@@ -1,0 +1,34 @@
+image: alpine:latest
+
+stages:
+ - review-check
+ - severity-check
+ - build-check
+
+
+review:
+  stage: review-check
+  script:
+    - scripts/review-check.sh
+  rules:
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "develop"'
+  tags:
+    - macos 
+
+severity:
+  stage: severity-check
+  script:
+    - scripts/severity-check.sh
+  rules:
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "develop"'
+  tags:
+    - macos 
+
+build:
+  stage: build-check
+  script:
+    - scripts/build-check.sh
+  rules:
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+  tags:
+    - macos 

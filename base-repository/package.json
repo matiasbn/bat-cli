@@ -1,0 +1,21 @@
+{
+  "name": "reporting-tool",
+  "version": "1.0.0",
+  "description": "Generate HTML and PDF reports from Markdown",
+  "main": "index.js",
+  "scripts": {
+    "build-report": "PREVIEW=false scripts/build-report.sh",
+    "build-report-preview": "PREVIEW=true scripts/build-report.sh",
+    "severity-check": "scripts/severity-check.sh",
+    "review-check": "scripts/review-check.sh",
+    "build-check": "scripts/build-check.sh",
+    "code-overhaul": "scripts/code-overhaul.sh",
+    "finding": "scripts/finding.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@git.kudelski.com:KS-Innovation/reporting-tool.git"
+  },
+  "author": "",
+  "license": "ISC"
+}

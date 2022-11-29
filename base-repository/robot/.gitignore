@@ -1,0 +1,10 @@
+.idea
+node_modules/
+*.err
+report.pdf
+report.html
+pd-images/
+*.theme
+content_variables.yml
+input.json
+package-lock.json

@@ -1,0 +1,4 @@
+.idea
+build_check_temp
+preview/*.html
+preview/*.md

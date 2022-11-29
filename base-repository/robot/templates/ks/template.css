@@ -1,0 +1,262 @@
+body {
+    margin: 0;
+    font-family: arial, sans-serif;
+}
+
+.main-div {
+    background-color: #ffffff;
+}
+
+table {
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 24px;
+    border-spacing: 0;
+    /*border-bottom: 2px solid black;*/
+    border-top: 2px solid black;
+    /*border-left: 1px solid black;*/
+    /*border-right: 1px solid black;*/
+}
+table th {
+    padding: 3px 10px;
+    background-color: white;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: 1px solid black;
+}
+table td {
+    padding: 3px 10px;
+    border-top: none;
+    border-left: none;
+    border-bottom: none;
+    border-right: none;
+}
+
+table tr:nth-child(even) {
+    background: #dddddd;
+}
+
+
+/* Add border for the last row of the table.           */
+ tr:last-child td { border-bottom: 1px solid black; }
+
+.title {
+    font-size: 2em;
+    color: #005A9C;
+    font-style: normal;
+}
+
+.subtitle {
+    font-size: 1.5em;
+    color: #005A9C;
+    text-align: center;
+    font-style: normal;
+}
+
+.document-metadata {
+    margin-left: 1em;
+}
+
+.pre-content {
+    height: 5em;
+}
+
+.content {
+    padding: 1em;
+    max-width: 50em;
+    text-align: justify;
+}
+
+.sidebar {
+    padding-top: 1em;
+    padding-left: 2em;
+    padding-right: 1em;
+    background-color: #f7f8f9;
+}
+
+.sidebar-title {
+    font-variant: initial;
+    font-size: 1.3em;
+    text-decoration: none;
+    font-weight: bold;
+    color: #0b0080;
+}
+
+.toc {
+    padding-bottom: 2em;
+}
+
+.toc-title {
+    color: #005A9C;
+    font-size: 1.3em;
+}
+
+
+.toc ul {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    padding-left: 0.25rem;
+    list-style-type: none;
+    list-style-position: outside;
+}
+
+.toc li {
+    color: #2ba6cb;
+    font-weight: bold;
+    padding-left: 1rem;
+}
+
+.toc a, .toc a:visited {
+    color: black;
+    text-decoration: none;
+    display: block;
+    box-shadow: 0 0 0 0 #0b0080;
+}
+
+.toc a:hover {
+    box-shadow: 0 3px 0 0 #0b0080;
+    background-color: #e7e8e9;
+}
+
+.toc ul li ul li {
+    list-style-position: outside;
+    font-weight: normal;
+}
+
+.toc-section-number:after {
+    content: ".";
+    margin-right: 1em;
+}
+
+.header-section-number:after {
+    content: ".";
+}
+
+.header-section-number:before {
+    content: "§";
+    border-bottom: 1px solid black;
+    margin-right: 0.5em;
+    color: #005A9C;
+    opacity: 0.5;
+}
+
+h1, h2, h3, h4 {
+    color: #005A9C;
+}
+
+h1 {
+    font-size: 1.5em;
+    font-style: italic;
+    font-weight: bolder;
+}
+
+h2 {
+    font-size: 1em;
+}
+
+h3 {
+    font-size: 1em;
+    color: black;
+    font-weight: bold;
+}
+
+h4 {
+    font-size: 1em;
+    color: black;
+    font-style: italic;
+    font-weight: normal;
+}
+
+pre {
+    padding: 1em;
+    border-left: 6px solid #efefef;
+}
+
+.info, .warning, .danger {
+    padding-left: 1em;
+    padding-right: 1em;
+    padding-top: 0.1em;
+    padding-bottom: 0.1em;
+    margin-top: 0.4em;
+    margin-bottom: 0.4em;
+    border-left-width: 0.5em;
+    border-left-style: solid;
+    line-height: 1.3em;
+}
+
+.info {
+    color: #004085;
+    background-color: lightblue;
+    border-left-color: darkblue;
+}
+
+.warning {
+    color: #856404;
+    background-color: #fff3cd;
+    border-left-color: orange;
+}
+
+.danger {
+    color: #721c24;
+    background-color: #f8d7da;
+    border-left-color: red;
+}
+
+@media screen and (min-width: 1260px) {
+
+    .logo {
+        float: right;
+    }
+
+    .sidebar {
+        border-right: 0;
+        border-left: 1px solid #eeeeee;
+        height: 100%;
+        position: fixed;
+        left: 0;
+        right: auto;
+        width: 23em;
+        overflow-y: scroll;
+        overflow-x: hidden;
+    }
+
+    .content {
+        margin-left: 31em;
+        margin-right: auto;
+    }
+
+    .toc-title {
+        color: gray;
+        font-variant: all-small-caps;
+    }
+
+}
+
+.high-color {
+    color: #FF0000;
+}
+
+.medium-color {
+    color: #F6902E;
+}
+
+.low-color {
+    color: #0070C0;
+}
+
+.informational-color {
+    color: #00B050;
+}
+
+.remediated-color {
+    color: #00B050;
+}
+
+.acknowledged-color {
+    color: #00B050;
+}
+
+.open-color {
+    color: #F6902E;
+}

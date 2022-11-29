@@ -1,0 +1,322 @@
+% !TeX document-id = {c8ef1eb9-96fc-4722-b9af-f2de3b740a2e}
+% !TeX TXS-program:compile = txs:///pdflatex/[--shell-escape]
+\RequirePackage[l2tabu, orthodox]{nag}
+\documentclass[english,12pt,svgnames]{article}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[table,xcdraw]{xcolor}
+\usepackage{ifthen}
+\usepackage[utf8]{inputenc}
+\usepackage[iso]{isodate}
+\usepackage[a4paper]{geometry}
+\usepackage[myheadings]{fullpage}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{longtable}
+\usepackage{eso-pic}
+\usepackage{tikz}
+\usepackage{anyfontsize}
+\usepackage[export]{adjustbox}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\newcommand\BackgroundPic{%
+\put(0,0){%
+\parbox[b][\paperheight]{\paperwidth}{%
+\centering
+\includegraphics[width=\paperwidth,height=\paperheight,%
+keepaspectratio]{templates/latex-ks/img/title-background.png}%
+\vfill
+}}}
+% Ugly workaround for graphicx v1.3b which clashes with old latex kernel (for MiKTeX and Windows, mostly)
+\makeatletter
+\def\set@curr@file#1{%
+	\begingroup
+	\escapechar\m@ne
+	\xdef\@curr@file{\expandafter\string\csname #1\endcsname}%
+	\endgroup
+}
+\def\quote@name#1{"\quote@@name#1\@gobble""}
+\def\quote@@name#1"{#1\quote@@name}
+\def\unquote@name#1{\quote@@name#1\@gobble"}
+\makeatother
+% TODO: remove the above once Miktex is fixed.
+\usepackage{graphicx, wrapfig, subcaption, setspace, booktabs}
+\usepackage[default]{lato}
+\usepackage[english]{babel}
+\addto\captionsenglish{% Replace "english" with the language you use
+  \renewcommand{\contentsname}%
+    {TABLE OF CONTENTS}%
+}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ############## Colors ##############
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\definecolor{titlecolor}{HTML}{003A62}
+\definecolor{customercolor}{HTML}{0097A9}
+\definecolor{titlepagecolor}{HTML}{75787B}
+\definecolor{headrulecolor}{HTML}{003A62}
+\definecolor{footrulecolor}{HTML}{BFBFBF}
+\definecolor{sectioncolor}{HTML}{003A62}
+\definecolor{subsectioncolor}{HTML}{4F81BD}
+\definecolor{high}{HTML}{FF0000}
+\definecolor{medium}{HTML}{F6902E}
+\definecolor{low}{HTML}{0070C0}
+\definecolor{informational}{HTML}{00B050}
+\definecolor{remediated}{HTML}{00B050}
+\definecolor{acknowledged}{HTML}{00B050}
+\definecolor{open}{HTML}{F6902E}
+
+
+$if(csl-refs)$
+\newlength{\cslhangindent}
+\setlength{\cslhangindent}{1.5em}
+\newlength{\csllabelwidth}
+\setlength{\csllabelwidth}{3em}
+\newlength{\cslentryspacingunit} % times entry-spacing
+\setlength{\cslentryspacingunit}{\parskip}
+\newenvironment{CSLReferences}[2] % #1 hanging-ident, #2 entry spacing
+ {% don't indent paragraphs
+  \setlength{\parindent}{0pt}
+  % turn on hanging indent if param 1 is 1
+  \ifodd #1
+  \let\oldpar\par
+  \def\par{\hangindent=\cslhangindent\oldpar}
+  \fi
+  % set entry spacing
+  \setlength{\parskip}{#2\cslentryspacingunit}
+ }%
+ {}
+\usepackage{calc}
+\newcommand{\CSLBlock}[1]{#1\hfill\break}
+\newcommand{\CSLLeftMargin}[1]{\parbox[t]{\csllabelwidth}{#1}}
+\newcommand{\CSLRightInline}[1]{\parbox[t]{\linewidth - \csllabelwidth}{#1}\break}
+\newcommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
+$endif$
+
+
+\usepackage{sectsty}
+\sectionfont{\large\color{sectioncolor}}
+\subsectionfont{\large\color{subsectioncolor}}
+
+\usepackage{eso-pic, url, lipsum, xspace}
+\usepackage{tabularx}
+\usepackage[section]{placeins}
+\usepackage{needspace}
+\usepackage{hyperref}
+\hypersetup{
+	colorlinks   = true, %Colours links instead of ugly boxes
+	urlcolor     = blue, %Colour for external hyperlinks
+	linkcolor    = blue, %Colour of internal links
+	citecolor   = red    %Colour of citations
+}
+\usepackage{titlesec}
+\usepackage{warning} % for warning messages
+
+\usepackage[sc]{mathpazo}
+\usepackage[default,scale=0.95]{opensans} % removed the osfigures option, since it causes compilation errors for Tommaso
+\usepackage{fontspec}
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+
+
+
+
+
+
+%% ############### USUALLY WE DON'T NEED TO CHANGE THINGS BELOW
+
+
+\hfuzz=3pt
+\setlength\parindent{0pt}
+\setlength\parskip{0.5em}
+
+%-------------------------------------------------------------------------------
+% CUSTOM SECTIONS
+%-------------------------------------------------------------------------------
+
+\urlstyle{sf}
+
+%\ifthenelse{\boolean{isDebug}}{\overfullrule=2cm}{}
+
+\usepackage{xcolor}
+\usepackage[newfloat]{minted}
+\usepackage{caption}
+\usepackage{csquotes}
+
+% Layout
+\titleformat{\chapter}[hang]{\Huge}{\thechapter\hspace{2ex}}{0pt}{\Huge}
+\newcommand{\pbspace}{\needspace{.19\textheight}}
+
+\setminted{frame=lines,framesep=2mm,baselinestretch=1.2,fontsize=\footnotesize,linenos,breaklines=true,breakbytoken=true,breakanywhere=true}
+
+% break overly long URLs
+\expandafter\def\expandafter\UrlBreaks\expandafter{\UrlBreaks%  save the current one
+  \do\a\do\b\do\c\do\d\do\e\do\f\do\g\do\h\do\i\do\j%
+  \do\k\do\l\do\m\do\n\do\o\do\p\do\q\do\r\do\s\do\t%
+  \do\u\do\v\do\w\do\x\do\y\do\z\do\A\do\B\do\C\do\D%
+  \do\E\do\F\do\G\do\H\do\I\do\J\do\K\do\L\do\M\do\N%
+  \do\O\do\P\do\Q\do\R\do\S\do\T\do\U\do\V\do\W\do\X%
+  \do\Y\do\Z}
+
+\newcommand{\HRule}[1]{\rule{\linewidth}{#1}}
+\onehalfspacing{}
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{5}
+
+%% force text wrap, also in texit
+\tolerance=3000
+\emergencystretch=\maxdimen
+\hyphenpenalty=8000
+\hbadness=10000
+
+\usepackage{seqsplit}
+
+% Spacing
+\titlespacing*{\subsubsection}{0pt}{0.5ex plus 0.3ex}{0pt}
+\titlespacing*{\section}{0pt}{1.5ex plus 0.4 ex minus 0.2 ex}{0.8ex plus 0.4 ex minus 0.2 ex}
+
+%-------------------------------------------------------------------------------
+% HEADER & FOOTER
+%-------------------------------------------------------------------------------
+% \patchcmd{<cmd>}{<search>}{<replace>}{<success>}{<failure>}
+\newcommand{\headrulecolor}[1]{\patchcmd{\headrule}{\hrule}{\color{#1}\hrule}{}{}}
+\newcommand{\footrulecolor}[1]{\patchcmd{\footrule}{\hrule}{\color{#1}\hrule}{}{}}
+\pagestyle{fancy}
+\fancyhf{}
+\setlength\headheight{18pt}
+
+%header
+\fancyhead[L]{\fontsize{10pt}{12pt}\selectfont \textcolor{titlecolor}{$customer$ | $title$\\$date$}}
+\fancyhead[R]{\includegraphics[height=31pt]{templates/latex-ks/img/ks_logo}}
+
+%footer
+\fancyfoot[L]{\fontsize{10pt}{12pt}\selectfont \textcolor{titlecolor}{\textcopyright~\the\year~Kudelski Security, Inc. Confidential and Proprietary. All Rights Reserved.\\$classification$}} % adding the copyright to make KIPI happy
+\fancyfoot[R]{\fontsize{10pt}{10pt}\selectfont \textcolor{titlecolor}{Page \thepage{}\ of~\pageref{LastPage}}}
+
+\renewcommand{\headrulewidth}{0.4pt}% Default \headrulewidth is 0.4pt
+\renewcommand{\footrulewidth}{0.4pt}% Default \footrulewidth is 0pt
+
+\headrulecolor{headrulecolor}
+\footrulecolor{footrulecolor}
+
+
+$if(highlighting-macros)$
+$highlighting-macros$
+$endif$
+
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\{\}}
+
+% https://eskola.uk/2021/pandoc-latex-font-fallback/
+%\setsansfont{Noto Sans}
+\setmonofont[]{Noto Sans Mono}
+
+% handle missing unicode characters
+\usepackage{newunicodechar}
+\newunicodechar{⋮}{ }
+
+%-------------------------------------------------------------------------------
+% TITLE PAGE
+%-------------------------------------------------------------------------------
+
+\begin{document}
+% draft watermark
+${if(draft-watermark)}
+\AddToShipoutPictureFG*{
+\begin{tikzpicture}[remember picture,overlay]
+\node[rotate=45,scale=15,text opacity=0.1,color=blue]
+at (current page.center) {DRAFT};
+\end{tikzpicture}
+}
+${endif}
+
+\AddToShipoutPicture*{\BackgroundPic}
+\hypersetup{pageanchor=false} % To avoid warning about the same identifier on page 1
+
+\title{
+    \vspace*{-5.2cm}\hspace*{1.6cm}\includegraphics[width=6cm, right]{templates/latex-ks/img/ks_logo}
+
+	\vspace*{0.5\baselineskip}
+	\vspace*{7.3cm}
+
+	\begin{flushleft}
+
+    \fontsize{30pt}{30pt}\selectfont
+    \textcolor{titlecolor}{$title$}\\
+
+    \large
+    \textcolor{titlepagecolor}{
+        \textmd{$second-title$}\\
+    }
+
+    \fontsize{30pt}{30pt}\selectfont
+	\textcolor{customercolor}{$customer$.}\\
+	\vspace*{0.5\baselineskip}
+
+    \large
+	\textcolor{titlepagecolor}{
+        \textmd{$date$}\\
+        \textmd{Version: $version$}
+	}
+
+	\vspace*{0.5\baselineskip}
+
+    \normalsize
+    \textcolor{titlepagecolor}{
+        Presented by:\\
+        Kudelski Security, Inc.\\
+        5090 North 40th Street, Suite 450\\
+        Phoenix, Arizona 85018
+    }
+
+	\vspace*{0.5\baselineskip}
+
+
+	\vspace*{0.5\baselineskip}
+
+    % uncomment to show customer logo on title page
+	%\includegraphics[width=7cm]{templates/latex-ks/img/customer_logo} \\
+	\end{flushleft}
+    \hfill
+    \begin{center}
+        \textcolor{titlepagecolor}{
+            $classification$
+        }
+    \end{center}
+
+}
+
+\date{}
+\author{} % empty author to avoid warning
+
+\maketitle
+\thispagestyle{empty}
+\hypersetup{pageanchor=true} % To avoid warning about the same identifier on page 1
+
+
+% Table of contents
+\newpage
+{
+    \setstretch{1.2}
+    \hypersetup{linkcolor=black}
+    \tableofcontents
+
+}
+\newpage
+
+$body$
+\newpage
+
+$if(has-frontmatter)$
+\backmatter
+$endif$
+
+
+
+$for(include-after)$
+$include-after$
+
+$endfor$
+
+\end{document}

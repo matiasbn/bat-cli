@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="$lang$" xml:lang="$lang$"$if(dir)$ dir="$dir$"$endif$>
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+$for(author-meta)$
+  <meta name="author" content="$author-meta$" />
+$endfor$
+$if(date-meta)$
+  <meta name="dcterms.date" content="$date-meta$" />
+$endif$
+$if(keywords)$
+  <meta name="keywords" content="$for(keywords)$$keywords$$sep$, $endfor$" />
+$endif$
+  <title>$if(title-prefix)$$title-prefix$ – $endif$$pagetitle$</title>
+  <style type="text/css">
+      code{white-space: pre-wrap;}
+      span.smallcaps{font-variant: small-caps;}
+      span.underline{text-decoration: underline;}
+      div.column{display: inline-block; vertical-align: top; width: 50%;}
+$if(quotes)$
+      q { quotes: "“" "”" "‘" "’"; }
+$endif$
+  </style>
+$if(highlighting-css)$
+  <style type="text/css">
+$highlighting-css$
+  </style>
+$endif$
+$for(css)$
+  <link rel="stylesheet" href="$css$" />
+$endfor$
+$if(math)$
+  $math$
+$endif$
+$for(header-includes)$
+  $header-includes$
+$endfor$
+</head>
+
+<body>
+<a name="page-top"></a>
+$for(include-before)$
+$include-before$
+$endfor$
+<div class="main-div">
+
+$if(toc)$
+        <div class="sidebar">
+            $if(title)$
+                <a class="sidebar-title" href="#page-top">$title$</a>
+            $endif$
+
+
+            <h3 class="toc-title">Table of Contents</h3>
+            <div class="toc">
+
+<nav id="$idprefix$TOC">
+$table-of-contents$
+</nav>
+                </div>
+            </div>
+$endif$
+
+
+    <div class="content">
+
+$if(title)$
+
+<header>
+    <img class="logo" alt="logo" src="templates/ks/kudelski-logo-header.png" />
+<h1 class="title">
+    $title$
+</h1>
+
+    <h2 class="subtitle">
+        $if(subtitle)$
+    $subtitle$
+    $endif$
+    </h2>
+
+
+    $if(date)$
+    <p class="date"><strong>Date:</strong><br /> <span class="document-metadata">$date$</span></p>
+$endif$
+    $if(version)$
+    <p class="version"><strong>Version:</strong><br /> <span class="document-metadata">$version$</span></p>
+    $endif$
+$for(author)$
+    <p class="author"><strong>Author:</strong><br /> <span class="document-metadata">$author$</span></p>
+$endfor$
+    $if(classification)$
+    <p class="classification"><strong>Classification:</strong><br /> <span class="document-metadata">$classification$</span></p>
+    $endif$
+</header>
+$endif$
+
+        <div class="pre-content"></div>
+
+$body$
+
+    </div>
+</div>
+$for(include-after)$
+$include-after$
+$endfor$
+</body>
+
+</html>
