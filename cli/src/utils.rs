@@ -1,10 +1,10 @@
-use crate::{Cli, DEFAULT_PATH};
+use crate::DEFAULT_PATH;
 
-pub fn get_path(args: Cli) -> String {
-    if args.parameter.is_none() {
+pub fn get_path(path: Option<String>) -> String {
+    if path.is_none() {
         return String::from(DEFAULT_PATH);
     }
-    return String::from(args.parameter.unwrap());
+    return String::from(path.unwrap());
 }
 
 // pub enum SamCommands {

@@ -9,3 +9,4 @@ edition = "2021"
 clap = { version = "4.0", features = ["derive"] }
 assert_cmd = "2.0"
 predicates = "2.1"
+serde = { version = "1.0.148", features = ["derive"] }
