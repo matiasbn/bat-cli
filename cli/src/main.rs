@@ -28,6 +28,10 @@ struct Cli {
 enum Commands {
     /// Generates a code-overhaul template file in the auditor path
     // #[serde(rename = "code-overhaul")]
+    Initialize {
+        /// The program entrypoint to analyze
+        config_file_path: Option<String>,
+    },
     CodeOverhaul {
         /// The program entrypoint to analyze
         entrypoint: Option<String>,
@@ -45,10 +49,13 @@ enum Commands {
 fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
+        Commands::Initialize {
+            config_file_path
+        } => commands::initialize::initialize_notes_repo(config_file_path),
         Commands::CodeOverhaul {
             entrypoint,
             audit_repo_path,
-        } => commands::code_overhaul::execute(entrypoint.unwrap(), audit_repo_path),
+        } => commands::code_overhaul::execute(entrypoint.unwrap(), audit_repo_path),,
         // "check" => commands::check::execute(args).unwrap()?,
         // "build" => println!("hey1"),
         // "finding" => println!("hey2"),
