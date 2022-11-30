@@ -1,34 +1,29 @@
-use serde::Deserialize;
+use std::fs;
+use std::path::Path;
 
-
-
-
-
-use std::str;
 use std::string::String;
 
-#[derive(Debug, Deserialize)]
-pub struct SamConfig {
-    path: SamPathConfig,
-}
+use crate::utils::get_sam_config_relative_path;
 
-#[derive(Debug, Deserialize)]
-struct SamPathConfig {
-    pub audit_folder_path: String,
-    pub templates_path: String,
-    pub program_path: String,
-    pub program_entrypoints_path: Vec<String>,
-}
+pub fn create_sam_project(toml_path: Option<String>) {
+    let sam_config_toml_path = get_sam_config_relative_path(toml_path);
+    let sam_toml_path = Path::new(&sam_config_toml_path);
 
-pub fn create_sam_project() {
+    if sam_toml_path.exists() {
+        panic!(
+            "SAM.toml file already exist in {:?}, aborting",
+            sam_toml_path
+        )
+    };
     // create SAM default config file
     let toml_str = r#"
-        [path]
-        audit_folder_path = "./audit-notes"
-        templates_path = "../audit-notes/templates"
-        program_path = ""
-        program_entrypoints_path = [""]
+    [path]
+    audit_folder_path = "./audit-notes"
+    templates_path = "../audit-notes/templates"
+    program_path = ""
+    program_entrypoints_path = [""]
     "#;
-    let decoded: SamConfig = toml::from_str(toml_str).unwrap();
-    println!("{:#?}", decoded);
+
+    fs::write(sam_config_toml_path.clone(), toml_str).expect("Could not write to file!");
+    println!("SAM.toml created at {:?}", sam_config_toml_path.clone());
 }

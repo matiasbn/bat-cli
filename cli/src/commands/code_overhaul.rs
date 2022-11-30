@@ -1,4 +1,4 @@
-use crate::{get_path, CODE_OVERHAUL_TEMPLATE_PATH};
+use crate::{get_notes_path, CODE_OVERHAUL_TEMPLATE_PATH};
 
 use std::path::Path;
 use std::process::Command;
@@ -6,7 +6,7 @@ use std::str;
 use std::string::String;
 
 pub fn create_overhaul_file(entrypoint: String, audit_repo_path: Option<String>) {
-    let repository_path = get_path(audit_repo_path);
+    let repository_path = get_notes_path(audit_repo_path);
     let branch_name = get_branch_name(repository_path.clone());
     create_code_overhaul_file(entrypoint, branch_name, repository_path);
 }

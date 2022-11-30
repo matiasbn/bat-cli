@@ -6,15 +6,13 @@ mod utils;
 
 extern crate core;
 
-
 use clap::{Parser, Subcommand};
 
-
-use crate::utils::get_path;
+use crate::utils::get_notes_path;
 
 pub const DEFAULT_AUDIT_NOTES_PATH: &str = "../audit-notes";
 pub const TEMPLATES_FOLDER: &str = "../audit-notes/templates";
-pub const DEFAULT_CONFIG_PATH: &str = "../SAM.toml";
+pub const DEFAULT_SAM_CONFIG_PATH: &str = "./SAM.toml";
 pub const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../../templates/code-overhaul.md";
 
 #[derive(Parser, Debug)]
@@ -28,10 +26,13 @@ struct Cli {
 // #[derive(Subcommand, Debug, Serialize, Deserialize)]
 enum Commands {
     /// Creates a SAM project
-    Create,
+    Create {
+        /// An optional config file path to create the initial SAM.toml file
+        config_file_relative_path: Option<String>,
+    },
     /// Initializes the project from the SAM.toml config file
     Initialize {
-        /// The program entrypoint to analyze
+        /// An optional config file path for the SAM project
         config_file_path: Option<String>,
     },
     /// Generates a code-overhaul template file in the auditor path
@@ -53,7 +54,9 @@ enum Commands {
 fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
-        Commands::Create => commands::create::create_sam_project(),
+        Commands::Create {
+            config_file_relative_path,
+        } => commands::create::create_sam_project(config_file_relative_path),
         Commands::Initialize { config_file_path } => {
             commands::initialize::initialize_notes_repo(config_file_path)
         }
