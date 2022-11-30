@@ -3,6 +3,12 @@ name = "sam-cli"
 version = "0.1.0"
 edition = "2021"
 description = "A CLI for Solana Audit Methodology"
+license = "MIT"
+homepage = "https://github.com/matiasbn/sam-cli/tree/main"
+documentation = "https://github.com/matiasbn/sam-cli/tree/main"
+repository = "https://github.com/matiasbn/sam-cli.git"
+readme = "../README.md"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
