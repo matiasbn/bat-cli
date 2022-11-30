@@ -12,7 +12,7 @@ use crate::utils::get_notes_path;
 
 pub const DEFAULT_AUDIT_NOTES_PATH: &str = "../audit-notes";
 pub const TEMPLATES_FOLDER: &str = "../audit-notes/templates";
-pub const DEFAULT_SAM_CONFIG_PATH: &str = "./SAM.toml";
+pub const DEFAULT_SAM_CONFIG_PATH: &str = "./BAT.toml";
 pub const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../../templates/code-overhaul.md";
 
 #[derive(Parser, Debug)]
@@ -25,15 +25,15 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 // #[derive(Subcommand, Debug, Serialize, Deserialize)]
 enum Commands {
-    /// Creates a SAM project
+    /// Creates a BAT project
     Create {
-        /// An optional config file path to create the initial SAM.toml file
+        /// An optional config file path to create the initial BAT.toml file
         config_file_relative_path: Option<String>,
     },
-    /// Initializes the project from the SAM.toml config file
+    /// Initializes the project from the BAT.toml config file
     Initialize {
-        /// An optional config file path for the SAM project
-        config_file_path: Option<String>,
+        /// An optional config file path for the BAT project
+        config_file_relative_path: Option<String>,
     },
     /// Generates a code-overhaul template file in the auditor path
     // #[serde(rename = "code-overhaul")]
@@ -57,9 +57,9 @@ fn main() {
         Commands::Create {
             config_file_relative_path,
         } => commands::create::create_sam_project(config_file_relative_path),
-        Commands::Initialize { config_file_path } => {
-            commands::initialize::initialize_notes_repo(config_file_path)
-        }
+        Commands::Initialize {
+            config_file_relative_path,
+        } => commands::initialize::initialize_notes_repo(config_file_relative_path),
         Commands::CodeOverhaul {
             entrypoint,
             audit_repo_path,

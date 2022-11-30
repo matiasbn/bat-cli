@@ -1,7 +1,0 @@
-
-    [path]
-    audit_folder_path = "./audit-notes"
-    templates_path = "../audit-notes/templates"
-    program_path = ""
-    program_entrypoints_path = [""]
-    
