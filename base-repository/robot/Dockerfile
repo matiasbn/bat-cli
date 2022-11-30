@@ -26,8 +26,8 @@ COPY *.sh ./
 RUN mv make-html-interactive.sh mkhtml && chmod +x ./mkhtml
 
 COPY config/style.csl ./data/
-COPY filters/ ./data/filters
-COPY templates/ ./data/templates
-COPY figures/ ./data/figures
+COPY filters ./data/filters
+COPY templates ./data/templates
+COPY figures ./data/figures
 
 WORKDIR /compile
