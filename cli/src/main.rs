@@ -6,9 +6,9 @@ mod utils;
 
 extern crate core;
 
-use clap::builder::Str;
+
 use clap::{Parser, Subcommand};
-use core::panicking::panic;
+
 
 use crate::utils::get_path;
 

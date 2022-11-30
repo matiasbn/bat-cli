@@ -1,18 +1,14 @@
-use crate::{get_path, Cli, CODE_OVERHAUL_TEMPLATE_PATH};
-use core::panicking::panic;
+use crate::{get_path, CODE_OVERHAUL_TEMPLATE_PATH};
+
 use std::path::Path;
 use std::process::Command;
 use std::str;
 use std::string::String;
 
 pub fn create_overhaul_file(entrypoint: String, audit_repo_path: Option<String>) {
-    let repository_path = get_path(audit_repo_path.clone());
+    let repository_path = get_path(audit_repo_path);
     let branch_name = get_branch_name(repository_path.clone());
-    create_code_overhaul_file(
-        entrypoint.clone(),
-        branch_name.clone(),
-        repository_path.clone(),
-    );
+    create_code_overhaul_file(entrypoint, branch_name, repository_path);
 }
 
 fn get_branch_name(repository_path: String) -> String {
@@ -22,11 +18,11 @@ fn get_branch_name(repository_path: String) -> String {
         .output();
     let output = git_symbolic.unwrap();
     let git_branch_slice = str::from_utf8(output.stdout.as_slice()).unwrap();
-    let git_branch_tokenized = git_branch_slice.split("/").collect::<Vec<&str>>();
+    let git_branch_tokenized = git_branch_slice.split('/').collect::<Vec<&str>>();
     let git_branch = git_branch_tokenized
         .last()
         .unwrap()
-        .split("\n")
+        .split('\n')
         .collect::<Vec<&str>>()[0];
     git_branch.to_owned()
 }
@@ -37,22 +33,20 @@ fn create_code_overhaul_file(
     repository_path: String,
 ) -> Result<(), ()> {
     let code_overhaul_path = repository_path + &String::from("/notes/") + &branch_name;
-    if !Path::new(&code_overhaul_path.clone()).exists() {
+    if !Path::new(&code_overhaul_path).exists() {
         panic!(
             "{:?} auditor folder does not exist, aborting",
             code_overhaul_path
         )
     };
 
-    let full_overhaul_path = code_overhaul_path.clone()
-        + &String::from("/code-overhaul/")
-        + &entrypoint
-        + &String::from(".md");
-    if Path::new(&full_overhaul_path.clone()).exists() {
+    let full_overhaul_path =
+        code_overhaul_path + &String::from("/code-overhaul/") + &entrypoint + &String::from(".md");
+    if Path::new(&full_overhaul_path).exists() {
         panic!("{:?} file already exist, aborting", entrypoint)
     };
     Command::new("cp")
-        .args([CODE_OVERHAUL_TEMPLATE_PATH, &full_overhaul_path.clone()])
+        .args([CODE_OVERHAUL_TEMPLATE_PATH, &full_overhaul_path])
         .output();
     println!("Creating {:?} file", entrypoint);
     Ok(())
