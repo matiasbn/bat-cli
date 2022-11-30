@@ -14,7 +14,7 @@ use crate::utils::get_path;
 
 const DEFAULT_PATH: &str = "../base-repository";
 const TEMPLATES_FOLDER: &str = "../templates";
-const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../templates/code-overhaul.md";
+const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../../templates/code-overhaul.md";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A CLI for Solana Audit Methodology")]

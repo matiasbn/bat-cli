@@ -6,7 +6,6 @@ use std::str;
 use std::string::String;
 
 pub fn execute(entrypoint: String, audit_repo_path: Option<String>) {
-    println!("entrypoint {:?}", entrypoint);
     let repository_path = get_path(audit_repo_path.clone());
     let branch_name = get_branch_name(repository_path.clone());
     create_code_overhaul_file(
@@ -24,7 +23,6 @@ fn get_branch_name(repository_path: String) -> String {
     let output = git_symbolic.unwrap();
     let git_branch_slice = str::from_utf8(output.stdout.as_slice()).unwrap();
     let git_branch_tokenized = git_branch_slice.split("/").collect::<Vec<&str>>();
-    println!("{:?}", git_branch_tokenized);
     let git_branch = git_branch_tokenized
         .last()
         .unwrap()
@@ -50,7 +48,7 @@ fn create_code_overhaul_file(
         + &String::from("/code-overhaul/")
         + &entrypoint
         + &String::from(".md");
-    if Path::new(&code_overhaul_path.clone()).exists() {
+    if Path::new(&full_overhaul_path.clone()).exists() {
         panic!("{:?} file already exist, aborting", entrypoint)
     };
     Command::new("cp")
