@@ -12,9 +12,10 @@ use core::panicking::panic;
 
 use crate::utils::get_path;
 
-const TEMPLATES_FOLDER: &str = "../audit-notes/templates";
-const DEFAULT_CONFIG_PATH: &str = "../SAM.toml";
-const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../../templates/code-overhaul.md";
+pub const DEFAULT_AUDIT_NOTES_PATH: &str = "../audit-notes";
+pub const TEMPLATES_FOLDER: &str = "../audit-notes/templates";
+pub const DEFAULT_CONFIG_PATH: &str = "../SAM.toml";
+pub const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../../templates/code-overhaul.md";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A CLI for Solana Audit Methodology")]
