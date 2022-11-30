@@ -34,9 +34,9 @@ pub fn get_notes_path(path: Option<String>) -> String {
 }
 
 pub fn get_sam_config() -> SamConfig {
-    let sam_toml_path = Path::new(&"./BAT.toml");
+    let sam_toml_path = Path::new(&"./Batman.toml");
     if !sam_toml_path.is_file() {
-        panic!("BAT.toml file not found at {:?}", sam_toml_path);
+        panic!("Batman.toml file not found at {:?}", sam_toml_path);
     }
     let toml_file = fs::read(sam_toml_path).unwrap();
     let tom_file_string = str::from_utf8(toml_file.as_slice()).unwrap();
@@ -47,13 +47,13 @@ pub fn get_sam_config() -> SamConfig {
 pub fn get_sam_config_relative_path(relative_path: Option<String>) -> String {
     String::from(DEFAULT_SAM_CONFIG_PATH)
     // match relative_path {
-    //     Some(sam_config_path) => sam_config_path + &String::from("/BAT.toml"),
+    //     Some(sam_config_path) => sam_config_path + &String::from("/Batman.toml"),
     //     None => String::from(DEFAULT_SAM_CONFIG_PATH),
     // }
 }
 
 // pub fn get_sam_config() -> Result<SamConfig, ()> {
-//     let contents = match fs::read_to_string("../BAT.toml") {
+//     let contents = match fs::read_to_string("../Batman.toml") {
 //         // If successful return the files text as `contents`.
 //         // `c` is a local variable.
 //         Ok(c) => c,

@@ -17,12 +17,14 @@ pub fn initialize_notes_repo(config_file_path: Option<String>) {
     // }
     // check auditor folders exist
     for auditor_name in &sam_config.init.auditors {
-        if !Path::new(&sam_config.path.audit_folder_path + &auditor_name).is_dir() {
-            panic!(
-                "templates folder {:?} does not exist, aborting",
-                &sam_config.path.audit_folder_path
-            );
-        }
+        let auditor_folder_path = sam_config.path.audit_folder_path.clone() + &auditor_name;
+        println!("{:?}", auditor_folder_path);
+        // if !Path::new(audit_folder_path).is_dir() {
+        //     panic!(
+        //         "templates folder {:?} does not exist, aborting",
+        //         &sam_config.path.audit_folder_path
+        //     );
+        // }
     }
     if !Path::new(&sam_config.path.templates_path).is_dir() {
         panic!(
@@ -41,7 +43,7 @@ pub fn initialize_notes_repo(config_file_path: Option<String>) {
     if sam_config.path.program_path.is_empty() || !Path::new(&sam_config.path.program_path).is_dir()
     {
         panic!(
-            "program folder {:?} does not exist, aborting, please update BAT.toml file",
+            "program folder {:?} does not exist, aborting, please update Batman.toml file",
             &sam_config.path.program_path
         );
     }
@@ -49,7 +51,7 @@ pub fn initialize_notes_repo(config_file_path: Option<String>) {
     for entrypoint_path in &sam_config.path.program_entrypoints_path {
         if entrypoint_path.is_empty() || !Path::new(&entrypoint_path).is_dir() {
             panic!(
-                "entrypoint folder {:?} does not exist, aborting, please update BAT.toml file",
+                "entrypoint folder {:?} does not exist, aborting, please update Batman.toml file",
                 &entrypoint_path
             );
         }

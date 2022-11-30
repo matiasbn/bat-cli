@@ -11,11 +11,11 @@ pub fn create_sam_project(toml_path: Option<String>) {
 
     if sam_toml_path.exists() {
         panic!(
-            "BAT.toml file already exist in {:?}, aborting",
+            "Batman.toml file already exist in {:?}, aborting",
             sam_toml_path
         )
     };
-    // create BAT default config file
+    // create Batman default config file
     let toml_str = r#"
     [init]
     auditors_names=[""]
@@ -27,5 +27,5 @@ pub fn create_sam_project(toml_path: Option<String>) {
     "#;
 
     fs::write(sam_config_toml_path.clone(), toml_str).expect("Could not write to file!");
-    println!("BAT.toml created at {:?}", sam_config_toml_path.clone());
+    println!("Batman.toml created at {:?}", sam_config_toml_path.clone());
 }

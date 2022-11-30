@@ -12,7 +12,7 @@ use crate::utils::get_notes_path;
 
 pub const DEFAULT_AUDIT_NOTES_PATH: &str = "../audit-notes";
 pub const TEMPLATES_FOLDER: &str = "../audit-notes/templates";
-pub const DEFAULT_SAM_CONFIG_PATH: &str = "./BAT.toml";
+pub const DEFAULT_SAM_CONFIG_PATH: &str = "./Batman.toml";
 pub const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../../templates/code-overhaul.md";
 
 #[derive(Parser, Debug)]
@@ -25,14 +25,14 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 // #[derive(Subcommand, Debug, Serialize, Deserialize)]
 enum Commands {
-    /// Creates a BAT project
+    /// Creates a Batman project
     Create {
-        /// An optional config file path to create the initial BAT.toml file
+        /// An optional config file path to create the initial Batman.toml file
         config_file_relative_path: Option<String>,
     },
-    /// Initializes the project from the BAT.toml config file
+    /// Initializes the project from the Batman.toml config file
     Initialize {
-        /// An optional config file path for the BAT project
+        /// An optional config file path for the Batman project
         config_file_relative_path: Option<String>,
     },
     /// Generates a code-overhaul template file in the auditor path
