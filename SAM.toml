@@ -1,0 +1,8 @@
+[init]
+audit_file_path = "audit-notes"
+
+[path]
+progrom_path = "star-atlas-programs/sol-programs/scream/programs/player_profile"
+program_entrypoints_path = [
+    "star-atlas-programs/sol-programs/scream/programs/player_profile/src/instructions",
+]

@@ -1,10 +1,10 @@
-use crate::DEFAULT_PATH;
+use crate::DEFAULT_AUDIT_NOTES_PATH;
 use serde::de::Unexpected::Str;
 
 pub fn get_path(path: Option<String>) -> String {
     match path {
         Some(audit_path) => audit_path,
-        None => String::from(DEFAULT_PATH),
+        None => String::from(DEFAULT_AUDIT_NOTES_PATH),
     }
 }
 
