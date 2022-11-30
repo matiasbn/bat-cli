@@ -1,4 +1,4 @@
-use crate::{get_path, Cli, CODE_OVERHAUL_TEMPLATE_PATH, TEMPLATES_FOLDER};
+use crate::{get_path, Cli, CODE_OVERHAUL_TEMPLATE_PATH};
 use core::panicking::panic;
 use std::path::Path;
 use std::process::Command;

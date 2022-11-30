@@ -27,12 +27,15 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 // #[derive(Subcommand, Debug, Serialize, Deserialize)]
 enum Commands {
-    /// Generates a code-overhaul template file in the auditor path
-    // #[serde(rename = "code-overhaul")]
+    /// Creates a SAM project
+    Create,
+    /// Initializes the project from the SAM.toml config file
     Initialize {
         /// The program entrypoint to analyze
         config_file_path: Option<String>,
     },
+    /// Generates a code-overhaul template file in the auditor path
+    // #[serde(rename = "code-overhaul")]
     CodeOverhaul {
         /// The program entrypoint to analyze
         entrypoint: Option<String>,
@@ -50,6 +53,7 @@ enum Commands {
 fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
+        Commands::Create => commands::create::create_sam_project(),
         Commands::Initialize { config_file_path } => {
             commands::initialize::initialize_notes_repo(config_file_path)
         }
