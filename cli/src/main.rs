@@ -1,18 +1,19 @@
 #![feature(core_panic)]
 
-mod commands;
-mod utils;
-// use serde::{Deserialize, Serialize};
-
 extern crate core;
 
 use clap::{Parser, Subcommand};
 
 use crate::utils::get_notes_path;
 
+mod commands;
+mod config;
+mod utils;
+// use serde::{Deserialize, Serialize};
+
 pub const DEFAULT_AUDIT_NOTES_PATH: &str = "../audit-notes";
 pub const TEMPLATES_FOLDER: &str = "../audit-notes/templates";
-pub const DEFAULT_SAM_CONFIG_PATH: &str = "./Batman.toml";
+pub const DEFAULT_CONFIG_FILE_PATH: &str = "./Batman.toml";
 pub const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../../templates/code-overhaul.md";
 
 #[derive(Parser, Debug)]
@@ -31,7 +32,7 @@ enum Commands {
         config_file_relative_path: Option<String>,
     },
     /// Initializes the project from the Batman.toml config file
-    Initialize {
+    Init {
         /// An optional config file path for the Batman project
         config_file_relative_path: Option<String>,
     },
@@ -56,10 +57,10 @@ fn main() {
     match cli.command {
         Commands::Create {
             config_file_relative_path,
-        } => commands::create::create_sam_project(config_file_relative_path),
-        Commands::Initialize {
+        } => commands::create::create_project(config_file_relative_path),
+        Commands::Init {
             config_file_relative_path,
-        } => commands::initialize::initialize_notes_repo(config_file_relative_path),
+        } => commands::init::initialize_notes_repo(config_file_relative_path),
         Commands::CodeOverhaul {
             entrypoint,
             audit_repo_path,

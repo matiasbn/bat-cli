@@ -3,26 +3,8 @@ use std::{fs, path::Path};
 
 use serde::Deserialize;
 
-use crate::{DEFAULT_AUDIT_NOTES_PATH, DEFAULT_SAM_CONFIG_PATH};
-
-#[derive(Debug, Deserialize)]
-pub struct SamConfig {
-    pub init: SamInitConfig,
-    pub path: SamPathConfig,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SamInitConfig {
-    pub auditors: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SamPathConfig {
-    pub audit_folder_path: String,
-    pub templates_path: String,
-    pub program_path: String,
-    pub program_entrypoints_path: Vec<String>,
-}
+use crate::config::BatmanConfig;
+use crate::{DEFAULT_AUDIT_NOTES_PATH, DEFAULT_CONFIG_FILE_PATH};
 
 pub fn clone_base_repository() {}
 
@@ -33,19 +15,19 @@ pub fn get_notes_path(path: Option<String>) -> String {
     }
 }
 
-pub fn get_sam_config() -> SamConfig {
-    let sam_toml_path = Path::new(&"./Batman.toml");
-    if !sam_toml_path.is_file() {
-        panic!("Batman.toml file not found at {:?}", sam_toml_path);
+pub fn get_config() -> BatmanConfig {
+    let batman_toml_path = Path::new(&"./Batman.toml");
+    if !batman_toml_path.is_file() {
+        panic!("Batman.toml file not found at {:?}", batman_toml_path);
     }
-    let toml_file = fs::read(sam_toml_path).unwrap();
+    let toml_file = fs::read(batman_toml_path).unwrap();
     let tom_file_string = str::from_utf8(toml_file.as_slice()).unwrap();
-    let decoded: SamConfig = toml::from_str(tom_file_string).unwrap();
+    let decoded: BatmanConfig = toml::from_str(tom_file_string).unwrap();
     decoded
 }
 
-pub fn get_sam_config_relative_path(relative_path: Option<String>) -> String {
-    String::from(DEFAULT_SAM_CONFIG_PATH)
+pub fn get_config_relative_path(relative_path: Option<String>) -> String {
+    String::from(DEFAULT_CONFIG_FILE_PATH)
     // match relative_path {
     //     Some(sam_config_path) => sam_config_path + &String::from("/Batman.toml"),
     //     None => String::from(DEFAULT_SAM_CONFIG_PATH),
