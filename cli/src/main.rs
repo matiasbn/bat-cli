@@ -49,13 +49,13 @@ enum Commands {
 fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
-        Commands::Initialize {
-            config_file_path
-        } => commands::initialize::initialize_notes_repo(config_file_path),
+        Commands::Initialize { config_file_path } => {
+            commands::initialize::initialize_notes_repo(config_file_path)
+        }
         Commands::CodeOverhaul {
             entrypoint,
             audit_repo_path,
-        } => commands::code_overhaul::execute(entrypoint.unwrap(), audit_repo_path),,
+        } => commands::code_overhaul::create_overhaul_file(entrypoint.unwrap(), audit_repo_path),
         // "check" => commands::check::execute(args).unwrap()?,
         // "build" => println!("hey1"),
         // "finding" => println!("hey2"),
