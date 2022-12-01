@@ -31,19 +31,68 @@ impl BatConfig {
         }
         let bat_toml_file = fs::read(bat_toml_path).unwrap();
         let bat_tom_file_string = str::from_utf8(bat_toml_file.as_slice()).unwrap();
-        let required: RequiredConfig = toml::from_str(bat_tom_file_string).unwrap();
 
         // BatAuditor.toml
         let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
         if !auditor_toml_path.is_file() {
-            panic!("Bat.toml file not found at {:?}", auditor_toml_path);
+            panic!("BatAuditor.toml file not found at {:?}", auditor_toml_path);
         }
         let auditor_toml_file = fs::read(auditor_toml_path).unwrap();
         let auditor_tom_file_string = str::from_utf8(auditor_toml_file.as_slice()).unwrap();
-        let auditor: AuditorConfig = toml::from_str(auditor_tom_file_string).unwrap();
 
-        let config = BatConfig { required, auditor };
+        // Get the BatConfig complete
+        let config: BatConfig =
+            toml::from_str((bat_tom_file_string.to_string() + auditor_tom_file_string).as_str())
+                .unwrap();
         config
+    }
+
+    pub fn validate_initial_config() {
+        Self::validate_audit_folder();
+        Self::validate_auditor_notes_folder();
+        Self::validate_program_path();
+    }
+
+    // audit notes folder should not exist
+    pub fn validate_audit_folder() {
+        let bat_config = BatConfig::get_config().required;
+        if Path::new(&bat_config.audit_folder_path).is_dir() {
+            panic!(
+                "audit folder {:?} already exists, abortings",
+                &bat_config.audit_folder_path
+            );
+        }
+    }
+
+    // auditors notes folders should not exist and not empty
+    pub fn validate_auditor_notes_folder() {
+        let bat_config = BatConfig::get_config().required;
+        if bat_config.auditor_names.is_empty() {
+            panic!("required parameter auditors_names is empty in Bat.toml file, aborting",);
+        }
+        for auditor_name in &bat_config.auditor_names {
+            let auditor_folder_path =
+                bat_config.audit_folder_path.clone() + "/".as_ref() + &auditor_name + "-notes";
+            if Path::new(&auditor_folder_path).is_dir() {
+                panic!(
+                    "auditor folder {:?} already exist, aborting",
+                    &auditor_folder_path
+                );
+            }
+        }
+    }
+
+    // program_path not empty and program_path exists
+    pub fn validate_program_path() {
+        let bat_config = BatConfig::get_config().required;
+        if bat_config.program_lib_path.is_empty() {
+            panic!("required parameter program_path is empty in Bat.toml file, aborting",);
+        } else if !Path::new(&bat_config.program_lib_path).is_file() {
+            panic!(
+                "program file at path \"{:?}\" does not exist, aborting, please update Bat.toml file",
+                &bat_config.program_lib_path
+            );
+        }
     }
 
     pub fn get_auditor_names() -> Vec<String> {
@@ -75,7 +124,6 @@ impl BatConfig {
 }
 
 #[test]
-
 fn test_get_test_config() {
     let batconfig = BatConfig::get_test_config();
     println!("{:#?}", batconfig);

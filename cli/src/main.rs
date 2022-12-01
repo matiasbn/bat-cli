@@ -11,7 +11,7 @@ mod utils;
 // use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "A CLI for Solana Audit Methodology")]
+#[command(author, version, about = "Blockchain Audit Toolkit (BAT) CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -29,8 +29,6 @@ enum Commands {
     CodeOverhaul {
         /// The program entrypoint to analyze
         entrypoint: Option<String>,
-        /// The program entrypoint to analyze
-        audit_repo_path: Option<String>,
     },
     /// Checks the health of the files
     Check {
@@ -45,10 +43,9 @@ fn main() {
     match cli.command {
         Commands::Create {} => commands::create::create_project(),
         Commands::Init {} => commands::init::initialize_notes_repo(),
-        Commands::CodeOverhaul {
-            entrypoint,
-            audit_repo_path,
-        } => commands::code_overhaul::create_overhaul_file(entrypoint.unwrap(), audit_repo_path),
+        Commands::CodeOverhaul { entrypoint } => {
+            commands::code_overhaul::create_overhaul_file(entrypoint.unwrap())
+        }
         // "check" => commands::check::execute(args).unwrap()?,
         // "build" => println!("hey1"),
         // "finding" => println!("hey2"),

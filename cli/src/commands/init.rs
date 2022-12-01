@@ -4,14 +4,14 @@ use std::io::{BufRead, Split};
 use std::process::{Command, Output};
 use std::{io, path::Path, string::String};
 
-use crate::config::{BatConfig, RequiredConfig};
+use crate::config::BatConfig;
 
 pub fn initialize_notes_repo() {
     let bat_config: BatConfig = BatConfig::get_config();
     println!("creating repository for the next config: ");
     println!("{:#?}", bat_config.clone());
     let required = bat_config.required;
-    validate_initial_config(required.clone()).unwrap();
+    BatConfig::validate_initial_config();
     create_notes_repository(required.clone().audit_folder_path);
     // copy templates/notes-folder-template
     create_auditors_notes_folders(
@@ -149,41 +149,6 @@ fn initialize_code_overhaul_files(
     //         }
     //     }
     // }
-}
-
-fn validate_initial_config(bat_config: RequiredConfig) -> Result<String, String> {
-    // audit notes folder should not exist
-    if Path::new(&bat_config.audit_folder_path).is_dir() {
-        panic!(
-            "audit folder {:?} already exists, abortings",
-            &bat_config.audit_folder_path
-        );
-    }
-
-    // auditors notes folders should not exist and not empty
-    if bat_config.auditor_names.is_empty() {
-        panic!("required parameter auditors_names is empty in Bat.toml file, aborting",);
-    }
-    for auditor_name in &bat_config.auditor_names {
-        let auditor_folder_path =
-            bat_config.audit_folder_path.clone() + "/".as_ref() + &auditor_name + "-notes";
-        if Path::new(&auditor_folder_path).is_dir() {
-            panic!(
-                "auditor folder {:?} already exist, aborting",
-                &auditor_folder_path
-            );
-        }
-    }
-    // program_path not empty and program_path exists
-    if bat_config.program_lib_path.is_empty() {
-        panic!("required parameter program_path is empty in Bat.toml file, aborting",);
-    } else if !Path::new(&bat_config.program_lib_path).is_file() {
-        panic!(
-            "program file at path \"{:?}\" does not exist, aborting, please update Bat.toml file",
-            &bat_config.program_lib_path
-        );
-    }
-    Ok(String::from("Ok"))
 }
 
 #[test]

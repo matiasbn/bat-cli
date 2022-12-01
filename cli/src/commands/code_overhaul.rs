@@ -6,7 +6,7 @@ use std::process::Command;
 use std::str;
 use std::string::String;
 
-pub fn create_overhaul_file(entrypoint: String, audit_repo_path: Option<String>) {
+pub fn create_overhaul_file(entrypoint: String) {
     let audit_repo_path = BatConfig::get_audit_folder_path();
     let branch_name = get_branch_name(audit_repo_path.clone());
     // let file_path = get_overhaul_file_path(audit_repo_path, entrypoint);
