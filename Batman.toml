@@ -1,8 +1,0 @@
-
-    [init]
-    auditors_names=[""]
-    [path]
-    audit_folder_path = "./audit-notes"
-    program_path = ""
-    program_entrypoints_path = [""]
-    

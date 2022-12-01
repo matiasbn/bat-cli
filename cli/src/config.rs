@@ -1,33 +1,22 @@
 use std::str;
-use std::{fs, path::Path};
 
 use serde::Deserialize;
 
-use crate::{DEFAULT_AUDIT_NOTES_PATH, DEFAULT_CONFIG_FILE_PATH};
-
 pub const TOML_INITIAL_CONFIG_STR: &str = r#"
-    [init]
-    auditors_names=[""]
-    [path]
+    [required]
+    auditor_names=[""]
     audit_folder_path = "./audit-notes"
-    program_path = ""
-    program_entrypoints_path = [""]
+    program_lib_path = ""
     "#;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct BatmanConfig {
-    pub init: InitConfig,
-    pub path: PathConfig,
+    pub required: RequiredConfig,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct InitConfig {
-    pub auditors_names: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PathConfig {
+#[derive(Debug, Deserialize, Clone)]
+pub struct RequiredConfig {
+    pub auditor_names: Vec<String>,
     pub audit_folder_path: String,
-    pub program_path: String,
-    pub program_entrypoints_path: Vec<String>,
+    pub program_lib_path: String,
 }

@@ -1,5 +1,3 @@
 {
-  "plugins": [
-    "prettier-plugin-toml"
-  ]
+  "pluginSearchDirs": ["/usr/local/lib/node_modules"]
 }

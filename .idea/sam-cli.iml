@@ -3,6 +3,9 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/cli/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/star-atlas-programs/sol-programs/scream/common/common_proc/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/star-atlas-programs/sol-programs/scream/common/common_utils/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/star-atlas-programs/sol-programs/scream/programs/player_profile/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/temp" />
       <excludeFolder url="file://$MODULE_DIR$/.tmp" />
       <excludeFolder url="file://$MODULE_DIR$/tmp" />

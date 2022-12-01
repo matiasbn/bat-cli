@@ -1,8 +1,11 @@
 [workspace]
-members = ["cli"]
+members = [
+    "cli",
+    # "star-atlas-programs/sol-programs/scream/programs/player_profile",
+]
 
 [profile.release]
 overflow-checks = true
 lto = true
-opt-level = 3
+opt-level = 0
 codegen-units = 1

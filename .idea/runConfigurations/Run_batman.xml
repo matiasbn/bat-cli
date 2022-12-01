@@ -1,6 +1,6 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Run batman" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
-    <option name="command" value="run --package batman --bin batman init" />
+  <configuration default="false" name="Run bat" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+    <option name="command" value="run --package bat --bin bat init" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <option name="channel" value="DEFAULT" />
     <option name="requiredFeatures" value="false" />

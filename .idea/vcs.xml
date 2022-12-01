@@ -2,7 +2,5 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/base-repository" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/star-atlas-programs" vcs="Git" />
   </component>
 </project>

@@ -11,12 +11,12 @@ pub fn create_project(toml_path: Option<String>) {
 
     if sam_toml_path.exists() {
         panic!(
-            "Batman.toml file already exist in {:?}, aborting",
+            "Bat.toml file already exist in {:?}, aborting",
             sam_toml_path
         )
     };
 
     fs::write(sam_config_toml_path.clone(), TOML_INITIAL_CONFIG_STR)
         .expect("Could not write to file!");
-    println!("Batman.toml created at {:?}", sam_config_toml_path.clone());
+    println!("Bat.toml created at {:?}", sam_config_toml_path.clone());
 }

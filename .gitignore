@@ -1,3 +1,7 @@
 cli/target
 target
+audit-notes
+base-repository
 star-atlas-programs/*
+Bat.toml
+cli/Bat.toml
