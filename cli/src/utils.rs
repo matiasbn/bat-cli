@@ -1,7 +1,7 @@
 use std::str;
 use std::{fs, path::Path};
 
-use crate::config::BatmanConfig;
+use crate::config::BatConfig;
 use crate::{DEFAULT_AUDIT_NOTES_PATH, DEFAULT_CONFIG_FILE_PATH};
 
 pub fn get_notes_path(path: Option<String>) -> String {
@@ -11,14 +11,14 @@ pub fn get_notes_path(path: Option<String>) -> String {
     }
 }
 
-pub fn get_config() -> BatmanConfig {
-    let batman_toml_path = Path::new(&"./Bat.toml");
-    if !batman_toml_path.is_file() {
-        panic!("Bat.toml file not found at {:?}", batman_toml_path);
+pub fn get_config() -> BatConfig {
+    let bat_toml_path = Path::new(&"./Bat.toml");
+    if !bat_toml_path.is_file() {
+        panic!("Bat.toml file not found at {:?}", bat_toml_path);
     }
-    let toml_file = fs::read(batman_toml_path).unwrap();
+    let toml_file = fs::read(bat_toml_path).unwrap();
     let tom_file_string = str::from_utf8(toml_file.as_slice()).unwrap();
-    let decoded: BatmanConfig = toml::from_str(tom_file_string).unwrap();
+    let decoded: BatConfig = toml::from_str(tom_file_string).unwrap();
     decoded
 }
 

@@ -1,1 +1,1 @@
-# sam-cli: Solana Audit Methodology Command Line Interface
+# bat-cli: Blockchain Audit Toolkit Command Line Interface

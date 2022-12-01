@@ -10,7 +10,7 @@ pub const TOML_INITIAL_CONFIG_STR: &str = r#"
     "#;
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct BatmanConfig {
+pub struct BatConfig {
     pub required: RequiredConfig,
 }
 
