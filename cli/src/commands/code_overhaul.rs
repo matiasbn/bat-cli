@@ -1,16 +1,31 @@
 use crate::config::BatConfig;
 use crate::utils::get_branch_name;
 
-use std::path::Path;
 use std::process::Command;
-use std::str;
 use std::string::String;
 
-pub fn create_overhaul_file(entrypoint: String) {
-    let audit_repo_path = BatConfig::get_audit_folder_path();
-    let branch_name = get_branch_name(audit_repo_path.clone());
-    // let file_path = get_overhaul_file_path(audit_repo_path, entrypoint);
-    // create_code_overhaul_file(file_path);
+pub fn create_overhaul_file(entrypoint_name: String, auditor_name: String) {
+    let audit_folder_path = BatConfig::get_audit_folder_path();
+    let branch_name = get_branch_name(audit_folder_path.clone());
+    let output = Command::new("cp")
+        .args([
+            "-r",
+            (audit_folder_path.clone() + "/templates/code-overhaul.md").as_str(),
+            (audit_folder_path.clone()
+                + "/notes/"
+                + &auditor_name.clone()
+                + "-notes/code-overhaul/to-review/"
+                + &entrypoint_name.clone()
+                + ".md")
+                .as_str(),
+        ])
+        .output()
+        .unwrap()
+        .status
+        .exit_ok();
+    if let Err(output) = output {
+        panic!("create code overhaul files failed with error: {:?}", output)
+    };
 }
 
 // fn get_overhaul_file_path(audit_repo_path: String, entrypoint: String) -> String {

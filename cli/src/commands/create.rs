@@ -9,7 +9,7 @@ program_lib_path = ""
 "#;
 pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
 [auditor]
-auditor=""
+auditor_name=""
 "#;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";

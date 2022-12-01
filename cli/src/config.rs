@@ -19,7 +19,7 @@ pub struct RequiredConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AuditorConfig {
-    pub auditor: String,
+    pub auditor_name: String,
 }
 
 impl BatConfig {
@@ -116,7 +116,7 @@ impl BatConfig {
                     .to_string(),
         };
         let auditor = AuditorConfig {
-            auditor: "matias".to_string(),
+            auditor_name: "matias".to_string(),
         };
         let bat_config = BatConfig { required, auditor };
         bat_config

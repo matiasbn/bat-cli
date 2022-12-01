@@ -4,6 +4,7 @@
 extern crate core;
 
 use clap::{Parser, Subcommand};
+use config::BatConfig;
 
 mod commands;
 mod config;
@@ -28,7 +29,7 @@ enum Commands {
     // #[serde(rename = "code-overhaul")]
     CodeOverhaul {
         /// The program entrypoint to analyze
-        entrypoint: Option<String>,
+        entrypoint_name: Option<String>,
     },
     /// Checks the health of the files
     Check {
@@ -43,8 +44,9 @@ fn main() {
     match cli.command {
         Commands::Create {} => commands::create::create_project(),
         Commands::Init {} => commands::init::initialize_notes_repo(),
-        Commands::CodeOverhaul { entrypoint } => {
-            commands::code_overhaul::create_overhaul_file(entrypoint.unwrap())
+        Commands::CodeOverhaul { entrypoint_name } => {
+            let auditor_name = BatConfig::get_config().auditor.auditor_name;
+            commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap(), auditor_name)
         }
         // "check" => commands::check::execute(args).unwrap()?,
         // "build" => println!("hey1"),

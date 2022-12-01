@@ -6,6 +6,8 @@ use std::{io, path::Path, string::String};
 
 use crate::config::BatConfig;
 
+use super::code_overhaul::create_overhaul_file;
+
 pub fn initialize_notes_repo() {
     let bat_config: BatConfig = BatConfig::get_config();
     println!("creating repository for the next config: ");
@@ -19,11 +21,7 @@ pub fn initialize_notes_repo() {
         required.auditor_names.clone(),
     );
     // create overhaul files
-    initialize_code_overhaul_files(
-        required.program_lib_path.clone(),
-        required.audit_folder_path.clone(),
-        required.auditor_names.clone(),
-    )
+    initialize_code_overhaul_files()
 }
 
 fn create_notes_repository(audit_folder_path: String) {
@@ -59,11 +57,11 @@ fn create_auditors_notes_folders(audit_folder_path: String, auditor_names: Vec<S
     }
 }
 
-fn initialize_code_overhaul_files(
-    program_lib_path: String,
-    audit_folder_path: String,
-    auditor_names: Vec<String>,
-) {
+fn initialize_code_overhaul_files() {
+    let bat_config = BatConfig::get_config().required;
+    let program_lib_path = bat_config.program_lib_path;
+    let auditor_names = bat_config.auditor_names;
+
     let lib_file = File::open(program_lib_path).unwrap();
     let mut lib_files_lines = io::BufReader::new(lib_file).lines().map(|l| l.unwrap());
     lib_files_lines
@@ -79,6 +77,7 @@ fn initialize_code_overhaul_files(
         }
         program_lines.push(line)
     }
+
     let entrypoints_names = program_lines
         .iter()
         .filter(|line| line.contains("pub fn"))
@@ -87,50 +86,9 @@ fn initialize_code_overhaul_files(
         .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))
         .collect::<Vec<String>>();
 
-    let context_names = program_lines
-        .iter()
-        .filter(|line| line.contains("Context<"))
-        .map(|line| {
-            line.replace("pub fn ", "")
-                .replace("<'info>", "")
-                .replace("'info, ", "")
-                .replace("'_, ", "")
-        })
-        .map(|line| {
-            let new_line = if line.contains("(") {
-                let new_line = String::from(line.split("(").collect::<Vec<&str>>()[1]);
-                String::from(new_line.split(",").collect::<Vec<&str>>()[0])
-            } else {
-                line
-            };
-            new_line.split_whitespace().collect::<Vec<&str>>()[1]
-                .to_string()
-                .replace(">,", "")
-                .replace("Context<", "")
-        })
-        .collect::<Vec<String>>();
-
-    for auditor in auditor_names {
+    for auditor_name in auditor_names {
         for entrypoint_name in entrypoints_names.clone() {
-            let output = Command::new("cp")
-                .args([
-                    "-r",
-                    (audit_folder_path.clone() + "/templates/code-overhaul.md").as_str(),
-                    (audit_folder_path.clone()
-                        + "/notes/"
-                        + &auditor.clone()
-                        + "-notes/code-overhaul/to-review/"
-                        + &entrypoint_name.clone()
-                        + ".md")
-                        .as_str(),
-                ])
-                .output()
-                .unwrap()
-                .status
-                .exit_ok();
-            if let Err(output) = output {
-                panic!("create code overhaul files failed with error: {:?}", output)
-            };
+            create_overhaul_file(entrypoint_name.clone(), auditor_name.clone());
         }
     }
     // for entrypoint_path in program_entrypoints_path.clone() {
@@ -151,6 +109,31 @@ fn initialize_code_overhaul_files(
     // }
 }
 
+// fn get_context_names() {
+//     let context_names = program_lines
+//         .iter()
+//         .filter(|line| line.contains("Context<"))
+//         .map(|line| {
+//             line.replace("pub fn ", "")
+//                 .replace("<'info>", "")
+//                 .replace("'info, ", "")
+//                 .replace("'_, ", "")
+//         })
+//         .map(|line| {
+//             let new_line = if line.contains("(") {
+//                 let new_line = String::from(line.split("(").collect::<Vec<&str>>()[1]);
+//                 String::from(new_line.split(",").collect::<Vec<&str>>()[0])
+//             } else {
+//                 line
+//             };
+//             new_line.split_whitespace().collect::<Vec<&str>>()[1]
+//                 .to_string()
+//                 .replace(">,", "")
+//                 .replace("Context<", "")
+//         })
+//         .collect::<Vec<String>>();
+// }
+
 #[test]
 fn test_create_notes_repository() {
     let bat_config = BatConfig::get_test_config().required;
@@ -161,13 +144,4 @@ fn test_create_notes_repository() {
 fn test_create_auditors_notes_folders() {
     let bat_config = BatConfig::get_test_config().required;
     create_auditors_notes_folders(bat_config.audit_folder_path, bat_config.auditor_names)
-}
-#[test]
-fn test_initialize_code_overhaul_files() {
-    let bat_config = BatConfig::get_test_config().required;
-    initialize_code_overhaul_files(
-        bat_config.program_lib_path,
-        bat_config.audit_folder_path,
-        bat_config.auditor_names,
-    )
 }

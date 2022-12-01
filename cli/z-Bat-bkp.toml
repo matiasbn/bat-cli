@@ -1,0 +1,6 @@
+
+[required]
+
+auditor_names = ["matias", "porter"]
+audit_folder_path = "../audit-notes"
+program_lib_path = "../star-atlas-programs/sol-programs/scream/programs/player_profile/src/lib.rs"
