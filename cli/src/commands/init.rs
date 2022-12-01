@@ -5,10 +5,9 @@ use std::process::{Command, Output};
 use std::{io, path::Path, string::String};
 
 use crate::config::{BatConfig, RequiredConfig};
-use crate::utils::get_config;
 
 pub fn initialize_notes_repo() {
-    let bat_config: BatConfig = get_config();
+    let bat_config: BatConfig = BatConfig::get_config();
     println!("creating repository for the next config: ");
     println!("{:#?}", bat_config.clone());
     let required = bat_config.required;
@@ -187,32 +186,20 @@ fn validate_initial_config(bat_config: RequiredConfig) -> Result<String, String>
     Ok(String::from("Ok"))
 }
 
-fn get_test_config() -> BatConfig {
-    let required = RequiredConfig {
-        auditor_names: vec!["matias".to_string()],
-        audit_folder_path: "../audit-notes".to_string(),
-        program_lib_path:
-            "../star-atlas-programs/sol-programs/scream/programs/player_profile/src/lib.rs"
-                .to_string(),
-    };
-    let bat_config = BatConfig { required: required };
-    bat_config
-}
-
 #[test]
 fn test_create_notes_repository() {
-    let bat_config = get_test_config().required;
+    let bat_config = BatConfig::get_test_config().required;
     create_notes_repository(bat_config.audit_folder_path)
 }
 
 #[test]
 fn test_create_auditors_notes_folders() {
-    let bat_config = get_test_config().required;
+    let bat_config = BatConfig::get_test_config().required;
     create_auditors_notes_folders(bat_config.audit_folder_path, bat_config.auditor_names)
 }
 #[test]
 fn test_initialize_code_overhaul_files() {
-    let bat_config = get_test_config().required;
+    let bat_config = BatConfig::get_test_config().required;
     initialize_code_overhaul_files(
         bat_config.program_lib_path,
         bat_config.audit_folder_path,

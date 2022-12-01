@@ -5,17 +5,10 @@ extern crate core;
 
 use clap::{Parser, Subcommand};
 
-use crate::utils::get_notes_path;
-
 mod commands;
 mod config;
 mod utils;
 // use serde::{Deserialize, Serialize};
-
-pub const DEFAULT_AUDIT_NOTES_PATH: &str = "../audit-notes";
-pub const TEMPLATES_FOLDER: &str = "../audit-notes/templates";
-pub const DEFAULT_CONFIG_FILE_PATH: &str = "./Bat.toml";
-pub const CODE_OVERHAUL_TEMPLATE_PATH: &str = "../../templates/code-overhaul.md";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A CLI for Solana Audit Methodology")]
@@ -28,10 +21,7 @@ struct Cli {
 // #[derive(Subcommand, Debug, Serialize, Deserialize)]
 enum Commands {
     /// Creates a Bat project
-    Create {
-        /// An optional config file path to create the initial Bat.toml file
-        config_file_relative_path: Option<String>,
-    },
+    Create,
     /// Initializes the project from the Bat.toml config file
     Init,
     /// Generates a code-overhaul template file in the auditor path
@@ -53,9 +43,7 @@ enum Commands {
 fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
-        Commands::Create {
-            config_file_relative_path,
-        } => commands::create::create_project(config_file_relative_path),
+        Commands::Create {} => commands::create::create_project(),
         Commands::Init {} => commands::init::initialize_notes_repo(),
         Commands::CodeOverhaul {
             entrypoint,

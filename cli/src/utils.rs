@@ -1,31 +1,18 @@
-use std::str;
-use std::{fs, path::Path};
+use std::{process::Command, str};
 
-use crate::config::BatConfig;
-use crate::{DEFAULT_AUDIT_NOTES_PATH, DEFAULT_CONFIG_FILE_PATH};
-
-pub fn get_notes_path(path: Option<String>) -> String {
-    match path {
-        Some(audit_path) => audit_path,
-        None => String::from(DEFAULT_AUDIT_NOTES_PATH),
-    }
-}
-
-pub fn get_config() -> BatConfig {
-    let bat_toml_path = Path::new(&"./Bat.toml");
-    if !bat_toml_path.is_file() {
-        panic!("Bat.toml file not found at {:?}", bat_toml_path);
-    }
-    let toml_file = fs::read(bat_toml_path).unwrap();
-    let tom_file_string = str::from_utf8(toml_file.as_slice()).unwrap();
-    let decoded: BatConfig = toml::from_str(tom_file_string).unwrap();
-    decoded
-}
-
-pub fn get_config_relative_path(relative_path: Option<String>) -> String {
-    String::from(DEFAULT_CONFIG_FILE_PATH)
-    // match relative_path {
-    //     Some(sam_config_path) => sam_config_path + &String::from("/Bat.toml"),
-    //     None => String::from(DEFAULT_SAM_CONFIG_PATH),
-    // }
+// Gets auditor name from branch name
+pub fn get_branch_name(audit_repository_path: String) -> String {
+    let git_symbolic = Command::new("git")
+        .current_dir(audit_repository_path)
+        .args(["symbolic-ref", "-q", "head"])
+        .output();
+    let output = git_symbolic.unwrap();
+    let git_branch_slice = str::from_utf8(output.stdout.as_slice()).unwrap();
+    let git_branch_tokenized = git_branch_slice.split('/').collect::<Vec<&str>>();
+    let git_branch = git_branch_tokenized
+        .last()
+        .unwrap()
+        .split('\n')
+        .collect::<Vec<&str>>()[0];
+    git_branch.to_owned()
 }
