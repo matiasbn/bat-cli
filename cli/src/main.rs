@@ -46,9 +46,6 @@ enum FindingActions {
     Create {
         /// Finding name, the file would be named finding_name.md
         finding_name: String,
-        /// Create and informational finding
-        #[arg(short, long)]
-        informational: bool,
     },
     /// Prepare the findings for review
     PrepareAll,
@@ -67,10 +64,9 @@ fn main() {
             let auditor_name = BatConfig::get_config().auditor.auditor_name;
             commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap(), auditor_name)
         }
-        Commands::Finding(FindingActions::Create {
-            finding_name,
-            informational,
-        }) => commands::finding::create_finding_file(finding_name, informational),
+        Commands::Finding(FindingActions::Create { finding_name }) => {
+            commands::finding::create_finding_file(finding_name)
+        }
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),

@@ -12,6 +12,7 @@ use crate::config::{BatConfig, BatConfigValidation};
 
 pub fn reject() {
     prepare_all();
+    println!("Select the finding file to reject:");
     let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
@@ -64,10 +65,10 @@ pub fn accept_all() {
     println!("All files has been moved to the accepted folder");
 }
 
-pub fn create_finding_file(finding_name: String, informational: bool) {
+pub fn create_finding_file(finding_name: String) {
     BatConfig::validate_bat_config();
     validate_config_create_finding_file(finding_name.clone());
-    copy_template_to_findings_to_review(finding_name, informational)
+    copy_template_to_findings_to_review(finding_name)
 }
 
 pub fn prepare_all() {
@@ -143,8 +144,16 @@ fn validate_config_create_finding_file(finding_name: String) {
     }
 }
 
-fn copy_template_to_findings_to_review(finding_name: String, informational: bool) {
-    let template_path = if informational {
+fn copy_template_to_findings_to_review(finding_name: String) {
+    println!("is the finding an informational?");
+    let options = vec!["yes", "no"];
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .items(&options)
+        .default(0)
+        .interact_on_opt(&Term::stderr())
+        .unwrap();
+
+    let template_path = if selection.unwrap() == 0 {
         BatConfig::get_informational_template_path()
     } else {
         BatConfig::get_finding_template_path()
