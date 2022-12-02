@@ -1,6 +1,5 @@
 #![feature(core_panic)]
 #![feature(exit_status_error)]
-
 extern crate core;
 
 use clap::{Parser, Subcommand};
@@ -74,6 +73,7 @@ fn main() {
         }) => commands::finding::create_finding_file(finding_name, informational),
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
+        Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
         _ => panic!("Bad command"),
     }
 }

@@ -4,7 +4,7 @@ use std::io::BufRead;
 use std::process::Command;
 use std::{io, string::String};
 
-use crate::config::{BatConfig, InitConfigValidation, TestConfig};
+use crate::config::{BatConfig, InitConfigValidation};
 
 use super::code_overhaul::create_overhaul_file;
 

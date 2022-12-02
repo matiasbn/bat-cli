@@ -1,3 +1,5 @@
+use console::Term;
+use dialoguer::{console, theme::ColorfulTheme, Select};
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -7,6 +9,40 @@ use std::{
 };
 
 use crate::config::{BatConfig, BatConfigValidation};
+
+pub fn reject() {
+    prepare_all();
+    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
+    // get to-review files
+    let review_files = fs::read_dir(to_review_path)
+        .unwrap()
+        .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
+        .filter(|file| file != ".gitkeep")
+        .collect::<Vec<String>>();
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .items(&review_files)
+        .default(0)
+        .interact_on_opt(&Term::stderr())
+        .unwrap();
+
+    // user select file
+    match selection {
+        // move selected file to rejected
+        Some(index) => {
+            let rejected_file_name = review_files[index].clone();
+            let rejected_path =
+                BatConfig::get_auditor_findings_rejected_path(Some(rejected_file_name.clone()));
+            let to_review_path =
+                BatConfig::get_auditor_findings_to_review_path(Some(rejected_file_name.clone()));
+            Command::new("mv")
+                .args([to_review_path, rejected_path])
+                .output()
+                .unwrap();
+            println!("{} file moved to rejected", rejected_file_name);
+        }
+        None => println!("User did not select anything"),
+    }
+}
 
 pub fn accept_all() {
     BatConfig::validate_bat_config();
@@ -18,7 +54,7 @@ pub fn accept_all() {
         if file_name != ".gitkeep" {
             Command::new("mv")
                 .args([
-                    to_review_path.clone() + &file_name.to_str().unwrap().to_string(),
+                    to_review_path.clone() + file_name.to_str().unwrap(),
                     accepted_path.clone(),
                 ])
                 .output()

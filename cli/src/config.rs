@@ -83,15 +83,28 @@ impl BatConfig {
 
     pub fn get_auditor_findings_to_review_path(file_name: Option<String>) -> String {
         match file_name {
-            Some(name) => Self::get_auditor_findings_path() + "to-review/" + &name + ".md",
+            Some(name) => {
+                Self::get_auditor_findings_path() + "to-review/" + &name.replace(".md", "") + ".md"
+            }
             None => Self::get_auditor_findings_path() + "to-review/",
         }
     }
 
     pub fn get_auditor_findings_accepted_path(file_name: Option<String>) -> String {
         match file_name {
-            Some(name) => Self::get_auditor_findings_path() + "accepted/" + &name + ".md",
+            Some(name) => {
+                Self::get_auditor_findings_path() + "accepted/" + &name.replace(".md", "") + ".md"
+            }
             None => Self::get_auditor_findings_path() + "accepted/",
+        }
+    }
+
+    pub fn get_auditor_findings_rejected_path(file_name: Option<String>) -> String {
+        match file_name {
+            Some(name) => {
+                Self::get_auditor_findings_path() + "rejected/" + &name.replace(".md", "") + ".md"
+            }
+            None => Self::get_auditor_findings_path() + "rejected/",
         }
     }
 

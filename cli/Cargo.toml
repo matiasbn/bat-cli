@@ -13,5 +13,6 @@ readme = "../README.md"
 
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
+dialoguer = "0.10.2"
 serde = { version = "1.0.148", features = ["derive"] }
 toml = "0.5"
