@@ -81,12 +81,30 @@ impl BatConfig {
         Self::get_auditor_notes_path() + &"findings/".to_string()
     }
 
-    pub fn get_auditor_findings_to_review_path() -> String {
-        Self::get_auditor_findings_path() + &"to-review/"
+    pub fn get_auditor_findings_to_review_path(file_name: Option<String>) -> String {
+        match file_name {
+            Some(name) => Self::get_auditor_findings_path() + &"to-review/" + &name + ".md",
+            None => Self::get_auditor_findings_path() + &"to-review/",
+        }
     }
 
-    pub fn get_auditor_findings_accepted_path() -> String {
-        Self::get_auditor_findings_path() + &"accepted/"
+    pub fn get_auditor_findings_accepted_path(file_name: Option<String>) -> String {
+        match file_name {
+            Some(name) => Self::get_auditor_findings_path() + &"accepted/" + &name + ".md",
+            None => Self::get_auditor_findings_path() + &"accepted/",
+        }
+    }
+
+    pub fn get_templates_path() -> String {
+        Self::get_audit_folder_path() + "/templates"
+    }
+
+    pub fn get_finding_template_path() -> String {
+        Self::get_templates_path() + "/finding.md"
+    }
+
+    pub fn get_informational_template_path() -> String {
+        Self::get_templates_path() + "/informational.md"
     }
 }
 
@@ -122,7 +140,7 @@ pub trait FindingConfigValidation {
 
 impl FindingConfigValidation for BatConfig {
     fn validate_create_finding_config(finding_name: String) {
-        let findings_to_review_path = Self::get_auditor_findings_to_review_path();
+        let findings_to_review_path = Self::get_auditor_findings_to_review_path(None);
         // check auditor/findings/to_review folder exists
         if !Path::new(&findings_to_review_path).is_dir() {
             panic!("Folder not found: {:#?}", findings_to_review_path);

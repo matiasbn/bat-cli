@@ -37,8 +37,7 @@ enum Commands {
     /// Checks the health of the files
     Check {
         /// The type of check to execute
-        kind: Option<String>,
-        path: Option<String>,
+        check_types: Option<String>,
     },
 }
 
@@ -48,9 +47,16 @@ enum FindingActions {
     Create {
         /// Finding name, the file would be named finding_name.md
         finding_name: Option<String>,
+        /// Create and informational finding
+        #[arg(short, long)]
+        informational: bool,
     },
-    /// Finishes a finding file
-    Finish,
+    /// Prepare the findings for review
+    PrepareAll,
+    /// Moves all the to-review findings to accepted
+    AcceptAll,
+    /// Moves a finding from to-review to rejected
+    Reject,
 }
 
 fn main() {
@@ -62,9 +68,10 @@ fn main() {
             let auditor_name = BatConfig::get_config().auditor.auditor_name;
             commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap(), auditor_name)
         }
-        Commands::Finding(FindingActions::Create { finding_name }) => {
-            commands::finding::create_finding_file(finding_name.unwrap())
-        }
+        Commands::Finding(FindingActions::Create {
+            finding_name,
+            informational,
+        }) => commands::finding::create_finding_file(finding_name.unwrap(), informational),
         Commands::Finding(FindingActions::Finish) => {
             unimplemented!("action not implemented yet")
         }
