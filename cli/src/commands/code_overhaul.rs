@@ -1,12 +1,10 @@
 use crate::config::BatConfig;
-use crate::utils::get_branch_name;
 
 use std::process::Command;
 use std::string::String;
 
 pub fn create_overhaul_file(entrypoint_name: String, auditor_name: String) {
     let audit_folder_path = BatConfig::get_audit_folder_path();
-    let branch_name = get_branch_name(audit_folder_path.clone());
     let output = Command::new("cp")
         .args([
             "-r",

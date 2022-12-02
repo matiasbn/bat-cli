@@ -31,12 +31,26 @@ enum Commands {
         /// The program entrypoint to analyze
         entrypoint_name: Option<String>,
     },
+    /// Generates and marks finding files as finished
+    #[command(subcommand)]
+    Finding(FindingActions),
     /// Checks the health of the files
     Check {
         /// The type of check to execute
         kind: Option<String>,
         path: Option<String>,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum FindingActions {
+    /// Creates a finding file
+    Create {
+        /// Finding name, the file would be named finding_name.md
+        finding_name: Option<String>,
+    },
+    /// Finishes a finding file
+    Finish,
 }
 
 fn main() {
@@ -48,9 +62,12 @@ fn main() {
             let auditor_name = BatConfig::get_config().auditor.auditor_name;
             commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap(), auditor_name)
         }
-        // "check" => commands::check::execute(args).unwrap()?,
-        // "build" => println!("hey1"),
-        // "finding" => println!("hey2"),
+        Commands::Finding(FindingActions::Create { finding_name }) => {
+            commands::finding::create_finding_file(finding_name.unwrap())
+        }
+        Commands::Finding(FindingActions::Finish) => {
+            unimplemented!("action not implemented yet")
+        }
         _ => panic!("Bad command"),
     }
 }

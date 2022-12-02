@@ -22,6 +22,12 @@ pub struct AuditorConfig {
     pub auditor_name: String,
 }
 
+trait AuditorConfigValidation {
+    fn validate_auditor_config_exists() -> bool {
+        return true;
+    }
+}
+
 impl BatConfig {
     pub fn get_config() -> BatConfig {
         // Bat.toml
@@ -47,14 +53,107 @@ impl BatConfig {
         config
     }
 
-    pub fn validate_initial_config() {
+    pub fn get_auditors_names() -> Vec<String> {
+        return Self::get_config().required.auditor_names;
+    }
+
+    pub fn get_auditor_name() -> String {
+        return Self::get_config().auditor.auditor_name;
+    }
+
+    pub fn get_audit_folder_path() -> String {
+        return Self::get_config().required.audit_folder_path;
+    }
+
+    pub fn get_program_lib_path() -> String {
+        return Self::get_config().required.program_lib_path;
+    }
+
+    pub fn get_notes_path() -> String {
+        Self::get_audit_folder_path() + &"/notes/".to_string()
+    }
+
+    pub fn get_auditor_notes_path() -> String {
+        Self::get_notes_path() + &Self::get_auditor_name() + &"-notes/".to_string()
+    }
+
+    pub fn get_auditor_findings_path() -> String {
+        Self::get_auditor_notes_path() + &"findings/".to_string()
+    }
+
+    pub fn get_auditor_findings_to_review_path() -> String {
+        Self::get_auditor_findings_path() + &"to-review/"
+    }
+
+    pub fn get_auditor_findings_accepted_path() -> String {
+        Self::get_auditor_findings_path() + &"accepted/"
+    }
+}
+
+pub trait BatConfigValidation {
+    fn validate_bat_config();
+}
+
+impl BatConfigValidation for BatConfig {
+    fn validate_bat_config() {
+        let bat_config = BatConfig::get_config();
+        let BatConfig { required, auditor } = bat_config;
+        // Validate required
+        if required.program_lib_path.is_empty() {
+            panic!("required parameter program_lib_path is empty at Bat.toml");
+        }
+        if required.audit_folder_path.is_empty() {
+            panic!("required parameter audit_folder_path is empty at Bat.toml");
+        }
+        if required.auditor_names.is_empty() {
+            panic!("required parameter auditor_names is empty at Bat.toml");
+        }
+
+        // Validate auditor
+        if auditor.auditor_name.is_empty() {
+            panic!("required parameter auditor_name is empty at BatAuditor.toml");
+        }
+    }
+}
+
+pub trait FindingConfigValidation {
+    fn validate_create_finding_config(finding_name: String);
+}
+
+impl FindingConfigValidation for BatConfig {
+    fn validate_create_finding_config(finding_name: String) {
+        let findings_to_review_path = Self::get_auditor_findings_to_review_path();
+        // check auditor/findings/to_review folder exists
+        if !Path::new(&findings_to_review_path).is_dir() {
+            panic!("Folder not found: {:#?}", findings_to_review_path);
+        }
+        // check if file exists in to_review
+        let finding_file_path = findings_to_review_path + &finding_name + ".md";
+        if Path::new(&finding_file_path).is_file() {
+            panic!("Finding file already exists: {:#?}", finding_file_path);
+        }
+    }
+}
+
+pub trait InitConfigValidation {
+    fn validate_init_config();
+
+    fn validate_audit_folder();
+
+    fn validate_auditor_notes_folder();
+
+    fn validate_program_path();
+}
+
+impl InitConfigValidation for BatConfig {
+    fn validate_init_config() {
         Self::validate_audit_folder();
         Self::validate_auditor_notes_folder();
         Self::validate_program_path();
     }
 
     // audit notes folder should not exist
-    pub fn validate_audit_folder() {
+    fn validate_audit_folder() {
         let bat_config = BatConfig::get_config().required;
         if Path::new(&bat_config.audit_folder_path).is_dir() {
             panic!(
@@ -65,7 +164,7 @@ impl BatConfig {
     }
 
     // auditors notes folders should not exist and not empty
-    pub fn validate_auditor_notes_folder() {
+    fn validate_auditor_notes_folder() {
         let bat_config = BatConfig::get_config().required;
         if bat_config.auditor_names.is_empty() {
             panic!("required parameter auditors_names is empty in Bat.toml file, aborting",);
@@ -83,7 +182,7 @@ impl BatConfig {
     }
 
     // program_path not empty and program_path exists
-    pub fn validate_program_path() {
+    fn validate_program_path() {
         let bat_config = BatConfig::get_config().required;
         if bat_config.program_lib_path.is_empty() {
             panic!("required parameter program_path is empty in Bat.toml file, aborting",);
@@ -94,20 +193,14 @@ impl BatConfig {
             );
         }
     }
+}
 
-    pub fn get_auditor_names() -> Vec<String> {
-        return Self::get_config().required.auditor_names;
-    }
+pub trait TestConfig {
+    fn get_test_config() -> BatConfig;
+}
 
-    pub fn get_audit_folder_path() -> String {
-        return Self::get_config().required.audit_folder_path;
-    }
-
-    pub fn get_program_lib_path() -> String {
-        return Self::get_config().required.program_lib_path;
-    }
-
-    pub fn get_test_config() -> BatConfig {
+impl TestConfig for BatConfig {
+    fn get_test_config() -> BatConfig {
         let required = RequiredConfig {
             auditor_names: vec!["matias".to_string(), "porter".to_string()],
             audit_folder_path: "../audit-notes".to_string(),

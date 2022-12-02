@@ -4,7 +4,7 @@ use std::io::{BufRead, Split};
 use std::process::{Command, Output};
 use std::{io, path::Path, string::String};
 
-use crate::config::BatConfig;
+use crate::config::{BatConfig, InitConfigValidation, TestConfig};
 
 use super::code_overhaul::create_overhaul_file;
 
@@ -13,7 +13,7 @@ pub fn initialize_notes_repo() {
     println!("creating repository for the next config: ");
     println!("{:#?}", bat_config.clone());
     let required = bat_config.required;
-    BatConfig::validate_initial_config();
+    BatConfig::validate_init_config();
     create_notes_repository(required.clone().audit_folder_path);
     // copy templates/notes-folder-template
     create_auditors_notes_folders(
