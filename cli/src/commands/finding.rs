@@ -8,6 +8,26 @@ use std::{
 
 use crate::config::{BatConfig, BatConfigValidation};
 
+pub fn accept_all() {
+    BatConfig::validate_bat_config();
+    prepare_all();
+    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
+    let accepted_path = BatConfig::get_auditor_findings_accepted_path(None);
+    for file_result in fs::read_dir(&to_review_path).unwrap() {
+        let file_name = file_result.unwrap().file_name();
+        if file_name != ".gitkeep" {
+            Command::new("mv")
+                .args([
+                    to_review_path.clone() + &file_name.to_str().unwrap().to_string(),
+                    accepted_path.clone(),
+                ])
+                .output()
+                .unwrap();
+        }
+    }
+    println!("All files has been moved to the accepted folder");
+}
+
 pub fn create_finding_file(finding_name: String, informational: bool) {
     BatConfig::validate_bat_config();
     validate_config_create_finding_file(finding_name.clone());

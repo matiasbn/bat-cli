@@ -46,7 +46,7 @@ enum FindingActions {
     /// Creates a finding file
     Create {
         /// Finding name, the file would be named finding_name.md
-        finding_name: Option<String>,
+        finding_name: String,
         /// Create and informational finding
         #[arg(short, long)]
         informational: bool,
@@ -71,8 +71,9 @@ fn main() {
         Commands::Finding(FindingActions::Create {
             finding_name,
             informational,
-        }) => commands::finding::create_finding_file(finding_name.unwrap(), informational),
+        }) => commands::finding::create_finding_file(finding_name, informational),
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
+        Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         _ => panic!("Bad command"),
     }
 }
