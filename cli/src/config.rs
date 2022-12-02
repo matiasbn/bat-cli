@@ -134,25 +134,6 @@ impl BatConfigValidation for BatConfig {
     }
 }
 
-pub trait FindingConfigValidation {
-    fn validate_create_finding_config(finding_name: String);
-}
-
-impl FindingConfigValidation for BatConfig {
-    fn validate_create_finding_config(finding_name: String) {
-        let findings_to_review_path = Self::get_auditor_findings_to_review_path(None);
-        // check auditor/findings/to_review folder exists
-        if !Path::new(&findings_to_review_path).is_dir() {
-            panic!("Folder not found: {:#?}", findings_to_review_path);
-        }
-        // check if file exists in to_review
-        let finding_file_path = findings_to_review_path + &finding_name + ".md";
-        if Path::new(&finding_file_path).is_file() {
-            panic!("Finding file already exists: {:#?}", finding_file_path);
-        }
-    }
-}
-
 pub trait InitConfigValidation {
     fn validate_init_config();
 

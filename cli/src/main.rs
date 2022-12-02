@@ -72,9 +72,7 @@ fn main() {
             finding_name,
             informational,
         }) => commands::finding::create_finding_file(finding_name.unwrap(), informational),
-        Commands::Finding(FindingActions::Finish) => {
-            unimplemented!("action not implemented yet")
-        }
+        Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         _ => panic!("Bad command"),
     }
 }
