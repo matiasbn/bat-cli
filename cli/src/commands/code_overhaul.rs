@@ -1,21 +1,23 @@
 use crate::config::BatConfig;
 
+use std::path::Path;
 use std::process::Command;
 use std::string::String;
 
-pub fn create_overhaul_file(entrypoint_name: String, auditor_name: String) {
-    let audit_folder_path = BatConfig::get_audit_folder_path();
+pub fn create_overhaul_file(entrypoint_name: String) {
+    let code_overhaul_auditor_file_path =
+        BatConfig::get_auditor_code_overhaul_path(Some(entrypoint_name.clone()));
+    if Path::new(&code_overhaul_auditor_file_path).is_file() {
+        panic!(
+            "code overhaul file already exists for: {:?}",
+            entrypoint_name
+        );
+    }
     let output = Command::new("cp")
         .args([
             "-r",
-            (audit_folder_path.clone() + "/templates/code-overhaul.md").as_str(),
-            (audit_folder_path
-                + "/notes/"
-                + &auditor_name
-                + "-notes/code-overhaul/to-review/"
-                + &entrypoint_name
-                + ".md")
-                .as_str(),
+            BatConfig::get_code_overhaul_template_path().as_str(),
+            code_overhaul_auditor_file_path.clone().as_str(),
         ])
         .output()
         .unwrap()
@@ -24,6 +26,10 @@ pub fn create_overhaul_file(entrypoint_name: String, auditor_name: String) {
     if let Err(output) = output {
         panic!("create code overhaul files failed with error: {:?}", output)
     };
+    println!(
+        "code-overhaul file created for file: {:?}.md",
+        entrypoint_name.clone()
+    );
 }
 
 // fn get_overhaul_file_path(audit_repo_path: String, entrypoint: String) -> String {

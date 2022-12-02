@@ -85,7 +85,7 @@ fn initialize_code_overhaul_files() {
 
     for auditor_name in auditor_names {
         for entrypoint_name in entrypoints_names.clone() {
-            create_overhaul_file(entrypoint_name.clone(), auditor_name.clone());
+            create_overhaul_file(entrypoint_name.clone());
         }
     }
     // for entrypoint_path in program_entrypoints_path.clone() {

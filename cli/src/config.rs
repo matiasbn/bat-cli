@@ -108,6 +108,15 @@ impl BatConfig {
         }
     }
 
+    pub fn get_auditor_code_overhaul_path(file_name: Option<String>) -> String {
+        match file_name {
+            Some(name) => {
+                Self::get_auditor_findings_path() + "rejected/" + &name.replace(".md", "") + ".md"
+            }
+            None => Self::get_auditor_findings_path() + "rejected/",
+        }
+    }
+
     pub fn get_templates_path() -> String {
         Self::get_audit_folder_path() + "/templates"
     }
@@ -118,6 +127,10 @@ impl BatConfig {
 
     pub fn get_informational_template_path() -> String {
         Self::get_templates_path() + "/informational.md"
+    }
+
+    pub fn get_code_overhaul_template_path() -> String {
+        Self::get_templates_path() + "/code-overhaul.md"
     }
 }
 

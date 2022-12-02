@@ -24,13 +24,11 @@ enum Commands {
     Create,
     /// Initializes the project from the Bat.toml config file
     Init,
-    /// Generates a code-overhaul template file in the auditor path
+    /// code-overhaul files management
     // #[serde(rename = "code-overhaul")]
-    CodeOverhaul {
-        /// The program entrypoint to analyze
-        entrypoint_name: Option<String>,
-    },
-    /// Generates and marks finding files as finished
+    #[command(subcommand)]
+    CodeOverhaul(CodeOverhaulActions),
+    /// findings files management
     #[command(subcommand)]
     Finding(FindingActions),
     /// Checks the health of the files
@@ -55,14 +53,24 @@ enum FindingActions {
     Reject,
 }
 
+#[derive(Subcommand, Debug)]
+enum CodeOverhaulActions {
+    /// Creates a code-overhaul file
+    Create {
+        /// The program entrypoint to analyze
+        entrypoint_name: Option<String>,
+    },
+    /// Moves the code-overhaul file from to-review to finished
+    Finish,
+}
+
 fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
         Commands::Create {} => commands::create::create_project(),
         Commands::Init {} => commands::init::initialize_notes_repo(),
-        Commands::CodeOverhaul { entrypoint_name } => {
-            let auditor_name = BatConfig::get_config().auditor.auditor_name;
-            commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap(), auditor_name)
+        Commands::CodeOverhaul(CodeOverhaulActions::Create { entrypoint_name }) => {
+            commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap())
         }
         Commands::Finding(FindingActions::Create { finding_name }) => {
             commands::finding::create_finding_file(finding_name)
