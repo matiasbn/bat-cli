@@ -3,7 +3,7 @@
 extern crate core;
 
 use clap::{Parser, Subcommand};
-use config::BatConfig;
+
 
 mod commands;
 mod config;
@@ -71,6 +71,9 @@ fn main() {
         Commands::Init {} => commands::init::initialize_notes_repo(),
         Commands::CodeOverhaul(CodeOverhaulActions::Create { entrypoint_name }) => {
             commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap())
+        }
+        Commands::CodeOverhaul(CodeOverhaulActions::Finish) => {
+            commands::code_overhaul::finish_code_overhaul_file()
         }
         Commands::Finding(FindingActions::Create { finding_name }) => {
             commands::finding::create_finding_file(finding_name)

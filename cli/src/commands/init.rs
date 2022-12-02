@@ -83,7 +83,7 @@ fn initialize_code_overhaul_files() {
         .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))
         .collect::<Vec<String>>();
 
-    for auditor_name in auditor_names {
+    for _auditor_name in auditor_names {
         for entrypoint_name in entrypoints_names.clone() {
             create_overhaul_file(entrypoint_name.clone());
         }

@@ -77,6 +77,7 @@ impl BatConfig {
         Self::get_notes_path() + &Self::get_auditor_name() + "-notes/"
     }
 
+    // Findings paths
     pub fn get_auditor_findings_path() -> String {
         Self::get_auditor_notes_path() + "findings/"
     }
@@ -108,15 +109,36 @@ impl BatConfig {
         }
     }
 
-    pub fn get_auditor_code_overhaul_path(file_name: Option<String>) -> String {
+    // Code overhaul paths
+    pub fn get_auditor_code_overhaul_path() -> String {
+        Self::get_auditor_notes_path() + "code-overhaul/"
+    }
+
+    pub fn get_auditor_code_overhaul_to_review_path(file_name: Option<String>) -> String {
         match file_name {
             Some(name) => {
-                Self::get_auditor_findings_path() + "rejected/" + &name.replace(".md", "") + ".md"
+                Self::get_auditor_code_overhaul_path()
+                    + "to-review/"
+                    + &name.replace(".md", "")
+                    + ".md"
             }
-            None => Self::get_auditor_findings_path() + "rejected/",
+            None => Self::get_auditor_code_overhaul_path() + "to-review/",
         }
     }
 
+    pub fn get_auditor_code_overhaul_finished_path(file_name: Option<String>) -> String {
+        match file_name {
+            Some(name) => {
+                Self::get_auditor_code_overhaul_path()
+                    + "finished/"
+                    + &name.replace(".md", "")
+                    + ".md"
+            }
+            None => Self::get_auditor_code_overhaul_path() + "finished/",
+        }
+    }
+
+    // Templates path
     pub fn get_templates_path() -> String {
         Self::get_audit_folder_path() + "/templates"
     }
