@@ -9,11 +9,11 @@ pub fn create_overhaul_file(entrypoint_name: String, auditor_name: String) {
         .args([
             "-r",
             (audit_folder_path.clone() + "/templates/code-overhaul.md").as_str(),
-            (audit_folder_path.clone()
+            (audit_folder_path
                 + "/notes/"
-                + &auditor_name.clone()
+                + &auditor_name
                 + "-notes/code-overhaul/to-review/"
-                + &entrypoint_name.clone()
+                + &entrypoint_name
                 + ".md")
                 .as_str(),
         ])

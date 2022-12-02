@@ -1,25 +1,22 @@
-use std::borrow::{Borrow, BorrowMut};
+use std::borrow::BorrowMut;
 use std::fs::File;
-use std::io::{BufRead, Split};
-use std::process::{Command, Output};
-use std::{io, path::Path, string::String};
+use std::io::BufRead;
+use std::process::Command;
+use std::{io, string::String};
 
-use crate::config::{BatConfig, InitConfigValidation, TestConfig};
+use crate::config::{BatConfig, InitConfigValidation};
 
 use super::code_overhaul::create_overhaul_file;
 
 pub fn initialize_notes_repo() {
     let bat_config: BatConfig = BatConfig::get_config();
     println!("creating repository for the next config: ");
-    println!("{:#?}", bat_config.clone());
+    println!("{:#?}", bat_config);
     let required = bat_config.required;
     BatConfig::validate_init_config();
     create_notes_repository(required.clone().audit_folder_path);
     // copy templates/notes-folder-template
-    create_auditors_notes_folders(
-        required.audit_folder_path.clone(),
-        required.auditor_names.clone(),
-    );
+    create_auditors_notes_folders(required.audit_folder_path.clone(), required.auditor_names);
     // create overhaul files
     initialize_code_overhaul_files()
 }
@@ -82,7 +79,7 @@ fn initialize_code_overhaul_files() {
         .iter()
         .filter(|line| line.contains("pub fn"))
         .map(|line| line.replace("pub fn ", "").replace("<'info>", ""))
-        .map(|line| String::from(line.split("(").collect::<Vec<&str>>()[0]))
+        .map(|line| String::from(line.split('(').collect::<Vec<&str>>()[0]))
         .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))
         .collect::<Vec<String>>();
 

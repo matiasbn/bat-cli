@@ -24,7 +24,7 @@ pub struct AuditorConfig {
 
 trait AuditorConfigValidation {
     fn validate_auditor_config_exists() -> bool {
-        return true;
+        true
     }
 }
 
@@ -54,44 +54,44 @@ impl BatConfig {
     }
 
     pub fn get_auditors_names() -> Vec<String> {
-        return Self::get_config().required.auditor_names;
+        Self::get_config().required.auditor_names
     }
 
     pub fn get_auditor_name() -> String {
-        return Self::get_config().auditor.auditor_name;
+        Self::get_config().auditor.auditor_name
     }
 
     pub fn get_audit_folder_path() -> String {
-        return Self::get_config().required.audit_folder_path;
+        Self::get_config().required.audit_folder_path
     }
 
     pub fn get_program_lib_path() -> String {
-        return Self::get_config().required.program_lib_path;
+        Self::get_config().required.program_lib_path
     }
 
     pub fn get_notes_path() -> String {
-        Self::get_audit_folder_path() + &"/notes/".to_string()
+        Self::get_audit_folder_path() + "/notes/"
     }
 
     pub fn get_auditor_notes_path() -> String {
-        Self::get_notes_path() + &Self::get_auditor_name() + &"-notes/".to_string()
+        Self::get_notes_path() + &Self::get_auditor_name() + "-notes/"
     }
 
     pub fn get_auditor_findings_path() -> String {
-        Self::get_auditor_notes_path() + &"findings/".to_string()
+        Self::get_auditor_notes_path() + "findings/"
     }
 
     pub fn get_auditor_findings_to_review_path(file_name: Option<String>) -> String {
         match file_name {
-            Some(name) => Self::get_auditor_findings_path() + &"to-review/" + &name + ".md",
-            None => Self::get_auditor_findings_path() + &"to-review/",
+            Some(name) => Self::get_auditor_findings_path() + "to-review/" + &name + ".md",
+            None => Self::get_auditor_findings_path() + "to-review/",
         }
     }
 
     pub fn get_auditor_findings_accepted_path(file_name: Option<String>) -> String {
         match file_name {
-            Some(name) => Self::get_auditor_findings_path() + &"accepted/" + &name + ".md",
-            None => Self::get_auditor_findings_path() + &"accepted/",
+            Some(name) => Self::get_auditor_findings_path() + "accepted/" + &name + ".md",
+            None => Self::get_auditor_findings_path() + "accepted/",
         }
     }
 
@@ -170,7 +170,7 @@ impl InitConfigValidation for BatConfig {
         }
         for auditor_name in &bat_config.auditor_names {
             let auditor_folder_path =
-                bat_config.audit_folder_path.clone() + "/".as_ref() + &auditor_name + "-notes";
+                bat_config.audit_folder_path.clone() + "/" + auditor_name + "-notes";
             if Path::new(&auditor_folder_path).is_dir() {
                 panic!(
                     "auditor folder {:?} already exist, aborting",
@@ -210,8 +210,8 @@ impl TestConfig for BatConfig {
         let auditor = AuditorConfig {
             auditor_name: "matias".to_string(),
         };
-        let bat_config = BatConfig { required, auditor };
-        bat_config
+
+        BatConfig { required, auditor }
     }
 }
 

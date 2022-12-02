@@ -27,7 +27,7 @@ pub fn prepare_all() {
             .to_str()
             .unwrap()
             .to_string()
-            .split("-")
+            .split('-')
             .map(|token| token.to_string())
             .collect::<Vec<String>>();
         let severity_flags = ["1", "2", "3", "4"];
@@ -41,9 +41,9 @@ pub fn prepare_all() {
         let file_lines = io::BufReader::new(open_file).lines().map(|l| l.unwrap());
         for line in file_lines {
             if line.contains("Severity:") {
-                let mut file_severity = line
+                let file_severity = line
                     .replace("**Severity:**", "")
-                    .replace(" ", "")
+                    .replace(' ', "")
                     .to_lowercase();
                 let severity = match file_severity.as_str() {
                     "high" => "1",
@@ -93,7 +93,7 @@ fn copy_template_to_findings_to_review(finding_name: String, informational: bool
     } else {
         BatConfig::get_finding_template_path()
     };
-    let new_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name.clone()));
+    let new_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name));
     let output = Command::new("cp")
         .args([template_path, new_file_path.clone()])
         .output()
@@ -103,8 +103,5 @@ fn copy_template_to_findings_to_review(finding_name: String, informational: bool
     if let Err(output) = output {
         panic!("Finding creation failed with reason: {:#?}", output)
     };
-    println!(
-        "Finding file successfully created at: {:?}",
-        new_file_path.clone()
-    );
+    println!("Finding file successfully created at: {:?}", new_file_path);
 }
