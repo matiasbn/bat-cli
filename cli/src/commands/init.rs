@@ -14,14 +14,19 @@ pub fn initialize_notes_repo() {
     println!("{:#?}", bat_config);
     let required = bat_config.required;
     BatConfig::validate_init_config();
-    create_notes_repository(required.clone().audit_folder_path);
+    create_notes_folder_repository(required.clone().audit_folder_path);
     // copy templates/notes-folder-template
     create_auditors_notes_folders(required.audit_folder_path.clone(), required.auditor_names);
     // create overhaul files
     initialize_code_overhaul_files()
 }
 
-fn create_notes_repository(audit_folder_path: String) {
+fn create_notes_folder_repository(audit_folder_path: String) {
+    // clone base-repository from required.base_repository_url
+    Command::new("git").args(["clone"]).output();
+    // delete .git
+    // initialize .git
+    // git remote add origin required.audit_repository_url
     let output = Command::new("cp")
         .args(["-r", "../base-repository", audit_folder_path.as_str()])
         .output()
@@ -130,15 +135,3 @@ fn initialize_code_overhaul_files() {
 //         })
 //         .collect::<Vec<String>>();
 // }
-
-#[test]
-fn test_create_notes_repository() {
-    let bat_config = BatConfig::get_test_config().required;
-    create_notes_repository(bat_config.audit_folder_path)
-}
-
-#[test]
-fn test_create_auditors_notes_folders() {
-    let bat_config = BatConfig::get_test_config().required;
-    create_auditors_notes_folders(bat_config.audit_folder_path, bat_config.auditor_names)
-}

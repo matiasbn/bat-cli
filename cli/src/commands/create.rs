@@ -1,16 +1,7 @@
-use std::fs;
 use std::path::Path;
+use std::{fs, process::Command};
 
-pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
-[required]
-auditor_names = [""]
-audit_folder_path = ""
-program_lib_path = ""
-"#;
-pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
-[auditor]
-auditor_name=""
-"#;
+use crate::config::{AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR};
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
@@ -18,9 +9,18 @@ pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 pub const GIT_IGNORE_STR: &str = r#"BatAuditor.toml"#;
 
 pub fn create_project() {
+    // command line Bat.toml and BatAuditor.toml
+    // create config files
+    // clone the repo
+    // move config files to repo
     create_bat_toml();
     create_auditor_toml();
     create_gitignore();
+    println!("Bat.toml created at {:?}", BAT_TOML_INITIAL_PATH.clone());
+    println!(
+        "BatAuditor.toml created at {:?}",
+        AUDITOR_TOML_INITIAL_PATH.clone()
+    );
 }
 
 fn create_bat_toml() {
@@ -35,7 +35,6 @@ fn create_bat_toml() {
 
     fs::write(bat_toml_path.clone(), BAT_TOML_INITIAL_CONFIG_STR)
         .expect("Could not write to file!");
-    println!("Bat.toml created at {:?}", bat_toml_path.clone());
 }
 
 fn create_auditor_toml() {
@@ -50,7 +49,6 @@ fn create_auditor_toml() {
 
     fs::write(auditor_toml_path.clone(), AUDITOR_TOML_INITIAL_CONFIG_STR)
         .expect("Could not write to file!");
-    println!("BatAuditor.toml created at {:?}", auditor_toml_path.clone());
 }
 
 fn create_gitignore() {
@@ -60,9 +58,14 @@ fn create_gitignore() {
         println!(
             ".gitignore file already exist in {:?}, please add BatAuditor.toml",
             gitignore_toml_path
-        )
+        );
+        // Command::new("echo").args([
+        //     "-n".to_string(),
+        //     "BatAuditor.toml'".to_string(),
+        //     ">>".to_string(),
+        //     ".gitignore".to_string(),
+        // ]);
     };
 
     fs::write(gitignore_toml_path.clone(), GIT_IGNORE_STR).expect("Could not write to file!");
-    println!(".gitignore created at {:?}", gitignore_toml_path.clone());
 }
