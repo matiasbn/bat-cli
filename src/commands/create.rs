@@ -1,13 +1,11 @@
 use std::path::Path;
-use std::process::CommandArgs;
+
 use std::{fs, process::Command};
 
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
 
-use crate::config::{
-    BatConfig, RequiredConfig, AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR,
-};
+use crate::config::{AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR};
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
@@ -23,7 +21,7 @@ pub fn create_project() {
     create_auditor_toml();
     // move config files to repo
     move_config_files(project_name.clone());
-    println!("Project {} succesfully created", project_name.clone());
+    println!("Project {} succesfully created", project_name);
 }
 
 fn get_project_name() -> String {
@@ -51,10 +49,7 @@ fn clone_repository(project_name: String) {
         .unwrap();
     // Remove .git folder
     Command::new("rm")
-        .args([
-            "-rf",
-            (project_name.to_string() + &"/.git".to_string()).as_str(),
-        ])
+        .args(["-rf", (project_name + "/.git").as_str()])
         .output()
         .unwrap();
 }
@@ -78,7 +73,7 @@ fn create_bat_toml(project_name: String) {
     fs::write(bat_toml_path.clone(), bat_toml_updated).expect("Could not write to file!");
 }
 
-fn create_auditor_toml() {
+pub fn create_auditor_toml() {
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
 
     if auditor_toml_path.exists() {

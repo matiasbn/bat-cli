@@ -2,7 +2,9 @@ use std::{fs, path::Path, str};
 
 use serde::Deserialize;
 
-use crate::commands::create::{AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH};
+use crate::commands::create::{
+    create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH,
+};
 
 pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
 [required]
@@ -10,11 +12,11 @@ project_name = ""
 auditor_names = [""]
 audit_folder_path = "."
 program_lib_path = ""
-notes_repository_url = ""
+project_repository_url = ""
 "#;
 pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
 [auditor]
-auditor_name=""
+auditor_name = ""
 "#;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -29,7 +31,7 @@ pub struct RequiredConfig {
     pub auditor_names: Vec<String>,
     pub audit_folder_path: String,
     pub program_lib_path: String,
-    pub notes_repository_url: String,
+    pub project_repository_url: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -37,14 +39,20 @@ pub struct AuditorConfig {
     pub auditor_name: String,
 }
 
-trait AuditorConfigValidation {
-    fn validate_auditor_config_exists() -> bool {
-        true
-    }
-}
-
 impl BatConfig {
-    pub fn get_config() -> BatConfig {
+    pub fn get_validated_config() -> BatConfig {
+        let bat_config = Self::get_bat_config();
+        Self::validate_bat_config(bat_config.clone(), true);
+        bat_config
+    }
+
+    pub fn get_init_config() -> BatConfig {
+        let bat_config: BatConfig = Self::get_bat_config();
+        Self::validate_bat_config(bat_config.clone(), false);
+        bat_config
+    }
+
+    fn get_bat_config() -> BatConfig {
         // Bat.toml
         let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
         if !bat_toml_path.is_file() {
@@ -56,7 +64,9 @@ impl BatConfig {
         // BatAuditor.toml
         let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
         if !auditor_toml_path.is_file() {
-            panic!("BatAuditor.toml file not found at {:?}", auditor_toml_path);
+            // if BatAuditor does not exist, create it
+            create_auditor_toml();
+            println!("BatAuditor.toml file not detected, creating")
         }
         let auditor_toml_file = fs::read(auditor_toml_path).unwrap();
         let auditor_tom_file_string = str::from_utf8(auditor_toml_file.as_slice()).unwrap();
@@ -68,20 +78,47 @@ impl BatConfig {
         config
     }
 
+    fn validate_bat_config(bat_config: BatConfig, validate_auditor: bool) {
+        let BatConfig { required, auditor } = bat_config;
+        // Validate required
+        if required.project_name.is_empty() {
+            panic!("required parameter project_name is empty at Bat.toml");
+        }
+        if required.program_lib_path.is_empty() {
+            panic!("required parameter program_lib_path is empty at Bat.toml");
+        }
+        if required.audit_folder_path.is_empty() {
+            panic!("required parameter audit_folder_path is empty at Bat.toml");
+        }
+        if required.auditor_names.is_empty() {
+            panic!("required parameter auditor_names is empty at Bat.toml");
+        }
+        if required.project_repository_url.is_empty() {
+            panic!("required parameter notes_repository_url is empty at Bat.toml");
+        }
+
+        // Validate auditor
+        if validate_auditor {
+            if auditor.auditor_name.is_empty() {
+                panic!("required parameter auditor_name is empty at BatAuditor.toml");
+            }
+        }
+    }
+
     pub fn get_auditors_names() -> Vec<String> {
-        Self::get_config().required.auditor_names
+        Self::get_validated_config().required.auditor_names
     }
 
     pub fn get_auditor_name() -> String {
-        Self::get_config().auditor.auditor_name
+        Self::get_validated_config().auditor.auditor_name
     }
 
     pub fn get_audit_folder_path() -> String {
-        Self::get_config().required.audit_folder_path
+        Self::get_validated_config().required.audit_folder_path
     }
 
     pub fn get_program_lib_path() -> String {
-        Self::get_config().required.program_lib_path
+        Self::get_validated_config().required.program_lib_path
     }
 
     pub fn get_notes_path() -> String {
@@ -158,6 +195,10 @@ impl BatConfig {
         Self::get_audit_folder_path() + "/templates"
     }
 
+    pub fn get_notes_folder_template_path() -> String {
+        Self::get_templates_path() + "/notes-folder-template"
+    }
+
     pub fn get_finding_template_path() -> String {
         Self::get_templates_path() + "/finding.md"
     }
@@ -168,98 +209,6 @@ impl BatConfig {
 
     pub fn get_code_overhaul_template_path() -> String {
         Self::get_templates_path() + "/code-overhaul.md"
-    }
-}
-
-pub trait BatConfigValidation {
-    fn validate_bat_config();
-}
-
-impl BatConfigValidation for BatConfig {
-    fn validate_bat_config() {
-        let bat_config = BatConfig::get_config();
-        let BatConfig { required, auditor } = bat_config;
-        // Validate required
-        if required.project_name.is_empty() {
-            panic!("required parameter project_name is empty at Bat.toml");
-        }
-        if required.program_lib_path.is_empty() {
-            panic!("required parameter program_lib_path is empty at Bat.toml");
-        }
-        if required.audit_folder_path.is_empty() {
-            panic!("required parameter audit_folder_path is empty at Bat.toml");
-        }
-        if required.auditor_names.is_empty() {
-            panic!("required parameter auditor_names is empty at Bat.toml");
-        }
-        if required.notes_repository_url.is_empty() {
-            panic!("required parameter notes_repository_url is empty at Bat.toml");
-        }
-
-        // Validate auditor
-        if auditor.auditor_name.is_empty() {
-            panic!("required parameter auditor_name is empty at BatAuditor.toml");
-        }
-    }
-}
-
-pub trait InitConfigValidation {
-    fn validate_init_config();
-
-    fn validate_audit_folder();
-
-    fn validate_auditor_notes_folder();
-
-    fn validate_program_path();
-}
-
-impl InitConfigValidation for BatConfig {
-    fn validate_init_config() {
-        Self::validate_audit_folder();
-        Self::validate_auditor_notes_folder();
-        Self::validate_program_path();
-    }
-
-    // audit notes folder should not exist
-    fn validate_audit_folder() {
-        let bat_config = BatConfig::get_config().required;
-        if Path::new(&bat_config.audit_folder_path).is_dir() {
-            panic!(
-                "audit folder {:?} already exists, abortings",
-                &bat_config.audit_folder_path
-            );
-        }
-    }
-
-    // auditors notes folders should not exist and not empty
-    fn validate_auditor_notes_folder() {
-        let bat_config = BatConfig::get_config().required;
-        if bat_config.auditor_names.is_empty() {
-            panic!("required parameter auditors_names is empty in Bat.toml file, aborting",);
-        }
-        for auditor_name in &bat_config.auditor_names {
-            let auditor_folder_path =
-                bat_config.audit_folder_path.clone() + "/" + auditor_name + "-notes";
-            if Path::new(&auditor_folder_path).is_dir() {
-                panic!(
-                    "auditor folder {:?} already exist, aborting",
-                    &auditor_folder_path
-                );
-            }
-        }
-    }
-
-    // program_path not empty and program_path exists
-    fn validate_program_path() {
-        let bat_config = BatConfig::get_config().required;
-        if bat_config.program_lib_path.is_empty() {
-            panic!("required parameter program_path is empty in Bat.toml file, aborting",);
-        } else if !Path::new(&bat_config.program_lib_path).is_file() {
-            panic!(
-                "program file at path \"{:?}\" does not exist, aborting, please update Bat.toml file",
-                &bat_config.program_lib_path
-            );
-        }
     }
 }
 
@@ -276,7 +225,7 @@ impl TestConfig for BatConfig {
             program_lib_path:
                 "../star-atlas-programs/sol-programs/scream/programs/player_profile/src/lib.rs"
                     .to_string(),
-            notes_repository_url: "git@github.com:bad-user/bad-url.git".to_string(),
+            project_repository_url: "git@github.com:bad-user/bad-url.git".to_string(),
         };
         let auditor = AuditorConfig {
             auditor_name: "matias".to_string(),

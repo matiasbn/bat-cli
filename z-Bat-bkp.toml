@@ -1,6 +1,7 @@
 
 [required]
-
+project_name = "test_project"
 auditor_names = ["matias", "porter"]
-audit_folder_path = "../audit-notes"
+audit_folder_path = "."
 program_lib_path = "../star-atlas-programs/sol-programs/scream/programs/player_profile/src/lib.rs"
+project_repository_url = ""

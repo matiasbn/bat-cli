@@ -4,7 +4,6 @@ extern crate core;
 
 use clap::{Parser, Subcommand};
 
-
 mod commands;
 mod config;
 mod utils;
@@ -68,7 +67,7 @@ fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
         Commands::Create {} => commands::create::create_project(),
-        Commands::Init {} => commands::init::initialize_notes_repo(),
+        Commands::Init {} => commands::init::initialize_bat_project(),
         Commands::CodeOverhaul(CodeOverhaulActions::Create { entrypoint_name }) => {
             commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap())
         }

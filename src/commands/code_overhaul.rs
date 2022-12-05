@@ -25,16 +25,14 @@ pub fn create_overhaul_file(entrypoint_name: String) {
             code_overhaul_auditor_file_path.as_str(),
         ])
         .output()
-        .unwrap()
-        .status
-        .exit_ok();
-    if let Err(output) = output {
-        panic!("create code overhaul files failed with error: {:?}", output)
+        .unwrap();
+    if !output.stderr.is_empty() {
+        panic!(
+            "create auditors note folder failed with error: {:?}",
+            std::str::from_utf8(output.stderr.as_slice()).unwrap()
+        )
     };
-    println!(
-        "code-overhaul file created for file: {:?}.md",
-        entrypoint_name
-    );
+    println!("code-overhaul file created: {:?}.md", entrypoint_name);
 }
 
 pub fn finish_code_overhaul_file() {

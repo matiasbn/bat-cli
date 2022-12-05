@@ -8,7 +8,7 @@ use std::{
     string::String,
 };
 
-use crate::config::{BatConfig, BatConfigValidation};
+use crate::config::BatConfig;
 
 pub fn reject() {
     prepare_all();
@@ -46,7 +46,6 @@ pub fn reject() {
 }
 
 pub fn accept_all() {
-    BatConfig::validate_bat_config();
     prepare_all();
     let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
     let accepted_path = BatConfig::get_auditor_findings_accepted_path(None);
@@ -66,13 +65,11 @@ pub fn accept_all() {
 }
 
 pub fn create_finding_file(finding_name: String) {
-    BatConfig::validate_bat_config();
     validate_config_create_finding_file(finding_name.clone());
     copy_template_to_findings_to_review(finding_name)
 }
 
 pub fn prepare_all() {
-    BatConfig::validate_bat_config();
     let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
