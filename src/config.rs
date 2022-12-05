@@ -7,9 +7,8 @@ use crate::commands::create::{AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH};
 pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
 [required]
 auditor_names = [""]
-audit_folder_path = ""
+audit_folder_path = "."
 program_lib_path = ""
-base_repository_url = "git@github.com:matiasbn/base-repository.git"
 notes_repository_url = ""
 "#;
 pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
@@ -28,7 +27,6 @@ pub struct RequiredConfig {
     pub auditor_names: Vec<String>,
     pub audit_folder_path: String,
     pub program_lib_path: String,
-    pub base_repository_url: String,
     pub notes_repository_url: String,
 }
 
@@ -189,9 +187,6 @@ impl BatConfigValidation for BatConfig {
         if required.auditor_names.is_empty() {
             panic!("required parameter auditor_names is empty at Bat.toml");
         }
-        if required.base_repository_url.is_empty() {
-            panic!("required parameter base_repository is empty at Bat.toml");
-        }
         if required.notes_repository_url.is_empty() {
             panic!("required parameter notes_repository_url is empty at Bat.toml");
         }
@@ -275,7 +270,6 @@ impl TestConfig for BatConfig {
             program_lib_path:
                 "../star-atlas-programs/sol-programs/scream/programs/player_profile/src/lib.rs"
                     .to_string(),
-            base_repository_url: "git@github.com:matiasbn/base-repository.git".to_string(),
             notes_repository_url: "git@github.com:bad-user/bad-url.git".to_string(),
         };
         let auditor = AuditorConfig {
