@@ -5,7 +5,9 @@ use std::{fs, process::Command};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
 
-use crate::config::{AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR};
+use crate::config::{
+    BatConfig, RequiredConfig, AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR,
+};
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
@@ -13,10 +15,11 @@ pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 pub fn create_project() {
     // get project name
     let project_name = get_project_name();
+    println!("Creating {} project", project_name);
     // clone repository
     clone_repository(project_name.clone());
     // create config files
-    create_bat_toml();
+    create_bat_toml(project_name.clone());
     create_auditor_toml();
     // move config files to repo
     move_config_files(project_name.clone());
@@ -36,7 +39,6 @@ fn get_project_name() -> String {
 }
 
 fn clone_repository(project_name: String) {
-    println!("Creating {} project", project_name);
     // Clone git repository
     Command::new("git")
         .args(["clone", "git@git.kudelski.com:TVRM/bat-base-repository.git"])
@@ -57,7 +59,7 @@ fn clone_repository(project_name: String) {
         .unwrap();
 }
 
-fn create_bat_toml() {
+fn create_bat_toml(project_name: String) {
     let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
 
     if bat_toml_path.exists() {
@@ -67,8 +69,13 @@ fn create_bat_toml() {
         )
     };
 
-    fs::write(bat_toml_path.clone(), BAT_TOML_INITIAL_CONFIG_STR)
-        .expect("Could not write to file!");
+    // set project name
+    let bat_toml_updated = BAT_TOML_INITIAL_CONFIG_STR.to_string().replace(
+        &String::from("project_name = \""),
+        &("project_name = \"".to_string() + &project_name),
+    );
+
+    fs::write(bat_toml_path.clone(), bat_toml_updated).expect("Could not write to file!");
 }
 
 fn create_auditor_toml() {
@@ -94,4 +101,10 @@ fn move_config_files(project_name: String) {
         .args(["BatAuditor.toml", &project_name])
         .output()
         .unwrap();
+}
+
+#[test]
+fn test_create_bat_toml() {
+    let project_name = "test_project".to_string();
+    create_bat_toml(project_name);
 }

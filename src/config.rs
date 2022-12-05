@@ -6,6 +6,7 @@ use crate::commands::create::{AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH};
 
 pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
 [required]
+project_name = ""
 auditor_names = [""]
 audit_folder_path = "."
 program_lib_path = ""
@@ -24,6 +25,7 @@ pub struct BatConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct RequiredConfig {
+    pub project_name: String,
     pub auditor_names: Vec<String>,
     pub audit_folder_path: String,
     pub program_lib_path: String,
@@ -178,6 +180,9 @@ impl BatConfigValidation for BatConfig {
         let bat_config = BatConfig::get_config();
         let BatConfig { required, auditor } = bat_config;
         // Validate required
+        if required.project_name.is_empty() {
+            panic!("required parameter project_name is empty at Bat.toml");
+        }
         if required.program_lib_path.is_empty() {
             panic!("required parameter program_lib_path is empty at Bat.toml");
         }
@@ -265,6 +270,7 @@ pub trait TestConfig {
 impl TestConfig for BatConfig {
     fn get_test_config() -> BatConfig {
         let required = RequiredConfig {
+            project_name: "test_project".to_string(),
             auditor_names: vec!["matias".to_string(), "porter".to_string()],
             audit_folder_path: "../audit-notes".to_string(),
             program_lib_path:
