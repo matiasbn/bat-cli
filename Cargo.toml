@@ -1,13 +1,13 @@
 [package]
 name = "bat-cli"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Blockchain Audit Toolkit (BAT)"
 license = "MIT"
 homepage = "https://github.com/matiasbn/bat-cli"
 documentation = "https://github.com/matiasbn/bat-cli"
 repository = "https://github.com/matiasbn/bat-cli.git"
-readme = "../README.md"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
