@@ -3,6 +3,7 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 
 use crate::config::BatConfig;
+use crate::utils::{check_correct_branch, create_git_commit, GitCommit};
 
 use std::fs;
 use std::path::Path;
@@ -66,15 +67,19 @@ pub fn finish_code_overhaul_file() {
             let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(
                 finished_file_name.clone(),
             ));
+            check_correct_branch();
             Command::new("mv")
                 .args([to_review_path, finished_path])
                 .output()
                 .unwrap();
             println!("{} file moved to finished", finished_file_name);
+            create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
         }
         None => println!("User did not select anything"),
     }
 }
+
+// fn create
 
 // fn get_overhaul_file_path(audit_repo_path: String, entrypoint: String) -> String {
 //     let code_overhaul_path =

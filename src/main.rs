@@ -24,9 +24,8 @@ enum Commands {
     /// Initializes the project from the Bat.toml config file
     Init,
     /// code-overhaul files management
-    // #[serde(rename = "code-overhaul")]
     #[command(subcommand)]
-    CodeOverhaul(CodeOverhaulActions),
+    CO(CodeOverhaulActions),
     /// findings files management
     #[command(subcommand)]
     Finding(FindingActions),
@@ -68,10 +67,10 @@ fn main() {
     match cli.command {
         Commands::Create {} => commands::create::create_project(),
         Commands::Init {} => commands::init::initialize_bat_project(),
-        Commands::CodeOverhaul(CodeOverhaulActions::Create { entrypoint_name }) => {
+        Commands::CO(CodeOverhaulActions::Create { entrypoint_name }) => {
             commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap())
         }
-        Commands::CodeOverhaul(CodeOverhaulActions::Finish) => {
+        Commands::CO(CodeOverhaulActions::Finish) => {
             commands::code_overhaul::finish_code_overhaul_file()
         }
         Commands::Finding(FindingActions::Create { finding_name }) => {
