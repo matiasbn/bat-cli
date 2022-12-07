@@ -58,6 +58,8 @@ enum CodeOverhaulActions {
         /// The program entrypoint to analyze
         entrypoint_name: Option<String>,
     },
+    /// Starts a code-overhaul file audit
+    Start,
     /// Moves the code-overhaul file from to-review to finished
     Finish,
 }
@@ -69,6 +71,9 @@ fn main() {
         Commands::Init {} => commands::init::initialize_bat_project(),
         Commands::CO(CodeOverhaulActions::Create { entrypoint_name }) => {
             commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap())
+        }
+        Commands::CO(CodeOverhaulActions::Start) => {
+            commands::code_overhaul::start_code_overhaul_file()
         }
         Commands::CO(CodeOverhaulActions::Finish) => {
             commands::code_overhaul::finish_code_overhaul_file()

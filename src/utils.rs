@@ -24,12 +24,28 @@ pub fn get_branch_name() -> String {
 }
 
 pub enum GitCommit {
+    StartCO,
     FinishCO,
 }
 
 pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String>>) {
     check_correct_branch();
     let (commit_message, commit_files_path): (String, Vec<String>) = match commit_type {
+        GitCommit::StartCO => {
+            let commit_file = &commit_files.clone().unwrap()[0];
+            let commit_string = "co: ".to_string()
+                + &commit_file.clone().replace(".md", "")
+                + &" started".to_string();
+            println!(
+                "code-overhaul file started with commit: {:?}",
+                commit_string
+            );
+            let file_to_delete_path =
+                BatConfig::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()));
+            let file_to_add_path =
+                BatConfig::get_auditor_code_overhaul_started_path(Some(commit_file.clone()));
+            (commit_string, vec![file_to_delete_path, file_to_add_path])
+        }
         GitCommit::FinishCO => {
             let commit_file = &commit_files.clone().unwrap()[0];
             let commit_string = "co: ".to_string()

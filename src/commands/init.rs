@@ -14,7 +14,9 @@ use crate::config::{BatConfig, RequiredConfig, AUDITOR_TOML_INITIAL_CONFIG_STR};
 
 pub fn initialize_bat_project() {
     let bat_config: BatConfig = BatConfig::get_init_config();
-    let BatConfig { required, auditor } = bat_config.clone();
+    let BatConfig {
+        required, auditor, ..
+    } = bat_config.clone();
     // if auditor.auditor is empty, prompt name
     if auditor.auditor_name.is_empty() {
         let auditor_name = get_auditor_name(required.auditor_names.clone());
