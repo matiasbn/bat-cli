@@ -119,10 +119,8 @@ impl BatConfig {
         }
 
         // Validate auditor
-        if validate_auditor {
-            if auditor.auditor_name.is_empty() {
-                panic!("required parameter auditor_name is empty at BatAuditor.toml");
-            }
+        if validate_auditor && auditor.auditor_name.is_empty() {
+            panic!("required parameter auditor_name is empty at BatAuditor.toml");
         }
     }
 

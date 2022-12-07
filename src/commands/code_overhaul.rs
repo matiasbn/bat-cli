@@ -4,7 +4,7 @@ use dialoguer::Select;
 
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER;
-use crate::utils::{check_correct_branch, create_git_commit, GitCommit};
+use crate::git::{check_correct_branch, create_git_commit, GitCommit};
 
 use std::borrow::BorrowMut;
 use std::fs::File;
@@ -12,7 +12,7 @@ use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::String;
-use std::{error, fs, io};
+use std::{fs, io};
 
 pub fn create_overhaul_file(entrypoint_name: String) {
     let code_overhaul_auditor_file_path =
@@ -75,7 +75,7 @@ pub fn start_code_overhaul_file() {
         // move selected file to rejected
         Some(index) => {
             let started_file_name = review_files[index].clone();
-            let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(
+            let _to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(
                 started_file_name.clone(),
             ));
             let started_path =
@@ -88,7 +88,7 @@ pub fn start_code_overhaul_file() {
             //     .unwrap();
             // println!("{} file moved to started", started_file_name);
             // // update started co file
-            update_code_overhaul_file(started_file_name.clone(), started_path.clone());
+            update_code_overhaul_file(started_file_name, started_path);
             // println!("{} file updated with instruction information", started_file_name);
             // create_git_commit(GitCommit::StartCO, Some(vec![started_file_name]));
         }
@@ -150,7 +150,7 @@ fn update_code_overhaul_file(co_file_name: String, co_file_path: String) {
         .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
         .filter(|file| file != "mod.rs")
         .collect::<Vec<String>>();
-    let entrypoint_name = co_file_name.clone().replace(".md", "");
+    let entrypoint_name = co_file_name.replace(".md", "");
     let instruction_match = instruction_files
         .iter()
         .filter(|ifile| ifile.replace(".rs", "") == entrypoint_name.as_str())
@@ -194,17 +194,12 @@ fn update_code_overhaul_file(co_file_name: String, co_file_path: String) {
             .unwrap();
         instruction_files[selection].clone()
     };
-    let instruction_file_path =
-        Path::new(&(instructions_path.clone() + "/" + &instruction_file_name))
-            .canonicalize()
-            .unwrap();
+    let instruction_file_path = Path::new(&(instructions_path + "/" + &instruction_file_name))
+        .canonicalize()
+        .unwrap();
     let co_file_path = Path::new(&(co_file_path)).canonicalize().unwrap();
     // parse context_accounts
-    parse_context_accounts_into_co(
-        instruction_file_path.clone(),
-        co_file_path,
-        co_file_name.clone(),
-    );
+    parse_context_accounts_into_co(instruction_file_path, co_file_path, co_file_name);
 }
 
 fn parse_context_accounts_into_co(
@@ -212,7 +207,7 @@ fn parse_context_accounts_into_co(
     co_file_path: PathBuf,
     co_file_name: String,
 ) {
-    let co_file = File::open(co_file_path.clone()).unwrap();
+    let co_file = File::open(co_file_path).unwrap();
     let co_file_lines = io::BufReader::new(co_file)
         .lines()
         .map(|l| l.unwrap())
@@ -230,12 +225,9 @@ fn parse_context_accounts_into_co(
         .iter()
         .position(|l| l.contains(CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER))
         .unwrap();
-    let mut co_lines_first_half: Vec<_> =
-        co_file_lines[0..context_co_index].iter().cloned().collect();
-    let mut co_lines_second_half: Vec<_> = co_file_lines[context_co_index + 1..co_file_lines.len()]
-        .iter()
-        .cloned()
-        .collect();
+    let mut co_lines_first_half: Vec<_> = co_file_lines[0..context_co_index].to_vec();
+    let mut co_lines_second_half: Vec<_> =
+        co_file_lines[context_co_index + 1..co_file_lines.len()].to_vec();
     let mut co_with_context_parsed = vec![];
     co_with_context_parsed.append(&mut co_lines_first_half);
     co_with_context_parsed.append(&mut filtered_context_account_lines);
@@ -249,85 +241,126 @@ fn parse_context_accounts_into_co(
     );
     co_with_context_parsed_string = co_with_context_parsed_string.replace(
         "    #[account(\n        zero,\n    )]\n",
-        "    #[account(mut)]\n",
+        "    #[account(zero)]\n",
     );
 
-    fs::write(co_file_path, co_with_context_parsed_string).unwrap();
-}
+    fn parse_validations_into_co(
+        instruction_file_path: PathBuf,
+        co_file_path: PathBuf,
+        co_file_name: String,
+    ) {
+        let co_file = File::open(co_file_path.clone()).unwrap();
+        let co_file_lines = io::BufReader::new(co_file)
+            .lines()
+            .map(|l| l.unwrap())
+            .into_iter()
+            .collect::<Vec<String>>();
 
-fn get_context_name(co_file_name: String) -> String {
-    let BatConfig { required, .. } = BatConfig::get_validated_config();
-    let RequiredConfig {
-        program_lib_path, ..
-    } = required;
+        let context_lines = get_context_lines(instruction_file_path, co_file_name);
+        let mut filtered_context_account_lines: Vec<_> = context_lines
+            .iter()
+            .filter(|line| !line.contains("constraint "))
+            .map(|line| line.to_string())
+            .collect();
+        // replace context in the co file
+        let context_co_index = co_file_lines
+            .iter()
+            .position(|l| l.contains(CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER))
+            .unwrap();
+        let mut co_lines_first_half: Vec<_> = co_file_lines[0..context_co_index].to_vec();
+        let mut co_lines_second_half: Vec<_> =
+            co_file_lines[context_co_index + 1..co_file_lines.len()].to_vec();
+        let mut co_with_context_parsed = vec![];
+        co_with_context_parsed.append(&mut co_lines_first_half);
+        co_with_context_parsed.append(&mut filtered_context_account_lines);
+        co_with_context_parsed.append(&mut co_lines_second_half);
+        let mut co_with_context_parsed_string = co_with_context_parsed.join("\n");
+        co_with_context_parsed_string =
+            co_with_context_parsed_string.replace("    #[account(\n    )]\n", "");
+        co_with_context_parsed_string = co_with_context_parsed_string.replace(
+            "    #[account(\n        mut,\n    )]\n",
+            "    #[account(mut)]\n",
+        );
+        co_with_context_parsed_string = co_with_context_parsed_string.replace(
+            "    #[account(\n        zero,\n    )]\n",
+            "    #[account(zero)]\n",
+        );
 
-    let lib_file = File::open(program_lib_path).unwrap();
-    let mut lib_files_lines = io::BufReader::new(lib_file).lines().map(|l| l.unwrap());
-    lib_files_lines
-        .borrow_mut()
-        .enumerate()
-        .find(|(_, line)| *line == String::from("#[program]"))
-        .unwrap();
-
-    let mut program_lines = vec![String::from(""); 0];
-    for (_, line) in lib_files_lines.borrow_mut().enumerate() {
-        if line == "}" {
-            break;
-        }
-        program_lines.push(line)
+        fs::write(co_file_path, co_with_context_parsed_string).unwrap();
     }
 
-    // if is not in the same line as the entrypoint name, is in the next line
-    let entrypoint_index = program_lines
-        .iter()
-        .position(|line| line.contains((co_file_name.replace(".md", "") + "(").as_str()))
-        .unwrap();
-    let canditate_lines = vec![
-        &program_lines[entrypoint_index],
-        &program_lines[entrypoint_index + 1],
-    ];
+    fn get_context_name(co_file_name: String) -> String {
+        let BatConfig { required, .. } = BatConfig::get_validated_config();
+        let RequiredConfig {
+            program_lib_path, ..
+        } = required;
 
-    let context_line = if canditate_lines[0].contains("Context<") {
-        canditate_lines[0]
-    } else {
-        canditate_lines[1]
-    };
-    let parsed_context_name = context_line
-        .split("Context<")
-        .map(|l| l.to_string())
-        .collect::<Vec<String>>()[1]
-        .split(">")
-        .map(|l| l.to_string())
-        .collect::<Vec<String>>()[0]
-        .clone();
-    parsed_context_name
-}
+        let lib_file = File::open(program_lib_path).unwrap();
+        let mut lib_files_lines = io::BufReader::new(lib_file).lines().map(|l| l.unwrap());
+        lib_files_lines
+            .borrow_mut()
+            .enumerate()
+            .find(|(_, line)| *line == String::from("#[program]"))
+            .unwrap();
 
-fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Vec<String> {
-    let instruction_file = File::open(instruction_file_path.clone()).unwrap();
-    let instruction_file_lines = io::BufReader::new(instruction_file)
-        .lines()
-        .map(|l| l.unwrap())
-        .into_iter()
-        .collect::<Vec<String>>();
+        let mut program_lines = vec![String::from(""); 0];
+        for (_, line) in lib_files_lines.borrow_mut().enumerate() {
+            if line == "}" {
+                break;
+            }
+            program_lines.push(line)
+        }
 
-    let context_name = get_context_name(co_file_name);
-    // get context lines
-    let first_line_index = instruction_file_lines
-        .iter()
-        .position(|line| {
-            line.contains(("pub struct ".to_string() + &context_name.clone()).as_str())
-        })
-        .unwrap();
-    // the closing curly brace "}", starting on first_line_index
-    let last_line_index = instruction_file_lines[first_line_index..]
-        .iter()
-        .position(|line| line == &"}")
-        .unwrap()
-        + first_line_index;
-    let mut context_lines: Vec<_> = instruction_file_lines[first_line_index..=last_line_index]
-        .iter()
-        .cloned()
-        .collect();
-    context_lines
+        // if is not in the same line as the entrypoint name, is in the next line
+        let entrypoint_index = program_lines
+            .iter()
+            .position(|line| line.contains((co_file_name.replace(".md", "") + "(").as_str()))
+            .unwrap();
+        let canditate_lines = vec![
+            &program_lines[entrypoint_index],
+            &program_lines[entrypoint_index + 1],
+        ];
+
+        let context_line = if canditate_lines[0].contains("Context<") {
+            canditate_lines[0]
+        } else {
+            canditate_lines[1]
+        };
+        let parsed_context_name = context_line
+            .split("Context<")
+            .map(|l| l.to_string())
+            .collect::<Vec<String>>()[1]
+            .split('>')
+            .map(|l| l.to_string())
+            .collect::<Vec<String>>()[0]
+            .clone();
+        parsed_context_name
+    }
+
+    fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Vec<String> {
+        let instruction_file = File::open(instruction_file_path).unwrap();
+        let instruction_file_lines = io::BufReader::new(instruction_file)
+            .lines()
+            .map(|l| l.unwrap())
+            .into_iter()
+            .collect::<Vec<String>>();
+
+        let context_name = get_context_name(co_file_name);
+        // get context lines
+        let first_line_index = instruction_file_lines
+            .iter()
+            .position(|line| {
+                line.contains(("pub struct ".to_string() + &context_name.clone()).as_str())
+            })
+            .unwrap();
+        // the closing curly brace "}", starting on first_line_index
+        let last_line_index = instruction_file_lines[first_line_index..]
+            .iter()
+            .position(|line| line == &"}")
+            .unwrap()
+            + first_line_index;
+        let context_lines: Vec<_> =
+            instruction_file_lines[first_line_index..=last_line_index].to_vec();
+        context_lines
+    }
 }

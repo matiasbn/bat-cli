@@ -32,10 +32,9 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
     check_correct_branch();
     let (commit_message, commit_files_path): (String, Vec<String>) = match commit_type {
         GitCommit::StartCO => {
-            let commit_file = &commit_files.clone().unwrap()[0];
-            let commit_string = "co: ".to_string()
-                + &commit_file.clone().replace(".md", "")
-                + &" started".to_string();
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_string =
+                "co: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
             println!(
                 "code-overhaul file started with commit: {:?}",
                 commit_string
@@ -47,10 +46,9 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             (commit_string, vec![file_to_delete_path, file_to_add_path])
         }
         GitCommit::FinishCO => {
-            let commit_file = &commit_files.clone().unwrap()[0];
-            let commit_string = "co: ".to_string()
-                + &commit_file.clone().replace(".md", "")
-                + &" finished".to_string();
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_string =
+                "co: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
             println!(
                 "code-overhaul file finished with commit: {:?}",
                 commit_string
@@ -93,9 +91,27 @@ pub fn check_correct_branch() {
     if get_branch_name() != expected_auditor_branch {
         panic!(
             "You are in an incorrect branch, please run \"git checkout {:?}\"",
-            expected_auditor_branch.replace("\"", "")
+            expected_auditor_branch.replace('\"', "")
         );
     }
+}
+
+pub fn clone_repository(project_name: String) {
+    // Clone git repository
+    Command::new("git")
+        .args(["clone", "git@git.kudelski.com:TVRM/bat-base-repository.git"])
+        .output()
+        .unwrap();
+    // change folder name
+    Command::new("mv")
+        .args(["bat-base-repository", project_name.as_str()])
+        .output()
+        .unwrap();
+    // Remove .git folder
+    Command::new("rm")
+        .args(["-rf", (project_name + "/.git").as_str()])
+        .output()
+        .unwrap();
 }
 
 #[test]

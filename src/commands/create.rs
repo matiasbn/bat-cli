@@ -6,6 +6,7 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
 
 use crate::config::{AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR};
+use crate::git::clone_repository;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
@@ -34,24 +35,6 @@ fn get_project_name() -> String {
         panic!("Project already exists");
     }
     project_name
-}
-
-fn clone_repository(project_name: String) {
-    // Clone git repository
-    Command::new("git")
-        .args(["clone", "git@git.kudelski.com:TVRM/bat-base-repository.git"])
-        .output()
-        .unwrap();
-    // change folder name
-    Command::new("mv")
-        .args(["bat-base-repository", project_name.as_str()])
-        .output()
-        .unwrap();
-    // Remove .git folder
-    Command::new("rm")
-        .args(["-rf", (project_name + "/.git").as_str()])
-        .output()
-        .unwrap();
 }
 
 fn create_bat_toml(project_name: String) {

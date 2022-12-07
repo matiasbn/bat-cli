@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod config;
 mod constants;
-mod utils;
+mod git;
 // use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
@@ -18,7 +18,6 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
-// #[derive(Subcommand, Debug, Serialize, Deserialize)]
 enum Commands {
     /// Creates a Bat project
     Create,
@@ -30,11 +29,13 @@ enum Commands {
     /// findings files management
     #[command(subcommand)]
     Finding(FindingActions),
-    /// Checks the health of the files
-    Check {
-        /// The type of check to execute
-        check_types: Option<String>,
-    },
+    // Update the templates
+    Templates,
+    // /// Checks the health of the files
+    // Check {
+    //     /// The type of check to execute
+    //     check_types: Option<String>,
+    // },
 }
 
 #[derive(Subcommand, Debug)]
@@ -85,6 +86,7 @@ fn main() {
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
+        Commands::Templates => commands::finding::reject(),
         _ => panic!("Bad command"),
     }
 }

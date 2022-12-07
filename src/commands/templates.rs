@@ -12,7 +12,7 @@ use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use crate::config::{BatConfig, RequiredConfig, AUDITOR_TOML_INITIAL_CONFIG_STR};
 
-pub fn initialize_bat_project() {
+pub fn update_templates() {
     let bat_config: BatConfig = BatConfig::get_init_config();
     let BatConfig {
         required, auditor, ..
