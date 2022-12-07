@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 
 mod commands;
 mod config;
+mod constants;
 mod utils;
 // use serde::{Deserialize, Serialize};
 
