@@ -13,6 +13,8 @@ auditor_names = [""]
 audit_folder_path = "."
 program_lib_path = ""
 project_repository_url = ""
+[optional]
+program_instructions_path = ""
 "#;
 pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
 [auditor]
@@ -22,6 +24,7 @@ auditor_name = ""
 #[derive(Debug, Deserialize, Clone)]
 pub struct BatConfig {
     pub required: RequiredConfig,
+    pub optional: OptionalConfig,
     pub auditor: AuditorConfig,
 }
 
@@ -32,6 +35,11 @@ pub struct RequiredConfig {
     pub audit_folder_path: String,
     pub program_lib_path: String,
     pub project_repository_url: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct OptionalConfig {
+    pub program_instructions_path: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -76,10 +84,23 @@ impl BatConfig {
             toml::from_str((bat_tom_file_string.to_string() + auditor_tom_file_string).as_str())
                 .unwrap();
         config
+        // // Get the BatConfig complete
+        // let config =
+        //     toml::from_str((bat_tom_file_string.to_string() + auditor_tom_file_string).as_str());
+        // println!("err {:#?}", config);
+        // match config {
+        //     Ok(bat_config) => bat_config,
+        //     Err(e) => {
+        //         println!("error {}", e);
+        //         Err(())
+        //     }
+        // }
     }
 
     fn validate_bat_config(bat_config: BatConfig, validate_auditor: bool) {
-        let BatConfig { required, auditor } = bat_config;
+        let BatConfig {
+            required, auditor, ..
+        } = bat_config;
         // Validate required
         if required.project_name.is_empty() {
             panic!("required parameter project_name is empty at Bat.toml");
@@ -190,6 +211,18 @@ impl BatConfig {
         }
     }
 
+    pub fn get_auditor_code_overhaul_started_path(file_name: Option<String>) -> String {
+        match file_name {
+            Some(name) => {
+                Self::get_auditor_code_overhaul_path()
+                    + "started/"
+                    + &name.replace(".md", "")
+                    + ".md"
+            }
+            None => Self::get_auditor_code_overhaul_path() + "started/",
+        }
+    }
+
     // Templates path
     pub fn get_templates_path() -> String {
         Self::get_audit_folder_path() + "/templates"
@@ -227,11 +260,18 @@ impl TestConfig for BatConfig {
                     .to_string(),
             project_repository_url: "git@github.com:bad-user/bad-url.git".to_string(),
         };
+        let optional = OptionalConfig {
+            program_instructions_path: "".to_string(),
+        };
         let auditor = AuditorConfig {
             auditor_name: "matias".to_string(),
         };
 
-        BatConfig { required, auditor }
+        BatConfig {
+            required,
+            optional,
+            auditor,
+        }
     }
 }
 
