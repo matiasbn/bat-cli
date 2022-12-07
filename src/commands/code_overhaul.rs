@@ -199,22 +199,19 @@ fn update_code_overhaul_file(co_file_name: String, co_file_path: String) {
             .canonicalize()
             .unwrap();
     let co_file_path = Path::new(&(co_file_path)).canonicalize().unwrap();
-    // parse instruction
-    parse_instruction_into_co(instruction_file_path, co_file_path, co_file_name);
+    // parse context_accounts
+    parse_context_accounts_into_co(
+        instruction_file_path.clone(),
+        co_file_path,
+        co_file_name.clone(),
+    );
 }
 
-fn parse_instruction_into_co(
+fn parse_context_accounts_into_co(
     instruction_file_path: PathBuf,
     co_file_path: PathBuf,
     co_file_name: String,
 ) {
-    let instruction_file = File::open(instruction_file_path.clone()).unwrap();
-    let instruction_file_lines = io::BufReader::new(instruction_file)
-        .lines()
-        .map(|l| l.unwrap())
-        .into_iter()
-        .collect::<Vec<String>>();
-
     let co_file = File::open(co_file_path.clone()).unwrap();
     let co_file_lines = io::BufReader::new(co_file)
         .lines()
@@ -222,23 +219,11 @@ fn parse_instruction_into_co(
         .into_iter()
         .collect::<Vec<String>>();
 
-    let context_name = get_context_name(co_file_name);
-    // get context lines
-    let first_line_index = instruction_file_lines
+    let context_lines = get_context_lines(instruction_file_path, co_file_name);
+    let mut filtered_context_account_lines: Vec<_> = context_lines
         .iter()
-        .position(|line| {
-            line.contains(("pub struct ".to_string() + &context_name.clone()).as_str())
-        })
-        .unwrap();
-    // the closing curly brace "}", starting on first_line_index
-    let last_line_index = instruction_file_lines[first_line_index..]
-        .iter()
-        .position(|line| line == &"}")
-        .unwrap()
-        + first_line_index;
-    let mut context_lines: Vec<_> = instruction_file_lines[first_line_index..=last_line_index]
-        .iter()
-        .cloned()
+        .filter(|line| !line.contains("constraint "))
+        .map(|line| line.to_string())
         .collect();
     // replace context in the co file
     let context_co_index = co_file_lines
@@ -253,17 +238,21 @@ fn parse_instruction_into_co(
         .collect();
     let mut co_with_context_parsed = vec![];
     co_with_context_parsed.append(&mut co_lines_first_half);
-    co_with_context_parsed.append(&mut context_lines);
+    co_with_context_parsed.append(&mut filtered_context_account_lines);
     co_with_context_parsed.append(&mut co_lines_second_half);
-
-    // Get validations
-    println!("context_lines: {:?}", context_lines.clone());
-    println!("context_co_index: {:?}", context_co_index.clone());
-    println!(
-        "co_with_context_parsed: {:?}",
-        co_with_context_parsed.clone()
+    let mut co_with_context_parsed_string = co_with_context_parsed.join("\n");
+    co_with_context_parsed_string =
+        co_with_context_parsed_string.replace("    #[account(\n    )]\n", "");
+    co_with_context_parsed_string = co_with_context_parsed_string.replace(
+        "    #[account(\n        mut,\n    )]\n",
+        "    #[account(mut)]\n",
     );
-    fs::write(co_file_path, co_with_context_parsed.join("\n")).unwrap();
+    co_with_context_parsed_string = co_with_context_parsed_string.replace(
+        "    #[account(\n        zero,\n    )]\n",
+        "    #[account(mut)]\n",
+    );
+
+    fs::write(co_file_path, co_with_context_parsed_string).unwrap();
 }
 
 fn get_context_name(co_file_name: String) -> String {
@@ -312,4 +301,33 @@ fn get_context_name(co_file_name: String) -> String {
         .collect::<Vec<String>>()[0]
         .clone();
     parsed_context_name
+}
+
+fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Vec<String> {
+    let instruction_file = File::open(instruction_file_path.clone()).unwrap();
+    let instruction_file_lines = io::BufReader::new(instruction_file)
+        .lines()
+        .map(|l| l.unwrap())
+        .into_iter()
+        .collect::<Vec<String>>();
+
+    let context_name = get_context_name(co_file_name);
+    // get context lines
+    let first_line_index = instruction_file_lines
+        .iter()
+        .position(|line| {
+            line.contains(("pub struct ".to_string() + &context_name.clone()).as_str())
+        })
+        .unwrap();
+    // the closing curly brace "}", starting on first_line_index
+    let last_line_index = instruction_file_lines[first_line_index..]
+        .iter()
+        .position(|line| line == &"}")
+        .unwrap()
+        + first_line_index;
+    let mut context_lines: Vec<_> = instruction_file_lines[first_line_index..=last_line_index]
+        .iter()
+        .cloned()
+        .collect();
+    context_lines
 }
