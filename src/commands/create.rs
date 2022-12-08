@@ -6,6 +6,7 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
 
 use crate::config::{AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR};
+use crate::constants::BASE_REPOSTORY_NAME;
 use crate::git::clone_base_repository;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
@@ -20,7 +21,7 @@ pub fn create_project() {
     clone_base_repository();
     // change folder name
     Command::new("mv")
-        .args(["bat-base-repository", project_name.as_str()])
+        .args([BASE_REPOSTORY_NAME, project_name.as_str()])
         .output()
         .unwrap();
     // Remove .git folder
