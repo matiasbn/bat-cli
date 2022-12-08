@@ -1,6 +1,9 @@
 use std::{process::Command, str};
 
-use crate::config::{BatConfig, RequiredConfig};
+use crate::{
+    config::{BatConfig, RequiredConfig},
+    constants::BASE_REPOSTORY_URL,
+};
 
 // Git
 pub fn get_branch_name() -> String {
@@ -96,20 +99,10 @@ pub fn check_correct_branch() {
     }
 }
 
-pub fn clone_repository(project_name: String) {
-    // Clone git repository
+pub fn clone_base_repository() {
+    // Clone base repository
     Command::new("git")
-        .args(["clone", "git@git.kudelski.com:TVRM/bat-base-repository.git"])
-        .output()
-        .unwrap();
-    // change folder name
-    Command::new("mv")
-        .args(["bat-base-repository", project_name.as_str()])
-        .output()
-        .unwrap();
-    // Remove .git folder
-    Command::new("rm")
-        .args(["-rf", (project_name + "/.git").as_str()])
+        .args(["clone", BASE_REPOSTORY_URL])
         .output()
         .unwrap();
 }

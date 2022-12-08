@@ -6,9 +6,10 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
 
 use crate::config::{AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR};
-use crate::git::clone_repository;
+use crate::git::clone_base_repository;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
+
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 
 pub fn create_project() {
@@ -16,7 +17,17 @@ pub fn create_project() {
     let project_name = get_project_name();
     println!("Creating {} project", project_name);
     // clone repository
-    clone_repository(project_name.clone());
+    clone_base_repository();
+    // change folder name
+    Command::new("mv")
+        .args(["bat-base-repository", project_name.as_str()])
+        .output()
+        .unwrap();
+    // Remove .git folder
+    Command::new("rm")
+        .args(["-rf", (project_name.clone() + "/.git").as_str()])
+        .output()
+        .unwrap();
     // create config files
     create_bat_toml(project_name.clone());
     create_auditor_toml();
@@ -53,7 +64,7 @@ fn create_bat_toml(project_name: String) {
         &("project_name = \"".to_string() + &project_name),
     );
 
-    fs::write(bat_toml_path.clone(), bat_toml_updated).expect("Could not write to file!");
+    fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");
 }
 
 pub fn create_auditor_toml() {
@@ -66,7 +77,7 @@ pub fn create_auditor_toml() {
         )
     };
 
-    fs::write(auditor_toml_path.clone(), AUDITOR_TOML_INITIAL_CONFIG_STR)
+    fs::write(auditor_toml_path, AUDITOR_TOML_INITIAL_CONFIG_STR)
         .expect("Could not write to file!");
 }
 

@@ -11,7 +11,7 @@ mod git;
 // use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Blockchain Audit Toolkit (BAT) CLI")]
+#[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -86,7 +86,7 @@ fn main() {
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
-        Commands::Templates => commands::finding::reject(),
+        Commands::Templates => commands::templates::update_templates(),
         _ => panic!("Bad command"),
     }
 }

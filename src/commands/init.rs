@@ -47,7 +47,7 @@ fn get_auditor_name(auditor_names: Vec<String>) -> String {
         .items(&auditor_names[..])
         .interact()
         .unwrap();
-    
+
     auditor_names[selection].clone()
 }
 
@@ -57,8 +57,7 @@ fn update_auditor_toml(auditor_name: String) {
         ("auditor_name = \"".to_string() + &auditor_name).as_str(),
     );
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
-    fs::write(auditor_toml_path.clone(), new_auditor_file_content)
-        .expect("Could not write to file!");
+    fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
 }
 
 fn validate_init_config() {
