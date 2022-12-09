@@ -1,3 +1,5 @@
-pub const CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER: &str = "context accounts without constraints";
+pub const CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER: &str = "CONTEXT_ACCOUNTS_PLACEHOLDER";
+pub const CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER: &str = "FUNCTION_PARAMETER_PLACEHOLDER";
+pub const CODE_OVERHAUL_VALIDATION_PLACEHOLDER: &str = "VALIDATIONS_PLACEHOLDER";
 pub const BASE_REPOSTORY_URL: &str = "git@git.kudelski.com:TVRM/bat-base-repository.git";
 pub const BASE_REPOSTORY_NAME: &str = "bat-base-repository";

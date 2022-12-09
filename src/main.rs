@@ -29,7 +29,7 @@ enum Commands {
     /// findings files management
     #[command(subcommand)]
     Finding(FindingActions),
-    // Update the templates
+    /// Update the templates folder
     Templates,
     // /// Checks the health of the files
     // Check {

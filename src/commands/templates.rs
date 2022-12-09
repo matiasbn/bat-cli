@@ -6,6 +6,7 @@ pub fn update_templates() {
     let BatConfig { required: _, .. } = BatConfig::get_validated_config();
 
     // clone base repository
+    println!("Cloning base repository");
     clone_base_repository();
 
     // delete templates folder
