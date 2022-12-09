@@ -27,6 +27,7 @@ pub fn get_branch_name() -> String {
 }
 
 pub enum GitCommit {
+    Init,
     StartCO,
     FinishCO,
 }
@@ -34,6 +35,19 @@ pub enum GitCommit {
 pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String>>) {
     check_correct_branch();
     let (commit_message, commit_files_path): (String, Vec<String>) = match commit_type {
+        GitCommit::Init => {
+            let commit_string =
+                "co: code overhaul files created for ".to_string() + &BatConfig::get_auditor_name();
+            let mut files_to_add: Vec<String> = vec![];
+            for file in commit_files.unwrap() {
+                println!("code-overhaul file added to commit: {:?}", file.clone());
+                let file_to_add_path =
+                    BatConfig::get_auditor_code_overhaul_to_review_path(Some(file.clone()));
+                files_to_add.push(file_to_add_path.clone());
+            }
+            println!("{}", commit_string);
+            (commit_string, files_to_add)
+        }
         GitCommit::StartCO => {
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =

@@ -5,3 +5,5 @@ auditor_names = ["matias", "porter"]
 audit_folder_path = "."
 program_lib_path = "../star-atlas-programs/sol-programs/scream/programs/points/src/lib.rs"
 project_repository_url = "git@github.com:matiasbn/bat_test_project.git"
+[optional]
+program_instructions_path = "../star-atlas-programs/sol-programs/scream/programs/points/src/instructions"
