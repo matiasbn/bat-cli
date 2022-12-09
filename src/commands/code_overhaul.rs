@@ -75,25 +75,25 @@ pub fn start_code_overhaul_file() {
         // move selected file to rejected
         Some(index) => {
             let started_file_name = review_files[index].clone();
-            let _to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(
+            let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(
                 started_file_name.clone(),
             ));
             let started_path =
                 BatConfig::get_auditor_code_overhaul_started_path(Some(started_file_name.clone()));
             check_correct_branch();
-            // // move to started
-            // Command::new("mv")
-            //     .args([to_review_path, started_path.clone()])
-            //     .output()
-            //     .unwrap();
-            // println!("{} file moved to started", started_file_name);
+            // move to started
+            Command::new("mv")
+                .args([to_review_path, started_path.clone()])
+                .output()
+                .unwrap();
+            println!("{} file moved to started", started_file_name);
             // update started co file
-            update_code_overhaul_file(started_file_name, started_path);
-            // println!(
-            //     "{} file updated with instruction information",
-            //     started_file_name
-            // );
-            // create_git_commit(GitCommit::StartCO, Some(vec![started_file_name]));
+            update_code_overhaul_file(started_file_name.clone(), started_path);
+            println!(
+                "{} file updated with instruction information",
+                started_file_name
+            );
+            create_git_commit(GitCommit::StartCO, Some(vec![started_file_name]));
         }
         None => println!("User did not select anything"),
     }
