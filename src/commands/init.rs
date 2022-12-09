@@ -11,6 +11,7 @@ use dialoguer::Select;
 use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use crate::config::{BatConfig, RequiredConfig, AUDITOR_TOML_INITIAL_CONFIG_STR};
+use crate::git::{create_git_commit, GitCommit};
 
 pub fn initialize_bat_project() {
     let bat_config: BatConfig = BatConfig::get_init_config();
@@ -29,7 +30,7 @@ pub fn initialize_bat_project() {
     // copy templates/notes-folder-template
     create_auditor_notes_folder();
     // create overhaul files
-    initialize_code_overhaul_files();
+    let entrypoints_names = initialize_code_overhaul_files();
 
     if !Path::new(".git").is_dir() {
         println!("Initializing project repository");
@@ -38,6 +39,10 @@ pub fn initialize_bat_project() {
     } else {
         println!("Project repository already initialized");
     }
+
+    // commit to-review files
+    create_git_commit(GitCommit::Init, Some(entrypoints_names));
+    println!("Project successfully initialized");
 }
 
 fn get_auditor_name(auditor_names: Vec<String>) -> String {
@@ -126,7 +131,7 @@ fn initialize_project_repository() {
 
     println!("Creating develop branch");
     // create develop
-    output = Command::new("git")
+    Command::new("git")
         .args(["checkout", "-b", "develop"])
         .output()
         .unwrap();
@@ -134,11 +139,11 @@ fn initialize_project_repository() {
     // create auditors branches from develop
     for auditor_name in auditor_names {
         println!("Creating branch for {:?}", auditor_name);
-        output = Command::new("git")
+        Command::new("git")
             .args(["checkout", "-b", (auditor_name + "-notes").as_str()])
             .output()
             .unwrap();
-        output = Command::new("git")
+        Command::new("git")
             .args(["checkout", "develop"])
             .output()
             .unwrap();
@@ -146,14 +151,14 @@ fn initialize_project_repository() {
 
     println!("Pushing all branches to origin");
     // push all branches to remote
-    output = Command::new("git")
+    Command::new("git")
         .args(["push", "origin", "--all"])
         .output()
         .unwrap();
 
     println!("Checking out {:?}'s branch", BatConfig::get_auditor_name());
     // checkout auditor branch
-    output = Command::new("git")
+    Command::new("git")
         .args([
             "checkout",
             (BatConfig::get_auditor_name() + "-notes").as_str(),
@@ -197,7 +202,7 @@ fn create_auditor_notes_folder() {
     };
 }
 
-fn initialize_code_overhaul_files() {
+fn initialize_code_overhaul_files() -> Vec<String> {
     let BatConfig { required, .. } = BatConfig::get_validated_config();
     let RequiredConfig {
         program_lib_path, ..
@@ -227,9 +232,10 @@ fn initialize_code_overhaul_files() {
         .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))
         .collect::<Vec<String>>();
 
-    for entrypoint_name in entrypoints_names {
+    for entrypoint_name in entrypoints_names.clone() {
         create_overhaul_file(entrypoint_name.clone());
     }
+    entrypoints_names
 }
 
 // fn get_context_names() {
