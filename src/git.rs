@@ -71,7 +71,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
                 commit_string
             );
             let file_to_delete_path =
-                BatConfig::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()));
+                BatConfig::get_auditor_code_overhaul_started_path(Some(commit_file.clone()));
             let file_to_add_path =
                 BatConfig::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_delete_path, file_to_add_path])
