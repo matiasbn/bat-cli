@@ -11,7 +11,6 @@ pub fn vs_code_open_file_in_current_window(path_to_file: String) {
 }
 
 fn execute_command(command_name: String, command_args: Vec<&str>, error_message: String) {
-    println!("{:?}",command_args);
     let output = Command::new(command_name).args(command_args).output().unwrap();
     if !output.stderr.is_empty() {
         panic!(
@@ -27,3 +26,10 @@ fn canonicalize_path(path_to_canonicalize: String)-> PathBuf{
     .canonicalize()
     .unwrap()
 }
+
+// "rust-analyzer.checkOnSave.command": "clippy",
+// "rust-analyzer.rustfmt.extraArgs": [
+//   "--fix",
+//   "--allow-dirty",
+//   "--allow-no-vcs"
+// ]

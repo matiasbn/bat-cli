@@ -2,9 +2,9 @@ use std::{fs, path::Path, str};
 
 use serde::Deserialize;
 
-use crate::commands::create::{BAT_TOML_INITIAL_PATH, AUDITOR_TOML_INITIAL_PATH, create_auditor_toml};
-
-
+use crate::commands::create::{
+    create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH,
+};
 
 pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
 [required]
@@ -249,7 +249,10 @@ impl BatConfig {
             .program_instructions_path
     }
     pub fn get_path_to_instruction(instruction_name: String) -> String {
-        Self::get_instructions_folder_path() +"/"+ instruction_name.replace(".rs", "").as_str() + ".rs"
+        Self::get_instructions_folder_path()
+            + "/"
+            + instruction_name.replace(".rs", "").as_str()
+            + ".rs"
     }
 }
 

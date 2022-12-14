@@ -5,10 +5,10 @@ extern crate core;
 use clap::{Parser, Subcommand};
 
 mod command_line;
+mod commands;
 mod config;
 mod constants;
 mod git;
-mod commands;
 // use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
