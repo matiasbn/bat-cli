@@ -2,6 +2,7 @@ use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 
+use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER;
 use crate::git::{check_correct_branch, create_git_commit, GitCommit};
@@ -71,32 +72,93 @@ pub fn start_code_overhaul_file() {
         .unwrap();
 
     // user select file
-    match selection {
+    let started_file_name = match selection {
         // move selected file to rejected
-        Some(index) => {
-            let started_file_name = review_files[index].clone();
-            let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(
-                started_file_name.clone(),
-            ));
-            let started_path =
-                BatConfig::get_auditor_code_overhaul_started_path(Some(started_file_name.clone()));
-            check_correct_branch();
-            // move to started
-            Command::new("mv")
-                .args([to_review_path, started_path.clone()])
-                .output()
-                .unwrap();
-            println!("{} file moved to started", started_file_name);
-            // update started co file
-            update_code_overhaul_file(started_file_name.clone(), started_path);
+        Some(index) => review_files[index].clone(),
+        None => panic!("User did not select anything"),
+    };
+
+    let to_review_path =
+        BatConfig::get_auditor_code_overhaul_to_review_path(Some(started_file_name.clone()));
+    let started_path =
+        BatConfig::get_auditor_code_overhaul_started_path(Some(started_file_name.clone()));
+    check_correct_branch();
+    // move to started
+    Command::new("mv")
+        .args([to_review_path, started_path.clone()])
+        .output()
+        .unwrap();
+    println!("{} file moved to started", started_file_name);
+    // update started co file
             println!(
                 "{} file updated with instruction information",
                 started_file_name
             );
-            create_git_commit(GitCommit::StartCO, Some(vec![started_file_name]));
-        }
-        None => println!("User did not select anything"),
-    }
+            create_git_commit(GitCommit::StartCO, Some(vec![started_file_name.clone()]));
+    
+            let instructions_path = BatConfig::get_validated_config()
+            .optional
+            .program_instructions_path;
+        let instructions_folder = fs::read_dir(instructions_path.clone()).unwrap();
+        let instruction_files = instructions_folder
+            .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
+            .filter(|file| file != "mod.rs")
+            .collect::<Vec<String>>();
+        let entrypoint_name = started_file_name.clone().replace(".md", "");
+        let instruction_match = instruction_files
+            .iter()
+            .filter(|ifile| ifile.replace(".rs", "") == entrypoint_name.as_str())
+            .collect::<Vec<&String>>();
+    
+        // if instruction exists, prompt the user if the file is correct
+        let is_match = if instruction_match.len() == 1 {
+            let instruction_match_path =
+                Path::new(&(instructions_path.clone() + "/" + &instruction_match[0].to_string()))
+                    .canonicalize()
+                    .unwrap();
+            let options = vec!["yes", "no"];
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt(
+                    instruction_match_path
+                        .into_os_string()
+                        .into_string()
+                        .unwrap()
+                        + " <--- is this the correct instruction file?:",
+                )
+                .items(&options)
+                .default(0)
+                .interact_on_opt(&Term::stderr())
+                .unwrap()
+                .unwrap();
+    
+            options[selection] == "yes"
+        } else {
+            false
+        };
+    
+        let instruction_file_name = if is_match {
+            instruction_match[0].to_string()
+        } else {
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Select the instruction file: ")
+                .items(&instruction_files)
+                .default(0)
+                .interact_on_opt(&Term::stderr())
+                .unwrap()
+                .unwrap();
+            instruction_files[selection].clone()
+        };
+        let instruction_file_path = Path::new(&(instructions_path + "/" + &instruction_file_name))
+            .canonicalize()
+            .unwrap();
+        
+        parse_context_accounts_into_co(instruction_file_path, Path::new(&(started_path)).canonicalize().unwrap() , started_file_name);
+
+
+    // open VSCode files
+    let instruction_file_path = BatConfig::get_path_to_instruction(instruction_file_name);
+    vs_code_open_file_in_current_window(instruction_file_path);
+    vs_code_open_file_in_current_window(started_path);
 }
 
 pub fn finish_code_overhaul_file() {
@@ -143,69 +205,7 @@ pub fn finish_code_overhaul_file() {
 
 // fn create
 
-fn update_code_overhaul_file(co_file_name: String, co_file_path: String) {
-    // show instructions files
-    let instructions_path = BatConfig::get_validated_config()
-        .optional
-        .program_instructions_path;
-    let instructions_folder = fs::read_dir(instructions_path.clone()).unwrap();
-    let instruction_files = instructions_folder
-        .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
-        .filter(|file| file != "mod.rs")
-        .collect::<Vec<String>>();
-    let entrypoint_name = co_file_name.replace(".md", "");
-    let instruction_match = instruction_files
-        .iter()
-        .filter(|ifile| ifile.replace(".rs", "") == entrypoint_name.as_str())
-        .collect::<Vec<&String>>();
 
-    // if instruction exists, prompt the user if the file is correct
-    let is_match = if instruction_match.len() == 1 {
-        let instruction_match_path =
-            Path::new(&(instructions_path.clone() + "/" + &instruction_match[0].to_string()))
-                .canonicalize()
-                .unwrap();
-        let options = vec!["yes", "no"];
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(
-                instruction_match_path
-                    .into_os_string()
-                    .into_string()
-                    .unwrap()
-                    + " <--- is this the correct instruction file?:",
-            )
-            .items(&options)
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-
-        options[selection] == "yes"
-    } else {
-        false
-    };
-
-    let instruction_file_name = if is_match {
-        instruction_match[0].to_string()
-    } else {
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select the instruction file: ")
-            .items(&instruction_files)
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-        instruction_files[selection].clone()
-    };
-    let instruction_file_path = Path::new(&(instructions_path + "/" + &instruction_file_name))
-        .canonicalize()
-        .unwrap();
-    let co_file_path = Path::new(&(co_file_path)).canonicalize().unwrap();
-    // parse context_accounts
-    parse_context_accounts_into_co(instruction_file_path, co_file_path, co_file_name);
-    // parse function parameters
-    // parse validations
-}
 
 fn parse_context_accounts_into_co(
     instruction_file_path: PathBuf,
