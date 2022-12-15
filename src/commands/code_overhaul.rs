@@ -4,10 +4,13 @@ use dialoguer::Select;
 
 use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
-use crate::constants::CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER;
+use crate::constants::{
+    CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
+};
 use crate::git::{check_correct_branch, create_git_commit, GitCommit};
 
 use std::borrow::BorrowMut;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -157,7 +160,11 @@ pub fn start_code_overhaul_file() {
     parse_context_accounts_into_co(
         instruction_file_path,
         Path::new(&(started_path)).canonicalize().unwrap(),
-        started_file_name,
+        started_file_name.clone(),
+    );
+    parse_validations_into_co(
+        started_file_name.clone(),
+        instruction_file_name.replace(".rs", ""),
     );
 
     // open VSCode files
@@ -252,49 +259,67 @@ fn parse_context_accounts_into_co(
     fs::write(co_file_path, co_with_context_parsed_string).unwrap();
 }
 
-fn parse_validations_into_co(
-    instruction_file_path: PathBuf,
-    co_file_path: PathBuf,
-    co_file_name: String,
-) {
+pub fn function_to_test() {
+    parse_validations_into_co("transfer_cargo".to_string(), "transfer_cargo".to_string());
+}
+
+// fn parse_function_parameters_into_co(co_file_path: String, co_file_name: String) {
+fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
+    let instruction_file_path = BatConfig::get_path_to_instruction(instruction_name);
+    let context_lines =
+        get_context_lines(PathBuf::from(instruction_file_path), co_file_name.clone());
+    let filtered_lines: Vec<_> = context_lines
+        .iter()
+        .filter(|line| !line.contains("///"))
+        .map(|line| line.replace("\t", ""))
+        .collect();
+    let mut accounts_groups: Vec<String> = Vec::new();
+    for (line_number, line) in filtered_lines.iter().enumerate() {
+        if line.contains("#[account(") {
+            let mut idx = 1;
+            // set the first line as a rust snippet on md
+            let mut account_string = vec!["- ```rust".to_string(), line.to_string()];
+            // if next line is pub
+            while !filtered_lines[line_number + idx].contains("pub ") {
+                if filtered_lines[line_number + idx].contains("constraint =")
+                    || filtered_lines[line_number + idx].contains("has_one")
+                    || filtered_lines[line_number + idx].contains(")]")
+                    || filtered_lines[line_number + idx].contains("pub ")
+                {
+                    account_string.push(filtered_lines[line_number + idx].to_string());
+                }
+                idx += 1;
+            }
+            // end of md section
+            account_string.push(filtered_lines[line_number + idx].clone());
+            account_string.push("   ```".to_string());
+            // filter empty lines, like accounts without nothing or account mut
+            if !(account_string[1].contains("#[account(") && account_string[2].contains(")]"))
+                && !account_string[1].contains("#[account(mut)]")
+            {
+                accounts_groups.push(account_string.join("\n"));
+            }
+        }
+    }
+    let accounts_string = accounts_groups.join("\n");
+
+    // replace in co file
+    let co_file_path =
+        BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name.clone()));
     let co_file = File::open(co_file_path.clone()).unwrap();
     let co_file_lines = io::BufReader::new(co_file)
         .lines()
         .map(|l| l.unwrap())
+        .map(|line| {
+            if line == CODE_OVERHAUL_VALIDATION_PLACEHOLDER {
+                accounts_string.clone()
+            } else {
+                line
+            }
+        })
         .into_iter()
         .collect::<Vec<String>>();
-
-    let context_lines = get_context_lines(instruction_file_path, co_file_name);
-    let mut filtered_context_account_lines: Vec<_> = context_lines
-        .iter()
-        .filter(|line| !line.contains("constraint "))
-        .map(|line| line.to_string())
-        .collect();
-    // replace context in the co file
-    let context_co_index = co_file_lines
-        .iter()
-        .position(|l| l.contains(CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER))
-        .unwrap();
-    let mut co_lines_first_half: Vec<_> = co_file_lines[0..context_co_index].to_vec();
-    let mut co_lines_second_half: Vec<_> =
-        co_file_lines[context_co_index + 1..co_file_lines.len()].to_vec();
-    let mut co_with_context_parsed = vec![];
-    co_with_context_parsed.append(&mut co_lines_first_half);
-    co_with_context_parsed.append(&mut filtered_context_account_lines);
-    co_with_context_parsed.append(&mut co_lines_second_half);
-    let mut co_with_context_parsed_string = co_with_context_parsed.join("\n");
-    co_with_context_parsed_string =
-        co_with_context_parsed_string.replace("    #[account(\n    )]\n", "");
-    co_with_context_parsed_string = co_with_context_parsed_string.replace(
-        "    #[account(\n        mut,\n    )]\n",
-        "    #[account(mut)]\n",
-    );
-    co_with_context_parsed_string = co_with_context_parsed_string.replace(
-        "    #[account(\n        zero,\n    )]\n",
-        "    #[account(zero)]\n",
-    );
-
-    fs::write(co_file_path, co_with_context_parsed_string).unwrap();
+    fs::write(co_file_path, co_file_lines.join("\n")).unwrap();
 }
 
 fn get_context_name(co_file_name: String) -> String {
@@ -375,3 +400,11 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
     let context_lines: Vec<_> = instruction_file_lines[first_line_index..=last_line_index].to_vec();
     context_lines
 }
+
+// #[test]
+// fn test_parse_function_parameters_into_co() {
+//     let file_name = "mint_to".to_string();
+//     let co_file_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(file_name));
+//     prin
+//     // let parse_function_parameters_into_co();
+// }

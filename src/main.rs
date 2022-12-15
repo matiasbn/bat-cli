@@ -65,6 +65,8 @@ enum CodeOverhaulActions {
     Start,
     /// Moves the code-overhaul file from to-review to finished
     Finish,
+    // Test function, ignore
+    // Test,
 }
 
 fn main() {
@@ -81,6 +83,7 @@ fn main() {
         Commands::CO(CodeOverhaulActions::Finish) => {
             commands::code_overhaul::finish_code_overhaul_file()
         }
+        // Commands::CO(CodeOverhaulActions::Test) => commands::code_overhaul::function_to_test(),
         Commands::Finding(FindingActions::Create { finding_name }) => {
             commands::finding::create_finding_file(finding_name)
         }
