@@ -318,23 +318,34 @@ fn get_context_name(co_file_name: String) -> String {
         }
         program_lines.push(line)
     }
-
-    // if is not in the same line as the entrypoint name, is in the next line
+    let entrypoint_text = "pub fn ".to_string() + co_file_name.replace(".md", "").as_str();
     let entrypoint_index = program_lines
         .iter()
-        .position(|line| line.contains((co_file_name.replace(".md", "") + "(").as_str()))
+        .position(|line| line.contains(entrypoint_text.clone().as_str()))
         .unwrap();
+    let test = program_lines
+        .iter()
+        .find(|line| line.contains(entrypoint_text.as_str()))
+        .unwrap();
+    println!("test {:?}", test);
     let canditate_lines = vec![
         &program_lines[entrypoint_index],
         &program_lines[entrypoint_index + 1],
     ];
 
+    println!("{:?}", canditate_lines);
+    // if is not in the same line as the entrypoint name, is in the next line
     let context_line = if canditate_lines[0].contains("Context<") {
         canditate_lines[0]
     } else {
         canditate_lines[1]
     };
+
+    // replace all the extra strings to get the Context name
     let parsed_context_name = context_line
+        .replace("'_, ", "")
+        .replace("'info, ", "")
+        .replace("<'info>", "")
         .split("Context<")
         .map(|l| l.to_string())
         .collect::<Vec<String>>()[1]
@@ -342,6 +353,7 @@ fn get_context_name(co_file_name: String) -> String {
         .map(|l| l.to_string())
         .collect::<Vec<String>>()[0]
         .clone();
+    println!("{:?}", parsed_context_name);
     parsed_context_name
 }
 
