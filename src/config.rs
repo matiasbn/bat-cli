@@ -84,17 +84,6 @@ impl BatConfig {
             toml::from_str((bat_tom_file_string.to_string() + auditor_tom_file_string).as_str())
                 .unwrap();
         config
-        // // Get the BatConfig complete
-        // let config =
-        //     toml::from_str((bat_tom_file_string.to_string() + auditor_tom_file_string).as_str());
-        // println!("err {:#?}", config);
-        // match config {
-        //     Ok(bat_config) => bat_config,
-        //     Err(e) => {
-        //         println!("error {}", e);
-        //         Err(())
-        //     }
-        // }
     }
 
     fn validate_bat_config(bat_config: BatConfig, validate_auditor: bool) {
@@ -137,7 +126,7 @@ impl BatConfig {
     }
 
     pub fn get_program_lib_path() -> String {
-        Self::get_validated_config().required.program_lib_path
+        Self::canonicalize_path(Self::get_validated_config().required.program_lib_path)
     }
 
     pub fn get_notes_path() -> String {
@@ -253,6 +242,15 @@ impl BatConfig {
             + "/"
             + instruction_name.replace(".rs", "").as_str()
             + ".rs"
+    }
+
+    fn canonicalize_path(path_to_canonicalize: String) -> String {
+        Path::new(&(path_to_canonicalize))
+            .canonicalize()
+            .unwrap()
+            .into_os_string()
+            .into_string()
+            .unwrap()
     }
 }
 

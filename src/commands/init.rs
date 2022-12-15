@@ -10,6 +10,7 @@ use dialoguer::Select;
 
 use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
+use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig, AUDITOR_TOML_INITIAL_CONFIG_STR};
 use crate::git::{create_git_commit, GitCommit};
 
@@ -43,6 +44,11 @@ pub fn initialize_bat_project() {
     // commit to-review files
     create_git_commit(GitCommit::Init, Some(entrypoints_names));
     println!("Project successfully initialized");
+    let lib_file_path = BatConfig::get_program_lib_path();
+
+    println!("Opening lib.rs in VSCode");
+    // Open lib.rs file in vscode
+    vs_code_open_file_in_current_window(lib_file_path)
 }
 
 fn get_auditor_name(auditor_names: Vec<String>) -> String {
