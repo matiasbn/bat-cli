@@ -43,8 +43,10 @@ enum Commands {
 enum FindingActions {
     /// Creates a finding file
     Create,
-    /// Finishes a finding file by creating a commit
+    /// Finish a finding file by creating a commit
     Finish,
+    /// Update a finding file by creating a commit
+    Update,
     /// Prepare the findings for review
     PrepareAll,
     /// Moves all the to-review findings to accepted
@@ -56,10 +58,10 @@ enum FindingActions {
 #[derive(Subcommand, Debug)]
 enum CodeOverhaulActions {
     /// Creates a code-overhaul file
-    Create {
-        /// The program entrypoint to analyze
-        entrypoint_name: Option<String>,
-    },
+    // Create {
+    //     /// The program entrypoint to analyze
+    //     entrypoint_name: Option<String>,
+    // },
     /// Starts a code-overhaul file audit
     Start,
     /// Moves the code-overhaul file from to-review to finished
@@ -73,9 +75,6 @@ fn main() {
     match cli.command {
         Commands::Create {} => commands::create::create_project(),
         Commands::Init {} => commands::init::initialize_bat_project(),
-        Commands::CO(CodeOverhaulActions::Create { entrypoint_name }) => {
-            commands::code_overhaul::create_overhaul_file(entrypoint_name.unwrap())
-        }
         Commands::CO(CodeOverhaulActions::Start) => {
             commands::code_overhaul::start_code_overhaul_file()
         }
@@ -85,6 +84,7 @@ fn main() {
         // Commands::CO(CodeOverhaulActions::Test) => commands::code_overhaul::function_to_test(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
+        Commands::Finding(FindingActions::Update) => commands::finding::update_finding(),
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),

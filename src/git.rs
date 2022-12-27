@@ -33,6 +33,7 @@ pub enum GitCommit {
     FinishCO,
     StartFinding,
     FinishFinding,
+    UpdateFinding,
     PrepareAllFinding,
 }
 
@@ -90,6 +91,15 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
             println!("finding file finished with commit: \"{}\"", commit_string);
+            let file_to_add_path =
+                BatConfig::get_auditor_findings_to_review_path(Some(commit_file.clone()));
+            (commit_string, vec![file_to_add_path])
+        }
+        GitCommit::UpdateFinding => {
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_string =
+                "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
+            println!("finding file updated with commit: \"{}\"", commit_string);
             let file_to_add_path =
                 BatConfig::get_auditor_findings_to_review_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_add_path])

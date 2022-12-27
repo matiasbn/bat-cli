@@ -91,7 +91,7 @@ pub fn finish_finding() {
         .collect::<Vec<String>>();
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&review_files)
-        .with_prompt("Select finding file:")
+        .with_prompt("Select finding file to finish:")
         .default(0)
         .interact_on_opt(&Term::stderr())
         .unwrap();
@@ -103,6 +103,32 @@ pub fn finish_finding() {
             let finding_name = review_files[index].clone();
             validate_config_create_finding_file(finding_name.clone());
             create_git_commit(GitCommit::FinishFinding, Some(vec![finding_name]))
+        }
+        None => println!("User did not select anything"),
+    }
+}
+pub fn update_finding() {
+    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
+    // get to-review files
+    let review_files = fs::read_dir(to_review_path)
+        .unwrap()
+        .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
+        .filter(|file| file != ".gitkeep")
+        .collect::<Vec<String>>();
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .items(&review_files)
+        .with_prompt("Select finding file to update:")
+        .default(0)
+        .interact_on_opt(&Term::stderr())
+        .unwrap();
+
+    // user select file
+    match selection {
+        // move selected file to rejected
+        Some(index) => {
+            let finding_name = review_files[index].clone();
+            validate_config_create_finding_file(finding_name.clone());
+            create_git_commit(GitCommit::UpdateFinding, Some(vec![finding_name]))
         }
         None => println!("User did not select anything"),
     }
