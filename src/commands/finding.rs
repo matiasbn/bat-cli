@@ -1,5 +1,5 @@
 use console::Term;
-use dialoguer::{console, theme::ColorfulTheme, Select};
+use dialoguer::{console, theme::ColorfulTheme, Input, Select};
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -8,7 +8,11 @@ use std::{
     string::String,
 };
 
-use crate::{command_line::vs_code_open_file_in_current_window, config::BatConfig};
+use crate::{
+    command_line::vs_code_open_file_in_current_window,
+    config::BatConfig,
+    git::{create_git_commit, GitCommit},
+};
 
 pub fn reject() {
     prepare_all();
@@ -64,11 +68,29 @@ pub fn accept_all() {
     println!("All files has been moved to the accepted folder");
 }
 
-pub fn create_finding_file(finding_name: String) {
+pub fn create_finding() {
+    let mut finding_name: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Finding name:")
+        .interact_text()
+        .unwrap();
+    finding_name = finding_name.replace("-", "_");
     validate_config_create_finding_file(finding_name.clone());
     copy_template_to_findings_to_review(finding_name.clone());
-    let finding_file_path =
-        BatConfig::get_auditor_findings_to_review_path(Some(finding_name));
+    create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]));
+    let finding_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name));
+    vs_code_open_file_in_current_window(finding_file_path)
+}
+
+pub fn finish_finding() {
+    let mut finding_name: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Finding name:")
+        .interact_text()
+        .unwrap();
+    finding_name = finding_name.replace("-", "_");
+    validate_config_create_finding_file(finding_name.clone());
+    copy_template_to_findings_to_review(finding_name.clone());
+    create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]));
+    let finding_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name));
     vs_code_open_file_in_current_window(finding_file_path)
 }
 
@@ -125,10 +147,9 @@ pub fn prepare_all() {
             }
         }
     }
+    create_git_commit(GitCommit::PrepareAllFinding, None);
     println!("All to-review findings severity tags updated")
 }
-
-// prepare_all
 
 // create_finding_file
 fn validate_config_create_finding_file(finding_name: String) {

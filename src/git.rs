@@ -31,6 +31,9 @@ pub enum GitCommit {
     InitAuditor,
     StartCO,
     FinishCO,
+    StartFinding,
+    FinishFinding,
+    PrepareAllFinding,
 }
 
 pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String>>) {
@@ -79,6 +82,30 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let file_to_add_path =
                 BatConfig::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_delete_path, file_to_add_path])
+        }
+        GitCommit::StartFinding => {
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_string =
+                "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
+            println!("finding file created with commit: \"{}\"", commit_string);
+            let file_to_add_path =
+                BatConfig::get_auditor_findings_to_review_path(Some(commit_file.clone()));
+            (commit_string, vec![file_to_add_path])
+        }
+        GitCommit::FinishFinding => {
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_string =
+                "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
+            println!("finding file finished with commit: \"{}\"", commit_string);
+            let file_to_add_path =
+                BatConfig::get_auditor_findings_to_review_path(Some(commit_file.clone()));
+            (commit_string, vec![file_to_add_path])
+        }
+        GitCommit::PrepareAllFinding => {
+            let commit_string = "finding: to-review findings severity updated".to_string();
+            println!("updating findings severity in repository");
+            let file_to_add_path = BatConfig::get_auditor_findings_to_review_path(None);
+            (commit_string, vec![file_to_add_path])
         }
         _ => panic!("Wrong GitCommit type input"),
     };

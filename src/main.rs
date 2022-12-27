@@ -42,10 +42,7 @@ enum Commands {
 #[derive(Subcommand, Debug)]
 enum FindingActions {
     /// Creates a finding file
-    Create {
-        /// Finding name, the file would be named finding_name.md
-        finding_name: String,
-    },
+    Create,
     /// Prepare the findings for review
     PrepareAll,
     /// Moves all the to-review findings to accepted
@@ -84,9 +81,7 @@ fn main() {
             commands::code_overhaul::finish_code_overhaul_file()
         }
         // Commands::CO(CodeOverhaulActions::Test) => commands::code_overhaul::function_to_test(),
-        Commands::Finding(FindingActions::Create { finding_name }) => {
-            commands::finding::create_finding_file(finding_name)
-        }
+        Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
