@@ -102,6 +102,9 @@ pub fn finish_finding() {
         Some(index) => {
             let finding_name = review_files[index].clone();
             validate_config_create_finding_file(finding_name.clone());
+            let finding_file_path =
+                BatConfig::get_auditor_findings_to_review_path(Some(finding_name.clone()));
+            validate_finished_finding_file(finding_file_path, finding_name.clone());
             create_git_commit(GitCommit::FinishFinding, Some(vec![finding_name]))
         }
         None => println!("User did not select anything"),
@@ -191,7 +194,6 @@ pub fn prepare_all() {
     println!("All to-review findings severity tags updated")
 }
 
-// create_finding_file
 fn validate_config_create_finding_file(finding_name: String) {
     let findings_to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
     // check auditor/findings/to_review folder exists
@@ -206,11 +208,11 @@ fn validate_config_create_finding_file(finding_name: String) {
 }
 
 fn copy_template_to_findings_to_review(finding_name: String) {
-    println!("is the finding an informational?");
     let options = vec!["yes", "no"];
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&options)
         .default(0)
+        .with_prompt("is the finding an informational?")
         .interact_on_opt(&Term::stderr())
         .unwrap();
 
@@ -230,4 +232,29 @@ fn copy_template_to_findings_to_review(finding_name: String) {
         panic!("Finding creation failed with reason: {:#?}", output)
     };
     println!("Finding file successfully created at: {:?}", new_file_path);
+}
+
+fn validate_finished_finding_file(file_path: String, file_name: String) {
+    let file_data = fs::read_to_string(file_path).unwrap();
+    if file_data.contains("## Finding name") {
+        panic!("Please update the Finding name of the {} file", file_name);
+    }
+    if file_data.contains("Fill the description") {
+        panic!(
+            "Please complete the Description section of the {} file",
+            file_name
+        );
+    }
+    if file_data.contains("Fill the impact") {
+        panic!(
+            "Please complete the Impact section of the {} file",
+            file_name
+        );
+    }
+    if file_data.contains("Add recommendations") {
+        panic!(
+            "Please complete the Recommendations section of the {} file",
+            file_name
+        );
+    }
 }
