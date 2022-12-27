@@ -90,10 +90,10 @@ impl BatConfig {
             panic!("required parameter auditor_names is empty at Bat.toml");
         }
         if required.project_repository_url.is_empty() {
-            panic!("required parameter notes_repository_url is empty at Bat.toml");
+            panic!("required parameter project_repository_url is empty at Bat.toml");
         }
-        if required.project_repository_url.is_empty() {
-            panic!("required parameter notes_repository_url is empty at Bat.toml");
+        if required.miro_board_url.is_empty() {
+            panic!("required parameter miro_board_url is empty at Bat.toml");
         }
 
         // Validate auditor
