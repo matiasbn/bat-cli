@@ -263,13 +263,6 @@ fn parse_context_accounts_into_co(
     co_file_path: PathBuf,
     co_file_name: String,
 ) {
-    let co_file = File::open(co_file_path.clone()).unwrap();
-    let co_file_lines = io::BufReader::new(co_file)
-        .lines()
-        .map(|l| l.unwrap())
-        .into_iter()
-        .collect::<Vec<String>>();
-
     let context_lines = get_context_lines(instruction_file_path, co_file_name);
     let filtered_context_account_lines: Vec<_> = context_lines
         .iter()
@@ -302,7 +295,6 @@ fn parse_context_accounts_into_co(
             .as_str(),
     );
     fs::write(co_file_path, data).unwrap();
-    // fs::write(co_file_path, co_with_context_parsed_string).unwrap();
 }
 
 fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
@@ -481,7 +473,7 @@ fn parse_function_parameters_into_co(co_file_name: String) {
         let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
         let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
             CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-            ("- ```rust\n\t".to_string() + parameters_lines.join("\n\t").as_str() + "\n\t```")
+            ("- ```rust\n ".to_string() + parameters_lines.join("\n ").as_str() + "\n ```")
                 .as_str(),
         );
         fs::write(co_file_path, data).unwrap();
