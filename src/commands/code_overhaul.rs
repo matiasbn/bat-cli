@@ -6,6 +6,8 @@ use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
+    CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
+    CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
     CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
 };
@@ -170,6 +172,7 @@ pub fn start_code_overhaul_file() {
         started_file_name.clone(),
         instruction_file_name.replace(".rs", ""),
     );
+    parse_function_parameters_into_co(started_file_name.clone());
 
     // open VSCode files
     let instruction_file_path = BatConfig::get_path_to_instruction(instruction_file_name);
@@ -394,6 +397,92 @@ fn parse_signers_into_co(co_file_name: String, instruction_name: String) {
         signers_string.clone().as_str(),
     );
     fs::write(co_file_path, data).unwrap();
+}
+
+fn parse_function_parameters_into_co(co_file_name: String) {
+    let BatConfig { required, .. } = BatConfig::get_validated_config();
+    let RequiredConfig {
+        program_lib_path, ..
+    } = required;
+
+    let lib_file = File::open(program_lib_path).unwrap();
+    let mut lib_files_lines = io::BufReader::new(lib_file).lines().map(|l| l.unwrap());
+    lib_files_lines
+        .borrow_mut()
+        .enumerate()
+        .find(|(_, line)| *line == String::from("#[program]"))
+        .unwrap();
+
+    let mut program_lines = vec![String::from(""); 0];
+    for (_, line) in lib_files_lines.borrow_mut().enumerate() {
+        if line == "}" {
+            break;
+        }
+        program_lines.push(line)
+    }
+    let entrypoint_text = "pub fn ".to_string() + co_file_name.replace(".md", "").as_str();
+    let entrypoint_index = program_lines
+        .iter()
+        .position(|line| line.contains(entrypoint_text.clone().as_str()))
+        .unwrap();
+    let mut canditate_lines = vec![program_lines[entrypoint_index].clone()];
+    let mut idx = 0;
+    // collect lines until closing parenthesis
+    while !program_lines[entrypoint_index + idx].contains(")") {
+        canditate_lines.push(program_lines[entrypoint_index + idx].clone());
+        idx += 1;
+    }
+    // same line parameters
+    if idx == 0 {
+        // split by "->"
+        // take only the first element
+        let mut function_line = canditate_lines[0].split("->").collect::<Vec<_>>()[0]
+            .to_string()
+            // replace ) by ""
+            .replace(")", "")
+            // split by ","
+            .split(", ")
+            // if no : then is a lifetime
+            .filter(|l| l.contains(":"))
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>();
+        // no parameters
+        if function_line.len() == 1 {
+            let co_file_path =
+                BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
+            let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
+                CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
+                ("- ".to_string() + CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER)
+                    .as_str(),
+            );
+            fs::write(co_file_path, data).unwrap();
+        } else {
+            // delete first element
+            function_line.remove(0);
+            // join
+            let co_file_path =
+                BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
+            let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
+                CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
+                ("- ```rust\n  ".to_string() + function_line.join("\n  ").as_str() + "\n  ```")
+                    .as_str(),
+            );
+            fs::write(co_file_path, data).unwrap();
+        }
+    } else {
+        let parameters_lines = canditate_lines
+            .iter()
+            .filter(|line| !line.contains("fn") && !line.contains("Context"))
+            .map(|l| l.to_string().replace(" ", "").replace(":", ": "))
+            .collect::<Vec<_>>();
+        let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
+        let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
+            CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
+            ("- ```rust\n\t".to_string() + parameters_lines.join("\n\t").as_str() + "\n\t```")
+                .as_str(),
+        );
+        fs::write(co_file_path, data).unwrap();
+    }
 }
 
 fn get_context_name(co_file_name: String) -> String {
