@@ -271,35 +271,38 @@ fn parse_context_accounts_into_co(
         .collect::<Vec<String>>();
 
     let context_lines = get_context_lines(instruction_file_path, co_file_name);
-    let mut filtered_context_account_lines: Vec<_> = context_lines
+    let filtered_context_account_lines: Vec<_> = context_lines
         .iter()
         .filter(|line| !line.contains("constraint "))
         .map(|line| line.to_string())
         .collect();
+
     // replace context in the co file
-    let context_co_index = co_file_lines
-        .iter()
-        .position(|l| l.contains(CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER))
-        .unwrap();
-    let mut co_lines_first_half: Vec<_> = co_file_lines[0..context_co_index].to_vec();
-    let mut co_lines_second_half: Vec<_> =
-        co_file_lines[context_co_index + 1..co_file_lines.len()].to_vec();
-    let mut co_with_context_parsed = vec![];
-    co_with_context_parsed.append(&mut co_lines_first_half);
-    co_with_context_parsed.append(&mut filtered_context_account_lines);
-    co_with_context_parsed.append(&mut co_lines_second_half);
-    let mut co_with_context_parsed_string = co_with_context_parsed.join("\n");
-    co_with_context_parsed_string =
-        co_with_context_parsed_string.replace("    #[account(\n    )]\n", "");
-    co_with_context_parsed_string = co_with_context_parsed_string.replace(
-        "    #[account(\n        mut,\n    )]\n",
-        "    #[account(mut)]\n",
+    let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
+        CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
+        ("- ```rust\n  ".to_string()
+            + filtered_context_account_lines
+                .clone()
+                .iter()
+                .map(|line| {
+                    line.replace("    #[account(\n    )]\n", "")
+                        .replace(
+                            "    #[account(\n        mut,\n    )]\n",
+                            "    #[account(mut)]\n",
+                        )
+                        .replace(
+                            "    #[account(\n        zero,\n    )]\n",
+                            "    #[account(zero)]\n",
+                        )
+                })
+                .collect::<Vec<_>>()
+                .join("\n  ")
+                .as_str()
+            + "\n  ```")
+            .as_str(),
     );
-    co_with_context_parsed_string = co_with_context_parsed_string.replace(
-        "    #[account(\n        zero,\n    )]\n",
-        "    #[account(zero)]\n",
-    );
-    fs::write(co_file_path, co_with_context_parsed_string).unwrap();
+    fs::write(co_file_path, data).unwrap();
+    // fs::write(co_file_path, co_with_context_parsed_string).unwrap();
 }
 
 fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
@@ -446,7 +449,7 @@ fn parse_function_parameters_into_co(co_file_name: String) {
             .filter(|l| l.contains(":"))
             .map(|l| l.to_string())
             .collect::<Vec<_>>();
-        // no parameters
+        // if the split produces 1 element, then there's no parameters
         if function_line.len() == 1 {
             let co_file_path =
                 BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
