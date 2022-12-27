@@ -32,24 +32,24 @@ pub fn initialize_bat_project() {
     }
     println!("creating project for the next config: ");
     println!("{:#?}", bat_config);
-    validate_init_config();
-    // copy templates/notes-folder-template
-    create_auditor_notes_folder();
-    // create overhaul files
-    let entrypoints_names = initialize_code_overhaul_files();
 
     if !Path::new(".git").is_dir() {
+        println!("Updating project information file");
+        update_audit_information_file();
         println!("Initializing project repository");
         initialize_project_repository();
         println!("Project repository successfully initialized");
-        // update audit information file
-        update_audit_information_file();
     } else {
         println!("Project repository already initialized");
     }
 
+    validate_init_config();
+    // copy templates/notes-folder-template
+    create_auditor_notes_folder();
+    // create overhaul files
+    initialize_code_overhaul_files();
     // commit to-review files
-    create_git_commit(GitCommit::Init, Some(entrypoints_names));
+    create_git_commit(GitCommit::InitAuditor, None);
     println!("Project successfully initialized");
     let lib_file_path = BatConfig::get_program_lib_path();
 
@@ -270,28 +270,3 @@ fn initialize_code_overhaul_files() -> Vec<String> {
     }
     entrypoints_names
 }
-
-// fn get_context_names() {
-//     let context_names = program_lines
-//         .iter()
-//         .filter(|line| line.contains("Context<"))
-//         .map(|line| {
-//             line.replace("pub fn ", "")
-//                 .replace("<'info>", "")
-//                 .replace("'info, ", "")
-//                 .replace("'_, ", "")
-//         })
-//         .map(|line| {
-//             let new_line = if line.contains("(") {
-//                 let new_line = String::from(line.split("(").collect::<Vec<&str>>()[1]);
-//                 String::from(new_line.split(",").collect::<Vec<&str>>()[0])
-//             } else {
-//                 line
-//             };
-//             new_line.split_whitespace().collect::<Vec<&str>>()[1]
-//                 .to_string()
-//                 .replace(">,", "")
-//                 .replace("Context<", "")
-//         })
-//         .collect::<Vec<String>>();
-// }
