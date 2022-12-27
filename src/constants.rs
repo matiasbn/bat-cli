@@ -1,20 +1,37 @@
+// Code overhaul template file
 pub const CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER: &str = "BRIEF_DESCRIPTION_OF_THE_FUNCTIONALITY";
 pub const CODE_OVERHAUL_NOTES_PLACEHOLDER: &str = "SOME_NOTES_ABOUT_THIS_ENTRYPOINT";
 pub const CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER: &str = "MIRO_FRAME_LINK_HERE";
 pub const CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER: &str = "CONTEXT_ACCOUNTS_PLACEHOLDER";
 pub const CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER: &str = "FUNCTION_PARAMETER_PLACEHOLDER";
 pub const CODE_OVERHAUL_VALIDATION_PLACEHOLDER: &str = "VALIDATIONS_PLACEHOLDER";
+
+// Audit information file
+pub const AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER: &str =
+    "AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER";
+pub const AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER: &str =
+    "AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER";
+pub const AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER: &str =
+    "AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER";
+pub const AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER: &str = "AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER";
+pub const AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER: &str =
+    "AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER";
+
+// Base repository
 pub const BASE_REPOSTORY_URL: &str = "git@git.kudelski.com:TVRM/bat-base-repository.git";
 pub const BASE_REPOSTORY_NAME: &str = "bat-base-repository";
 
 pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
 [required]
-project_name = ""
 auditor_names = [""]
+project_name = ""
+client_name = ""
+commit_hash_url = ""
+starting_date = ""
+miro_board_url = ""
 audit_folder_path = "."
 program_lib_path = ""
 project_repository_url = ""
-miro_board_url = ""
 [optional]
 program_instructions_path = ""
 "#;

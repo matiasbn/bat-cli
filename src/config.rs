@@ -16,6 +16,9 @@ pub struct BatConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct RequiredConfig {
     pub project_name: String,
+    pub client_name: String,
+    pub commit_hash_url: String,
+    pub starting_date: String,
     pub auditor_names: Vec<String>,
     pub audit_folder_path: String,
     pub program_lib_path: String,
@@ -80,6 +83,18 @@ impl BatConfig {
         if required.project_name.is_empty() {
             panic!("required parameter project_name is empty at Bat.toml");
         }
+        if required.client_name.is_empty() {
+            panic!("required parameter client_name is empty at Bat.toml");
+        }
+        if required.commit_hash_url.is_empty() {
+            panic!("required parameter commit_hash_url is empty at Bat.toml");
+        }
+        if required.starting_date.is_empty() {
+            panic!("required parameter starting_date is empty at Bat.toml");
+        }
+        if required.miro_board_url.is_empty() {
+            panic!("required parameter miro_board_url is empty at Bat.toml");
+        }
         if required.program_lib_path.is_empty() {
             panic!("required parameter program_lib_path is empty at Bat.toml");
         }
@@ -91,9 +106,6 @@ impl BatConfig {
         }
         if required.project_repository_url.is_empty() {
             panic!("required parameter project_repository_url is empty at Bat.toml");
-        }
-        if required.miro_board_url.is_empty() {
-            panic!("required parameter miro_board_url is empty at Bat.toml");
         }
 
         // Validate auditor
@@ -258,6 +270,9 @@ impl TestConfig for BatConfig {
                     .to_string(),
             project_repository_url: "git@github.com:bad-user/bad-url.git".to_string(),
             miro_board_url: "example.miro.url".to_string(),
+            client_name: "client_name".to_string(),
+            commit_hash_url: "example.miro.url".to_string(),
+            starting_date: "01/01/2023".to_string(),
         };
         let optional = OptionalConfig {
             program_instructions_path: "".to_string(),
