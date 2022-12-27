@@ -6,7 +6,8 @@ use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
-    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
+    CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
+    CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
 };
 use crate::git::{check_correct_branch, create_git_commit, GitCommit};
 
@@ -308,6 +309,7 @@ fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
         .map(|line| line.replace('\t', ""))
         .collect();
     let mut accounts_groups: Vec<String> = Vec::new();
+
     for (line_number, line) in filtered_lines.iter().enumerate() {
         if line.contains("#[account(") {
             let mut idx = 1;
@@ -339,6 +341,13 @@ fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
 
     // replace in co file
     let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
+    if accounts_groups.len() == 0 {
+        let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
+            CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
+            CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER,
+        );
+        fs::write(co_file_path.clone(), data).unwrap()
+    }
     let co_file = File::open(co_file_path.clone()).unwrap();
     let co_file_lines = io::BufReader::new(co_file)
         .lines()
