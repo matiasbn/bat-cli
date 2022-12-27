@@ -46,13 +46,6 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
         GitCommit::InitAuditor => {
             let commit_string =
                 "co: project initialized for ".to_string() + &BatConfig::get_auditor_name();
-            let files_to_add: Vec<String> = vec![BatConfig::get_auditor_notes_path()];
-            // for file in commit_files.unwrap() {
-            //     println!("code-overhaul file added to commit: {:?}", file.clone());
-            //     let file_to_add_path =
-            //         BatConfig::get_auditor_code_overhaul_to_review_path(Some(file.clone()));
-            //     files_to_add.push(file_to_add_path.clone());
-            // }
             (commit_string, vec![BatConfig::get_auditor_notes_path()])
         }
         GitCommit::StartCO => {

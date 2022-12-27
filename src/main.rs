@@ -43,6 +43,8 @@ enum Commands {
 enum FindingActions {
     /// Creates a finding file
     Create,
+    /// Finishes a finding file by creating a commit
+    Finish,
     /// Prepare the findings for review
     PrepareAll,
     /// Moves all the to-review findings to accepted
@@ -82,6 +84,7 @@ fn main() {
         }
         // Commands::CO(CodeOverhaulActions::Test) => commands::code_overhaul::function_to_test(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
+        Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
