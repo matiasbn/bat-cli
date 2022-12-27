@@ -152,7 +152,7 @@ fn create_bat_toml(project_config: RequiredConfig) {
         )
         .replace(
             &String::from("auditor_names = [\""),
-            &("auditor_names = [\"".to_string() + &auditor_names.join(",")),
+            &("auditor_names = [\"".to_string() + &auditor_names.join("\",\"")),
         );
 
     fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");
