@@ -6,10 +6,10 @@ use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
-    CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-    CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
+    CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER, CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER,
+    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
-    CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
+    CODE_OVERHAUL_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
 };
 use crate::git::{check_correct_branch, create_git_commit, GitCommit};
 
@@ -214,6 +214,7 @@ pub fn finish_code_overhaul_file() {
             let started_path =
                 BatConfig::get_auditor_code_overhaul_started_path(Some(finished_file_name.clone()));
             check_correct_branch();
+            check_code_overhaul_file_completed(started_path.clone(), finished_file_name.clone());
             Command::new("mv")
                 .args([started_path, finished_path])
                 .output()
@@ -557,6 +558,44 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
         + first_line_index;
     let context_lines: Vec<_> = instruction_file_lines[first_line_index..=last_line_index].to_vec();
     context_lines
+}
+
+fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
+    let file_data = fs::read_to_string(file_path).unwrap();
+    if file_data.contains(CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER) {
+        panic!(
+            "Please complete the \"What it does?\" section of the {} file",
+            file_name
+        );
+    }
+
+    if file_data.contains(CODE_OVERHAUL_NOTES_PLACEHOLDER) {
+        panic!(
+            "Please complete the \"Notes\" section of the {} file, or delete the {} placeholder",
+            file_name, CODE_OVERHAUL_NOTES_PLACEHOLDER
+        );
+    }
+
+    if file_data.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
+        panic!(
+            "Please complete the \"Signers\" section of the {} file",
+            file_name
+        );
+    }
+
+    if file_data.contains(CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER) {
+        panic!(
+            "Please complete the \"Validations\" section of the {} file, or delete the {} placeholder",
+            file_name, CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER
+        );
+    }
+
+    if file_data.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
+        panic!(
+            "Please complete the \"Miro board frame\" section of the {} file",
+            file_name
+        );
+    }
 }
 
 pub fn function_to_test() {
