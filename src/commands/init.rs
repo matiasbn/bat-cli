@@ -68,7 +68,7 @@ fn update_audit_information_file() {
         ..
     } = BatConfig::get_init_config().required;
     let audit_information_path = BatConfig::get_audit_information_file_path();
-    let data = fs::read_to_string(audit_information_path.clone()).unwrap(); // read from file into a string
+    let data = fs::read_to_string(audit_information_path.clone()).unwrap();
     let updated_audit_information = data
         .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
         .replace(AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, &client_name)

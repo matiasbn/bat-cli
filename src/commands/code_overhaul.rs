@@ -5,7 +5,8 @@ use dialoguer::Select;
 use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
-    CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
+    CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
+    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
 };
 use crate::git::{check_correct_branch, create_git_commit, GitCommit};
 
@@ -98,7 +99,6 @@ pub fn start_code_overhaul_file() {
         "{} file updated with instruction information",
         started_file_name
     );
-    create_git_commit(GitCommit::StartCO, Some(vec![started_file_name.clone()]));
 
     let instructions_path = BatConfig::get_validated_config()
         .optional
@@ -161,10 +161,20 @@ pub fn start_code_overhaul_file() {
         Path::new(&(started_path)).canonicalize().unwrap(),
         started_file_name.clone(),
     );
-    parse_validations_into_co(started_file_name, instruction_file_name.replace(".rs", ""));
+    parse_validations_into_co(
+        started_file_name.clone(),
+        instruction_file_name.replace(".rs", ""),
+    );
+    parse_signers_into_co(
+        started_file_name.clone(),
+        instruction_file_name.replace(".rs", ""),
+    );
 
     // open VSCode files
     let instruction_file_path = BatConfig::get_path_to_instruction(instruction_file_name);
+
+    create_git_commit(GitCommit::StartCO, Some(vec![started_file_name.clone()]));
+
     vs_code_open_file_in_current_window(instruction_file_path);
     vs_code_open_file_in_current_window(started_path);
 }
@@ -288,11 +298,6 @@ fn parse_context_accounts_into_co(
     fs::write(co_file_path, co_with_context_parsed_string).unwrap();
 }
 
-pub fn function_to_test() {
-    parse_validations_into_co("transfer_cargo".to_string(), "transfer_cargo".to_string());
-}
-
-// fn parse_function_parameters_into_co(co_file_path: String, co_file_name: String) {
 fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
     let instruction_file_path = BatConfig::get_path_to_instruction(instruction_name);
     let context_lines =
@@ -348,6 +353,38 @@ fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
         .into_iter()
         .collect::<Vec<String>>();
     fs::write(co_file_path, co_file_lines.join("\n")).unwrap();
+}
+
+fn parse_signers_into_co(co_file_name: String, instruction_name: String) {
+    let instruction_file_path = BatConfig::get_path_to_instruction(instruction_name);
+    let context_lines =
+        get_context_lines(PathBuf::from(instruction_file_path), co_file_name.clone());
+    let signers_names: Vec<_> = context_lines
+        .iter()
+        .filter(|line| line.contains("Signer"))
+        .map(|line| line.replace("pub ", ""))
+        .map(|line| line.replace("  ", ""))
+        .map(|line| {
+            "- ".to_string()
+                + line
+                    .split(":")
+                    .map(|l| l.to_string())
+                    .collect::<Vec<String>>()[0]
+                    .clone()
+                    .as_str()
+                + ": "
+                + CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER
+        })
+        .collect();
+    let signers_string = signers_names.join("\n");
+
+    // replace in co file
+    let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
+    let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
+        CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
+        signers_string.clone().as_str(),
+    );
+    fs::write(co_file_path, data).unwrap();
 }
 
 fn get_context_name(co_file_name: String) -> String {
@@ -427,6 +464,10 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
         + first_line_index;
     let context_lines: Vec<_> = instruction_file_lines[first_line_index..=last_line_index].to_vec();
     context_lines
+}
+
+pub fn function_to_test() {
+    parse_validations_into_co("transfer_cargo".to_string(), "transfer_cargo".to_string());
 }
 
 // #[test]

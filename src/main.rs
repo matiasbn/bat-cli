@@ -57,19 +57,12 @@ enum FindingActions {
 
 #[derive(Subcommand, Debug)]
 enum CodeOverhaulActions {
-    /// Creates a code-overhaul file
-    // Create {
-    //     /// The program entrypoint to analyze
-    //     entrypoint_name: Option<String>,
-    // },
     /// Starts a code-overhaul file audit
     Start,
     /// Moves the code-overhaul file from to-review to finished
     Finish,
     /// Update a code-overhaul file by creating a commit
     Update,
-    // Test function, ignore
-    // Test,
 }
 
 fn main() {
