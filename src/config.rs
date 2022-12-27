@@ -6,21 +6,6 @@ use crate::commands::create::{
     create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH,
 };
 
-pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
-[required]
-project_name = ""
-auditor_names = [""]
-audit_folder_path = "."
-program_lib_path = ""
-project_repository_url = ""
-[optional]
-program_instructions_path = ""
-"#;
-pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
-[auditor]
-auditor_name = ""
-"#;
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct BatConfig {
     pub required: RequiredConfig,

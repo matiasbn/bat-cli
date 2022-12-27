@@ -5,8 +5,9 @@ use std::{fs, process::Command};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
 
-use crate::config::{AUDITOR_TOML_INITIAL_CONFIG_STR, BAT_TOML_INITIAL_CONFIG_STR};
-use crate::constants::BASE_REPOSTORY_NAME;
+use crate::constants::{
+    AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
+};
 use crate::git::clone_base_repository;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";

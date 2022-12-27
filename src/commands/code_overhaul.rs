@@ -10,7 +10,6 @@ use crate::constants::{
 use crate::git::{check_correct_branch, create_git_commit, GitCommit};
 
 use std::borrow::BorrowMut;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};

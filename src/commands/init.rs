@@ -11,7 +11,8 @@ use dialoguer::Select;
 use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use crate::command_line::vs_code_open_file_in_current_window;
-use crate::config::{BatConfig, RequiredConfig, AUDITOR_TOML_INITIAL_CONFIG_STR};
+use crate::config::{BatConfig, RequiredConfig};
+use crate::constants::AUDITOR_TOML_INITIAL_CONFIG_STR;
 use crate::git::{create_git_commit, GitCommit};
 
 pub fn initialize_bat_project() {

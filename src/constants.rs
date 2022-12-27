@@ -6,3 +6,18 @@ pub const CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER: &str = "FUNCTION_PARAME
 pub const CODE_OVERHAUL_VALIDATION_PLACEHOLDER: &str = "VALIDATIONS_PLACEHOLDER";
 pub const BASE_REPOSTORY_URL: &str = "git@git.kudelski.com:TVRM/bat-base-repository.git";
 pub const BASE_REPOSTORY_NAME: &str = "bat-base-repository";
+
+pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
+[required]
+project_name = ""
+auditor_names = [""]
+audit_folder_path = "."
+program_lib_path = ""
+project_repository_url = ""
+[optional]
+program_instructions_path = ""
+"#;
+pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
+[auditor]
+auditor_name = ""
+"#;
