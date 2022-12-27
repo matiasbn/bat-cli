@@ -162,7 +162,7 @@ pub fn start_code_overhaul_file() {
         started_file_name.clone(),
     );
     parse_validations_into_co(
-        started_file_name.clone(),
+        started_file_name,
         instruction_file_name.replace(".rs", ""),
     );
 
@@ -270,7 +270,7 @@ fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
     let filtered_lines: Vec<_> = context_lines
         .iter()
         .filter(|line| !line.contains("///"))
-        .map(|line| line.replace("\t", ""))
+        .map(|line| line.replace('\t', ""))
         .collect();
     let mut accounts_groups: Vec<String> = Vec::new();
     for (line_number, line) in filtered_lines.iter().enumerate() {
@@ -304,7 +304,7 @@ fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
 
     // replace in co file
     let co_file_path =
-        BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name.clone()));
+        BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
     let co_file = File::open(co_file_path.clone()).unwrap();
     let co_file_lines = io::BufReader::new(co_file)
         .lines()

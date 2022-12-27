@@ -16,7 +16,7 @@ pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 
 pub fn create_project() {
-    // get project name
+    // get project config
     let project_config = get_project_config();
     println!("Creating {:#?} project", project_config);
     // clone repository
@@ -39,6 +39,7 @@ pub fn create_project() {
     create_auditor_toml();
     // move config files to repo
     move_config_files(project_config.project_name.clone());
+
     println!(
         "Project {} succesfully created",
         project_config.project_name
@@ -84,7 +85,7 @@ fn get_project_config() -> RequiredConfig {
         .interact_text()
         .unwrap();
 
-    let project_config = RequiredConfig {
+    RequiredConfig {
         auditor_names,
         project_name,
         client_name,
@@ -94,9 +95,7 @@ fn get_project_config() -> RequiredConfig {
         project_repository_url,
         audit_folder_path: "".to_string(),
         program_lib_path: "".to_string(),
-    };
-
-    project_config
+    }
 }
 
 fn create_bat_toml(project_config: RequiredConfig) {
@@ -182,10 +181,4 @@ fn move_config_files(project_name: String) {
         .args(["BatAuditor.toml", &project_name])
         .output()
         .unwrap();
-}
-
-#[test]
-fn test_create_bat_toml() {
-    let project_name = "test_project".to_string();
-    create_bat_toml(project_name);
 }

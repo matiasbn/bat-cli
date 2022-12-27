@@ -12,7 +12,11 @@ use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
-use crate::constants::AUDITOR_TOML_INITIAL_CONFIG_STR;
+use crate::constants::{
+    AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
+    AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER,
+    AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
+};
 use crate::git::{create_git_commit, GitCommit};
 
 pub fn initialize_bat_project() {
@@ -38,6 +42,8 @@ pub fn initialize_bat_project() {
         println!("Initializing project repository");
         initialize_project_repository();
         println!("Project repository successfully initialized");
+        // update audit information file
+        update_audit_information_file();
     } else {
         println!("Project repository already initialized");
     }
@@ -50,6 +56,26 @@ pub fn initialize_bat_project() {
     println!("Opening lib.rs in VSCode");
     // Open lib.rs file in vscode
     vs_code_open_file_in_current_window(lib_file_path)
+}
+
+fn update_audit_information_file() {
+    let RequiredConfig {
+        project_name,
+        client_name,
+        commit_hash_url,
+        starting_date,
+        miro_board_url,
+        ..
+    } = BatConfig::get_init_config().required;
+    let audit_information_path = BatConfig::get_audit_information_file_path();
+    let data = fs::read_to_string(audit_information_path.clone()).unwrap(); // read from file into a string
+    let updated_audit_information = data
+        .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
+        .replace(AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, &client_name)
+        .replace(AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, &commit_hash_url)
+        .replace(AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, &miro_board_url)
+        .replace(AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, &starting_date);
+    fs::write(audit_information_path, updated_audit_information).expect("Could not write to file!");
 }
 
 fn get_auditor_name(auditor_names: Vec<String>) -> String {
