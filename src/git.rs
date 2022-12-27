@@ -31,6 +31,7 @@ pub enum GitCommit {
     InitAuditor,
     StartCO,
     FinishCO,
+    UpdateCO,
     StartFinding,
     FinishFinding,
     UpdateFinding,
@@ -76,6 +77,18 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let file_to_add_path =
                 BatConfig::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_delete_path, file_to_add_path])
+        }
+        GitCommit::UpdateCO => {
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_string =
+                "co: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
+            println!(
+                "code-overhaul file updated with commit: {:?}",
+                commit_string
+            );
+            let file_to_add_path =
+                BatConfig::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()));
+            (commit_string, vec![file_to_add_path])
         }
         GitCommit::StartFinding => {
             let commit_file = &commit_files.unwrap()[0];

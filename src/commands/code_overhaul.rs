@@ -161,10 +161,7 @@ pub fn start_code_overhaul_file() {
         Path::new(&(started_path)).canonicalize().unwrap(),
         started_file_name.clone(),
     );
-    parse_validations_into_co(
-        started_file_name,
-        instruction_file_name.replace(".rs", ""),
-    );
+    parse_validations_into_co(started_file_name, instruction_file_name.replace(".rs", ""));
 
     // open VSCode files
     let instruction_file_path = BatConfig::get_path_to_instruction(instruction_file_name);
@@ -173,7 +170,6 @@ pub fn start_code_overhaul_file() {
 }
 
 pub fn finish_code_overhaul_file() {
-    println!("Select the code-overhaul file to finish:");
     let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
     // get to-review files
     let started_files = fs::read_dir(started_path)
@@ -189,6 +185,7 @@ pub fn finish_code_overhaul_file() {
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&started_files)
         .default(0)
+        .with_prompt("Select the code-overhaul file to finish:")
         .interact_on_opt(&Term::stderr())
         .unwrap();
 
@@ -209,6 +206,39 @@ pub fn finish_code_overhaul_file() {
                 .unwrap();
             println!("{} file moved to finished", finished_file_name);
             create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
+        }
+        None => println!("User did not select anything"),
+    }
+}
+
+pub fn update_code_overhaul_file() {
+    println!("Select the code-overhaul file to finish:");
+    let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+    // get to-review files
+    let finished_files = fs::read_dir(finished_path)
+        .unwrap()
+        .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
+        .filter(|file| file != ".gitkeep")
+        .collect::<Vec<String>>();
+
+    if finished_files.is_empty() {
+        panic!("no finished files in code-overhaul folder");
+    }
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .items(&finished_files)
+        .default(0)
+        .with_prompt("Select the code-overhaul file to update:")
+        .interact_on_opt(&Term::stderr())
+        .unwrap();
+
+    // user select file
+    match selection {
+        // move selected file to finished
+        Some(index) => {
+            let finished_file_name = finished_files[index].clone();
+            check_correct_branch();
+            create_git_commit(GitCommit::UpdateCO, Some(vec![finished_file_name]));
         }
         None => println!("User did not select anything"),
     }
@@ -303,8 +333,7 @@ fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
     let accounts_string = accounts_groups.join("\n");
 
     // replace in co file
-    let co_file_path =
-        BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
+    let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
     let co_file = File::open(co_file_path.clone()).unwrap();
     let co_file_lines = io::BufReader::new(co_file)
         .lines()
