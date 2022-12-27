@@ -20,6 +20,7 @@ pub struct RequiredConfig {
     pub audit_folder_path: String,
     pub program_lib_path: String,
     pub project_repository_url: String,
+    pub miro_board_url: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -87,6 +88,9 @@ impl BatConfig {
         }
         if required.auditor_names.is_empty() {
             panic!("required parameter auditor_names is empty at Bat.toml");
+        }
+        if required.project_repository_url.is_empty() {
+            panic!("required parameter notes_repository_url is empty at Bat.toml");
         }
         if required.project_repository_url.is_empty() {
             panic!("required parameter notes_repository_url is empty at Bat.toml");
@@ -253,6 +257,7 @@ impl TestConfig for BatConfig {
                 "../star-atlas-programs/sol-programs/scream/programs/player_profile/src/lib.rs"
                     .to_string(),
             project_repository_url: "git@github.com:bad-user/bad-url.git".to_string(),
+            miro_board_url: "example.miro.url".to_string(),
         };
         let optional = OptionalConfig {
             program_instructions_path: "".to_string(),
