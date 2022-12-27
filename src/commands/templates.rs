@@ -1,6 +1,10 @@
 use std::{fs, process::Command};
 
-use crate::{config::BatConfig, constants::BASE_REPOSTORY_NAME, git::clone_base_repository};
+use crate::{
+    config::BatConfig,
+    constants::BASE_REPOSTORY_NAME,
+    git::{clone_base_repository, create_git_commit, GitCommit},
+};
 
 pub fn update_templates() {
     let BatConfig { required: _, .. } = BatConfig::get_validated_config();
@@ -72,5 +76,6 @@ pub fn update_templates() {
             }
         }
     };
+    create_git_commit(GitCommit::Templates, None);
     println!("Templates folder successfully updated");
 }

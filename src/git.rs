@@ -36,6 +36,7 @@ pub enum GitCommit {
     FinishFinding,
     UpdateFinding,
     PrepareAllFinding,
+    Templates,
 }
 
 pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String>>) {
@@ -122,6 +123,12 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             println!("updating findings severity in repository");
             let file_to_add_path = BatConfig::get_auditor_findings_to_review_path(None);
             (commit_string, vec![file_to_add_path])
+        }
+        GitCommit::Templates => {
+            let commit_string = "templates updated".to_string();
+            let file_to_add_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
+            let templates_path = BatConfig::get_templates_path();
+            (commit_string, vec![file_to_add_path, templates_path])
         }
         _ => panic!("Wrong GitCommit type input"),
     };
