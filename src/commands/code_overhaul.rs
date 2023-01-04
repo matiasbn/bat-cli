@@ -1,6 +1,7 @@
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
+use walkdir::WalkDir;
 
 use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
@@ -13,7 +14,7 @@ use crate::constants::{
 };
 use crate::git::{check_correct_branch, create_git_commit, GitCommit};
 
-use std::borrow::BorrowMut;
+use std::borrow::{Borrow, BorrowMut};
 use std::fs::File;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -106,23 +107,40 @@ pub fn start_code_overhaul_file() {
     let instructions_path = BatConfig::get_validated_config()
         .optional
         .program_instructions_path;
-    let instructions_folder = fs::read_dir(instructions_path.clone()).unwrap();
-    let instruction_files = instructions_folder
-        .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
-        .filter(|file| file != "mod.rs")
-        .collect::<Vec<String>>();
+    #[derive(Debug)]
+    struct FileInfo {
+        path: String,
+        name: String,
+    }
+    let instruction_files_info = WalkDir::new(instructions_path.clone())
+        .into_iter()
+        .map(|entry| {
+            let info = FileInfo {
+                path: entry.as_ref().unwrap().path().display().to_string(),
+                name: entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap(),
+            };
+            info
+        })
+        .filter(|file_info| file_info.name != "mod.rs" && file_info.name.contains(".rs"))
+        .collect::<Vec<FileInfo>>();
+
     let entrypoint_name = started_file_name.replace(".md", "");
-    let instruction_match = instruction_files
+    let instruction_match = instruction_files_info
         .iter()
-        .filter(|ifile| ifile.replace(".rs", "") == entrypoint_name.as_str())
-        .collect::<Vec<&String>>();
+        .filter(|ifile| ifile.name.replace(".rs", "") == entrypoint_name.as_str())
+        .collect::<Vec<&FileInfo>>();
 
     // if instruction exists, prompt the user if the file is correct
     let is_match = if instruction_match.len() == 1 {
-        let instruction_match_path =
-            Path::new(&(instructions_path.clone() + "/" + &instruction_match[0].to_string()))
-                .canonicalize()
-                .unwrap();
+        let instruction_match_path = Path::new(&instruction_match[0].path)
+            .canonicalize()
+            .unwrap();
         let options = vec!["yes", "no"];
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt(
@@ -143,44 +161,42 @@ pub fn start_code_overhaul_file() {
         false
     };
 
-    let instruction_file_name = if is_match {
-        instruction_match[0].to_string()
+    let instruction_file_path = if is_match {
+        &instruction_match[0].path
     } else {
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Select the instruction file: ")
-            .items(&instruction_files)
+            .items(
+                &instruction_files_info
+                    .as_slice()
+                    .into_iter()
+                    .map(|f| &f.name)
+                    .collect::<Vec<&String>>(),
+            )
             .default(0)
             .interact_on_opt(&Term::stderr())
             .unwrap()
             .unwrap();
-        instruction_files[selection].clone()
+        let name = instruction_files_info.as_slice()[selection].path.borrow();
+        name
     };
-    let instruction_file_path = Path::new(&(instructions_path + "/" + &instruction_file_name))
-        .canonicalize()
-        .unwrap();
+    let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
 
     parse_context_accounts_into_co(
-        instruction_file_path,
+        instruction_file_path.clone(),
         Path::new(&(started_path)).canonicalize().unwrap(),
         started_file_name.clone(),
     );
-    parse_validations_into_co(
-        started_file_name.clone(),
-        instruction_file_name.replace(".rs", ""),
-    );
-    parse_signers_into_co(
-        started_file_name.clone(),
-        instruction_file_name.replace(".rs", ""),
-    );
+    parse_validations_into_co(started_file_name.clone(), instruction_file_path.clone());
+    parse_signers_into_co(started_file_name.clone(), instruction_file_path.clone());
     parse_function_parameters_into_co(started_file_name.clone());
 
     // open VSCode files
-    let instruction_file_path = BatConfig::get_path_to_instruction(instruction_file_name);
 
     create_git_commit(GitCommit::StartCO, Some(vec![started_file_name.clone()]));
 
     vs_code_open_file_in_current_window(instruction_file_path);
-    vs_code_open_file_in_current_window(started_path);
+    vs_code_open_file_in_current_window(PathBuf::from(started_path));
 }
 
 pub fn finish_code_overhaul_file() {
@@ -298,8 +314,7 @@ fn parse_context_accounts_into_co(
     fs::write(co_file_path, data).unwrap();
 }
 
-fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
-    let instruction_file_path = BatConfig::get_path_to_instruction(instruction_name);
+fn parse_validations_into_co(co_file_name: String, instruction_file_path: PathBuf) {
     let context_lines =
         get_context_lines(PathBuf::from(instruction_file_path), co_file_name.clone());
     let filtered_lines: Vec<_> = context_lines
@@ -363,8 +378,7 @@ fn parse_validations_into_co(co_file_name: String, instruction_name: String) {
     fs::write(co_file_path, co_file_lines.join("\n")).unwrap();
 }
 
-fn parse_signers_into_co(co_file_name: String, instruction_name: String) {
-    let instruction_file_path = BatConfig::get_path_to_instruction(instruction_name);
+fn parse_signers_into_co(co_file_name: String, instruction_file_path: PathBuf) {
     let context_lines =
         get_context_lines(PathBuf::from(instruction_file_path), co_file_name.clone());
     let signers_names: Vec<_> = context_lines
@@ -390,7 +404,12 @@ fn parse_signers_into_co(co_file_name: String, instruction_name: String) {
     let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
     let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
         CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
-        signers_string.clone().as_str(),
+        if signers_names.len() > 0 {
+            let signers = signers_string.as_str();
+            signers
+        } else {
+            "No signers found"
+        },
     );
     fs::write(co_file_path, data).unwrap();
 }
@@ -596,10 +615,6 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
             file_name
         );
     }
-}
-
-pub fn function_to_test() {
-    parse_validations_into_co("transfer_cargo".to_string(), "transfer_cargo".to_string());
 }
 
 // #[test]

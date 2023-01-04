@@ -78,7 +78,7 @@ pub fn create_finding() {
     copy_template_to_findings_to_review(finding_name.clone());
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]));
     let finding_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name));
-    vs_code_open_file_in_current_window(finding_file_path)
+    vs_code_open_file_in_current_window(PathBuf::from(finding_file_path))
 }
 
 pub fn finish_finding() {

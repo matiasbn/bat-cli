@@ -1,17 +1,23 @@
 // VSCode
 
-use std::{process::Command, str::from_utf8, path::{Path, PathBuf}};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    str::from_utf8,
+};
 
-pub fn vs_code_open_file_in_current_window(path_to_file: String) {
+pub fn vs_code_open_file_in_current_window(path_to_file: PathBuf) {
     let command_name = "code".to_string();
-    let canonical_path = canonicalize_path(path_to_file);
-    let command_args = vec!["-a", canonical_path.to_str().unwrap() ];
+    let command_args = vec!["-a", path_to_file.to_str().unwrap()];
     let error_message = "git commit creation failed with error".to_string();
     execute_command(command_name, command_args, error_message);
 }
 
 fn execute_command(command_name: String, command_args: Vec<&str>, error_message: String) {
-    let output = Command::new(command_name).args(command_args).output().unwrap();
+    let output = Command::new(command_name)
+        .args(command_args)
+        .output()
+        .unwrap();
     if !output.stderr.is_empty() {
         panic!(
             "{}: {:?}",
@@ -21,10 +27,8 @@ fn execute_command(command_name: String, command_args: Vec<&str>, error_message:
     };
 }
 
-fn canonicalize_path(path_to_canonicalize: String)-> PathBuf{
-    Path::new(&(path_to_canonicalize))
-    .canonicalize()
-    .unwrap()
+fn canonicalize_path(path_to_canonicalize: String) -> PathBuf {
+    Path::new(&(path_to_canonicalize)).canonicalize().unwrap()
 }
 
 // "rust-analyzer.checkOnSave.command": "clippy",

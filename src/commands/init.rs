@@ -1,7 +1,7 @@
 use std::borrow::BorrowMut;
 use std::fs::{self, File};
 use std::io::BufRead;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{io, string::String};
 
@@ -55,7 +55,7 @@ pub fn initialize_bat_project() {
 
     println!("Opening lib.rs in VSCode");
     // Open lib.rs file in vscode
-    vs_code_open_file_in_current_window(lib_file_path)
+    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path))
 }
 
 fn update_audit_information_file() {
