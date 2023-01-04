@@ -493,7 +493,7 @@ fn parse_function_parameters_into_co(co_file_name: String) {
         let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
         let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
             CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-            ("- ```rust\n ".to_string() + parameters_lines.join("\n ").as_str() + "\n ```")
+            ("- ```rust\n  ".to_string() + parameters_lines.join("\n  ").as_str() + "\n  ```")
                 .as_str(),
         );
         fs::write(co_file_path, data).unwrap();
