@@ -285,29 +285,75 @@ fn parse_context_accounts_into_co(
     let context_lines = get_context_lines(instruction_file_path, co_file_name);
     let filtered_context_account_lines: Vec<_> = context_lines
         .iter()
+        .map(|line| {
+            // if has validation in a single line
+            if line.contains("#[account(")
+                && line.contains(")]")
+                && (line.contains("constraint") || line.contains("has_one"))
+            {
+                let new_line = line
+                    .split(",")
+                    .filter(|element| {
+                        !(element.contains("has_one") || element.contains("constraint"))
+                    })
+                    .map(|l| l.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",");
+                new_line + ")]"
+            } else {
+                line.to_string()
+            }
+        })
         .filter(|line| !line.contains("constraint "))
         .filter(|line| !line.contains("has_one "))
         .map(|line| line.to_string())
         .collect();
 
-    // lines to filter
-    let filtered_lines = [")]".to_string(), "mut,".to_string()];
-
     let mut formatted_lines: Vec<String> = vec!["- ```rust".to_string()];
     for (idx, line) in filtered_context_account_lines.clone().iter().enumerate() {
-        // if the current line opens an account, push conditionally
-        if line.replace(" ", "") == "#[account(" {
-            // if next line is mut, then push a "#[account(mut)]"
-            if filtered_context_account_lines[idx + 1].replace(" ", "") == "mut," {
-                formatted_lines.push(line.to_string() + "mut)]");
+        // if the current line opens an account, and next does not closes it
+        if line.replace(" ", "") == "#[account("
+            && filtered_context_account_lines[idx + 1].replace(" ", "") != ")]"
+        {
+            let mut counter = 1;
+            let mut lines_to_add: Vec<String> = vec![];
+            while filtered_context_account_lines[idx + counter].replace(" ", "") != ")]" {
+                let next_line = filtered_context_account_lines[idx + counter].clone();
+                lines_to_add.push(next_line);
+                counter += 1;
             }
-        } else if !filtered_lines.contains(&line.replace(" ", "")) {
-            // if the line is not in the filter list
+
+            // single attribute, join to single line
+            if counter == 2 {
+                formatted_lines.push(
+                    line.to_string()
+                        + lines_to_add[0].replace(" ", "").replace(",", "").as_str()
+                        + ")]",
+                )
+            // multiple attributes, join to multiple lines
+            } else {
+                formatted_lines.push(
+                    [
+                        line.to_string(),
+                        lines_to_add.join("\n\t"),
+                        filtered_context_account_lines[idx + counter].clone(),
+                    ]
+                    .join("\n\t"),
+                );
+            }
+        // if the line defines an account, is a comment or an empty line
+        } else if line.contains("pub")
+            || line.contains("///")
+            || line.replace(" ", "") == "}"
+            || line == ""
+        {
+            formatted_lines.push(line.to_string())
+        // if is an already single line account
+        } else if line.contains("#[account(") && line.contains(")]") {
             formatted_lines.push(line.to_string())
         }
     }
     formatted_lines.push("```".to_string());
-    println!("{:#?}", formatted_lines);
 
     // replace formatted lines in co file
     let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
