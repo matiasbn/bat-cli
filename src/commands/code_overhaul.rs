@@ -490,7 +490,12 @@ fn parse_function_parameters_into_co(co_file_name: String) {
         let parameters_lines = canditate_lines
             .iter()
             .filter(|line| !line.contains("fn") && !line.contains("Context"))
-            .map(|l| l.to_string().replace(" ", "").replace(":", ": "))
+            .map(|l| {
+                l.to_string()
+                    .replace(" ", "")
+                    .replace(":", ": ")
+                    .replace(";", "; ")
+            })
             .collect::<Vec<_>>();
         let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
         let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
