@@ -286,32 +286,33 @@ fn parse_context_accounts_into_co(
     let filtered_context_account_lines: Vec<_> = context_lines
         .iter()
         .filter(|line| !line.contains("constraint "))
+        .filter(|line| !line.contains("has_one "))
         .map(|line| line.to_string())
         .collect();
 
-    // replace context in the co file
+    // lines to filter
+    let filtered_lines = [")]".to_string(), "mut,".to_string()];
+
+    let mut formatted_lines: Vec<String> = vec!["- ```rust".to_string()];
+    for (idx, line) in filtered_context_account_lines.clone().iter().enumerate() {
+        // if the current line opens an account, push conditionally
+        if line.replace(" ", "") == "#[account(" {
+            // if next line is mut, then push a "#[account(mut)]"
+            if filtered_context_account_lines[idx + 1].replace(" ", "") == "mut," {
+                formatted_lines.push(line.to_string() + "mut)]");
+            }
+        } else if !filtered_lines.contains(&line.replace(" ", "")) {
+            // if the line is not in the filter list
+            formatted_lines.push(line.to_string())
+        }
+    }
+    formatted_lines.push("```".to_string());
+    println!("{:#?}", formatted_lines);
+
+    // replace formatted lines in co file
     let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
         CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
-        ("- ```rust\n  ".to_string()
-            + filtered_context_account_lines
-                .clone()
-                .iter()
-                .map(|line| {
-                    line.replace("    #[account(\n    )]\n", "")
-                        .replace(
-                            "    #[account(\n        mut,\n    )]\n",
-                            "    #[account(mut)]\n",
-                        )
-                        .replace(
-                            "    #[account(\n        zero,\n    )]\n",
-                            "    #[account(zero)]\n",
-                        )
-                })
-                .collect::<Vec<_>>()
-                .join("\n  ")
-                .as_str()
-            + "\n  ```")
-            .as_str(),
+        formatted_lines.join("\n  ").as_str(),
     );
     fs::write(co_file_path, data).unwrap();
 }
