@@ -596,10 +596,17 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
     }
 
     if file_data.contains(CODE_OVERHAUL_NOTES_PLACEHOLDER) {
-        panic!(
-            "Please complete the \"Notes\" section of the {} file, or delete the {} placeholder",
-            file_name, CODE_OVERHAUL_NOTES_PLACEHOLDER
-        );
+        let options = vec!["yes", "no"];
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Notes section not completed, do you want to proceed anyway?")
+            .items(&options)
+            .default(0)
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+        if options[selection] == "no" {
+            panic!("Aborted by the user");
+        }
     }
 
     if file_data.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
@@ -610,10 +617,17 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
     }
 
     if file_data.contains(CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER) {
-        panic!(
-            "Please complete the \"Validations\" section of the {} file, or delete the {} placeholder",
-            file_name, CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER
-        );
+        let options = vec!["yes", "no"];
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Validations section not completed, do you want to proceed anyway?")
+            .items(&options)
+            .default(0)
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+        if options[selection] == "no" {
+            panic!("Aborted by the user");
+        }
     }
 
     if file_data.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
