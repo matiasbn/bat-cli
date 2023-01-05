@@ -45,7 +45,7 @@ pub fn create_overhaul_file(entrypoint_name: String) {
             std::str::from_utf8(output.stderr.as_slice()).unwrap()
         )
     };
-    println!("code-overhaul file created: {:?}.md", entrypoint_name);
+    println!("code-overhaul file created: {}.md", entrypoint_name);
 }
 
 pub fn start_code_overhaul_file() {
@@ -61,11 +61,12 @@ pub fn start_code_overhaul_file() {
 
     let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
     // get to-review files
-    let review_files = fs::read_dir(to_review_path)
+    let mut review_files = fs::read_dir(to_review_path)
         .unwrap()
         .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
         .filter(|file| file != ".gitkeep")
         .collect::<Vec<String>>();
+    review_files.sort_by(|a, b| a.cmp(b));
 
     if review_files.is_empty() {
         panic!("no to-review files in code-overhaul folder");
@@ -112,7 +113,7 @@ pub fn start_code_overhaul_file() {
         path: String,
         name: String,
     }
-    let instruction_files_info = WalkDir::new(instructions_path.clone())
+    let mut instruction_files_info = WalkDir::new(instructions_path.clone())
         .into_iter()
         .map(|entry| {
             let info = FileInfo {
@@ -129,6 +130,7 @@ pub fn start_code_overhaul_file() {
         })
         .filter(|file_info| file_info.name != "mod.rs" && file_info.name.contains(".rs"))
         .collect::<Vec<FileInfo>>();
+    instruction_files_info.sort_by(|a, b| a.name.cmp(&b.name));
 
     let entrypoint_name = started_file_name.replace(".md", "");
     let instruction_match = instruction_files_info
