@@ -323,16 +323,6 @@ fn parse_context_accounts_into_co(
                 lines_to_add.push(next_line);
                 counter += 1;
             }
-            println!(
-                "{}",
-                [
-                    &[line.to_string()],
-                    &lines_to_add[..],
-                    &[filtered_context_account_lines[idx + counter].clone()],
-                ]
-                .concat()
-                .join("\n  "),
-            );
 
             // single attribute, join to single line
             if counter == 2 {
