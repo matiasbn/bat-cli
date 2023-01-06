@@ -286,7 +286,7 @@ fn parse_context_accounts_into_co(
     let filtered_context_account_lines: Vec<_> = context_lines
         .iter()
         .map(|line| {
-            // if has validation in a single line
+            // if has validation in a single line, then delete the validation, so the filters don't erase them
             if line.contains("#[account(")
                 && line.contains(")]")
                 && (line.contains("constraint") || line.contains("has_one"))
@@ -317,6 +317,7 @@ fn parse_context_accounts_into_co(
         {
             let mut counter = 1;
             let mut lines_to_add: Vec<String> = vec![];
+            // iterate next lines until reaching )]
             while filtered_context_account_lines[idx + counter].replace(" ", "") != ")]" {
                 let next_line = filtered_context_account_lines[idx + counter].clone();
                 lines_to_add.push(next_line);
@@ -335,13 +336,13 @@ fn parse_context_accounts_into_co(
                 formatted_lines.push(
                     [
                         line.to_string(),
-                        lines_to_add.join("\n\t"),
+                        lines_to_add.join("\n"),
                         filtered_context_account_lines[idx + counter].clone(),
                     ]
-                    .join("\n\t"),
+                    .join("\n  "),
                 );
             }
-        // if the line defines an account, is a comment or an empty line
+        // if the line defines an account, is a comment, an empty line or closure of context accounts
         } else if line.contains("pub")
             || line.contains("///")
             || line.replace(" ", "") == "}"
