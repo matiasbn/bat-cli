@@ -333,6 +333,7 @@ fn parse_context_accounts_into_co(
                 )
             // multiple attributes, join to multiple lines
             } else {
+                // multiline attributes, join line, the lines_to_add and the closure )] line
                 formatted_lines.push(
                     [
                         &[line.to_string()],
@@ -622,7 +623,7 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
     let first_line_index = instruction_file_lines
         .iter()
         .position(|line| {
-            line.contains(("pub struct ".to_string() + &context_name.clone()).as_str())
+            line.contains(("pub struct ".to_string() + &context_name.clone() + "<").as_str())
         })
         .unwrap();
     // the closing curly brace "}", starting on first_line_index
