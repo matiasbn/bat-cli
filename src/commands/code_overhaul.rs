@@ -1,3 +1,9 @@
+#[derive(Debug)]
+struct FileInfo {
+    path: String,
+    name: String,
+}
+
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
@@ -105,32 +111,7 @@ pub fn start_code_overhaul_file() {
         started_file_name
     );
 
-    let instructions_path = BatConfig::get_validated_config()
-        .optional
-        .program_instructions_path;
-    #[derive(Debug)]
-    struct FileInfo {
-        path: String,
-        name: String,
-    }
-    let mut instruction_files_info = WalkDir::new(instructions_path.clone())
-        .into_iter()
-        .map(|entry| {
-            let info = FileInfo {
-                path: entry.as_ref().unwrap().path().display().to_string(),
-                name: entry
-                    .as_ref()
-                    .unwrap()
-                    .file_name()
-                    .to_os_string()
-                    .into_string()
-                    .unwrap(),
-            };
-            info
-        })
-        .filter(|file_info| file_info.name != "mod.rs" && file_info.name.contains(".rs"))
-        .collect::<Vec<FileInfo>>();
-    instruction_files_info.sort_by(|a, b| a.name.cmp(&b.name));
+    let instruction_files_info = get_instruction_files();
 
     let entrypoint_name = started_file_name.replace(".md", "");
     let instruction_match = instruction_files_info
@@ -183,14 +164,14 @@ pub fn start_code_overhaul_file() {
         name
     };
     let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
+    let context_lines = get_context_lines(instruction_file_path.clone(), started_file_name.clone());
 
     parse_context_accounts_into_co(
-        instruction_file_path.clone(),
         Path::new(&(started_path)).canonicalize().unwrap(),
-        started_file_name.clone(),
+        context_lines.clone(),
     );
-    parse_validations_into_co(started_file_name.clone(), instruction_file_path.clone());
-    parse_signers_into_co(started_file_name.clone(), instruction_file_path.clone());
+    parse_validations_into_co(started_file_name.clone(), context_lines.clone());
+    parse_signers_into_co(started_file_name.clone(), context_lines.clone());
     parse_function_parameters_into_co(started_file_name.clone());
 
     // open VSCode files
@@ -277,12 +258,7 @@ pub fn update_code_overhaul_file() {
     }
 }
 
-fn parse_context_accounts_into_co(
-    instruction_file_path: PathBuf,
-    co_file_path: PathBuf,
-    co_file_name: String,
-) {
-    let context_lines = get_context_lines(instruction_file_path, co_file_name);
+fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
     let filtered_context_account_lines: Vec<_> = context_lines
         .iter()
         .map(|line| {
@@ -366,9 +342,7 @@ fn parse_context_accounts_into_co(
     fs::write(co_file_path, data).unwrap();
 }
 
-fn parse_validations_into_co(co_file_name: String, instruction_file_path: PathBuf) {
-    let context_lines =
-        get_context_lines(PathBuf::from(instruction_file_path), co_file_name.clone());
+fn parse_validations_into_co(co_file_name: String, context_lines: Vec<String>) {
     let filtered_lines: Vec<_> = context_lines
         .iter()
         .filter(|line| !line.contains("///"))
@@ -430,9 +404,7 @@ fn parse_validations_into_co(co_file_name: String, instruction_file_path: PathBu
     fs::write(co_file_path, co_file_lines.join("\n")).unwrap();
 }
 
-fn parse_signers_into_co(co_file_name: String, instruction_file_path: PathBuf) {
-    let context_lines =
-        get_context_lines(PathBuf::from(instruction_file_path), co_file_name.clone());
+fn parse_signers_into_co(co_file_name: String, context_lines: Vec<String>) {
     let signers_names: Vec<_> = context_lines
         .iter()
         .filter(|line| line.contains("Signer"))
@@ -611,29 +583,84 @@ fn get_context_name(co_file_name: String) -> String {
 }
 
 fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Vec<String> {
-    let instruction_file = File::open(instruction_file_path).unwrap();
+    let instruction_file = File::open(instruction_file_path.clone()).unwrap();
     let instruction_file_lines = io::BufReader::new(instruction_file)
         .lines()
         .map(|l| l.unwrap())
         .into_iter()
         .collect::<Vec<String>>();
 
-    let context_name = get_context_name(co_file_name);
+    let context_name = get_context_name(co_file_name.clone());
     // get context lines
-    let first_line_index = instruction_file_lines
-        .iter()
-        .position(|line| {
-            line.contains(("pub struct ".to_string() + &context_name.clone() + "<").as_str())
-        })
-        .unwrap();
-    // the closing curly brace "}", starting on first_line_index
-    let last_line_index = instruction_file_lines[first_line_index..]
-        .iter()
-        .position(|line| line == &"}")
-        .unwrap()
-        + first_line_index;
-    let context_lines: Vec<_> = instruction_file_lines[first_line_index..=last_line_index].to_vec();
-    context_lines
+    let first_line_index_opt = instruction_file_lines.iter().position(|line| {
+        line.contains(("pub struct ".to_string() + &context_name.clone() + "<").as_str())
+    });
+    match first_line_index_opt {
+        Some(first_line_index) => {
+            // the closing curly brace "}", starting on first_line_index
+            let last_line_index = instruction_file_lines[first_line_index..]
+                .iter()
+                .position(|line| line == &"}")
+                .unwrap()
+                + first_line_index;
+            let context_lines: Vec<_> =
+                instruction_file_lines[first_line_index..=last_line_index].to_vec();
+            context_lines
+        }
+        // if the Context Accouns were not found in the file
+        None => {
+            // tell the user that the context was not found in the instruction file
+            let co_name = co_file_name.clone().replace(".md", "");
+            let instruction_file_name = instruction_file_path
+                .clone()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
+            // tell the user to select the instruction file that has the context of the file
+            let instruction_files = get_instruction_files();
+            let instruction_files_names: Vec<&String> =
+                instruction_files.iter().map(|file| &file.name).collect();
+            // list the instruction files
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt(format!(
+                    "Context Accounts not found for {} in {}, please select the file that contains the context:",
+                    co_name, instruction_file_name,
+                ))
+                .items(&instruction_files_names)
+                .default(0)
+                .interact_on_opt(&Term::stderr())
+                .unwrap()
+                .unwrap();
+            let selected_instruction_file = &instruction_files[selection];
+            let instruction_file = File::open(selected_instruction_file.path.clone()).unwrap();
+            let instruction_file_lines = io::BufReader::new(instruction_file)
+                .lines()
+                .map(|l| l.unwrap())
+                .into_iter()
+                .collect::<Vec<String>>();
+            // get context lines
+            // check if the context is in the file
+            let first_line_index = instruction_file_lines
+                .iter()
+                .position(|line| {
+                    line.contains(
+                        ("pub struct ".to_string() + &context_name.clone() + "<").as_str(),
+                    )
+                })
+                // if is not in the file, panic
+                .unwrap();
+            let last_line_index = instruction_file_lines[first_line_index..]
+                .iter()
+                .position(|line| line == &"}")
+                .unwrap()
+                + first_line_index;
+            let context_lines: Vec<_> =
+                instruction_file_lines[first_line_index..=last_line_index].to_vec();
+            context_lines
+        }
+    }
 }
 
 fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
@@ -688,6 +715,31 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
     }
 }
 
+fn get_instruction_files() -> Vec<FileInfo> {
+    let instructions_path = BatConfig::get_validated_config()
+        .optional
+        .program_instructions_path;
+
+    let mut instruction_files_info = WalkDir::new(instructions_path.clone())
+        .into_iter()
+        .map(|entry| {
+            let info = FileInfo {
+                path: entry.as_ref().unwrap().path().display().to_string(),
+                name: entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap(),
+            };
+            info
+        })
+        .filter(|file_info| file_info.name != "mod.rs" && file_info.name.contains(".rs"))
+        .collect::<Vec<FileInfo>>();
+    instruction_files_info.sort_by(|a, b| a.name.cmp(&b.name));
+    instruction_files_info
+}
 // #[test]
 // fn test_parse_function_parameters_into_co() {
 //     let file_name = "mint_to".to_string();
