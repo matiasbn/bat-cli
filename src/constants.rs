@@ -33,7 +33,6 @@ project_name = ""
 client_name = ""
 commit_hash_url = ""
 starting_date = ""
-miro_board_url = ""
 audit_folder_path = "."
 program_lib_path = ""
 project_repository_url = ""
@@ -43,4 +42,5 @@ program_instructions_path = ""
 pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
 [auditor]
 auditor_name = ""
+miro_oauth_access_token = ""
 "#;
