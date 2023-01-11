@@ -20,6 +20,7 @@ pub struct RequiredConfig {
     pub commit_hash_url: String,
     pub starting_date: String,
     pub miro_board_url: String,
+    pub miro_board_id: String,
     pub auditor_names: Vec<String>,
     pub audit_folder_path: String,
     pub program_lib_path: String,
@@ -274,7 +275,8 @@ impl TestConfig for BatConfig {
                     .to_string(),
             project_repository_url: "git@git.kudelski.com:Matias.Barrios/test_project.git"
                 .to_string(),
-            miro_board_url: "example.miro.url".to_string(),
+            miro_board_url: "https://miro.com/app/board/".to_string(),
+            miro_board_id: "uXjVPzsgmiY=".to_string(),
             client_name: "client_name".to_string(),
             commit_hash_url: "example.miro.url".to_string(),
             starting_date: "01/01/2023".to_string(),

@@ -36,6 +36,8 @@ starting_date = ""
 audit_folder_path = "."
 program_lib_path = ""
 project_repository_url = ""
+miro_board_url = ""
+miro_board_id = ""
 [optional]
 program_instructions_path = ""
 "#;

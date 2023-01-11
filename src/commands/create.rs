@@ -76,10 +76,11 @@ fn get_project_config() -> RequiredConfig {
         .with_prompt("Starting date, example: (01/01/2023):")
         .interact_text()
         .unwrap();
-    let miro_board_url: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Miro board url:")
+    let miro_board_id: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Miro board id:")
         .interact_text()
         .unwrap();
+    let miro_board_url = "https://miro.com/app/board/".to_string() + &miro_board_id;
     let project_repository_url: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Project repo url, where this audit folder would be pushed:")
         .interact_text()
@@ -90,6 +91,7 @@ fn get_project_config() -> RequiredConfig {
         project_name,
         client_name,
         miro_board_url,
+        miro_board_id,
         starting_date,
         commit_hash_url,
         project_repository_url,
