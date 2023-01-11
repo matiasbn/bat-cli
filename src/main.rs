@@ -69,9 +69,9 @@ async fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
         Commands::Create {} => commands::create::create_project(),
-        Commands::Init {} => commands::init::initialize_bat_project().await,
+        Commands::Init {} => commands::init::initialize_bat_project(),
         Commands::CO(CodeOverhaulActions::Start) => {
-            commands::code_overhaul::start_code_overhaul_file()
+            commands::code_overhaul::start_code_overhaul_file().await
         }
         Commands::CO(CodeOverhaulActions::Finish) => {
             commands::code_overhaul::finish_code_overhaul_file()

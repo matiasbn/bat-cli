@@ -10,6 +10,7 @@ use dialoguer::Select;
 use walkdir::WalkDir;
 
 use crate::command_line::vs_code_open_file_in_current_window;
+use crate::commands::miro::miro_api::frame::create_frame;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
@@ -32,9 +33,7 @@ pub fn create_overhaul_file(entrypoint_name: String) {
     let code_overhaul_auditor_file_path =
         BatConfig::get_auditor_code_overhaul_to_review_path(Some(entrypoint_name.clone()));
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
-        panic!(
-            "code overhaul file already exists for: {entrypoint_name:?}"
-        );
+        panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
     let output = Command::new("cp")
         .args([
@@ -53,7 +52,7 @@ pub fn create_overhaul_file(entrypoint_name: String) {
     println!("code-overhaul file created: {entrypoint_name}.md");
 }
 
-pub fn start_code_overhaul_file() {
+pub async fn start_code_overhaul_file() {
     // check if program_lib_path is not empty or panic
     let BatConfig { optional, .. } = BatConfig::get_validated_config();
     if optional.program_instructions_path.is_empty() {
@@ -105,9 +104,7 @@ pub fn start_code_overhaul_file() {
     println!("{started_file_name} file moved to started");
 
     // update started co file
-    println!(
-        "{started_file_name} file updated with instruction information"
-    );
+    println!("{started_file_name} file updated with instruction information");
 
     let instruction_files_info = get_instruction_files();
 
@@ -164,6 +161,7 @@ pub fn start_code_overhaul_file() {
     let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
     let context_lines = get_context_lines(instruction_file_path.clone(), started_file_name.clone());
 
+    // parse text into co file
     parse_context_accounts_into_co(
         Path::new(&(started_path)).canonicalize().unwrap(),
         context_lines.clone(),
@@ -172,10 +170,26 @@ pub fn start_code_overhaul_file() {
     parse_signers_into_co(started_file_name.clone(), context_lines);
     parse_function_parameters_into_co(started_file_name.clone());
 
-    // open VSCode files
+    // create frame into Miro if user provided miro_oauth_access_token
+    if !BatConfig::get_validated_config()
+        .auditor
+        .miro_oauth_access_token
+        .is_empty()
+    {
+        let RequiredConfig { miro_board_url, .. } = BatConfig::get_validated_config().required;
+        let frame = create_frame(&entrypoint_name).await;
+        let frame_id: String = frame["id"].clone().to_string().replace("\"", "");
+        let frame_url: String = miro_board_url + "/?moveToWidget=" + &frame_id;
+        // Replace placeholder with Miro url
+        let started_file_content = fs::read_to_string(&started_path)
+            .unwrap()
+            .replace(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, &frame_url);
+        fs::write(&started_path, started_file_content).unwrap()
+    }
 
     create_git_commit(GitCommit::StartCO, Some(vec![started_file_name]));
 
+    // open VSCode files
     vs_code_open_file_in_current_window(instruction_file_path);
     vs_code_open_file_in_current_window(PathBuf::from(started_path));
 }
@@ -300,9 +314,7 @@ fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<Stri
             // single attribute, join to single line
             if counter == 2 {
                 formatted_lines.push(
-                    line.to_string()
-                        + lines_to_add[0].replace([' ', ','], "").as_str()
-                        + ")]",
+                    line.to_string() + lines_to_add[0].replace([' ', ','], "").as_str() + ")]",
                 )
             // multiple attributes, join to multiple lines
             } else {
@@ -607,7 +619,6 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
             // tell the user that the context was not found in the instruction file
             let co_name = co_file_name.replace(".md", "");
             let instruction_file_name = instruction_file_path
-                
                 .file_name()
                 .unwrap()
                 .to_str()
@@ -659,9 +670,7 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
 fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
     let file_data = fs::read_to_string(file_path).unwrap();
     if file_data.contains(CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER) {
-        panic!(
-            "Please complete the \"What it does?\" section of the {file_name} file"
-        );
+        panic!("Please complete the \"What it does?\" section of the {file_name} file");
     }
 
     if file_data.contains(CODE_OVERHAUL_NOTES_PLACEHOLDER) {
@@ -679,9 +688,7 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
     }
 
     if file_data.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
-        panic!(
-            "Please complete the \"Signers\" section of the {file_name} file"
-        );
+        panic!("Please complete the \"Signers\" section of the {file_name} file");
     }
 
     if file_data.contains(CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER) {
@@ -699,9 +706,7 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
     }
 
     if file_data.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
-        panic!(
-            "Please complete the \"Miro board frame\" section of the {file_name} file"
-        );
+        panic!("Please complete the \"Miro board frame\" section of the {file_name} file");
     }
 }
 
@@ -730,10 +735,3 @@ fn get_instruction_files() -> Vec<FileInfo> {
     instruction_files_info.sort_by(|a, b| a.name.cmp(&b.name));
     instruction_files_info
 }
-// #[test]
-// fn test_parse_function_parameters_into_co() {
-//     let file_name = "mint_to".to_string();
-//     let co_file_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(file_name));
-//     prin
-//     // let parse_function_parameters_into_co();
-// }
