@@ -19,7 +19,7 @@ use crate::constants::{
 };
 use crate::git::{create_git_commit, GitCommit};
 
-pub async fn initialize_bat_project() {
+pub fn initialize_bat_project() {
     let bat_config: BatConfig = BatConfig::get_init_config();
     let BatConfig {
         required, auditor, ..
@@ -115,7 +115,7 @@ fn update_auditor_toml(auditor_name: String, miro_oauth_access_token: Option<&st
     if let Some(moat) = miro_oauth_access_token {
         new_auditor_file_content = new_auditor_file_content.replace(
             "miro_oauth_access_token = \"",
-            ("miro_oauth_access_token = \"".to_string() + &moat).as_str(),
+            ("miro_oauth_access_token = \"".to_string() + moat).as_str(),
         )
     }
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
@@ -288,17 +288,9 @@ fn initialize_code_overhaul_files() -> Vec<String> {
         .map(|line| String::from(line.split('(').collect::<Vec<&str>>()[0]))
         .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))
         .collect::<Vec<String>>();
-    let miro_integrated = !BatConfig::get_init_config()
-        .auditor
-        .miro_oauth_access_token
-        .is_empty();
+
     for entrypoint_name in entrypoints_names.clone() {
         create_overhaul_file(entrypoint_name.clone());
-        if miro_integrated {
-            // create the miro frame
-            // get the miro frame id
-            // replace the miro frame url with the corresponding frame
-        }
     }
     entrypoints_names
 }

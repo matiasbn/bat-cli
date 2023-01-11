@@ -2,12 +2,8 @@ pub mod miro_api {
 
     pub mod board {
         use serde_json::Value;
-        use std::collections::HashMap;
 
-        use reqwest::{
-            header::{ACCEPT, AUTHORIZATION},
-            Response,
-        };
+        use reqwest::header::{ACCEPT, AUTHORIZATION};
 
         use crate::config::{AuditorConfig, BatConfig, RequiredConfig};
 
@@ -36,17 +32,13 @@ pub mod miro_api {
         }
     }
     pub mod frame {
-        use serde_json::Value;
-        use std::collections::HashMap;
+        use serde_json::{json, Value};
 
-        use reqwest::{
-            header::{ACCEPT, AUTHORIZATION},
-            Response,
-        };
+        use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
         use crate::config::{AuditorConfig, BatConfig, RequiredConfig};
 
-        pub async fn get_board() -> Value {
+        pub async fn create_frame(entrypoint_name: &str) -> Value {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
             let AuditorConfig {
                 miro_oauth_access_token,
@@ -54,11 +46,25 @@ pub mod miro_api {
             } = BatConfig::get_init_config().auditor;
             let client = reqwest::Client::new();
             let board_response = client
-                .get(format!(
-                    "https://api.miro.com/v2/boards/{miro_board_id}
-            "
+                .post(format!(
+                    "https://api.miro.com/v2/boards/{miro_board_id}/frames"
                 ))
-                .header(ACCEPT, "application/json")
+                .body(
+                    json!({
+                         "data": {
+                              "format": "custom",
+                              "title": entrypoint_name,
+                              "type": "freeform"
+                         },
+                         "position": {
+                              "origin": "center",
+                              "x": 0,
+                              "y": 0
+                         }
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
                 .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
                 .send()
                 .await
