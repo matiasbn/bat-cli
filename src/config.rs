@@ -54,7 +54,7 @@ impl BatConfig {
         // Bat.toml
         let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
         if !bat_toml_path.is_file() {
-            panic!("Bat.toml file not found at {:?}", bat_toml_path);
+            panic!("Bat.toml file not found at {bat_toml_path:?}");
         }
         let bat_toml_file = fs::read(bat_toml_path).unwrap();
         let bat_tom_file_string = str::from_utf8(bat_toml_file.as_slice()).unwrap();
@@ -299,5 +299,5 @@ impl TestConfig for BatConfig {
 #[test]
 fn test_get_test_config() {
     let batconfig = BatConfig::get_test_config();
-    println!("{:#?}", batconfig);
+    println!("{batconfig:#?}");
 }

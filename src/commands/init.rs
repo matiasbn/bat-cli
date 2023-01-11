@@ -27,11 +27,11 @@ pub fn initialize_bat_project() {
     // if auditor.auditor is empty, prompt name
     if auditor.auditor_name.is_empty() {
         let auditor_name = get_auditor_name(required.auditor_names);
-        println!("Is great to have you here {}!", auditor_name);
+        println!("Is great to have you here {auditor_name}!");
         update_auditor_toml(auditor_name);
     }
     println!("creating project for the next config: ");
-    println!("{:#?}", bat_config);
+    println!("{bat_config:#?}");
 
     if !Path::new(".git").is_dir() {
         println!("Updating project information file");
@@ -171,7 +171,7 @@ fn initialize_project_repository() {
 
     // create auditors branches from develop
     for auditor_name in auditor_names {
-        println!("Creating branch for {:?}", auditor_name);
+        println!("Creating branch for {auditor_name:?}");
         Command::new("git")
             .args(["checkout", "-b", (auditor_name + "-notes").as_str()])
             .output()
@@ -202,7 +202,7 @@ fn initialize_project_repository() {
 
 fn create_auditor_notes_folder() {
     let dest_path = BatConfig::get_auditor_notes_path();
-    println!("creating {}", dest_path);
+    println!("creating {dest_path}");
 
     let mut output = Command::new("cp")
         .args([

@@ -56,8 +56,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
             println!(
-                "code-overhaul file started with commit: {:?}",
-                commit_string
+                "code-overhaul file started with commit: {commit_string:?}"
             );
             let file_to_delete_path =
                 BatConfig::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()));
@@ -70,8 +69,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
             println!(
-                "code-overhaul file finished with commit: {:?}",
-                commit_string
+                "code-overhaul file finished with commit: {commit_string:?}"
             );
             let file_to_delete_path =
                 BatConfig::get_auditor_code_overhaul_started_path(Some(commit_file.clone()));
@@ -84,8 +82,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
             println!(
-                "code-overhaul file updated with commit: {:?}",
-                commit_string
+                "code-overhaul file updated with commit: {commit_string:?}"
             );
             let file_to_add_path =
                 BatConfig::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()));
@@ -95,7 +92,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
-            println!("finding file created with commit: \"{}\"", commit_string);
+            println!("finding file created with commit: \"{commit_string}\"");
             let file_to_add_path =
                 BatConfig::get_auditor_findings_to_review_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_add_path])
@@ -104,7 +101,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
-            println!("finding file finished with commit: \"{}\"", commit_string);
+            println!("finding file finished with commit: \"{commit_string}\"");
             let file_to_add_path =
                 BatConfig::get_auditor_findings_to_review_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_add_path])
@@ -113,7 +110,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
-            println!("finding file updated with commit: \"{}\"", commit_string);
+            println!("finding file updated with commit: \"{commit_string}\"");
             let file_to_add_path =
                 BatConfig::get_auditor_findings_to_review_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_add_path])

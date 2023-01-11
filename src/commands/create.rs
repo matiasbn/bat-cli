@@ -18,7 +18,7 @@ pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 pub fn create_project() {
     // get project config
     let project_config = get_project_config();
-    println!("Creating {:#?} project", project_config);
+    println!("Creating {project_config:#?} project");
     // clone repository
     clone_base_repository();
     // change folder name
@@ -116,8 +116,7 @@ fn create_bat_toml(project_config: RequiredConfig) {
 
     if bat_toml_path.exists() {
         panic!(
-            "Bat.toml file already exist in {:?}, aborting",
-            bat_toml_path
+            "Bat.toml file already exist in {bat_toml_path:?}, aborting"
         )
     };
 
@@ -165,8 +164,7 @@ pub fn create_auditor_toml() {
 
     if auditor_toml_path.exists() {
         panic!(
-            "BatAudit.toml file already exist in {:?}, aborting",
-            auditor_toml_path
+            "BatAudit.toml file already exist in {auditor_toml_path:?}, aborting"
         )
     };
 

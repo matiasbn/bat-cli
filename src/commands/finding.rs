@@ -43,7 +43,7 @@ pub fn reject() {
                 .args([to_review_path, rejected_path])
                 .output()
                 .unwrap();
-            println!("{} file moved to rejected", rejected_file_name);
+            println!("{rejected_file_name} file moved to rejected");
         }
         None => println!("User did not select anything"),
     }
@@ -73,7 +73,7 @@ pub fn create_finding() {
         .with_prompt("Finding name:")
         .interact_text()
         .unwrap();
-    finding_name = finding_name.replace("-", "_");
+    finding_name = finding_name.replace('-', "_");
     validate_config_create_finding_file(finding_name.clone());
     copy_template_to_findings_to_review(finding_name.clone());
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]));
@@ -198,12 +198,12 @@ fn validate_config_create_finding_file(finding_name: String) {
     let findings_to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
     // check auditor/findings/to_review folder exists
     if !Path::new(&findings_to_review_path).is_dir() {
-        panic!("Folder not found: {:#?}", findings_to_review_path);
+        panic!("Folder not found: {findings_to_review_path:#?}");
     }
     // check if file exists in to_review
     let finding_file_path = findings_to_review_path + &finding_name + ".md";
     if Path::new(&finding_file_path).is_file() {
-        panic!("Finding file already exists: {:#?}", finding_file_path);
+        panic!("Finding file already exists: {finding_file_path:#?}");
     }
 }
 
@@ -229,32 +229,29 @@ fn copy_template_to_findings_to_review(finding_name: String) {
         .status
         .exit_ok();
     if let Err(output) = output {
-        panic!("Finding creation failed with reason: {:#?}", output)
+        panic!("Finding creation failed with reason: {output:#?}")
     };
-    println!("Finding file successfully created at: {:?}", new_file_path);
+    println!("Finding file successfully created at: {new_file_path:?}");
 }
 
 fn validate_finished_finding_file(file_path: String, file_name: String) {
     let file_data = fs::read_to_string(file_path).unwrap();
     if file_data.contains("## Finding name") {
-        panic!("Please update the Finding name of the {} file", file_name);
+        panic!("Please update the Finding name of the {file_name} file");
     }
     if file_data.contains("Fill the description") {
         panic!(
-            "Please complete the Description section of the {} file",
-            file_name
+            "Please complete the Description section of the {file_name} file"
         );
     }
     if file_data.contains("Fill the impact") {
         panic!(
-            "Please complete the Impact section of the {} file",
-            file_name
+            "Please complete the Impact section of the {file_name} file"
         );
     }
     if file_data.contains("Add recommendations") {
         panic!(
-            "Please complete the Recommendations section of the {} file",
-            file_name
+            "Please complete the Recommendations section of the {file_name} file"
         );
     }
 }

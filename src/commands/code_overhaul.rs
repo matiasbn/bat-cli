@@ -33,8 +33,7 @@ pub fn create_overhaul_file(entrypoint_name: String) {
         BatConfig::get_auditor_code_overhaul_to_review_path(Some(entrypoint_name.clone()));
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
         panic!(
-            "code overhaul file already exists for: {:?}",
-            entrypoint_name
+            "code overhaul file already exists for: {entrypoint_name:?}"
         );
     }
     let output = Command::new("cp")
@@ -51,7 +50,7 @@ pub fn create_overhaul_file(entrypoint_name: String) {
             std::str::from_utf8(output.stderr.as_slice()).unwrap()
         )
     };
-    println!("code-overhaul file created: {}.md", entrypoint_name);
+    println!("code-overhaul file created: {entrypoint_name}.md");
 }
 
 pub fn start_code_overhaul_file() {
@@ -72,7 +71,7 @@ pub fn start_code_overhaul_file() {
         .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
         .filter(|file| file != ".gitkeep")
         .collect::<Vec<String>>();
-    review_files.sort_by(|a, b| a.cmp(b));
+    review_files.sort();
 
     if review_files.is_empty() {
         panic!("no to-review files in code-overhaul folder");
@@ -103,12 +102,11 @@ pub fn start_code_overhaul_file() {
         .args([to_review_path, started_path.clone()])
         .output()
         .unwrap();
-    println!("{} file moved to started", started_file_name);
+    println!("{started_file_name} file moved to started");
 
     // update started co file
     println!(
-        "{} file updated with instruction information",
-        started_file_name
+        "{started_file_name} file updated with instruction information"
     );
 
     let instruction_files_info = get_instruction_files();
@@ -152,7 +150,7 @@ pub fn start_code_overhaul_file() {
             .items(
                 &instruction_files_info
                     .as_slice()
-                    .into_iter()
+                    .iter()
                     .map(|f| &f.name)
                     .collect::<Vec<&String>>(),
             )
@@ -171,12 +169,12 @@ pub fn start_code_overhaul_file() {
         context_lines.clone(),
     );
     parse_validations_into_co(started_file_name.clone(), context_lines.clone());
-    parse_signers_into_co(started_file_name.clone(), context_lines.clone());
+    parse_signers_into_co(started_file_name.clone(), context_lines);
     parse_function_parameters_into_co(started_file_name.clone());
 
     // open VSCode files
 
-    create_git_commit(GitCommit::StartCO, Some(vec![started_file_name.clone()]));
+    create_git_commit(GitCommit::StartCO, Some(vec![started_file_name]));
 
     vs_code_open_file_in_current_window(instruction_file_path);
     vs_code_open_file_in_current_window(PathBuf::from(started_path));
@@ -218,7 +216,7 @@ pub fn finish_code_overhaul_file() {
                 .args([started_path, finished_path])
                 .output()
                 .unwrap();
-            println!("{} file moved to finished", finished_file_name);
+            println!("{finished_file_name} file moved to finished");
             create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
         }
         None => println!("User did not select anything"),
@@ -268,7 +266,7 @@ fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<Stri
                 && (line.contains("constraint") || line.contains("has_one"))
             {
                 let new_line = line
-                    .split(",")
+                    .split(',')
                     .filter(|element| {
                         !(element.contains("has_one") || element.contains("constraint"))
                     })
@@ -282,19 +280,18 @@ fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<Stri
         })
         .filter(|line| !line.contains("constraint "))
         .filter(|line| !line.contains("has_one "))
-        .map(|line| line.to_string())
         .collect();
 
     let mut formatted_lines: Vec<String> = vec!["- ```rust".to_string()];
-    for (idx, line) in filtered_context_account_lines.clone().iter().enumerate() {
+    for (idx, line) in filtered_context_account_lines.iter().enumerate() {
         // if the current line opens an account, and next does not closes it
-        if line.replace(" ", "") == "#[account("
-            && filtered_context_account_lines[idx + 1].replace(" ", "") != ")]"
+        if line.replace(' ', "") == "#[account("
+            && filtered_context_account_lines[idx + 1].replace(' ', "") != ")]"
         {
             let mut counter = 1;
             let mut lines_to_add: Vec<String> = vec![];
             // iterate next lines until reaching )]
-            while filtered_context_account_lines[idx + counter].replace(" ", "") != ")]" {
+            while filtered_context_account_lines[idx + counter].replace(' ', "") != ")]" {
                 let next_line = filtered_context_account_lines[idx + counter].clone();
                 lines_to_add.push(next_line);
                 counter += 1;
@@ -304,7 +301,7 @@ fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<Stri
             if counter == 2 {
                 formatted_lines.push(
                     line.to_string()
-                        + lines_to_add[0].replace(" ", "").replace(",", "").as_str()
+                        + lines_to_add[0].replace([' ', ','], "").as_str()
                         + ")]",
                 )
             // multiple attributes, join to multiple lines
@@ -323,8 +320,8 @@ fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<Stri
         // if the line defines an account, is a comment, an empty line or closure of context accounts
         } else if line.contains("pub")
             || line.contains("///")
-            || line.replace(" ", "") == "}"
-            || line == ""
+            || line.replace(' ', "") == "}"
+            || line.is_empty()
         {
             formatted_lines.push(line.to_string())
         // if is an already single line account
@@ -381,7 +378,7 @@ fn parse_validations_into_co(co_file_name: String, context_lines: Vec<String>) {
 
     // replace in co file
     let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
-    if accounts_groups.len() == 0 {
+    if accounts_groups.is_empty() {
         let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
             CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
             CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER,
@@ -399,7 +396,6 @@ fn parse_validations_into_co(co_file_name: String, context_lines: Vec<String>) {
                 line
             }
         })
-        .into_iter()
         .collect::<Vec<String>>();
     fs::write(co_file_path, co_file_lines.join("\n")).unwrap();
 }
@@ -413,7 +409,7 @@ fn parse_signers_into_co(co_file_name: String, context_lines: Vec<String>) {
         .map(|line| {
             "- ".to_string()
                 + line
-                    .split(":")
+                    .split(':')
                     .map(|l| l.to_string())
                     .collect::<Vec<String>>()[0]
                     .clone()
@@ -428,7 +424,7 @@ fn parse_signers_into_co(co_file_name: String, context_lines: Vec<String>) {
     let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
     let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
         CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
-        if signers_names.len() > 0 {
+        if !signers_names.is_empty() {
             let signers = signers_string.as_str();
             signers
         } else {
@@ -467,7 +463,7 @@ fn parse_function_parameters_into_co(co_file_name: String) {
     let mut canditate_lines = vec![program_lines[entrypoint_index].clone()];
     let mut idx = 0;
     // collect lines until closing parenthesis
-    while !program_lines[entrypoint_index + idx].contains(")") {
+    while !program_lines[entrypoint_index + idx].contains(')') {
         canditate_lines.push(program_lines[entrypoint_index + idx].clone());
         idx += 1;
     }
@@ -478,11 +474,11 @@ fn parse_function_parameters_into_co(co_file_name: String) {
         let mut function_line = canditate_lines[0].split("->").collect::<Vec<_>>()[0]
             .to_string()
             // replace ) by ""
-            .replace(")", "")
+            .replace(')', "")
             // split by ","
             .split(", ")
             // if no : then is a lifetime
-            .filter(|l| l.contains(":"))
+            .filter(|l| l.contains(':'))
             .map(|l| l.to_string())
             .collect::<Vec<_>>();
         // if the split produces 1 element, then there's no parameters
@@ -514,9 +510,9 @@ fn parse_function_parameters_into_co(co_file_name: String) {
             .filter(|line| !line.contains("fn") && !line.contains("Context"))
             .map(|l| {
                 l.to_string()
-                    .replace(" ", "")
-                    .replace(":", ": ")
-                    .replace(";", "; ")
+                    .replace(' ', "")
+                    .replace(':', ": ")
+                    .replace(';', "; ")
             })
             .collect::<Vec<_>>();
         let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
@@ -587,7 +583,6 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
     let instruction_file_lines = io::BufReader::new(instruction_file)
         .lines()
         .map(|l| l.unwrap())
-        .into_iter()
         .collect::<Vec<String>>();
 
     let context_name = get_context_name(co_file_name.clone());
@@ -610,9 +605,9 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
         // if the Context Accouns were not found in the file
         None => {
             // tell the user that the context was not found in the instruction file
-            let co_name = co_file_name.clone().replace(".md", "");
+            let co_name = co_file_name.replace(".md", "");
             let instruction_file_name = instruction_file_path
-                .clone()
+                
                 .file_name()
                 .unwrap()
                 .to_str()
@@ -625,8 +620,7 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
             // list the instruction files
             let selection = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt(format!(
-                    "Context Accounts not found for {} in {}, please select the file that contains the context:",
-                    co_name, instruction_file_name,
+                    "Context Accounts not found for {co_name} in {instruction_file_name}, please select the file that contains the context:",
                 ))
                 .items(&instruction_files_names)
                 .default(0)
@@ -638,7 +632,6 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
             let instruction_file_lines = io::BufReader::new(instruction_file)
                 .lines()
                 .map(|l| l.unwrap())
-                .into_iter()
                 .collect::<Vec<String>>();
             // get context lines
             // check if the context is in the file
@@ -667,8 +660,7 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
     let file_data = fs::read_to_string(file_path).unwrap();
     if file_data.contains(CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER) {
         panic!(
-            "Please complete the \"What it does?\" section of the {} file",
-            file_name
+            "Please complete the \"What it does?\" section of the {file_name} file"
         );
     }
 
@@ -688,8 +680,7 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
 
     if file_data.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
         panic!(
-            "Please complete the \"Signers\" section of the {} file",
-            file_name
+            "Please complete the \"Signers\" section of the {file_name} file"
         );
     }
 
@@ -709,8 +700,7 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
 
     if file_data.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
         panic!(
-            "Please complete the \"Miro board frame\" section of the {} file",
-            file_name
+            "Please complete the \"Miro board frame\" section of the {file_name} file"
         );
     }
 }
@@ -720,7 +710,7 @@ fn get_instruction_files() -> Vec<FileInfo> {
         .optional
         .program_instructions_path;
 
-    let mut instruction_files_info = WalkDir::new(instructions_path.clone())
+    let mut instruction_files_info = WalkDir::new(instructions_path)
         .into_iter()
         .map(|entry| {
             let info = FileInfo {
