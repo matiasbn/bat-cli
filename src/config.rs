@@ -35,6 +35,7 @@ pub struct OptionalConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AuditorConfig {
     pub auditor_name: String,
+    pub miro_oauth_access_token: String,
 }
 
 impl BatConfig {
@@ -286,6 +287,7 @@ impl TestConfig for BatConfig {
         };
         let auditor = AuditorConfig {
             auditor_name: "matias".to_string(),
+            miro_oauth_access_token: "!".to_string(),
         };
 
         BatConfig {

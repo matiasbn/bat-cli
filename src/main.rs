@@ -64,12 +64,12 @@ enum CodeOverhaulActions {
     /// Update a code-overhaul file by creating a commit
     Update,
 }
-
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
         Commands::Create {} => commands::create::create_project(),
-        Commands::Init {} => commands::init::initialize_bat_project(),
+        Commands::Init {} => commands::init::initialize_bat_project().await,
         Commands::CO(CodeOverhaulActions::Start) => {
             commands::code_overhaul::start_code_overhaul_file()
         }

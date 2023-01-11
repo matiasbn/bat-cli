@@ -6,7 +6,7 @@ use std::process::Command;
 use std::{io, string::String};
 
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::Select;
+use dialoguer::{Input, Select};
 
 use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
@@ -19,7 +19,7 @@ use crate::constants::{
 };
 use crate::git::{create_git_commit, GitCommit};
 
-pub fn initialize_bat_project() {
+pub async fn initialize_bat_project() {
     let bat_config: BatConfig = BatConfig::get_init_config();
     let BatConfig {
         required, auditor, ..
@@ -28,7 +28,25 @@ pub fn initialize_bat_project() {
     if auditor.auditor_name.is_empty() {
         let auditor_name = get_auditor_name(required.auditor_names);
         println!("Is great to have you here {auditor_name}!");
-        update_auditor_toml(auditor_name);
+
+        // Ask the user if is going to use the Miro integration
+        let options = ["yes", "no"];
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Are you going to use the Miro integration?")
+            .default(0)
+            .items(&options)
+            .interact()
+            .unwrap();
+        if options[selection] == "yes" {
+            let moat: String = Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Miro OAuth access token")
+                .interact_text()
+                .unwrap();
+
+            update_auditor_toml(auditor_name, Some(&moat));
+        } else {
+            update_auditor_toml(auditor_name, None);
+        };
     }
     println!("creating project for the next config: ");
     println!("{bat_config:#?}");
@@ -89,11 +107,17 @@ fn get_auditor_name(auditor_names: Vec<String>) -> String {
     auditor_names[selection].clone()
 }
 
-fn update_auditor_toml(auditor_name: String) {
-    let new_auditor_file_content = AUDITOR_TOML_INITIAL_CONFIG_STR.replace(
+fn update_auditor_toml(auditor_name: String, miro_oauth_access_token: Option<&str>) {
+    let mut new_auditor_file_content = AUDITOR_TOML_INITIAL_CONFIG_STR.replace(
         "auditor_name = \"",
         ("auditor_name = \"".to_string() + &auditor_name).as_str(),
     );
+    if let Some(moat) = miro_oauth_access_token {
+        new_auditor_file_content = new_auditor_file_content.replace(
+            "miro_oauth_access_token = \"",
+            ("miro_oauth_access_token = \"".to_string() + &moat).as_str(),
+        )
+    }
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
     fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
 }
@@ -264,9 +288,17 @@ fn initialize_code_overhaul_files() -> Vec<String> {
         .map(|line| String::from(line.split('(').collect::<Vec<&str>>()[0]))
         .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))
         .collect::<Vec<String>>();
-
+    let miro_integrated = !BatConfig::get_init_config()
+        .auditor
+        .miro_oauth_access_token
+        .is_empty();
     for entrypoint_name in entrypoints_names.clone() {
         create_overhaul_file(entrypoint_name.clone());
+        if miro_integrated {
+            // create the miro frame
+            // get the miro frame id
+            // replace the miro frame url with the corresponding frame
+        }
     }
     entrypoints_names
 }
