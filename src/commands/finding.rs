@@ -78,7 +78,7 @@ pub fn create_finding() {
     copy_template_to_findings_to_review(finding_name.clone());
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]));
     let finding_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name));
-    vs_code_open_file_in_current_window(PathBuf::from(finding_file_path))
+    vs_code_open_file_in_current_window(finding_file_path.as_str())
 }
 
 pub fn finish_finding() {
@@ -240,18 +240,12 @@ fn validate_finished_finding_file(file_path: String, file_name: String) {
         panic!("Please update the Finding name of the {file_name} file");
     }
     if file_data.contains("Fill the description") {
-        panic!(
-            "Please complete the Description section of the {file_name} file"
-        );
+        panic!("Please complete the Description section of the {file_name} file");
     }
     if file_data.contains("Fill the impact") {
-        panic!(
-            "Please complete the Impact section of the {file_name} file"
-        );
+        panic!("Please complete the Impact section of the {file_name} file");
     }
     if file_data.contains("Add recommendations") {
-        panic!(
-            "Please complete the Recommendations section of the {file_name} file"
-        );
+        panic!("Please complete the Recommendations section of the {file_name} file");
     }
 }

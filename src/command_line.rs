@@ -6,9 +6,9 @@ use std::{
     str::from_utf8,
 };
 
-pub fn vs_code_open_file_in_current_window(path_to_file: PathBuf) {
+pub fn vs_code_open_file_in_current_window(path_to_file: &str) {
     let command_name = "code".to_string();
-    let command_args = vec!["-a", path_to_file.to_str().unwrap()];
+    let command_args = vec!["-a", path_to_file];
     let error_message = "git commit creation failed with error".to_string();
     execute_command(command_name, command_args, error_message);
 }

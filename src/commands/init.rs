@@ -1,9 +1,8 @@
-
 use std::fs::{self};
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::{string::String};
+use std::string::String;
 
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Input, Select};
@@ -75,7 +74,7 @@ pub fn initialize_bat_project() {
 
     println!("Opening lib.rs in VSCode");
     // Open lib.rs file in vscode
-    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path))
+    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())
 }
 
 fn update_audit_information_file() {

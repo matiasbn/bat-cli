@@ -53,8 +53,11 @@ pub fn create_overhaul_file(entrypoint_name: String) {
 }
 
 pub async fn start_code_overhaul_file() {
+    check_correct_branch();
+
     // check if program_lib_path is not empty or panic
     let BatConfig { optional, .. } = BatConfig::get_validated_config();
+
     if optional.program_instructions_path.is_empty() {
         panic!("Optional program_instructions_path parameter not set in Bat.toml")
     }
@@ -84,31 +87,19 @@ pub async fn start_code_overhaul_file() {
         .unwrap();
 
     // user select file
-    let started_file_name = match selection {
+    let to_start_file_name = match selection {
         // move selected file to rejected
         Some(index) => review_files[index].clone(),
         None => panic!("User did not select anything"),
     };
 
-    let to_review_path =
-        BatConfig::get_auditor_code_overhaul_to_review_path(Some(started_file_name.clone()));
-    let started_path =
-        BatConfig::get_auditor_code_overhaul_started_path(Some(started_file_name.clone()));
-    check_correct_branch();
-
-    // move to started
-    Command::new("mv")
-        .args([to_review_path, started_path.clone()])
-        .output()
-        .unwrap();
-    println!("{started_file_name} file moved to started");
-
-    // update started co file
-    println!("{started_file_name} file updated with instruction information");
+    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path.clone()(Some(
+        to_start_file_name.clone(),
+    ));
 
     let instruction_files_info = get_instruction_files();
 
-    let entrypoint_name = started_file_name.replace(".md", "");
+    let entrypoint_name = to_start_file_name.replace(".md", "");
     let instruction_match = instruction_files_info
         .iter()
         .filter(|ifile| ifile.name.replace(".rs", "") == entrypoint_name.as_str())
@@ -159,16 +150,19 @@ pub async fn start_code_overhaul_file() {
         name
     };
     let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
-    let context_lines = get_context_lines(instruction_file_path.clone(), started_file_name.clone());
+    let context_lines =
+        get_context_lines(instruction_file_path.clone(), to_start_file_name.clone());
 
     // parse text into co file
     parse_context_accounts_into_co(
-        Path::new(&(started_path)).canonicalize().unwrap(),
+        Path::new(&(to_review_path.clone())).canonicalize().unwrap(),
         context_lines.clone(),
     );
-    parse_validations_into_co(started_file_name.clone(), context_lines.clone());
-    parse_signers_into_co(started_file_name.clone(), context_lines);
-    parse_function_parameters_into_co(started_file_name.clone());
+    parse_validations_into_co(to_review_path.clone(), context_lines.clone());
+    parse_signers_into_co(to_review_path.clone(), context_lines);
+    parse_function_parameters_into_co(to_review_path.clone(), to_start_file_name.clone());
+
+    println!("{to_start_file_name} file updated with instruction information");
 
     // create frame into Miro if user provided miro_oauth_access_token
     if !BatConfig::get_validated_config()
@@ -181,17 +175,26 @@ pub async fn start_code_overhaul_file() {
         let frame_id: String = frame["id"].clone().to_string().replace('\"', "");
         let frame_url: String = miro_board_url + "/?moveToWidget=" + &frame_id;
         // Replace placeholder with Miro url
-        let started_file_content = fs::read_to_string(&started_path)
+        let to_start_file_content = fs::read_to_string(&to_review_path)
             .unwrap()
             .replace(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, &frame_url);
-        fs::write(&started_path, started_file_content).unwrap()
+        fs::write(&to_review_path, to_start_file_content).unwrap()
     }
 
-    create_git_commit(GitCommit::StartCO, Some(vec![started_file_name]));
+    // move to started
+    let started_path =
+        BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()));
+    Command::new("mv")
+        .args([to_review_path.clone(), started_path.clone()])
+        .output()
+        .unwrap();
+    println!("{to_start_file_name} file moved to started");
+
+    create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]));
 
     // open VSCode files
-    vs_code_open_file_in_current_window(instruction_file_path);
-    vs_code_open_file_in_current_window(PathBuf::from(started_path));
+    vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
+    vs_code_open_file_in_current_window(started_path.as_str());
 }
 
 pub fn finish_code_overhaul_file() {
@@ -351,7 +354,7 @@ fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<Stri
     fs::write(co_file_path, data).unwrap();
 }
 
-fn parse_validations_into_co(co_file_name: String, context_lines: Vec<String>) {
+fn parse_validations_into_co(co_file_path: String, context_lines: Vec<String>) {
     let filtered_lines: Vec<_> = context_lines
         .iter()
         .filter(|line| !line.contains("///"))
@@ -389,7 +392,6 @@ fn parse_validations_into_co(co_file_name: String, context_lines: Vec<String>) {
     let accounts_string = accounts_groups.join("\n");
 
     // replace in co file
-    let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
     if accounts_groups.is_empty() {
         let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
             CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
@@ -412,7 +414,7 @@ fn parse_validations_into_co(co_file_name: String, context_lines: Vec<String>) {
     fs::write(co_file_path, co_file_lines.join("\n")).unwrap();
 }
 
-fn parse_signers_into_co(co_file_name: String, context_lines: Vec<String>) {
+fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
     let signers_names: Vec<_> = context_lines
         .iter()
         .filter(|line| line.contains("Signer"))
@@ -433,20 +435,18 @@ fn parse_signers_into_co(co_file_name: String, context_lines: Vec<String>) {
     let signers_string = signers_names.join("\n");
 
     // replace in co file
-    let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
     let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
         CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
-        if !signers_names.is_empty() {
-            
-            signers_string.as_str() as _
-        } else {
+        if signers_names.is_empty() {
             "No signers found"
+        } else {
+            signers_string.as_str() as _
         },
     );
     fs::write(co_file_path, data).unwrap();
 }
 
-fn parse_function_parameters_into_co(co_file_name: String) {
+fn parse_function_parameters_into_co(co_file_path: String, co_file_name: String) {
     let BatConfig { required, .. } = BatConfig::get_validated_config();
     let RequiredConfig {
         program_lib_path, ..
@@ -495,8 +495,6 @@ fn parse_function_parameters_into_co(co_file_name: String) {
             .collect::<Vec<_>>();
         // if the split produces 1 element, then there's no parameters
         if function_line.len() == 1 {
-            let co_file_path =
-                BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
             let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
                 CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
                 ("- ".to_string() + CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER)
@@ -507,8 +505,6 @@ fn parse_function_parameters_into_co(co_file_name: String) {
             // delete first element
             function_line.remove(0);
             // join
-            let co_file_path =
-                BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
             let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
                 CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
                 ("- ```rust\n  ".to_string() + function_line.join("\n  ").as_str() + "\n  ```")
