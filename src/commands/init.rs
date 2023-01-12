@@ -32,21 +32,22 @@ pub fn initialize_bat_project() {
         // Ask the user if is going to use the Miro integration
         let options = ["yes", "no"];
         let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Are you going to use the Miro integration?")
+            .with_prompt("Do you want to use the Miro integration?")
             .default(0)
             .items(&options)
             .interact()
             .unwrap();
-        if options[selection] == "yes" {
-            let moat: String = Input::with_theme(&ColorfulTheme::default())
+        let token: String;
+        let moat: Option<&str> = if options[selection] == "yes" {
+            token = Input::with_theme(&ColorfulTheme::default())
                 .with_prompt("Miro OAuth access token")
                 .interact_text()
                 .unwrap();
-
-            update_auditor_toml(auditor_name, Some(&moat));
+            Some(token.as_str())
         } else {
-            update_auditor_toml(auditor_name, None);
+            None
         };
+        update_auditor_toml(auditor_name, moat);
     }
     println!("creating project for the next config: ");
     println!("{bat_config:#?}");
@@ -294,3 +295,5 @@ fn initialize_code_overhaul_files() -> Vec<String> {
     }
     entrypoints_names
 }
+
+fn initialize_entrypoints_empty_images() {}

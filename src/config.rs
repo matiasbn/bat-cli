@@ -116,10 +116,6 @@ impl BatConfig {
         }
     }
 
-    pub fn get_auditors_names() -> Vec<String> {
-        Self::get_validated_config().required.auditor_names
-    }
-
     pub fn get_auditor_name() -> String {
         Self::get_validated_config().auditor.auditor_name
     }
@@ -237,19 +233,19 @@ impl BatConfig {
     pub fn get_code_overhaul_template_path() -> String {
         Self::get_templates_path() + "/code-overhaul.md"
     }
-
-    // Instructions
-    pub fn get_instructions_folder_path() -> String {
-        Self::get_validated_config()
-            .optional
-            .program_instructions_path
-    }
-    pub fn get_path_to_instruction(instruction_name: String) -> String {
-        Self::get_instructions_folder_path()
-            + "/"
-            + instruction_name.replace(".rs", "").as_str()
-            + ".rs"
-    }
+    // TODO: consider the case of subfolders
+    // // Instructions
+    // pub fn get_instructions_folder_path() -> String {
+    //     Self::get_validated_config()
+    //         .optional
+    //         .program_instructions_path
+    // }
+    // pub fn get_path_to_instruction(instruction_name: String) -> String {
+    //     Self::get_instructions_folder_path()
+    //         + "/"
+    //         + instruction_name.replace(".rs", "").as_str()
+    //         + ".rs"
+    // }
 
     fn canonicalize_path(path_to_canonicalize: String) -> String {
         Path::new(&(path_to_canonicalize))
