@@ -4,3 +4,4 @@ pub mod finding;
 pub mod init;
 pub mod miro;
 pub mod templates;
+pub mod entrypoints;

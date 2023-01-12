@@ -1,15 +1,16 @@
-use std::borrow::BorrowMut;
-use std::fs::{self, File};
-use std::io::BufRead;
+
+use std::fs::{self};
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::{io, string::String};
+use std::{string::String};
 
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Input, Select};
 
 use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
+use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::command_line::vs_code_open_file_in_current_window;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
@@ -263,45 +264,7 @@ fn create_auditor_notes_folder() {
 fn initialize_code_overhaul_files() {
     let entrypoints_names = get_entrypoints_names();
 
-    for entrypoint_name in entrypoints_names.clone() {
+    for entrypoint_name in entrypoints_names {
         create_overhaul_file(entrypoint_name.clone());
-    }
-}
-
-fn get_entrypoints_names() -> Vec<String> {
-    let BatConfig { required, .. } = BatConfig::get_validated_config();
-
-    let RequiredConfig {
-        program_lib_path, ..
-    } = required;
-    let lib_file = File::open(program_lib_path).unwrap();
-    let mut lib_files_lines = io::BufReader::new(lib_file).lines().map(|l| l.unwrap());
-    lib_files_lines
-        .borrow_mut()
-        .enumerate()
-        .find(|(_, line)| *line == String::from("#[program]"))
-        .unwrap();
-    let mut program_lines = vec![String::from(""); 0];
-    for (_, line) in lib_files_lines.borrow_mut().enumerate() {
-        if line == "}" {
-            break;
-        }
-        program_lines.push(line)
-    }
-    let entrypoints_names = program_lines
-        .iter()
-        .filter(|line| line.contains("pub fn"))
-        .map(|line| line.replace("pub fn ", "").replace("<'info>", ""))
-        .map(|line| String::from(line.split('(').collect::<Vec<&str>>()[0]))
-        .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))
-        .collect::<Vec<String>>();
-    entrypoints_names
-}
-
-fn initialize_code_overhaul_empty_images() {
-    let entrypoints_names = get_entrypoints_names();
-    let entrypoints_figures_path = BatConfig::get_auditor_figures_entrypoints_path();
-    for name in entrypoints_names.iter() {
-        // create a png file for every name
     }
 }

@@ -178,7 +178,7 @@ pub async fn start_code_overhaul_file() {
     {
         let RequiredConfig { miro_board_url, .. } = BatConfig::get_validated_config().required;
         let frame = create_frame(&entrypoint_name).await;
-        let frame_id: String = frame["id"].clone().to_string().replace("\"", "");
+        let frame_id: String = frame["id"].clone().to_string().replace('\"', "");
         let frame_url: String = miro_board_url + "/?moveToWidget=" + &frame_id;
         // Replace placeholder with Miro url
         let started_file_content = fs::read_to_string(&started_path)
@@ -437,8 +437,8 @@ fn parse_signers_into_co(co_file_name: String, context_lines: Vec<String>) {
     let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
         CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
         if !signers_names.is_empty() {
-            let signers = signers_string.as_str();
-            signers
+            
+            signers_string.as_str() as _
         } else {
             "No signers found"
         },
