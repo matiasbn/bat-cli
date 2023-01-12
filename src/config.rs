@@ -139,6 +139,13 @@ impl BatConfig {
     pub fn get_auditor_notes_path() -> String {
         Self::get_notes_path() + &Self::get_auditor_name() + "-notes/"
     }
+    // Figures
+    pub fn get_auditor_figures_path() -> String {
+        Self::canonicalize_path(Self::get_auditor_notes_path() + "figures/")
+    }
+    pub fn get_auditor_figures_entrypoints_path() -> String {
+        Self::canonicalize_path(Self::get_auditor_figures_path() + "entrypoints/")
+    }
 
     // Findings paths
     pub fn get_auditor_findings_path() -> String {
