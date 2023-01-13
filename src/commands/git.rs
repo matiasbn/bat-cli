@@ -188,11 +188,7 @@ pub fn clone_base_repository() {
 }
 
 pub fn git_push() {
-    execute_command(
-        "git".to_string(),
-        vec!["push"],
-        "error pushing changes".to_string(),
-    );
+    Command::new("git").arg("push").output().unwrap();
 }
 
 // returns false if there are files to commit
