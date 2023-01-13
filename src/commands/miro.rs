@@ -38,6 +38,7 @@ pub mod miro_api {
 
         use crate::config::{AuditorConfig, BatConfig, RequiredConfig};
 
+        // returns the frame url
         pub async fn create_frame(entrypoint_name: &str) -> Value {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
             let AuditorConfig {

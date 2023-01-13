@@ -8,6 +8,7 @@ use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{MultiSelect, Select};
+use normalize_url::normalizer;
 use walkdir::WalkDir;
 
 use crate::command_line::vs_code_open_file_in_current_window;
@@ -170,7 +171,7 @@ pub async fn start_code_overhaul_file() {
 
     println!("{to_start_file_name} file updated with instruction information");
 
-    // create frame into Miro if user provided miro_oauth_access_token
+    // create frame into Miro and co subfolder if user provided miro_oauth_access_token
     let miro_enabled = !BatConfig::get_validated_config()
         .auditor
         .miro_oauth_access_token
@@ -179,7 +180,12 @@ pub async fn start_code_overhaul_file() {
         let RequiredConfig { miro_board_url, .. } = BatConfig::get_validated_config().required;
         let frame = create_frame(&entrypoint_name).await;
         let frame_id: String = frame["id"].clone().to_string().replace('\"', "");
-        let frame_url: String = miro_board_url + "/?moveToWidget=" + &frame_id;
+        let frame_url = normalizer::UrlNormalizer::new(
+            format!("{miro_board_url}/?moveToWidget={frame_id}").as_str(),
+        )
+        .unwrap()
+        .normalize(None)
+        .unwrap();
         // Replace placeholder with Miro url
         let to_start_file_content = fs::read_to_string(&to_review_file_path)
             .unwrap()
@@ -211,6 +217,7 @@ pub async fn start_code_overhaul_file() {
             ])
             .output()
             .unwrap();
+        println!("Empty screenshots created, remember to complete them");
 
         create_git_commit(GitCommit::StartCOMiro, Some(vec![to_start_file_name]));
 
@@ -227,8 +234,7 @@ pub async fn start_code_overhaul_file() {
 
         create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]));
 
-        // open VSCode files
-        vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
+        // open co file in VSCode
         vs_code_open_file_in_current_window(started_path.as_str());
     }
 }

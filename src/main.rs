@@ -64,6 +64,8 @@ enum CodeOverhaulActions {
     Finish,
     /// Update a code-overhaul file by creating a commit
     Update,
+    /// Deploys the
+    Miro,
     /// Counts the to-review, started, finished and total co files
     Count,
 }
