@@ -137,7 +137,11 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
             );
             execute_command(
                 "git".to_string(),
-                vec!["commit", "-m", "clippy commit".to_string().as_str()],
+                vec![
+                    "commit",
+                    "-m",
+                    "package: clippy commit".to_string().as_str(),
+                ],
                 "error creating commit for clippy".to_string(),
             );
         }
