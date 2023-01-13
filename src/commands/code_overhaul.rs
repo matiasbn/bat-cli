@@ -523,7 +523,6 @@ fn parse_function_parameters_into_co(co_file_path: String, co_file_name: String)
                     .replace(';', "; ")
             })
             .collect::<Vec<_>>();
-        let co_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(co_file_name));
         let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
             CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
             ("- ```rust\n  ".to_string() + parameters_lines.join("\n  ").as_str() + "\n  ```")
@@ -539,29 +538,26 @@ fn get_context_name(co_file_name: String) -> String {
         program_lib_path, ..
     } = required;
 
-    let lib_file = File::open(program_lib_path).unwrap();
-    let mut lib_files_lines = io::BufReader::new(lib_file).lines().map(|l| l.unwrap());
-    lib_files_lines
-        .borrow_mut()
-        .enumerate()
-        .find(|(_, line)| *line == String::from("#[program]"))
-        .unwrap();
+    let lib_file = fs::read_to_string(program_lib_path).unwrap();
+    let lib_file_lines: Vec<&str> = lib_file.lines().collect();
 
-    let mut program_lines = vec![String::from(""); 0];
-    for (_, line) in lib_files_lines.borrow_mut().enumerate() {
-        if line == "}" {
-            break;
-        }
-        program_lines.push(line)
-    }
-    let entrypoint_text = "pub fn ".to_string() + co_file_name.replace(".md", "").as_str();
-    let entrypoint_index = program_lines
-        .iter()
-        .position(|line| line.contains(entrypoint_text.clone().as_str()))
+    let entrypoint_index = lib_file
+        .lines()
+        .position(|line| {
+            if line.contains("pub fn") {
+                let function_name = line.split("(").collect::<Vec<&str>>()[0]
+                    .split_whitespace()
+                    .last()
+                    .unwrap();
+                function_name == co_file_name.replace(".md", "")
+            } else {
+                false
+            }
+        })
         .unwrap();
     let canditate_lines = vec![
-        &program_lines[entrypoint_index],
-        &program_lines[entrypoint_index + 1],
+        lib_file_lines[entrypoint_index],
+        lib_file_lines[entrypoint_index + 1],
     ];
 
     // if is not in the same line as the entrypoint name, is in the next line
