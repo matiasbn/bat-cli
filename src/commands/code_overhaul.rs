@@ -6,7 +6,7 @@ struct FileInfo {
 
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::Select;
+use dialoguer::{MultiSelect, Select};
 use walkdir::WalkDir;
 
 use crate::command_line::vs_code_open_file_in_current_window;
@@ -416,9 +416,8 @@ fn parse_validations_into_co(co_file_path: String, context_lines: Vec<String>) {
 
     for validation in validations.iter() {
         let options = vec!["account validation", "prerequisite"];
-        let prompt_text = format!(
-            "is the next validation an account validation or a prerequisite? \n {validation}"
-        );
+        let prompt_text =
+            format!("is this validation an account validation or a prerequisite?: \n {validation}");
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt_text)
             .items(&options)
@@ -466,33 +465,107 @@ fn parse_validations_into_co(co_file_path: String, context_lines: Vec<String>) {
 }
 
 fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
+    // signer names is only the name of the signer
     let signers_names: Vec<_> = context_lines
         .iter()
         .filter(|line| line.contains("Signer"))
-        .map(|line| line.replace("pub ", ""))
-        .map(|line| line.replace("  ", ""))
         .map(|line| {
-            "- ".to_string()
-                + line
-                    .split(':')
-                    .map(|l| l.to_string())
-                    .collect::<Vec<String>>()[0]
-                    .clone()
-                    .as_str()
-                + ": "
-                + CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER
+            line.replace("pub ", "")
+                .replace("  ", "")
+                .split(":")
+                .collect::<Vec<&str>>()[0]
+                .to_string()
         })
         .collect();
-    let signers_string = signers_names.join("\n");
+    // array of signers description: - signer_name: SIGNER_DESCRIPTION
+    let mut signers_text: Vec<String> = vec![];
+    for signer in signers_names.clone() {
+        let signer_index = context_lines
+            .iter()
+            .position(|line| line.contains(&signer) && line.contains("pub"))
+            .unwrap();
+        let mut index = 1;
+        let mut candidate_lines: Vec<String> = vec![];
+        // move up through the lines until getting a pub
+        while !context_lines[signer_index - index].clone().contains("pub") {
+            // push only if is a comment
+            if context_lines[signer_index - index].contains("//") {
+                candidate_lines.push(context_lines[signer_index - index].clone());
+            }
+            index += 1;
+        }
+        // no comments detected, replace with placeholder
+        if candidate_lines.is_empty() {
+            signers_text
+                .push("- ".to_string() + &signer + ": " + CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER);
+        // only 1 comment
+        } else if candidate_lines.len() == 1 {
+            // prompt the user to state if the comment is correct
+            let signer_description = candidate_lines[0].split("// ").last().unwrap();
+            let prompt_text = format!(
+                "is this a proper description of the signer '{signer}'?: '{signer_description}'"
+            );
+            let options = vec!["yes", "no"];
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt(prompt_text)
+                .items(&options)
+                .default(0)
+                .interact_on_opt(&Term::stderr())
+                .unwrap()
+                .unwrap();
+
+            if options[selection] == options[0] {
+                signers_text.push("- ".to_string() + &signer + ": " + signer_description);
+            } else {
+                signers_text.push(
+                    "- ".to_string() + &signer + ": " + CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
+                );
+            }
+        // multiple line description
+        } else {
+            // prompt the user to select the lines that contains the description and join them
+            let prompt_text = format!(
+                "Use the spacebar to select the lines that describes the signer '{signer}'. \n Hit enter if is not a proper description:"
+            );
+            candidate_lines.reverse();
+            let formatted_candidate_lines: Vec<&str> = candidate_lines
+                .iter()
+                .map(|line| line.split("// ").last().unwrap())
+                .collect();
+            let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+                .with_prompt(prompt_text)
+                .items(&formatted_candidate_lines)
+                .interact_on_opt(&Term::stderr())
+                .unwrap()
+                .unwrap();
+            if selections.is_empty() {
+                signers_text.push(
+                    "- ".to_string() + &signer + ": " + CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
+                );
+            } else {
+                // take the selections and create the array
+                let mut signer_description_lines: Vec<String> = vec![];
+                for selection in selections.iter() {
+                    signer_description_lines
+                        .push(formatted_candidate_lines.as_slice()[*selection].to_string());
+                }
+                signers_text.push(
+                    "- ".to_string() + &signer + ": " + signer_description_lines.join(" ").as_str(),
+                );
+            }
+        }
+    }
 
     // replace in co file
+    let signers_text_to_replace = if signers_names.is_empty() {
+        "- No signers found".to_string()
+    } else {
+        signers_text.join("\n").clone()
+    };
+
     let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
         CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
-        if signers_names.is_empty() {
-            "No signers found"
-        } else {
-            signers_string.as_str() as _
-        },
+        signers_text_to_replace.as_str(),
     );
     fs::write(co_file_path, data).unwrap();
 }
