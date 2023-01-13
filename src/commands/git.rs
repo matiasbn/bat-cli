@@ -128,12 +128,14 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             )
         }
         GitCommit::Notes => {
+            println!("Creating a commit for open_questions.md, smellies.md and threat_modeling.md");
             let auditor_notes_path = BatConfig::get_auditor_notes_path();
             let open_questions_path = auditor_notes_path.clone() + "open_questions.md";
             let smellies_path = auditor_notes_path.clone() + "smellies.md";
             let threat_modeling_path = auditor_notes_path.clone() + "threat_modeling.md";
             let commit_string =
                 "notes: open_questions, smellies and threat_modeling notes".to_string();
+            println!("{commit_string}");
             (
                 commit_string,
                 vec![open_questions_path, smellies_path, threat_modeling_path],
