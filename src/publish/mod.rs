@@ -15,7 +15,10 @@ pub fn full() {
 
 pub fn clippy() {
     assert!(check_files_not_commited());
-    Command::new("cargo").arg("clippy").output().unwrap();
+    Command::new("cargo")
+        .args(["clippy", "--fix"])
+        .output()
+        .unwrap();
     create_commit(PublishCommit::Clippy, None);
 }
 
