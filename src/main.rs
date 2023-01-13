@@ -3,12 +3,12 @@
 extern crate core;
 
 use clap::{Parser, Subcommand};
+use commands::git::GitCommit;
 
 mod command_line;
 mod commands;
 mod config;
 mod constants;
-mod git;
 // use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
@@ -32,6 +32,8 @@ enum Commands {
     Finding(FindingActions),
     /// Update the templates folder
     Templates,
+    /// Commits the open_questions, smellies and threat_modeling notes
+    Notes,
     // /// Checks the health of the files
     // Check {
     //     /// The type of check to execute
@@ -87,6 +89,7 @@ async fn main() {
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
         Commands::Templates => commands::templates::update_templates(),
+        Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None),
         _ => panic!("Bad command"),
     }
 }

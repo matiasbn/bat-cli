@@ -11,13 +11,13 @@ use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::command_line::vs_code_open_file_in_current_window;
+use crate::commands::git::{create_git_commit, GitCommit};
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
     AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER,
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
-use crate::git::{create_git_commit, GitCommit};
 
 pub fn initialize_bat_project() {
     let bat_config: BatConfig = BatConfig::get_init_config();

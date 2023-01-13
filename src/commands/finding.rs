@@ -10,8 +10,8 @@ use std::{
 
 use crate::{
     command_line::vs_code_open_file_in_current_window,
+    commands::git::{create_git_commit, GitCommit},
     config::BatConfig,
-    git::{create_git_commit, GitCommit},
 };
 
 pub fn reject() {

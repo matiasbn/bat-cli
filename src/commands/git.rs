@@ -37,6 +37,7 @@ pub enum GitCommit {
     UpdateFinding,
     PrepareAllFinding,
     Templates,
+    Notes,
 }
 
 pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String>>) {
@@ -55,9 +56,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
-            println!(
-                "code-overhaul file started with commit: {commit_string:?}"
-            );
+            println!("code-overhaul file started with commit: {commit_string:?}");
             let file_to_delete_path =
                 BatConfig::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()));
             let file_to_add_path =
@@ -68,9 +67,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
-            println!(
-                "code-overhaul file finished with commit: {commit_string:?}"
-            );
+            println!("code-overhaul file finished with commit: {commit_string:?}");
             let file_to_delete_path =
                 BatConfig::get_auditor_code_overhaul_started_path(Some(commit_file.clone()));
             let file_to_add_path =
@@ -81,9 +78,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
-            println!(
-                "code-overhaul file updated with commit: {commit_string:?}"
-            );
+            println!("code-overhaul file updated with commit: {commit_string:?}");
             let file_to_add_path =
                 BatConfig::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_add_path])
@@ -126,6 +121,18 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let file_to_add_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
             let templates_path = BatConfig::get_templates_path();
             (commit_string, vec![file_to_add_path, templates_path])
+        }
+        GitCommit::Notes => {
+            let auditor_notes_path = BatConfig::get_auditor_notes_path();
+            let open_questions_path = auditor_notes_path.clone() + "open_questions.md";
+            let smellies_path = auditor_notes_path.clone() + "smellies.md";
+            let threat_modeling_path = auditor_notes_path.clone() + "threat_modeling.md";
+            let commit_string =
+                "notes: open_questions, smellies and threat_modeling notes".to_string();
+            (
+                commit_string,
+                vec![open_questions_path, smellies_path, threat_modeling_path],
+            )
         }
         _ => panic!("Wrong GitCommit type input"),
     };

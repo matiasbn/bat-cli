@@ -1,9 +1,9 @@
 use std::{fs, process::Command};
 
 use crate::{
+    commands::git::{clone_base_repository, create_git_commit, GitCommit},
     config::BatConfig,
     constants::BASE_REPOSTORY_NAME,
-    git::{clone_base_repository, create_git_commit, GitCommit},
 };
 
 pub fn update_templates() {

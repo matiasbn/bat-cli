@@ -10,6 +10,7 @@ use dialoguer::Select;
 use walkdir::WalkDir;
 
 use crate::command_line::vs_code_open_file_in_current_window;
+use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::miro::miro_api::frame::create_frame;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
@@ -19,7 +20,6 @@ use crate::constants::{
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
     CODE_OVERHAUL_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
 };
-use crate::git::{check_correct_branch, create_git_commit, GitCommit};
 
 use std::borrow::{Borrow, BorrowMut};
 use std::fs::File;

@@ -5,11 +5,11 @@ use std::{fs, process::Command};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
 
+use crate::commands::git::clone_base_repository;
 use crate::config::RequiredConfig;
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
 };
-use crate::git::clone_base_repository;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 
@@ -115,9 +115,7 @@ fn create_bat_toml(project_config: RequiredConfig) {
     } = project_config;
 
     if bat_toml_path.exists() {
-        panic!(
-            "Bat.toml file already exist in {bat_toml_path:?}, aborting"
-        )
+        panic!("Bat.toml file already exist in {bat_toml_path:?}, aborting")
     };
 
     // set project name
@@ -163,9 +161,7 @@ pub fn create_auditor_toml() {
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
 
     if auditor_toml_path.exists() {
-        panic!(
-            "BatAudit.toml file already exist in {auditor_toml_path:?}, aborting"
-        )
+        panic!("BatAudit.toml file already exist in {auditor_toml_path:?}, aborting")
     };
 
     fs::write(auditor_toml_path, AUDITOR_TOML_INITIAL_CONFIG_STR)
