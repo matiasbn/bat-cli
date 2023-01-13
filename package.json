@@ -1,0 +1,13 @@
+{
+  "name": "bat-cli",
+  "version": "0.1.24",
+  "description": "Blockchain auditor toolkit",
+  "main": "index.js",
+  "scripts": {
+    "publish-and-install": "npm run publish && npm run install",
+    "publish": "cargo publish",
+    "install": "cargo install bat-cli"
+  },
+  "author": "",
+  "license": "ISC"
+}
