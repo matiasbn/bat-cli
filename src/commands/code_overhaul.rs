@@ -94,7 +94,7 @@ pub async fn start_code_overhaul_file() {
         None => panic!("User did not select anything"),
     };
 
-    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path.clone()(Some(
+    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(
         to_start_file_name.clone(),
     ));
 
@@ -442,12 +442,12 @@ fn parse_validations_into_co(co_file_path: String, context_lines: Vec<String>) {
     let accounts_validations_string = if account_validations.is_empty() {
         "- NONE".to_string()
     } else {
-        account_validations.join("\n").clone()
+        account_validations.join("\n")
     };
     let prerequisites_string = if prerequisites.is_empty() {
         "- NONE".to_string()
     } else {
-        prerequisites.join("\n").clone()
+        prerequisites.join("\n")
     };
     fs::write(
         co_file_path,
@@ -472,7 +472,7 @@ fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
         .map(|line| {
             line.replace("pub ", "")
                 .replace("  ", "")
-                .split(":")
+                .split(':')
                 .collect::<Vec<&str>>()[0]
                 .to_string()
         })
@@ -560,7 +560,7 @@ fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
     let signers_text_to_replace = if signers_names.is_empty() {
         "- No signers found".to_string()
     } else {
-        signers_text.join("\n").clone()
+        signers_text.join("\n")
     };
 
     let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
@@ -669,7 +669,7 @@ fn get_context_name(co_file_name: String) -> String {
         .lines()
         .position(|line| {
             if line.contains("pub fn") {
-                let function_name = line.split("(").collect::<Vec<&str>>()[0]
+                let function_name = line.split('(').collect::<Vec<&str>>()[0]
                     .split_whitespace()
                     .last()
                     .unwrap();

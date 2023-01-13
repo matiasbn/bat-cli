@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, fs, process::Command};
+use std::{fs, process::Command};
 
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 
@@ -34,16 +34,16 @@ pub fn publish() {
 
 pub fn bump(push: bool) {
     assert!(check_files_not_commited());
-    let prompt_text = format!("select the version bump:");
+    let prompt_text = "select the version bump:".to_string();
     let cargo_toml = fs::read_to_string("Cargo.toml").unwrap();
     let version_line_index = cargo_toml
         .lines()
         .position(|line| line.split(" = ").next().unwrap() == "version")
         .unwrap();
     let version_line = cargo_toml.lines().collect::<Vec<_>>()[version_line_index];
-    let mut version = version_line.to_string().replace("\"", "");
+    let mut version = version_line.to_string().replace('\"', "");
     version = version.split("= ").last().unwrap().to_string();
-    let mut version_split = version.split(".");
+    let mut version_split = version.split('.');
     let major = version_split.next().unwrap().parse::<i32>().unwrap();
     let minor = version_split.next().unwrap().parse::<i32>().unwrap();
     let patch = version_split.next().unwrap().parse::<i32>().unwrap();
@@ -137,7 +137,7 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
             );
             execute_command(
                 "git".to_string(),
-                vec!["commit", "-m", format!("clippy commit").as_str()],
+                vec!["commit", "-m", "clippy commit".to_string().as_str()],
                 "error creating commit for clippy".to_string(),
             );
         }

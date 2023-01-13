@@ -32,7 +32,7 @@ pub fn execute_command(
     from_utf8(output.stdout.as_slice())
         .unwrap()
         .to_string()
-        .clone()
+        
 }
 
 fn canonicalize_path(path_to_canonicalize: String) -> PathBuf {
