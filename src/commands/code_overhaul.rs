@@ -28,7 +28,7 @@ use crate::constants::{
 
 use std::borrow::{Borrow, BorrowMut};
 
-use std::fmt::format;
+
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -971,7 +971,7 @@ fn get_possible_validations(
     for (line_index, line) in lines_enumerate {
         for validation in validations_strings.iter() {
             // validation function
-            if line.contains(validation) && line.contains("(") {
+            if line.contains(validation) && line.contains('(') {
                 // single line validation
                 if line.contains(");") {
                     let prompt = format!("is the next line a validation? \n {line}");

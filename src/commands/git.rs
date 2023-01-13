@@ -108,7 +108,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
         }
         GitCommit::DeployMiro => {
             let entrypoint_name = &commit_files.unwrap()[0];
-            let commit_string = "co: ".to_string() + &entrypoint_name + " deployed to Miro";
+            let commit_string = "co: ".to_string() + entrypoint_name + " deployed to Miro";
             println!("code-overhaul file deployed to Miro with commit: {commit_string:?}");
             let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
             let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
