@@ -10,12 +10,7 @@ pub fn full() {
         vec!["status", "--porcelain"],
         "error running git status".to_string(),
     );
-    if !output
-        .split("\n")
-        .map(|l| l.to_string())
-        .collect::<Vec<String>>()
-        .is_empty()
-    {
+    if !output.is_empty() {
         panic!("Commit your changes before executing this command!");
     }
     println!("{output}")
