@@ -103,7 +103,7 @@ async fn main() {
         Commands::Update => commands::update::update_repository(),
         Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None),
         // only for dev
-        Commands::Package(PublishActions::Bump) => publish::bump_version(false),
+        Commands::Package(PublishActions::Bump) => publish::bump(false),
         Commands::Package(PublishActions::Clippy) => publish::clippy(),
         Commands::Package(PublishActions::Publish) => publish::publish(),
         Commands::Package(PublishActions::Full) => publish::full(),

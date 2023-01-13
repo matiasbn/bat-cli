@@ -2,23 +2,19 @@ use std::{borrow::BorrowMut, fs, process::Command};
 
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 
-use crate::command_line::execute_command;
+use crate::{
+    command_line::execute_command,
+    commands::git::{check_files_not_commited, git_push},
+};
 
 pub fn full() {
-    let output = execute_command(
-        "git".to_string(),
-        vec!["status", "--porcelain"],
-        "error running git status".to_string(),
-    );
-    if !output.is_empty() {
-        panic!("Commit your changes before executing this command!");
-    }
-    println!("{output}")
-    // clippy();
-    // publish();
+    assert!(check_files_not_commited());
+    clippy();
+    publish();
 }
 
 pub fn clippy() {
+    assert!(check_files_not_commited());
     execute_command(
         "cargo".to_string(),
         vec!["clippy"],
@@ -28,7 +24,8 @@ pub fn clippy() {
 }
 
 pub fn publish() {
-    bump_version(true);
+    assert!(check_files_not_commited());
+    bump(true);
     execute_command(
         "cargo".to_string(),
         vec!["publish"],
@@ -36,7 +33,8 @@ pub fn publish() {
     );
 }
 
-pub fn bump_version(push: bool) {
+pub fn bump(push: bool) {
+    assert!(check_files_not_commited());
     let prompt_text = format!("select the version bump:");
     let cargo_toml = fs::read_to_string("Cargo.toml").unwrap();
     let version_line_index = cargo_toml
@@ -139,12 +137,4 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
             );
         }
     }
-}
-
-fn git_push() {
-    execute_command(
-        "git".to_string(),
-        vec!["push"],
-        "error pushing commit for Cargo.toml".to_string(),
-    );
 }

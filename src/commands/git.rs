@@ -1,6 +1,7 @@
 use std::{process::Command, str};
 
 use crate::{
+    command_line::execute_command,
     config::{BatConfig, RequiredConfig},
     constants::BASE_REPOSTORY_URL,
 };
@@ -184,6 +185,24 @@ pub fn clone_base_repository() {
         .args(["clone", BASE_REPOSTORY_URL])
         .output()
         .unwrap();
+}
+
+pub fn git_push() {
+    execute_command(
+        "git".to_string(),
+        vec!["push"],
+        "error pushing changes".to_string(),
+    );
+}
+
+// returns false if there are files to commit
+pub fn check_files_not_commited() -> bool {
+    let output = execute_command(
+        "git".to_string(),
+        vec!["status", "--porcelain"],
+        "error running git status".to_string(),
+    );
+    output.is_empty()
 }
 
 #[test]
