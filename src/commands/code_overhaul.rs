@@ -14,11 +14,12 @@ use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::miro::miro_api::frame::create_frame;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
-    CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
-    CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER, CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER,
-    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
-    CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
-    CODE_OVERHAUL_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
+    CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
+    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
+    CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER,
+    CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
+    CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
+    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
 };
 
 use std::borrow::{Borrow, BorrowMut};
@@ -360,13 +361,13 @@ fn parse_validations_into_co(co_file_path: String, context_lines: Vec<String>) {
         .filter(|line| !line.contains("///"))
         .map(|line| line.replace('\t', ""))
         .collect();
-    let mut accounts_groups: Vec<String> = Vec::new();
+    let mut validations: Vec<String> = Vec::new();
 
     for (line_number, line) in filtered_lines.iter().enumerate() {
         if line.contains("#[account(") {
             let mut idx = 1;
             // set the first line as a rust snippet on md
-            let mut account_string = vec!["- ```rust".to_string(), line.to_string()];
+            let mut account_string = vec![line.to_string()];
             // if next line is pub
             while !filtered_lines[line_number + idx].contains("pub ") {
                 if filtered_lines[line_number + idx].contains("constraint =")
@@ -380,38 +381,88 @@ fn parse_validations_into_co(co_file_path: String, context_lines: Vec<String>) {
             }
             // end of md section
             account_string.push(filtered_lines[line_number + idx].clone());
-            account_string.push("   ```".to_string());
             // filter empty lines, like accounts without nothing or account mut
             if !(account_string[1].contains("#[account(") && account_string[2].contains(")]"))
                 && !account_string[1].contains("#[account(mut)]")
             {
-                accounts_groups.push(account_string.join("\n"));
+                validations.push(account_string.join("\n"));
             }
         }
     }
-    let accounts_string = accounts_groups.join("\n");
+    // filter only validations
+    validations = validations
+        .iter()
+        .filter(|validation| validation.contains("has_one") || validation.contains("constraint"))
+        .map(|validation| validation.to_string())
+        .collect();
 
     // replace in co file
-    if accounts_groups.is_empty() {
-        let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
-            CODE_OVERHAUL_VALIDATION_PLACEHOLDER,
-            CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER,
-        );
+    if validations.is_empty() {
+        let data = fs::read_to_string(co_file_path.clone())
+            .unwrap()
+            .replace(
+                CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER,
+                CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER,
+            )
+            .replace(
+                CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
+                CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER,
+            );
         fs::write(co_file_path.clone(), data).unwrap()
     }
-    let co_file = File::open(co_file_path.clone()).unwrap();
-    let co_file_lines = io::BufReader::new(co_file)
-        .lines()
-        .map(|l| l.unwrap())
-        .map(|line| {
-            if line == CODE_OVERHAUL_VALIDATION_PLACEHOLDER {
-                accounts_string.clone()
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<String>>();
-    fs::write(co_file_path, co_file_lines.join("\n")).unwrap();
+
+    let mut account_validations: Vec<String> = vec![];
+    let mut prerequisites: Vec<String> = vec![];
+
+    for validation in validations.iter() {
+        let options = vec!["account validation", "prerequisite"];
+        let prompt_text = format!(
+            "is the next validation an account validation or a prerequisite? \n {validation}"
+        );
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(prompt_text)
+            .items(&options)
+            .default(0)
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+
+        if options[selection] == options[0] {
+            account_validations.push("- ```rust".to_string());
+            account_validations.push(validation.to_string());
+            account_validations.push("   ```".to_string());
+        } else {
+            account_validations.push("- ```rust".to_string());
+            prerequisites.push(validation.to_string());
+            account_validations.push("   ```".to_string());
+        }
+    }
+
+    let co_file_content = fs::read_to_string(co_file_path.clone()).unwrap();
+
+    let accounts_validations_string = if account_validations.is_empty() {
+        "- NONE".to_string()
+    } else {
+        account_validations.join("\n").clone()
+    };
+    let prerequisites_string = if prerequisites.is_empty() {
+        "- NONE".to_string()
+    } else {
+        prerequisites.join("\n").clone()
+    };
+    fs::write(
+        co_file_path,
+        co_file_content
+            .replace(
+                CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER,
+                accounts_validations_string.as_str(),
+            )
+            .replace(
+                CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
+                prerequisites_string.as_str(),
+            ),
+    )
+    .unwrap();
 }
 
 fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
