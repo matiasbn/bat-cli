@@ -27,7 +27,7 @@ use crate::constants::{
 };
 
 use std::borrow::{Borrow, BorrowMut};
-use std::fmt::format;
+
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};

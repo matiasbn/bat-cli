@@ -1,7 +1,7 @@
 use std::{process::Command, str};
 
 use crate::{
-    command_line::{canonicalize_path, execute_command},
+    command_line::{execute_command},
     config::{BatConfig, RequiredConfig},
     constants::BASE_REPOSTORY_URL,
 };
