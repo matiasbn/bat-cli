@@ -101,7 +101,8 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             println!("code-overhaul file finished with commit: {commit_string:?}");
             let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
             let folder_to_delete_path = format!("{started_path}/{commit_file_name}");
-            let file_to_add_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+            let finished_folder_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+            let file_to_add_path = format!("{finished_folder_path}{commit_file}.md");
             (commit_string, vec![folder_to_delete_path, file_to_add_path])
         }
         GitCommit::UpdateCO => {
