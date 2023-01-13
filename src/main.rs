@@ -36,7 +36,6 @@ enum Commands {
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
     /// Cargo publish operations
-    #[cfg(debug_assertions)]
     #[command(subcommand)]
     Package(PackageActions),
 }
@@ -103,10 +102,14 @@ async fn main() {
         Commands::Update => commands::update::update_repository(),
         Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None),
         // only for dev
+        #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Bump) => publish::bump(false),
+        #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Clippy) => publish::clippy(),
-        // Commands::Package(PackageActions::Publish) => publish::publish(),
-        // Commands::Package(PackageActions::Full) => publish::full(),
-        _ => panic!("Bad command"),
+        #[cfg(debug_assertions)]
+        Commands::Package(PackageActions::Publish) => publish::publish(),
+        #[cfg(debug_assertions)]
+        Commands::Package(PackageActions::Full) => publish::full(),
+        _ => unimplemented!("Command unimplemented"),
     }
 }
