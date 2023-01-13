@@ -4,6 +4,7 @@ struct FileInfo {
     name: String,
 }
 
+use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{MultiSelect, Select};
@@ -23,7 +24,7 @@ use crate::constants::{
 };
 
 use std::borrow::{Borrow, BorrowMut};
-use std::fs::File;
+use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -94,9 +95,8 @@ pub async fn start_code_overhaul_file() {
         None => panic!("User did not select anything"),
     };
 
-    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(Some(
-        to_start_file_name.clone(),
-    ));
+    let to_review_path =
+        BatConfig::get_auditor_code_overhaul_to_review_path(Some(to_start_file_name.clone()));
 
     let instruction_files_info = get_instruction_files();
 
@@ -272,6 +272,40 @@ pub fn update_code_overhaul_file() {
         }
         None => println!("User did not select anything"),
     }
+}
+
+pub fn count_co_files() {
+    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
+    let to_review_folder = fs::read_dir(to_review_path).unwrap();
+    let to_review_count = count_filtered(to_review_folder);
+    println!("to-review co files: {}", format!("{to_review_count}").red());
+    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    let started_folder = fs::read_dir(started_path).unwrap();
+    let started_count = count_filtered(started_folder);
+    println!("started co files: {}", format!("{started_count}").yellow());
+    let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+    let finished_folder = fs::read_dir(finished_path).unwrap();
+    let finished_count = count_filtered(finished_folder);
+    println!("finished co files: {}", format!("{finished_count}").green());
+    println!(
+        "total co files: {}",
+        format!("{}", to_review_count + started_count + finished_count).purple()
+    );
+}
+
+pub fn count_filtered(dir_to_count: ReadDir) -> usize {
+    dir_to_count
+        .filter(|file| {
+            !file
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_str()
+                .unwrap()
+                .contains(".gitkeep")
+        })
+        .collect::<Vec<_>>()
+        .len()
 }
 
 fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {

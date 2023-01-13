@@ -64,6 +64,8 @@ enum CodeOverhaulActions {
     Finish,
     /// Update a code-overhaul file by creating a commit
     Update,
+    /// Counts the to-review, started, finished and total co files
+    Count,
 }
 
 #[derive(Subcommand, Debug)]
@@ -92,6 +94,8 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Update) => {
             commands::code_overhaul::update_code_overhaul_file()
         }
+        Commands::CO(CodeOverhaulActions::Count) => commands::code_overhaul::count_co_files(),
+
         // Commands::CO(CodeOverhaulActions::Test) => commands::code_overhaul::function_to_test(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
