@@ -28,7 +28,7 @@ pub fn clippy() {
 pub fn publish() {
     assert!(check_files_not_commited());
     bump(true);
-    println!("Executing publish cargo publish");
+    println!("Executing cargo publish");
     Command::new("cargo").arg("publish").output().unwrap();
 }
 

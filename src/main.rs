@@ -38,7 +38,7 @@ enum Commands {
     /// Cargo publish operations
     #[cfg(debug_assertions)]
     #[command(subcommand)]
-    Package(PublishActions),
+    Package(PackageActions),
 }
 
 #[derive(Subcommand, Debug)]
@@ -68,7 +68,7 @@ enum CodeOverhaulActions {
 }
 
 #[derive(Subcommand, Debug)]
-enum PublishActions {
+enum PackageActions {
     /// Bump the version
     Bump,
     /// Bump version and publish to crates.io
@@ -103,10 +103,10 @@ async fn main() {
         Commands::Update => commands::update::update_repository(),
         Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None),
         // only for dev
-        Commands::Package(PublishActions::Bump) => publish::bump(false),
-        Commands::Package(PublishActions::Clippy) => publish::clippy(),
-        Commands::Package(PublishActions::Publish) => publish::publish(),
-        Commands::Package(PublishActions::Full) => publish::full(),
+        Commands::Package(PackageActions::Bump) => publish::bump(false),
+        Commands::Package(PackageActions::Clippy) => publish::clippy(),
+        Commands::Package(PackageActions::Publish) => publish::publish(),
+        Commands::Package(PackageActions::Full) => publish::full(),
         _ => panic!("Bad command"),
     }
 }
