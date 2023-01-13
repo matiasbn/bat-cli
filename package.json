@@ -5,10 +5,9 @@
   "main": "index.js",
   "scripts": {
     "bat-cli::package::bump": "bat-cli package bump",
-    "bat-cli::package::publish": "bat-cli package publish",
     "bat-cli::package::clippy": "bat-cli package clippy",
-    "bat-cli::package::full": "bat-cli package full",
-    "bat-cli::install": "cargo install bat-cli",
+    "cargo::install::bat-cli": "cargo install bat-cli",
+    "cargo::publish::bat-cli": "cargo publish",
     "open-cargo-toml": "code -a Cargo.toml"
   },
   "author": "",
