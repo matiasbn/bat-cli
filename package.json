@@ -6,6 +6,8 @@
   "scripts": {
     "bat-cli::package::bump": "cargo run package bump",
     "bat-cli::package::clippy": "cargo run package clippy",
+    "bat-cli::package::publish": "cargo run package publish",
+    "bat-cli::package::full": "cargo run package full",
     "cargo::install::bat-cli": "cargo install bat-cli",
     "cargo::publish::bat-cli": "cargo publish",
     "open-cargo-toml": "code -a Cargo.toml"
