@@ -8,10 +8,10 @@ use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{MultiSelect, Select};
-use normalize_url::normalizer;
+
 use walkdir::WalkDir;
 
-use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
+use crate::command_line::{vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::miro::miro_api::frame::{create_frame, create_image_from_device};
 use crate::commands::miro::miro_api::miro_enabled;
@@ -178,7 +178,7 @@ pub fn start_code_overhaul_file() {
     if miro_enabled {
         // if miro enabled, then create a subfolder
         let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
-        let started_co_folder_path = started_folder_path.clone() + entrypoint_name.clone().as_str();
+        let started_co_folder_path = started_folder_path + entrypoint_name.clone().as_str();
         let started_co_file_path = format!("{started_co_folder_path}/{to_start_file_name}");
         // create the co subfolder
         Command::new("mkdir")
@@ -202,12 +202,12 @@ pub fn start_code_overhaul_file() {
         create_git_commit(GitCommit::StartCOMiro, Some(vec![to_start_file_name]));
 
         // open co file in VSCode
-        vs_code_open_file_in_current_window(&started_co_file_path.as_str());
+        vs_code_open_file_in_current_window(started_co_file_path.as_str());
     } else {
         let started_path =
             BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()));
         Command::new("mv")
-            .args([to_review_file_path.clone(), started_path.clone()])
+            .args([to_review_file_path, started_path.clone()])
             .output()
             .unwrap();
         println!("{to_start_file_name} file moved to started");
@@ -317,7 +317,7 @@ pub async fn deploy_miro() {
     if started_folders.is_empty() {
         panic!("No folders found in started folder for the auditor")
     }
-    let prompt_text = format!("select the folder to deploy to Miro");
+    let prompt_text = "select the folder to deploy to Miro".to_string();
     let selection = Select::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt_text)
         .items(&started_folders)
@@ -335,7 +335,7 @@ pub async fn deploy_miro() {
     // check if some of the screenshots is empty
     for path in screenshot_paths.clone() {
         let screenshot_file = fs::read(&path).unwrap();
-        let screenshot_name = path.split("/").clone().last().unwrap();
+        let screenshot_name = path.split('/').clone().last().unwrap();
         if screenshot_file.is_empty() {
             panic!("{screenshot_name} screenshot file is empty, please complete it");
         }
@@ -349,7 +349,7 @@ pub async fn deploy_miro() {
 
     // only create the frame if it was not created yet
     if to_start_file_content.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
-        let miro_frame = create_frame(&selected_folder).await;
+        let miro_frame = create_frame(selected_folder).await;
         fs::write(
             &started_co_file_path,
             to_start_file_content
@@ -363,7 +363,7 @@ pub async fn deploy_miro() {
 
     let selections = MultiSelect::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt_text)
-        .items(&CO_FIGURES)
+        .items(CO_FIGURES)
         .interact_on_opt(&Term::stderr())
         .unwrap()
         .unwrap();
@@ -371,7 +371,7 @@ pub async fn deploy_miro() {
         for selection in selections.iter() {
             let screenshot_path_vec = &screenshot_paths.clone().collect::<Vec<_>>();
             let screenshot_path = &screenshot_path_vec.as_slice()[*selection];
-            let file_name = screenshot_path.split("/").last().unwrap();
+            let file_name = screenshot_path.split('/').last().unwrap();
             println!("Uploading: {file_name}");
             create_image_from_device(screenshot_path.to_string()).await;
         }

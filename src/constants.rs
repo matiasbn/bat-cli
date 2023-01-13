@@ -48,7 +48,7 @@ auditor_name = ""
 miro_oauth_access_token = ""
 "#;
 
-pub static CO_FIGURES: &'static [&str] = &[
+pub static CO_FIGURES: &[&str] = &[
     "entrypoint.png",
     "handler.png",
     "context_accounts.png",

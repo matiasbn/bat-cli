@@ -1,7 +1,7 @@
 // VSCode
 
 use std::{
-    path::{Path, PathBuf},
+    path::{Path},
     process::Command,
     str::from_utf8,
 };

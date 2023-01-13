@@ -50,7 +50,7 @@ pub mod miro_api {
         use serde_json::{json, Value};
 
         use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-        use reqwest::multipart::{self, Part};
+        use reqwest::multipart::{self};
         use tokio::fs::File;
         use tokio_util::codec::{BytesCodec, FramedRead};
 
@@ -116,7 +116,7 @@ pub mod miro_api {
                 miro_oauth_access_token,
                 ..
             } = BatConfig::get_init_config().auditor;
-            let file_name = file_path.clone().split("/").last().unwrap().to_string();
+            let file_name = file_path.clone().split('/').last().unwrap().to_string();
             let file = File::open(file_path.clone()).await.unwrap();
             // read file body stream
             let stream = FramedRead::new(file, BytesCodec::new());
@@ -132,7 +132,7 @@ pub mod miro_api {
             let form = multipart::Form::new().part("resource", some_file);
 
             let client = reqwest::Client::new();
-            let board_response = client
+            let _board_response = client
                 .post(format!(
                     "https://api.miro.com/v2/boards/{miro_board_id}/images"
                 ))
