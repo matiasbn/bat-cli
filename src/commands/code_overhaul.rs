@@ -11,7 +11,7 @@ use dialoguer::{MultiSelect, Select};
 
 use walkdir::WalkDir;
 
-use crate::command_line::{vs_code_open_file_in_current_window};
+use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::miro::miro_api::frame::{create_frame, create_image_from_device};
 use crate::commands::miro::miro_api::miro_enabled;
@@ -27,6 +27,7 @@ use crate::constants::{
 };
 
 use std::borrow::{Borrow, BorrowMut};
+use std::fmt::format;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -220,13 +221,14 @@ pub fn start_code_overhaul_file() {
 }
 
 pub fn finish_code_overhaul_file() {
+    check_correct_branch();
     // get to-review files
-    let started_files = get_started_entrypoints();
+    let started_endpoints = get_started_entrypoints();
 
     let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&started_files)
+        .items(&started_endpoints)
         .default(0)
-        .with_prompt("Select the code-overhaul file to finish:")
+        .with_prompt("Select the code-overhaul to finish:")
         .interact_on_opt(&Term::stderr())
         .unwrap();
 
@@ -234,20 +236,50 @@ pub fn finish_code_overhaul_file() {
     match selection {
         // move selected file to finished
         Some(index) => {
-            let finished_file_name = started_files[index].clone();
-            let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(Some(
-                finished_file_name.clone(),
-            ));
-            let started_path =
-                BatConfig::get_auditor_code_overhaul_started_path(Some(finished_file_name.clone()));
-            check_correct_branch();
-            check_code_overhaul_file_completed(started_path.clone(), finished_file_name.clone());
-            Command::new("mv")
-                .args([started_path, finished_path])
-                .output()
-                .unwrap();
-            println!("{finished_file_name} file moved to finished");
-            create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
+            if miro_enabled() {
+                let finished_endpoint = started_endpoints[index].clone();
+                let finished_folder_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+                let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+                let started_co_folder_path =
+                    canonicalize_path(format!("{started_folder_path}/{finished_endpoint}"));
+                let started_co_file_path = canonicalize_path(format!(
+                    "{started_folder_path}/{finished_endpoint}/{finished_endpoint}.md"
+                ));
+                check_code_overhaul_file_completed(
+                    started_co_file_path.clone(),
+                    finished_endpoint.clone(),
+                );
+                // move into finished
+                Command::new("mv")
+                    .args([started_co_file_path, finished_folder_path])
+                    .output()
+                    .unwrap();
+                // remove co subfolder
+                Command::new("rm")
+                    .args(["-rf", &started_co_folder_path])
+                    .output()
+                    .unwrap();
+                println!("{finished_endpoint} moved to finished");
+                create_git_commit(GitCommit::FinishCOMiro, Some(vec![finished_endpoint]));
+            } else {
+                let finished_file_name = started_endpoints[index].clone();
+                let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(Some(
+                    finished_file_name.clone(),
+                ));
+                let started_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
+                    finished_file_name.clone(),
+                ));
+                check_code_overhaul_file_completed(
+                    started_path.clone(),
+                    finished_file_name.clone(),
+                );
+                Command::new("mv")
+                    .args([started_path, finished_path])
+                    .output()
+                    .unwrap();
+                println!("{finished_file_name} file moved to finished");
+                create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
+            }
         }
         None => println!("User did not select anything"),
     }
@@ -287,22 +319,27 @@ pub fn update_code_overhaul_file() {
 }
 
 pub fn count_co_files() {
-    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
-    let to_review_folder = fs::read_dir(to_review_path).unwrap();
-    let to_review_count = count_filtered(to_review_folder);
+    let (to_review_count, started_count, finished_count) = co_counter();
     println!("to-review co files: {}", format!("{to_review_count}").red());
-    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
-    let started_folder = fs::read_dir(started_path).unwrap();
-    let started_count = count_filtered(started_folder);
     println!("started co files: {}", format!("{started_count}").yellow());
-    let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
-    let finished_folder = fs::read_dir(finished_path).unwrap();
-    let finished_count = count_filtered(finished_folder);
     println!("finished co files: {}", format!("{finished_count}").green());
     println!(
         "total co files: {}",
         format!("{}", to_review_count + started_count + finished_count).purple()
     );
+}
+
+pub fn co_counter() -> (usize, usize, usize) {
+    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
+    let to_review_folder = fs::read_dir(to_review_path).unwrap();
+    let to_review_count = count_filtered(to_review_folder);
+    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    let started_folder = fs::read_dir(started_path).unwrap();
+    let started_count = count_filtered(started_folder);
+    let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+    let finished_folder = fs::read_dir(finished_path).unwrap();
+    let finished_count = count_filtered(finished_folder);
+    (to_review_count, started_count, finished_count)
 }
 
 pub async fn deploy_miro() {

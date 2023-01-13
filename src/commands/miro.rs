@@ -128,7 +128,7 @@ pub mod miro_api {
 
             //make form part of file
             let some_file = multipart::Part::stream(file_body)
-                .file_name(file_name)
+                .file_name(file_name.clone())
                 .mime_str("text/plain")
                 .unwrap();
 
@@ -140,6 +140,19 @@ pub mod miro_api {
                 .post(format!(
                     "https://api.miro.com/v2/boards/{miro_board_id}/images"
                 ))
+                .body(
+                    json!({
+                        "data": {
+                            "title": file_name.clone(),
+                            "position": {
+                                "origin": "center",
+                                "x": 0,
+                                "y": 0
+                            },
+                         },
+                    })
+                    .to_string(),
+                )
                 .multipart(form)
                 .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
                 .send()
