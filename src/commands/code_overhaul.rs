@@ -95,7 +95,7 @@ pub async fn start_code_overhaul_file() {
         None => panic!("User did not select anything"),
     };
 
-    let to_review_path =
+    let to_review_file_path =
         BatConfig::get_auditor_code_overhaul_to_review_path(Some(to_start_file_name.clone()));
 
     let instruction_files_info = get_instruction_files();
@@ -154,48 +154,83 @@ pub async fn start_code_overhaul_file() {
     let context_lines =
         get_context_lines(instruction_file_path.clone(), to_start_file_name.clone());
 
+    // open instruction file in VSCode
+    vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
+
     // parse text into co file
     parse_context_accounts_into_co(
-        Path::new(&(to_review_path.clone())).canonicalize().unwrap(),
+        Path::new(&(to_review_file_path.clone()))
+            .canonicalize()
+            .unwrap(),
         context_lines.clone(),
     );
-    parse_validations_into_co(to_review_path.clone(), context_lines.clone());
-    parse_signers_into_co(to_review_path.clone(), context_lines);
-    parse_function_parameters_into_co(to_review_path.clone(), to_start_file_name.clone());
+    parse_validations_into_co(to_review_file_path.clone(), context_lines.clone());
+    parse_signers_into_co(to_review_file_path.clone(), context_lines);
+    parse_function_parameters_into_co(to_review_file_path.clone(), to_start_file_name.clone());
 
     println!("{to_start_file_name} file updated with instruction information");
 
     // create frame into Miro if user provided miro_oauth_access_token
-    if !BatConfig::get_validated_config()
+    let miro_enabled = !BatConfig::get_validated_config()
         .auditor
         .miro_oauth_access_token
-        .is_empty()
-    {
+        .is_empty();
+    if miro_enabled {
         let RequiredConfig { miro_board_url, .. } = BatConfig::get_validated_config().required;
         let frame = create_frame(&entrypoint_name).await;
         let frame_id: String = frame["id"].clone().to_string().replace('\"', "");
         let frame_url: String = miro_board_url + "/?moveToWidget=" + &frame_id;
         // Replace placeholder with Miro url
-        let to_start_file_content = fs::read_to_string(&to_review_path)
+        let to_start_file_content = fs::read_to_string(&to_review_file_path)
             .unwrap()
             .replace(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, &frame_url);
-        fs::write(&to_review_path, to_start_file_content).unwrap()
+        fs::write(&to_review_file_path, to_start_file_content).unwrap();
+        // if miro enabled, then create a subfolder
+        let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+        let started_co_folder_path = started_folder_path.clone() + entrypoint_name.clone().as_str();
+        let started_co_file_path = format!("{started_co_folder_path}/{to_start_file_name}");
+        // create the co subfolder
+        Command::new("mkdir")
+            .args([&started_co_folder_path])
+            .output()
+            .unwrap();
+        // move the co file inside the folder: mv
+        Command::new("mv")
+            .args([&to_review_file_path, &started_co_folder_path])
+            .output()
+            .unwrap();
+        println!("{to_start_file_name} file moved to started");
+        // create the screenshots empty images: entrypoint, handler, context accounts and validations
+        Command::new("touch")
+            .current_dir(&started_co_folder_path)
+            .args([
+                "entrypoint.png",
+                "handler.png",
+                "context_accounts.png",
+                "validations.png",
+            ])
+            .output()
+            .unwrap();
+
+        create_git_commit(GitCommit::StartCOMiro, Some(vec![to_start_file_name]));
+
+        // open co file in VSCode
+        vs_code_open_file_in_current_window(&started_co_file_path.as_str());
+    } else {
+        let started_path =
+            BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()));
+        Command::new("mv")
+            .args([to_review_file_path.clone(), started_path.clone()])
+            .output()
+            .unwrap();
+        println!("{to_start_file_name} file moved to started");
+
+        create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]));
+
+        // open VSCode files
+        vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
+        vs_code_open_file_in_current_window(started_path.as_str());
     }
-
-    // move to started
-    let started_path =
-        BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()));
-    Command::new("mv")
-        .args([to_review_path.clone(), started_path.clone()])
-        .output()
-        .unwrap();
-    println!("{to_start_file_name} file moved to started");
-
-    create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]));
-
-    // open VSCode files
-    vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
-    vs_code_open_file_in_current_window(started_path.as_str());
 }
 
 pub fn finish_code_overhaul_file() {

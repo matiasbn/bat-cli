@@ -31,6 +31,7 @@ pub enum GitCommit {
     Init,
     InitAuditor,
     StartCO,
+    StartCOMiro,
     FinishCO,
     UpdateCO,
     StartFinding,
@@ -63,6 +64,23 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let file_to_add_path =
                 BatConfig::get_auditor_code_overhaul_started_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_delete_path, file_to_add_path])
+        }
+        GitCommit::StartCOMiro => {
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_file_name = commit_file.clone().replace(".md", "");
+            let commit_string = format!("co: {commit_file_name} started");
+            println!("code-overhaul file started with commit: {commit_string}");
+            let file_to_delete_path =
+                BatConfig::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()));
+            let file_to_add_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+            (
+                commit_string,
+                vec![
+                    file_to_delete_path,
+                    // started_path/commit_file_name <- folder
+                    format!("{file_to_add_path}{commit_file_name}"),
+                ],
+            )
         }
         GitCommit::FinishCO => {
             let commit_file = &commit_files.unwrap()[0];
