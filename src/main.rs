@@ -35,7 +35,7 @@ enum Commands {
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
-    /// Cargo publish operations
+    /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageActions),
 }
@@ -110,6 +110,6 @@ async fn main() {
         Commands::Package(PackageActions::Publish) => publish::publish(),
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Full) => publish::full(),
-        _ => unimplemented!("Command unimplemented"),
+        _ => unimplemented!("Command only implemented for dev opetions"),
     }
 }

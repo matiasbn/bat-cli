@@ -4,8 +4,8 @@
   "description": "Blockchain auditor toolkit",
   "main": "index.js",
   "scripts": {
-    "bat-cli::package::bump": "bat-cli package bump",
-    "bat-cli::package::clippy": "bat-cli package clippy",
+    "bat-cli::package::bump": "cargo run package bump",
+    "bat-cli::package::clippy": "cargo run package clippy",
     "cargo::install::bat-cli": "cargo install bat-cli",
     "cargo::publish::bat-cli": "cargo publish",
     "open-cargo-toml": "code -a Cargo.toml"
