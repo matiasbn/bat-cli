@@ -25,11 +25,7 @@ pub fn clippy() {
 pub fn publish() {
     assert!(check_files_not_commited());
     bump(true);
-    execute_command(
-        "cargo".to_string(),
-        vec!["publish"],
-        "error publishing to crates.io".to_string(),
-    );
+    Command::new("cargo").arg("publish").output().unwrap();
 }
 
 pub fn bump(push: bool) {
