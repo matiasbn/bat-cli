@@ -9,22 +9,26 @@ use crate::{
 
 pub fn full() {
     assert!(check_files_not_commited());
+    println!("Executing full package publish");
     clippy();
     publish();
 }
 
 pub fn clippy() {
     assert!(check_files_not_commited());
+    println!("Executing clippy --fix");
     Command::new("cargo")
         .args(["clippy", "--fix"])
         .output()
         .unwrap();
+    println!("Commiting clippy changes");
     create_commit(PublishCommit::Clippy, None);
 }
 
 pub fn publish() {
     assert!(check_files_not_commited());
     bump(true);
+    println!("Executing publish cargo publish");
     Command::new("cargo").arg("publish").output().unwrap();
 }
 
@@ -76,6 +80,7 @@ pub fn bump(push: bool) {
         .map(|ver| ver.to_string())
         .collect::<Vec<_>>()
         .join(".");
+    println!("Bumping the version {new_version} on Cargo.toml");
     fs::write(
         "Cargo.toml",
         cargo_toml.replace(version_line, &format!("version = \"{new_version}\"")),
@@ -83,9 +88,11 @@ pub fn bump(push: bool) {
     .unwrap();
 
     // create commit with new version
+    println!("Creating commit for version bump {new_version}");
     create_commit(PublishCommit::CommitCargo, Some(vec![new_version.as_str()]));
 
     if push {
+        println!("Pushing changes");
         git_push();
     } else {
         let selection = Select::with_theme(&ColorfulTheme::default())
@@ -97,6 +104,7 @@ pub fn bump(push: bool) {
             .unwrap()
             .unwrap();
         if selection == 0 {
+            println!("Pushing changes");
             git_push();
         }
     }
