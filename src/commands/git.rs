@@ -1,7 +1,7 @@
 use std::{process::Command, str};
 
 use crate::{
-    command_line::execute_command,
+    command_line::{canonicalize_path, execute_command},
     config::{BatConfig, RequiredConfig},
     constants::BASE_REPOSTORY_URL,
 };
@@ -31,7 +31,9 @@ pub enum GitCommit {
     Init,
     InitAuditor,
     StartCO,
+    StartCOMiro,
     FinishCO,
+    FinishCOMiro,
     UpdateCO,
     StartFinding,
     FinishFinding,
@@ -64,6 +66,23 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
                 BatConfig::get_auditor_code_overhaul_started_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_delete_path, file_to_add_path])
         }
+        GitCommit::StartCOMiro => {
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_file_name = commit_file.clone().replace(".md", "");
+            let commit_string = format!("co: {commit_file_name} started");
+            println!("code-overhaul file started with commit: {commit_string}");
+            let file_to_delete_path =
+                BatConfig::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()));
+            let file_to_add_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+            (
+                commit_string,
+                vec![
+                    file_to_delete_path,
+                    // started_path/commit_file_name <- folder
+                    format!("{file_to_add_path}{commit_file_name}"),
+                ],
+            )
+        }
         GitCommit::FinishCO => {
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
@@ -74,6 +93,17 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let file_to_add_path =
                 BatConfig::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()));
             (commit_string, vec![file_to_delete_path, file_to_add_path])
+        }
+        GitCommit::FinishCOMiro => {
+            let commit_file = &commit_files.unwrap()[0];
+            let commit_file_name = commit_file.clone().replace(".md", "");
+            let commit_string = "co: ".to_string() + &commit_file_name + " finished";
+            println!("code-overhaul file finished with commit: {commit_string:?}");
+            let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+            let folder_to_delete_path = format!("{started_path}/{commit_file_name}");
+            let finished_folder_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+            let file_to_add_path = format!("{finished_folder_path}{commit_file}.md");
+            (commit_string, vec![folder_to_delete_path, file_to_add_path])
         }
         GitCommit::UpdateCO => {
             let commit_file = &commit_files.unwrap()[0];

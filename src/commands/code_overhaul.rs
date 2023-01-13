@@ -8,11 +8,13 @@ use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{MultiSelect, Select};
+
 use walkdir::WalkDir;
 
-use crate::command_line::vs_code_open_file_in_current_window;
+use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
-use crate::commands::miro::miro_api::frame::create_frame;
+use crate::commands::miro::miro_api::frame::{create_frame, create_image_from_device};
+use crate::commands::miro::miro_api::miro_enabled;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
@@ -21,9 +23,11 @@ use crate::constants::{
     CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
     CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
+    CO_FIGURES,
 };
 
 use std::borrow::{Borrow, BorrowMut};
+use std::fmt::format;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -54,7 +58,7 @@ pub fn create_overhaul_file(entrypoint_name: String) {
     println!("code-overhaul file created: {entrypoint_name}.md");
 }
 
-pub async fn start_code_overhaul_file() {
+pub fn start_code_overhaul_file() {
     check_correct_branch();
 
     // check if program_lib_path is not empty or panic
@@ -95,7 +99,7 @@ pub async fn start_code_overhaul_file() {
         None => panic!("User did not select anything"),
     };
 
-    let to_review_path =
+    let to_review_file_path =
         BatConfig::get_auditor_code_overhaul_to_review_path(Some(to_start_file_name.clone()));
 
     let instruction_files_info = get_instruction_files();
@@ -154,67 +158,77 @@ pub async fn start_code_overhaul_file() {
     let context_lines =
         get_context_lines(instruction_file_path.clone(), to_start_file_name.clone());
 
+    // open instruction file in VSCode
+    vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
+
     // parse text into co file
     parse_context_accounts_into_co(
-        Path::new(&(to_review_path.clone())).canonicalize().unwrap(),
+        Path::new(&(to_review_file_path.clone()))
+            .canonicalize()
+            .unwrap(),
         context_lines.clone(),
     );
-    parse_validations_into_co(to_review_path.clone(), context_lines.clone());
-    parse_signers_into_co(to_review_path.clone(), context_lines);
-    parse_function_parameters_into_co(to_review_path.clone(), to_start_file_name.clone());
+    parse_validations_into_co(to_review_file_path.clone(), context_lines.clone());
+    parse_signers_into_co(to_review_file_path.clone(), context_lines);
+    parse_function_parameters_into_co(to_review_file_path.clone(), to_start_file_name.clone());
 
     println!("{to_start_file_name} file updated with instruction information");
 
-    // create frame into Miro if user provided miro_oauth_access_token
-    if !BatConfig::get_validated_config()
-        .auditor
-        .miro_oauth_access_token
-        .is_empty()
-    {
-        let RequiredConfig { miro_board_url, .. } = BatConfig::get_validated_config().required;
-        let frame = create_frame(&entrypoint_name).await;
-        let frame_id: String = frame["id"].clone().to_string().replace('\"', "");
-        let frame_url: String = miro_board_url + "/?moveToWidget=" + &frame_id;
-        // Replace placeholder with Miro url
-        let to_start_file_content = fs::read_to_string(&to_review_path)
-            .unwrap()
-            .replace(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, &frame_url);
-        fs::write(&to_review_path, to_start_file_content).unwrap()
+    // create  co subfolder if user provided miro_oauth_access_token
+    let miro_enabled = miro_enabled();
+    if miro_enabled {
+        // if miro enabled, then create a subfolder
+        let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+        let started_co_folder_path = started_folder_path + entrypoint_name.clone().as_str();
+        let started_co_file_path = format!("{started_co_folder_path}/{to_start_file_name}");
+        // create the co subfolder
+        Command::new("mkdir")
+            .args([&started_co_folder_path])
+            .output()
+            .unwrap();
+        // move the co file inside the folder: mv
+        Command::new("mv")
+            .args([&to_review_file_path, &started_co_folder_path])
+            .output()
+            .unwrap();
+        println!("{to_start_file_name} file moved to started");
+        // create the screenshots empty images: entrypoint, handler, context accounts and validations
+        Command::new("touch")
+            .current_dir(&started_co_folder_path)
+            .args(CO_FIGURES)
+            .output()
+            .unwrap();
+        println!("Empty screenshots created, remember to complete them");
+
+        create_git_commit(GitCommit::StartCOMiro, Some(vec![to_start_file_name]));
+
+        // open co file in VSCode
+        vs_code_open_file_in_current_window(started_co_file_path.as_str());
+    } else {
+        let started_path =
+            BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()));
+        Command::new("mv")
+            .args([to_review_file_path, started_path.clone()])
+            .output()
+            .unwrap();
+        println!("{to_start_file_name} file moved to started");
+
+        create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]));
+
+        // open co file in VSCode
+        vs_code_open_file_in_current_window(started_path.as_str());
     }
-
-    // move to started
-    let started_path =
-        BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()));
-    Command::new("mv")
-        .args([to_review_path.clone(), started_path.clone()])
-        .output()
-        .unwrap();
-    println!("{to_start_file_name} file moved to started");
-
-    create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]));
-
-    // open VSCode files
-    vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
-    vs_code_open_file_in_current_window(started_path.as_str());
 }
 
 pub fn finish_code_overhaul_file() {
-    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    check_correct_branch();
     // get to-review files
-    let started_files = fs::read_dir(started_path)
-        .unwrap()
-        .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
-        .filter(|file| file != ".gitkeep")
-        .collect::<Vec<String>>();
-
-    if started_files.is_empty() {
-        panic!("no started files in code-overhaul folder");
-    }
+    let started_endpoints = get_started_entrypoints();
 
     let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&started_files)
+        .items(&started_endpoints)
         .default(0)
-        .with_prompt("Select the code-overhaul file to finish:")
+        .with_prompt("Select the code-overhaul to finish:")
         .interact_on_opt(&Term::stderr())
         .unwrap();
 
@@ -222,20 +236,50 @@ pub fn finish_code_overhaul_file() {
     match selection {
         // move selected file to finished
         Some(index) => {
-            let finished_file_name = started_files[index].clone();
-            let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(Some(
-                finished_file_name.clone(),
-            ));
-            let started_path =
-                BatConfig::get_auditor_code_overhaul_started_path(Some(finished_file_name.clone()));
-            check_correct_branch();
-            check_code_overhaul_file_completed(started_path.clone(), finished_file_name.clone());
-            Command::new("mv")
-                .args([started_path, finished_path])
-                .output()
-                .unwrap();
-            println!("{finished_file_name} file moved to finished");
-            create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
+            if miro_enabled() {
+                let finished_endpoint = started_endpoints[index].clone();
+                let finished_folder_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+                let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+                let started_co_folder_path =
+                    canonicalize_path(format!("{started_folder_path}/{finished_endpoint}"));
+                let started_co_file_path = canonicalize_path(format!(
+                    "{started_folder_path}/{finished_endpoint}/{finished_endpoint}.md"
+                ));
+                check_code_overhaul_file_completed(
+                    started_co_file_path.clone(),
+                    finished_endpoint.clone(),
+                );
+                // move into finished
+                Command::new("mv")
+                    .args([started_co_file_path, finished_folder_path])
+                    .output()
+                    .unwrap();
+                // remove co subfolder
+                Command::new("rm")
+                    .args(["-rf", &started_co_folder_path])
+                    .output()
+                    .unwrap();
+                println!("{finished_endpoint} moved to finished");
+                create_git_commit(GitCommit::FinishCOMiro, Some(vec![finished_endpoint]));
+            } else {
+                let finished_file_name = started_endpoints[index].clone();
+                let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(Some(
+                    finished_file_name.clone(),
+                ));
+                let started_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
+                    finished_file_name.clone(),
+                ));
+                check_code_overhaul_file_completed(
+                    started_path.clone(),
+                    finished_file_name.clone(),
+                );
+                Command::new("mv")
+                    .args([started_path, finished_path])
+                    .output()
+                    .unwrap();
+                println!("{finished_file_name} file moved to finished");
+                create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
+            }
         }
         None => println!("User did not select anything"),
     }
@@ -275,17 +319,9 @@ pub fn update_code_overhaul_file() {
 }
 
 pub fn count_co_files() {
-    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
-    let to_review_folder = fs::read_dir(to_review_path).unwrap();
-    let to_review_count = count_filtered(to_review_folder);
+    let (to_review_count, started_count, finished_count) = co_counter();
     println!("to-review co files: {}", format!("{to_review_count}").red());
-    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
-    let started_folder = fs::read_dir(started_path).unwrap();
-    let started_count = count_filtered(started_folder);
     println!("started co files: {}", format!("{started_count}").yellow());
-    let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
-    let finished_folder = fs::read_dir(finished_path).unwrap();
-    let finished_count = count_filtered(finished_folder);
     println!("finished co files: {}", format!("{finished_count}").green());
     println!(
         "total co files: {}",
@@ -293,7 +329,95 @@ pub fn count_co_files() {
     );
 }
 
-pub fn count_filtered(dir_to_count: ReadDir) -> usize {
+pub fn co_counter() -> (usize, usize, usize) {
+    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
+    let to_review_folder = fs::read_dir(to_review_path).unwrap();
+    let to_review_count = count_filtered(to_review_folder);
+    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    let started_folder = fs::read_dir(started_path).unwrap();
+    let started_count = count_filtered(started_folder);
+    let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+    let finished_folder = fs::read_dir(finished_path).unwrap();
+    let finished_count = count_filtered(finished_folder);
+    (to_review_count, started_count, finished_count)
+}
+
+pub async fn deploy_miro() {
+    assert!(miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
+    // check empty images
+    // get files and folders from started, filter .md files
+    let started_folders: Vec<String> = get_started_entrypoints()
+        .iter()
+        .filter(|file| !file.contains(".md"))
+        .map(|file| file.to_string())
+        .collect();
+    if started_folders.is_empty() {
+        panic!("No folders found in started folder for the auditor")
+    }
+    let prompt_text = "select the folder to deploy to Miro".to_string();
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt_text)
+        .items(&started_folders)
+        .default(0)
+        .interact_on_opt(&Term::stderr())
+        .unwrap()
+        .unwrap();
+
+    let selected_folder = &started_folders[selection];
+    let selected_co_started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    let screenshot_paths = CO_FIGURES
+        .iter()
+        .map(|figure| format!("{selected_co_started_path}/{selected_folder}/{figure}"));
+
+    // check if some of the screenshots is empty
+    for path in screenshot_paths.clone() {
+        let screenshot_file = fs::read(&path).unwrap();
+        let screenshot_name = path.split('/').clone().last().unwrap();
+        if screenshot_file.is_empty() {
+            panic!("{screenshot_name} screenshot file is empty, please complete it");
+        }
+    }
+
+    // create the Miro frame
+    // Replace placeholder with Miro url
+    let started_co_file_path =
+        format!("{selected_co_started_path}/{selected_folder}/{selected_folder}.md");
+    let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
+
+    // only create the frame if it was not created yet
+    if to_start_file_content.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
+        let miro_frame = create_frame(selected_folder).await;
+        fs::write(
+            &started_co_file_path,
+            to_start_file_content
+                .replace(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, &miro_frame.url),
+        )
+        .unwrap();
+    }
+
+    // Upload images
+    let prompt_text = format!("select the images to upload for {selected_folder}");
+
+    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt_text)
+        .items(CO_FIGURES)
+        .interact_on_opt(&Term::stderr())
+        .unwrap()
+        .unwrap();
+    if !selections.is_empty() {
+        for selection in selections.iter() {
+            let screenshot_path_vec = &screenshot_paths.clone().collect::<Vec<_>>();
+            let screenshot_path = &screenshot_path_vec.as_slice()[*selection];
+            let file_name = screenshot_path.split('/').last().unwrap();
+            println!("Uploading: {file_name}");
+            create_image_from_device(screenshot_path.to_string()).await;
+        }
+    } else {
+        println!("No files selected");
+    }
+}
+
+fn count_filtered(dir_to_count: ReadDir) -> usize {
     dir_to_count
         .filter(|file| {
             !file
@@ -884,4 +1008,18 @@ fn get_instruction_files() -> Vec<FileInfo> {
         .collect::<Vec<FileInfo>>();
     instruction_files_info.sort_by(|a, b| a.name.cmp(&b.name));
     instruction_files_info
+}
+
+// returns a list of folder and files names
+fn get_started_entrypoints() -> Vec<String> {
+    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    let started_files = fs::read_dir(started_path)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
+        .filter(|file| file != ".gitkeep")
+        .collect::<Vec<String>>();
+    if started_files.is_empty() {
+        panic!("no started files in code-overhaul folder");
+    }
+    started_files
 }
