@@ -415,6 +415,10 @@ pub async fn deploy_miro() {
     } else {
         println!("No files selected");
     }
+    create_git_commit(
+        GitCommit::DeployMiro,
+        Some(vec![selected_folder.to_string()]),
+    )
 }
 
 fn count_filtered(dir_to_count: ReadDir) -> usize {

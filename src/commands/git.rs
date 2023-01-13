@@ -1,7 +1,7 @@
 use std::{process::Command, str};
 
 use crate::{
-    command_line::{execute_command},
+    command_line::execute_command,
     config::{BatConfig, RequiredConfig},
     constants::BASE_REPOSTORY_URL,
 };
@@ -34,6 +34,7 @@ pub enum GitCommit {
     StartCOMiro,
     FinishCO,
     FinishCOMiro,
+    DeployMiro,
     UpdateCO,
     StartFinding,
     FinishFinding,
@@ -104,6 +105,14 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let finished_folder_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
             let file_to_add_path = format!("{finished_folder_path}{commit_file}.md");
             (commit_string, vec![folder_to_delete_path, file_to_add_path])
+        }
+        GitCommit::DeployMiro => {
+            let entrypoint_name = &commit_files.unwrap()[0];
+            let commit_string = "co: ".to_string() + &entrypoint_name + " deployed to Miro";
+            println!("code-overhaul file deployed to Miro with commit: {commit_string:?}");
+            let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+            let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
+            (commit_string, vec![folder_to_add_path])
         }
         GitCommit::UpdateCO => {
             let commit_file = &commit_files.unwrap()[0];
