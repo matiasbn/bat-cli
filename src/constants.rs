@@ -47,3 +47,10 @@ pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
 auditor_name = ""
 miro_oauth_access_token = ""
 "#;
+
+pub static CO_FIGURES: &'static [&str] = &[
+    "entrypoint.png",
+    "handler.png",
+    "context_accounts.png",
+    "validations.png",
+];

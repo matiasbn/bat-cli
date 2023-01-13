@@ -64,7 +64,7 @@ enum CodeOverhaulActions {
     Finish,
     /// Update a code-overhaul file by creating a commit
     Update,
-    /// Deploys the
+    /// Copies the images to the co Miro frame
     Miro,
     /// Counts the to-review, started, finished and total co files
     Count,
@@ -88,7 +88,7 @@ async fn main() {
         Commands::Create => commands::create::create_project(),
         Commands::Init => commands::init::initialize_bat_project(),
         Commands::CO(CodeOverhaulActions::Start) => {
-            commands::code_overhaul::start_code_overhaul_file().await
+            commands::code_overhaul::start_code_overhaul_file()
         }
         Commands::CO(CodeOverhaulActions::Finish) => {
             commands::code_overhaul::finish_code_overhaul_file()
@@ -97,8 +97,8 @@ async fn main() {
             commands::code_overhaul::update_code_overhaul_file()
         }
         Commands::CO(CodeOverhaulActions::Count) => commands::code_overhaul::count_co_files(),
+        Commands::CO(CodeOverhaulActions::Miro) => commands::code_overhaul::deploy_miro().await,
 
-        // Commands::CO(CodeOverhaulActions::Test) => commands::code_overhaul::function_to_test(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding(),

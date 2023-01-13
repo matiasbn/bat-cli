@@ -11,9 +11,10 @@ use dialoguer::{MultiSelect, Select};
 use normalize_url::normalizer;
 use walkdir::WalkDir;
 
-use crate::command_line::vs_code_open_file_in_current_window;
+use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
-use crate::commands::miro::miro_api::frame::create_frame;
+use crate::commands::miro::miro_api::frame::{create_frame, create_image_from_device};
+use crate::commands::miro::miro_api::miro_enabled;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
@@ -22,6 +23,7 @@ use crate::constants::{
     CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
     CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
+    CO_FIGURES,
 };
 
 use std::borrow::{Borrow, BorrowMut};
@@ -55,7 +57,7 @@ pub fn create_overhaul_file(entrypoint_name: String) {
     println!("code-overhaul file created: {entrypoint_name}.md");
 }
 
-pub async fn start_code_overhaul_file() {
+pub fn start_code_overhaul_file() {
     check_correct_branch();
 
     // check if program_lib_path is not empty or panic
@@ -171,26 +173,9 @@ pub async fn start_code_overhaul_file() {
 
     println!("{to_start_file_name} file updated with instruction information");
 
-    // create frame into Miro and co subfolder if user provided miro_oauth_access_token
-    let miro_enabled = !BatConfig::get_validated_config()
-        .auditor
-        .miro_oauth_access_token
-        .is_empty();
+    // create  co subfolder if user provided miro_oauth_access_token
+    let miro_enabled = miro_enabled();
     if miro_enabled {
-        let RequiredConfig { miro_board_url, .. } = BatConfig::get_validated_config().required;
-        let frame = create_frame(&entrypoint_name).await;
-        let frame_id: String = frame["id"].clone().to_string().replace('\"', "");
-        let frame_url = normalizer::UrlNormalizer::new(
-            format!("{miro_board_url}/?moveToWidget={frame_id}").as_str(),
-        )
-        .unwrap()
-        .normalize(None)
-        .unwrap();
-        // Replace placeholder with Miro url
-        let to_start_file_content = fs::read_to_string(&to_review_file_path)
-            .unwrap()
-            .replace(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, &frame_url);
-        fs::write(&to_review_file_path, to_start_file_content).unwrap();
         // if miro enabled, then create a subfolder
         let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
         let started_co_folder_path = started_folder_path.clone() + entrypoint_name.clone().as_str();
@@ -209,12 +194,7 @@ pub async fn start_code_overhaul_file() {
         // create the screenshots empty images: entrypoint, handler, context accounts and validations
         Command::new("touch")
             .current_dir(&started_co_folder_path)
-            .args([
-                "entrypoint.png",
-                "handler.png",
-                "context_accounts.png",
-                "validations.png",
-            ])
+            .args(CO_FIGURES)
             .output()
             .unwrap();
         println!("Empty screenshots created, remember to complete them");
@@ -240,17 +220,8 @@ pub async fn start_code_overhaul_file() {
 }
 
 pub fn finish_code_overhaul_file() {
-    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
     // get to-review files
-    let started_files = fs::read_dir(started_path)
-        .unwrap()
-        .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
-        .filter(|file| file != ".gitkeep")
-        .collect::<Vec<String>>();
-
-    if started_files.is_empty() {
-        panic!("no started files in code-overhaul folder");
-    }
+    let started_files = get_started_entrypoints();
 
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&started_files)
@@ -334,7 +305,82 @@ pub fn count_co_files() {
     );
 }
 
-pub fn count_filtered(dir_to_count: ReadDir) -> usize {
+pub async fn deploy_miro() {
+    assert!(miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
+    // check empty images
+    // get files and folders from started, filter .md files
+    let started_folders: Vec<String> = get_started_entrypoints()
+        .iter()
+        .filter(|file| !file.contains(".md"))
+        .map(|file| file.to_string())
+        .collect();
+    if started_folders.is_empty() {
+        panic!("No folders found in started folder for the auditor")
+    }
+    let prompt_text = format!("select the folder to deploy to Miro");
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt_text)
+        .items(&started_folders)
+        .default(0)
+        .interact_on_opt(&Term::stderr())
+        .unwrap()
+        .unwrap();
+
+    let selected_folder = &started_folders[selection];
+    let selected_co_started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    let screenshot_paths = CO_FIGURES
+        .iter()
+        .map(|figure| format!("{selected_co_started_path}/{selected_folder}/{figure}"));
+
+    // check if some of the screenshots is empty
+    for path in screenshot_paths.clone() {
+        let screenshot_file = fs::read(&path).unwrap();
+        let screenshot_name = path.split("/").clone().last().unwrap();
+        if screenshot_file.is_empty() {
+            panic!("{screenshot_name} screenshot file is empty, please complete it");
+        }
+    }
+
+    // create the Miro frame
+    // Replace placeholder with Miro url
+    let started_co_file_path =
+        format!("{selected_co_started_path}/{selected_folder}/{selected_folder}.md");
+    let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
+
+    // only create the frame if it was not created yet
+    if to_start_file_content.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
+        let miro_frame = create_frame(&selected_folder).await;
+        fs::write(
+            &started_co_file_path,
+            to_start_file_content
+                .replace(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, &miro_frame.url),
+        )
+        .unwrap();
+    }
+
+    // Upload images
+    let prompt_text = format!("select the images to upload for {selected_folder}");
+
+    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt_text)
+        .items(&CO_FIGURES)
+        .interact_on_opt(&Term::stderr())
+        .unwrap()
+        .unwrap();
+    if !selections.is_empty() {
+        for selection in selections.iter() {
+            let screenshot_path_vec = &screenshot_paths.clone().collect::<Vec<_>>();
+            let screenshot_path = &screenshot_path_vec.as_slice()[*selection];
+            let file_name = screenshot_path.split("/").last().unwrap();
+            println!("Uploading: {file_name}");
+            create_image_from_device(screenshot_path.to_string()).await;
+        }
+    } else {
+        println!("No files selected");
+    }
+}
+
+fn count_filtered(dir_to_count: ReadDir) -> usize {
     dir_to_count
         .filter(|file| {
             !file
@@ -925,4 +971,18 @@ fn get_instruction_files() -> Vec<FileInfo> {
         .collect::<Vec<FileInfo>>();
     instruction_files_info.sort_by(|a, b| a.name.cmp(&b.name));
     instruction_files_info
+}
+
+// returns a list of folder and files names
+fn get_started_entrypoints() -> Vec<String> {
+    let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    let started_files = fs::read_dir(started_path)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
+        .filter(|file| file != ".gitkeep")
+        .collect::<Vec<String>>();
+    if started_files.is_empty() {
+        panic!("no started files in code-overhaul folder");
+    }
+    started_files
 }
