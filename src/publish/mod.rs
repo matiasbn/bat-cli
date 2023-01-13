@@ -5,8 +5,22 @@ use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 use crate::command_line::execute_command;
 
 pub fn full() {
-    clippy();
-    publish();
+    let output = execute_command(
+        "git".to_string(),
+        vec!["status", "--porcelain"],
+        "error running git status".to_string(),
+    );
+    if !output
+        .split("\n")
+        .map(|l| l.to_string())
+        .collect::<Vec<String>>()
+        .is_empty()
+    {
+        panic!("Commit your changes before executing this command!");
+    }
+    println!("{output}")
+    // clippy();
+    // publish();
 }
 
 pub fn clippy() {
