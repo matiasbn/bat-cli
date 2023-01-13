@@ -1,7 +1,7 @@
 // VSCode
 
 use std::{
-    path::{Path, PathBuf},
+    path::{Path},
     process::Command,
     str::from_utf8,
 };
@@ -29,14 +29,16 @@ pub fn execute_command(
             from_utf8(output.stderr.as_slice()).unwrap()
         )
     };
-    from_utf8(output.stdout.as_slice())
-        .unwrap()
-        .to_string()
-        
+    from_utf8(output.stdout.as_slice()).unwrap().to_string()
 }
 
-fn canonicalize_path(path_to_canonicalize: String) -> PathBuf {
-    Path::new(&(path_to_canonicalize)).canonicalize().unwrap()
+pub fn canonicalize_path(path_to_canonicalize: String) -> String {
+    Path::new(&(path_to_canonicalize))
+        .canonicalize()
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap()
 }
 
 // "rust-analyzer.checkOnSave.command": "clippy",
