@@ -105,8 +105,8 @@ async fn main() {
         // only for dev
         Commands::Package(PackageActions::Bump) => publish::bump(false),
         Commands::Package(PackageActions::Clippy) => publish::clippy(),
-        Commands::Package(PackageActions::Publish) => publish::publish(),
-        Commands::Package(PackageActions::Full) => publish::full(),
+        // Commands::Package(PackageActions::Publish) => publish::publish(),
+        // Commands::Package(PackageActions::Full) => publish::full(),
         _ => panic!("Bad command"),
     }
 }
