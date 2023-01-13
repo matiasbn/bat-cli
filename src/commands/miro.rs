@@ -83,7 +83,11 @@ pub mod miro_api {
                               "origin": "center",
                               "x": 0,
                               "y": 0
-                         }
+                         },
+                         "geometry": {
+                            "width": 1878.94949246026,
+                            "height": 1056.9090895089
+                       }
                     })
                     .to_string(),
                 )
