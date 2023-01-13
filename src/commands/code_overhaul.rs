@@ -28,6 +28,7 @@ use crate::constants::{
 
 use std::borrow::{Borrow, BorrowMut};
 
+use std::fmt::format;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -168,7 +169,11 @@ pub fn start_code_overhaul_file() {
             .unwrap(),
         context_lines.clone(),
     );
-    parse_validations_into_co(to_review_file_path.clone(), context_lines.clone());
+    parse_validations_into_co(
+        to_review_file_path.clone(),
+        context_lines.clone(),
+        instruction_file_path.to_str().unwrap().to_string(),
+    );
     parse_signers_into_co(to_review_file_path.clone(), context_lines);
     parse_function_parameters_into_co(to_review_file_path.clone(), to_start_file_name.clone());
 
@@ -517,14 +522,19 @@ fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<Stri
     fs::write(co_file_path, data).unwrap();
 }
 
-fn parse_validations_into_co(co_file_path: String, context_lines: Vec<String>) {
+fn parse_validations_into_co(
+    co_file_path: String,
+    context_lines: Vec<String>,
+    instruction_file_path: String,
+) {
     let filtered_lines: Vec<_> = context_lines
         .iter()
         .filter(|line| !line.contains("///"))
         .map(|line| line.replace('\t', ""))
         .collect();
-    let mut validations: Vec<String> = Vec::new();
-
+    let validations_strings = vec!["require", "valid", "assert"];
+    let mut validations: Vec<String> =
+        get_possible_validations(instruction_file_path, validations_strings.clone());
     for (line_number, line) in filtered_lines.iter().enumerate() {
         if line.contains("#[account(") {
             let mut idx = 1;
@@ -554,7 +564,13 @@ fn parse_validations_into_co(co_file_path: String, context_lines: Vec<String>) {
     // filter only validations
     validations = validations
         .iter()
-        .filter(|validation| validation.contains("has_one") || validation.contains("constraint"))
+        .filter(|validation| {
+            validation.contains("has_one")
+                || validation.contains("constraint")
+                || validation.contains(&validations_strings[0])
+                || validation.contains(&validations_strings[1])
+                || validation.contains(&validations_strings[2])
+        })
         .map(|validation| validation.to_string())
         .collect();
 
@@ -943,6 +959,67 @@ fn get_context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Ve
             context_lines
         }
     }
+}
+
+fn get_possible_validations(
+    instruction_file_path: String,
+    validations_strings: Vec<&str>,
+) -> Vec<String> {
+    let instruction_file = fs::read_to_string(&instruction_file_path).unwrap();
+    let mut possible_validations: Vec<String> = Vec::new();
+    let lines_enumerate = instruction_file.lines().enumerate();
+    for (line_index, line) in lines_enumerate {
+        for validation in validations_strings.iter() {
+            // validation function
+            if line.contains(validation) && line.contains("(") {
+                // single line validation
+                if line.contains(");") {
+                    let prompt = format!("is the next line a validation? \n {line}");
+                    let selection = Select::with_theme(&ColorfulTheme::default())
+                        .with_prompt(prompt)
+                        .item("yes")
+                        .item("no")
+                        .default(0)
+                        .interact_on_opt(&Term::stderr())
+                        .unwrap()
+                        .unwrap();
+                    if selection == 0 {
+                        possible_validations.push(line.to_string());
+                    }
+                } else {
+                    // multi line validation
+                    let mut validation_candidate: Vec<String> = vec![line.to_string()];
+                    let mut idx = 1;
+                    let mut validation_line = instruction_file.clone().lines().collect::<Vec<_>>()
+                        [line_index + idx]
+                        .to_string();
+                    while !(validation_line.contains(");") || validation_line.contains(")?;")) {
+                        validation_candidate.push(validation_line);
+                        idx += 1;
+                        validation_line = instruction_file.clone().lines().collect::<Vec<_>>()
+                            [line_index + idx]
+                            .to_string();
+                    }
+                    validation_candidate.push(validation_line);
+                    let validation_string = validation_candidate.join("\n");
+                    let prompt =
+                        format!("is the next function a validation? \n {validation_string}");
+                    let selection = Select::with_theme(&ColorfulTheme::default())
+                        .with_prompt(prompt)
+                        .item("yes")
+                        .item("no")
+                        .default(0)
+                        .interact_on_opt(&Term::stderr())
+                        .unwrap()
+                        .unwrap();
+                    if selection == 0 {
+                        possible_validations.push(validation_string);
+                    }
+                }
+            }
+        }
+    }
+    possible_validations
 }
 
 fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
