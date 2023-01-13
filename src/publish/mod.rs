@@ -120,7 +120,11 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
 
             execute_command(
                 "git".to_string(),
-                vec!["commit", "-m", format!("version bump {version}").as_str()],
+                vec![
+                    "commit",
+                    "-m",
+                    format!("package: version bump {version}").as_str(),
+                ],
                 "error creating commit for Cargo.toml".to_string(),
             );
         }
