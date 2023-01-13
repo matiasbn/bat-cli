@@ -6,7 +6,7 @@ use crate::{
     constants::BASE_REPOSTORY_NAME,
 };
 
-pub fn update_templates() {
+pub fn update_repository() {
     let BatConfig { required: _, .. } = BatConfig::get_validated_config();
 
     // clone base repository
@@ -14,6 +14,7 @@ pub fn update_templates() {
     clone_base_repository();
 
     // delete templates folder
+    println!("Updating templates folder");
     let templates_path = BatConfig::get_templates_path();
     let output = Command::new("rm")
         .args(["-rf", templates_path.as_str()])
@@ -21,7 +22,7 @@ pub fn update_templates() {
         .unwrap();
     if !output.stderr.is_empty() {
         panic!(
-            "update templates failed with error: {:?}",
+            "update repository failed with error: {:?}",
             std::str::from_utf8(output.stderr.as_slice()).unwrap()
         )
     };
@@ -36,21 +37,11 @@ pub fn update_templates() {
         .unwrap();
     if !output.stderr.is_empty() {
         panic!(
-            "update templates failed with error: {:?}",
+            "update repository failed with error: {:?}",
             std::str::from_utf8(output.stderr.as_slice()).unwrap()
         )
     };
-    // delete base_repository cloned
-    let output = Command::new("rm")
-        .args(["-rf", BASE_REPOSTORY_NAME])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "update templates failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+
     println!("Updating to-review files in code-overhaul folder");
     // move new templates to to-review in the auditor notes folder
     let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
@@ -76,6 +67,41 @@ pub fn update_templates() {
             }
         }
     };
-    create_git_commit(GitCommit::Templates, None);
-    println!("Templates folder successfully updated");
+
+    // replace package.json
+    let audit_folder_path = BatConfig::get_audit_folder_path(None);
+    println!("Updating package.json");
+    let output = Command::new("mv")
+        .args([
+            BASE_REPOSTORY_NAME.to_string() + "/package.json",
+            audit_folder_path,
+        ])
+        .output()
+        .unwrap();
+    if !output.stderr.is_empty() {
+        panic!(
+            "update repository failed with error: {:?}",
+            std::str::from_utf8(output.stderr.as_slice()).unwrap()
+        )
+    };
+
+    // delete base_repository cloned
+    let output = Command::new("rm")
+        .args(["-rf", BASE_REPOSTORY_NAME])
+        .output()
+        .unwrap();
+    if !output.stderr.is_empty() {
+        panic!(
+            "update repository failed with error: {:?}",
+            std::str::from_utf8(output.stderr.as_slice()).unwrap()
+        )
+    };
+    if !output.stderr.is_empty() {
+        panic!(
+            "update repository failed with error: {:?}",
+            std::str::from_utf8(output.stderr.as_slice()).unwrap()
+        )
+    };
+    create_git_commit(GitCommit::UpdateRepo, None);
+    println!("Repository successfully updated");
 }

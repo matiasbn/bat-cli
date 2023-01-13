@@ -30,8 +30,8 @@ enum Commands {
     /// findings files management
     #[command(subcommand)]
     Finding(FindingActions),
-    /// Update the templates folder
-    Templates,
+    /// Update the templates folder and the package.json of the audit repository
+    Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
     // /// Checks the health of the files
@@ -88,7 +88,7 @@ async fn main() {
         Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
-        Commands::Templates => commands::templates::update_templates(),
+        Commands::Update => commands::update::update_repository(),
         Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None),
         _ => panic!("Bad command"),
     }

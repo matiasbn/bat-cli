@@ -5,4 +5,4 @@ pub mod finding;
 pub mod git;
 pub mod init;
 pub mod miro;
-pub mod templates;
+pub mod update;

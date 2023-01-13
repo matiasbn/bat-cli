@@ -120,12 +120,20 @@ impl BatConfig {
         Self::get_validated_config().auditor.auditor_name
     }
 
-    pub fn get_audit_folder_path() -> String {
-        Self::get_validated_config().required.audit_folder_path
+    pub fn get_audit_folder_path(file_name: Option<String>) -> String {
+        if let Some(file_name_option) = file_name {
+            Self::canonicalize_path(
+                Self::get_validated_config().required.audit_folder_path
+                    + "/"
+                    + file_name_option.as_str(),
+            )
+        } else {
+            Self::canonicalize_path(Self::get_validated_config().required.audit_folder_path)
+        }
     }
 
     pub fn get_audit_information_file_path() -> String {
-        Self::canonicalize_path(Self::get_audit_folder_path() + "/audit_information.md")
+        Self::canonicalize_path(Self::get_audit_folder_path(None) + "/audit_information.md")
     }
 
     pub fn get_program_lib_path() -> String {
@@ -133,7 +141,7 @@ impl BatConfig {
     }
 
     pub fn get_notes_path() -> String {
-        Self::get_audit_folder_path() + "/notes/"
+        Self::get_audit_folder_path(None) + "/notes/"
     }
 
     pub fn get_auditor_notes_path() -> String {
@@ -222,7 +230,7 @@ impl BatConfig {
 
     // Templates path
     pub fn get_templates_path() -> String {
-        Self::get_audit_folder_path() + "/templates"
+        Self::get_audit_folder_path(None) + "/templates"
     }
 
     pub fn get_notes_folder_template_path() -> String {

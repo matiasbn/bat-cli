@@ -36,7 +36,7 @@ pub enum GitCommit {
     FinishFinding,
     UpdateFinding,
     PrepareAllFinding,
-    Templates,
+    UpdateRepo,
     Notes,
 }
 
@@ -45,7 +45,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
     let (commit_message, commit_files_path): (String, Vec<String>) = match commit_type {
         GitCommit::Init => {
             let commit_string = "initial commit".to_string();
-            (commit_string, vec![BatConfig::get_audit_folder_path()])
+            (commit_string, vec![BatConfig::get_audit_folder_path(None)])
         }
         GitCommit::InitAuditor => {
             let commit_string =
@@ -116,11 +116,16 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
             let file_to_add_path = BatConfig::get_auditor_findings_to_review_path(None);
             (commit_string, vec![file_to_add_path])
         }
-        GitCommit::Templates => {
-            let commit_string = "templates updated".to_string();
+        GitCommit::UpdateRepo => {
+            let commit_string = "repo: templates and package.json update".to_string();
             let file_to_add_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
+            let packagejson_path =
+                BatConfig::get_audit_folder_path(Some("package.json".to_string()));
             let templates_path = BatConfig::get_templates_path();
-            (commit_string, vec![file_to_add_path, templates_path])
+            (
+                commit_string,
+                vec![file_to_add_path, templates_path, packagejson_path],
+            )
         }
         GitCommit::Notes => {
             let auditor_notes_path = BatConfig::get_auditor_notes_path();
