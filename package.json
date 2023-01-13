@@ -4,8 +4,9 @@
   "description": "Blockchain auditor toolkit",
   "main": "index.js",
   "scripts": {
-    "publish-and-install": "npm run cargo::publish && npm run cargo::install",
+    "publish::full": "npm run cargo::clippy && npm run cargo::publish && npm run cargo::install",
     "cargo::publish": "cargo publish",
+    "cargo::clippy": "cargo clippy --fix",
     "cargo::install": "cargo install bat-cli",
     "open-cargo-toml": "code -a Cargo.toml"
   },
