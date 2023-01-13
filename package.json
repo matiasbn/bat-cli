@@ -4,9 +4,9 @@
   "description": "Blockchain auditor toolkit",
   "main": "index.js",
   "scripts": {
-    "publish-and-install": "npm run publish && npm run install",
-    "publish": "cargo publish",
-    "install": "cargo install bat-cli"
+    "publish-and-install": "npm run cargo::publish && npm run cargo::install",
+    "cargo::publish": "cargo publish",
+    "cargo::install": "cargo install bat-cli"
   },
   "author": "",
   "license": "ISC"
