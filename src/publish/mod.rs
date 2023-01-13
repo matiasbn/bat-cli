@@ -15,11 +15,7 @@ pub fn full() {
 
 pub fn clippy() {
     assert!(check_files_not_commited());
-    execute_command(
-        "cargo".to_string(),
-        vec!["clippy"],
-        "error publishing to crates.io".to_string(),
-    );
+    Command::new("cargo").arg("clippy").output().unwrap();
     create_commit(PublishCommit::Clippy, None);
 }
 
