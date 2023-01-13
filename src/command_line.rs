@@ -13,7 +13,7 @@ pub fn vs_code_open_file_in_current_window(path_to_file: &str) {
     execute_command(command_name, command_args, error_message);
 }
 
-fn execute_command(command_name: String, command_args: Vec<&str>, error_message: String) {
+pub fn execute_command(command_name: String, command_args: Vec<&str>, error_message: String) {
     let output = Command::new(command_name)
         .args(command_args)
         .output()

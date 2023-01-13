@@ -9,6 +9,7 @@ mod command_line;
 mod commands;
 mod config;
 mod constants;
+mod publish;
 // use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
@@ -34,11 +35,10 @@ enum Commands {
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
-    // /// Checks the health of the files
-    // Check {
-    //     /// The type of check to execute
-    //     check_types: Option<String>,
-    // },
+    /// Cargo publish operations
+    #[cfg(debug_assertions)]
+    #[command(subcommand)]
+    Package(PublishActions),
 }
 
 #[derive(Subcommand, Debug)]
@@ -66,12 +66,24 @@ enum CodeOverhaulActions {
     /// Update a code-overhaul file by creating a commit
     Update,
 }
+
+#[derive(Subcommand, Debug)]
+enum PublishActions {
+    /// Bump the version
+    Bump,
+    /// Bump version and publish to crates.io
+    Publish,
+    /// run cargo clippy and commit the changes
+    Clippy,
+    /// run cargo clippy, bump the version (commit again) and publish to crates.io
+    Full,
+}
 #[tokio::main]
 async fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
-        Commands::Create {} => commands::create::create_project(),
-        Commands::Init {} => commands::init::initialize_bat_project(),
+        Commands::Create => commands::create::create_project(),
+        Commands::Init => commands::init::initialize_bat_project(),
         Commands::CO(CodeOverhaulActions::Start) => {
             commands::code_overhaul::start_code_overhaul_file().await
         }
@@ -90,6 +102,11 @@ async fn main() {
         Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
         Commands::Update => commands::update::update_repository(),
         Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None),
+        // only for dev
+        Commands::Package(PublishActions::Bump) => publish::bump_version(false),
+        Commands::Package(PublishActions::Clippy) => publish::clippy(),
+        Commands::Package(PublishActions::Publish) => publish::publish(),
+        Commands::Package(PublishActions::Full) => publish::full(),
         _ => panic!("Bad command"),
     }
 }
