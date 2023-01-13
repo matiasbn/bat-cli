@@ -130,6 +130,12 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
             );
         }
         PublishCommit::Clippy => {
+            // commit all files
+            execute_command(
+                "git".to_string(),
+                vec!["add", "--all"],
+                "error adding Cargo.toml to commit files".to_string(),
+            );
             execute_command(
                 "git".to_string(),
                 vec!["commit", "-m", format!("clippy commit").as_str()],
