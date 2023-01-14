@@ -10,6 +10,7 @@
     "bat-cli::package::full": "cargo run package full",
     "cargo::install::bat-cli": "cargo install bat-cli",
     "cargo::publish::bat-cli": "cargo publish",
+    "git-pull": "git pull",
     "open-cargo-toml": "code -a Cargo.toml"
   },
   "author": "",

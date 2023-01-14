@@ -28,7 +28,6 @@ use crate::constants::{
 
 use std::borrow::{Borrow, BorrowMut};
 
-
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -567,9 +566,9 @@ fn parse_validations_into_co(
         .filter(|validation| {
             validation.contains("has_one")
                 || validation.contains("constraint")
-                || validation.contains(&validations_strings[0])
-                || validation.contains(&validations_strings[1])
-                || validation.contains(&validations_strings[2])
+                || validations_strings
+                    .iter()
+                    .any(|validation_str| validation.contains(validation_str))
         })
         .map(|validation| validation.to_string())
         .collect();
@@ -609,9 +608,9 @@ fn parse_validations_into_co(
             account_validations.push(validation.to_string());
             account_validations.push("   ```".to_string());
         } else {
-            account_validations.push("- ```rust".to_string());
+            prerequisites.push("- ```rust".to_string());
             prerequisites.push(validation.to_string());
-            account_validations.push("   ```".to_string());
+            prerequisites.push("   ```".to_string());
         }
     }
 
@@ -969,52 +968,54 @@ fn get_possible_validations(
     let mut possible_validations: Vec<String> = Vec::new();
     let lines_enumerate = instruction_file.lines().enumerate();
     for (line_index, line) in lines_enumerate {
-        for validation in validations_strings.iter() {
-            // validation function
-            if line.contains(validation) && line.contains('(') {
-                // single line validation
-                if line.contains(");") {
-                    let prompt = format!("is the next line a validation? \n {line}");
-                    let selection = Select::with_theme(&ColorfulTheme::default())
-                        .with_prompt(prompt)
-                        .item("yes")
-                        .item("no")
-                        .default(0)
-                        .interact_on_opt(&Term::stderr())
-                        .unwrap()
-                        .unwrap();
-                    if selection == 0 {
-                        possible_validations.push(line.to_string());
-                    }
-                } else {
-                    // multi line validation
-                    let mut validation_candidate: Vec<String> = vec![line.to_string()];
-                    let mut idx = 1;
-                    let mut validation_line = instruction_file.clone().lines().collect::<Vec<_>>()
+        // if the line contains any of the validations and has a parenthesis
+        if validations_strings
+            .iter()
+            .any(|validation| line.contains(validation))
+            && line.contains('(')
+        {
+            // single line validation
+            if line.contains(");") {
+                let validation = format!("\t{}", line.trim());
+                let prompt = format!("is the next line a validation? \n {validation}");
+                let selection = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt(prompt)
+                    .item("yes")
+                    .item("no")
+                    .default(0)
+                    .interact_on_opt(&Term::stderr())
+                    .unwrap()
+                    .unwrap();
+                if selection == 0 {
+                    possible_validations.push(validation);
+                }
+            } else {
+                // multi line validation
+                let mut validation_candidate: Vec<String> = vec![line.to_string()];
+                let mut idx = 1;
+                let mut validation_line = instruction_file.clone().lines().collect::<Vec<_>>()
+                    [line_index + idx]
+                    .to_string();
+                while !(validation_line.contains(");") || validation_line.contains(")?;")) {
+                    validation_candidate.push(validation_line);
+                    idx += 1;
+                    validation_line = instruction_file.clone().lines().collect::<Vec<_>>()
                         [line_index + idx]
                         .to_string();
-                    while !(validation_line.contains(");") || validation_line.contains(")?;")) {
-                        validation_candidate.push(validation_line);
-                        idx += 1;
-                        validation_line = instruction_file.clone().lines().collect::<Vec<_>>()
-                            [line_index + idx]
-                            .to_string();
-                    }
-                    validation_candidate.push(validation_line);
-                    let validation_string = validation_candidate.join("\n");
-                    let prompt =
-                        format!("is the next function a validation? \n {validation_string}");
-                    let selection = Select::with_theme(&ColorfulTheme::default())
-                        .with_prompt(prompt)
-                        .item("yes")
-                        .item("no")
-                        .default(0)
-                        .interact_on_opt(&Term::stderr())
-                        .unwrap()
-                        .unwrap();
-                    if selection == 0 {
-                        possible_validations.push(validation_string);
-                    }
+                }
+                validation_candidate.push(validation_line);
+                let validation_string = validation_candidate.join("\n");
+                let prompt = format!("is the next function a validation? \n {validation_string}");
+                let selection = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt(prompt)
+                    .item("yes")
+                    .item("no")
+                    .default(0)
+                    .interact_on_opt(&Term::stderr())
+                    .unwrap()
+                    .unwrap();
+                if selection == 0 {
+                    possible_validations.push(validation_string);
                 }
             }
         }
