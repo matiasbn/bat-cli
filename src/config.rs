@@ -2,8 +2,9 @@ use std::{fs, path::Path, str};
 
 use serde::Deserialize;
 
-use crate::commands::create::{
-    create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH,
+use crate::commands::{
+    create::{create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH},
+    miro::miro_api::miro_enabled,
 };
 
 #[derive(Debug, Deserialize, Clone)]
@@ -219,10 +220,18 @@ impl BatConfig {
     pub fn get_auditor_code_overhaul_started_path(file_name: Option<String>) -> String {
         match file_name {
             Some(name) => {
-                Self::get_auditor_code_overhaul_path()
-                    + "started/"
-                    + &name.replace(".md", "")
-                    + ".md"
+                if miro_enabled() {
+                    let entrypoint_name = &name.replace(".md", "");
+                    Self::canonicalize_path(format!(
+                        "{}/started/{entrypoint_name}/{entrypoint_name}.md",
+                        Self::get_auditor_code_overhaul_path()
+                    ))
+                } else {
+                    Self::get_auditor_code_overhaul_path()
+                        + "started/"
+                        + &name.replace(".md", "")
+                        + ".md"
+                }
             }
             None => Self::get_auditor_code_overhaul_path() + "started/",
         }

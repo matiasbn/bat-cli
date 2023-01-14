@@ -45,6 +45,8 @@ pub mod miro_api {
         }
     }
     pub mod frame {
+        use std::fs;
+
         use normalize_url::normalizer;
         use reqwest::Body;
         use serde_json::{json, Value};
@@ -54,6 +56,7 @@ pub mod miro_api {
         use tokio::fs::File;
         use tokio_util::codec::{BytesCodec, FramedRead};
 
+        use crate::constants::CO_FIGURES;
         use crate::{
             commands::miro::MiroFrame,
             config::{AuditorConfig, BatConfig, RequiredConfig},
@@ -85,8 +88,8 @@ pub mod miro_api {
                               "y": 0
                          },
                          "geometry": {
-                            "width": 1878.94949246026,
-                            "height": 1056.9090895089
+                            "width": 3400,
+                            "height": 1800
                        }
                     })
                     .to_string(),
@@ -113,8 +116,37 @@ pub mod miro_api {
                 url: frame_url,
             }
         }
+
+        pub async fn get_frame_positon(frame_id: String) -> (u64, u64) {
+            let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
+            let AuditorConfig {
+                miro_oauth_access_token,
+                ..
+            } = BatConfig::get_init_config().auditor;
+            let client = reqwest::Client::new();
+            let board_response = client
+                .get(format!(
+                    "https://api.miro.com/v2/boards/{miro_board_id}/frames/{frame_id}"
+                ))
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            let response: Value = serde_json::from_str(board_response.as_str()).unwrap();
+            println!("frame pos {response:#?}");
+            let x_position = response["position"]["x"].clone();
+            let y_position = response["position"]["y"].clone();
+            (
+                x_position.as_f64().unwrap() as u64,
+                y_position.as_f64().unwrap() as u64,
+            )
+        }
         // uploads the image in file_path to the board
-        pub async fn create_image_from_device(file_path: String) {
+        pub async fn create_image_from_device(file_path: String, entrypoint_name: &str) -> String {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
             let AuditorConfig {
                 miro_oauth_access_token,
@@ -131,28 +163,13 @@ pub mod miro_api {
                 .file_name(file_name.clone())
                 .mime_str("text/plain")
                 .unwrap();
-
             //create the multipart form
             let form = multipart::Form::new().part("resource", some_file);
-
             let client = reqwest::Client::new();
-            let _board_response = client
+            let response = client
                 .post(format!(
                     "https://api.miro.com/v2/boards/{miro_board_id}/images"
                 ))
-                .body(
-                    json!({
-                        "data": {
-                            "title": file_name.clone(),
-                            "position": {
-                                "origin": "center",
-                                "x": 0,
-                                "y": 0
-                            },
-                         },
-                    })
-                    .to_string(),
-                )
                 .multipart(form)
                 .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
                 .send()
@@ -161,6 +178,73 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
+            let response: Value = serde_json::from_str(&response.as_str()).unwrap();
+            let id = response["id"].to_string().replace("\"", "");
+            update_item_position(entrypoint_name.to_string(), file_name, id.clone()).await;
+            id
+        }
+        async fn update_item_position(entrypoint_name: String, file_name: String, item_id: String) {
+            let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
+            let AuditorConfig {
+                miro_oauth_access_token,
+                ..
+            } = BatConfig::get_init_config().auditor;
+            let frame_id = get_frame_id(entrypoint_name.as_str());
+            // let started_file_path
+            let (x_position, y_position) = match file_name.clone().as_str() {
+                "entrypoint.png" => (800, 250),
+                "context_accounts.png" => (1800, 350),
+                "validations.png" => (2800, 500),
+                "handler.png" => (2800, 1400),
+                _ => todo!(),
+            };
+            // let x_position = x + x_move;
+            let client = reqwest::Client::new();
+            let response = client
+                .patch(format!(
+                    "https://api.miro.com/v2/boards/{miro_board_id}/images/{item_id}",
+                ))
+                .body(
+                    json!({
+                        "parent": {
+                            "id": frame_id
+                        },
+                        "position": {
+                            "x": x_position,
+                            "y": y_position,
+                            "origin": "center",
+                        },
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            println!("update {response}");
+        }
+
+        fn get_frame_id(entrypoint_name: &str) -> String {
+            let started_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
+                entrypoint_name.to_string(),
+            ));
+            let miro_url = fs::read_to_string(started_file_path)
+                .unwrap()
+                .lines()
+                .find(|line| line.contains("https://miro.com/app/board/"))
+                .unwrap()
+                .to_string();
+            let frame_id = miro_url
+                .split("moveToWidget=")
+                .last()
+                .unwrap()
+                .to_string()
+                .replace("\"", "");
+            frame_id
         }
     }
     // pub mod token {

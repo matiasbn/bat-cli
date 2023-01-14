@@ -18,12 +18,13 @@ use crate::commands::miro::miro_api::miro_enabled;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
-    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-    CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER,
-    CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
+    CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
+    CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
+    CODE_OVERHAUL_HANDLER_PLACEHOLDER, CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
+    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
-    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
-    CO_FIGURES,
+    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
+    CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER, CO_FIGURES,
 };
 
 use std::borrow::{Borrow, BorrowMut};
@@ -389,12 +390,12 @@ pub async fn deploy_miro() {
     let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
 
     // only create the frame if it was not created yet
-    if to_start_file_content.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
+    if to_start_file_content.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER) {
         let miro_frame = create_frame(selected_folder).await;
         fs::write(
             &started_co_file_path,
-            to_start_file_content
-                .replace(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER, &miro_frame.url),
+            &to_start_file_content
+                .replace(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, &miro_frame.url),
         )
         .unwrap();
     }
@@ -405,6 +406,7 @@ pub async fn deploy_miro() {
     let selections = MultiSelect::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt_text)
         .items(CO_FIGURES)
+        .defaults(&[true, true, true, true])
         .interact_on_opt(&Term::stderr())
         .unwrap()
         .unwrap();
@@ -414,7 +416,27 @@ pub async fn deploy_miro() {
             let screenshot_path = &screenshot_path_vec.as_slice()[*selection];
             let file_name = screenshot_path.split('/').last().unwrap();
             println!("Uploading: {file_name}");
-            create_image_from_device(screenshot_path.to_string()).await;
+            let id = create_image_from_device(screenshot_path.to_string(), &selected_folder).await;
+            let figure = CO_FIGURES[*selection];
+            let placeholder = match figure {
+                "entrypoint.png" => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
+                "context_accounts.png" => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
+                "validations.png" => CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
+                "handler.png" => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
+                _ => todo!(),
+            };
+            if fs::read_to_string(&started_co_file_path)
+                .unwrap()
+                .contains(placeholder)
+            {
+                fs::write(
+                    &started_co_file_path,
+                    fs::read_to_string(&started_co_file_path)
+                        .unwrap()
+                        .replace(placeholder, &id),
+                )
+                .unwrap();
+            }
         }
     } else {
         println!("No files selected");
@@ -1061,7 +1083,7 @@ fn check_code_overhaul_file_completed(file_path: String, file_name: String) {
         }
     }
 
-    if file_data.contains(CODE_OVERHAUL_MIRO_BOARD_FRAME_PLACEHOLDER) {
+    if file_data.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER) {
         panic!("Please complete the \"Miro board frame\" section of the {file_name} file");
     }
 }
