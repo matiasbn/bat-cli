@@ -137,7 +137,6 @@ pub mod miro_api {
                 .await
                 .unwrap();
             let response: Value = serde_json::from_str(board_response.as_str()).unwrap();
-            println!("frame pos {response:#?}");
             let x_position = response["position"]["x"].clone();
             let y_position = response["position"]["y"].clone();
             (
@@ -183,6 +182,44 @@ pub mod miro_api {
             update_item_position(entrypoint_name.to_string(), file_name, id.clone()).await;
             id
         }
+        pub async fn update_image_from_device(
+            file_path: String,
+            entrypoint_name: &str,
+            item_id: &str,
+        ) {
+            let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
+            let AuditorConfig {
+                miro_oauth_access_token,
+                ..
+            } = BatConfig::get_init_config().auditor;
+            let file_name = file_path.clone().split('/').last().unwrap().to_string();
+            let file = File::open(file_path.clone()).await.unwrap();
+            // read file body stream
+            let stream = FramedRead::new(file, BytesCodec::new());
+            let file_body = Body::wrap_stream(stream);
+
+            //make form part of file
+            let some_file = multipart::Part::stream(file_body)
+                .file_name(file_name.clone())
+                .mime_str("text/plain")
+                .unwrap();
+            //create the multipart form
+            let form = multipart::Form::new().part("resource", some_file);
+            let client = reqwest::Client::new();
+            let response = client
+                .patch(format!(
+                    "https://api.miro.com/v2/boards/{miro_board_id}/images/{item_id}"
+                ))
+                .multipart(form)
+                .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            update_item_position(entrypoint_name.to_string(), file_name, item_id.to_string()).await;
+        }
         async fn update_item_position(entrypoint_name: String, file_name: String, item_id: String) {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
             let AuditorConfig {
@@ -225,9 +262,43 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
-            println!("update {response}");
         }
-
+        pub async fn create_connector(start_item_id: &str, end_item_id: &str) {
+            let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
+            let AuditorConfig {
+                miro_oauth_access_token,
+                ..
+            } = BatConfig::get_init_config().auditor;
+            // let x_position = x + x_move;
+            let client = reqwest::Client::new();
+            let response = client
+                .post(format!(
+                    "https://api.miro.com/v2/boards/{miro_board_id}/connectors",
+                ))
+                .body(
+                    json!({
+                        "startItem": {
+                            "id": start_item_id
+                       },
+                       "endItem": {
+                            "id": end_item_id
+                       },
+                       "style": {
+                            "strokeWidth": "3"
+                       },
+                       "shape": "elbowed"
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+        }
         fn get_frame_id(entrypoint_name: &str) -> String {
             let started_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
                 entrypoint_name.to_string(),

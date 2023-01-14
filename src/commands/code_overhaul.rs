@@ -13,7 +13,9 @@ use walkdir::WalkDir;
 
 use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
-use crate::commands::miro::miro_api::frame::{create_frame, create_image_from_device};
+use crate::commands::miro::miro_api::frame::{
+    create_connector, create_frame, create_image_from_device, update_image_from_device,
+};
 use crate::commands::miro::miro_api::miro_enabled;
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
@@ -387,10 +389,11 @@ pub async fn deploy_miro() {
     // Replace placeholder with Miro url
     let started_co_file_path =
         format!("{selected_co_started_path}/{selected_folder}/{selected_folder}.md");
-    let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
 
     // only create the frame if it was not created yet
-    if to_start_file_content.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER) {
+    let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
+    let is_deploying = to_start_file_content.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER);
+    if is_deploying {
         let miro_frame = create_frame(selected_folder).await;
         fs::write(
             &started_co_file_path,
@@ -398,53 +401,87 @@ pub async fn deploy_miro() {
                 .replace(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, &miro_frame.url),
         )
         .unwrap();
-    }
 
-    // Upload images
-    let prompt_text = format!("select the images to upload for {selected_folder}");
-
-    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt_text)
-        .items(CO_FIGURES)
-        .defaults(&[true, true, true, true])
-        .interact_on_opt(&Term::stderr())
-        .unwrap()
-        .unwrap();
-    if !selections.is_empty() {
-        for selection in selections.iter() {
-            let screenshot_path_vec = &screenshot_paths.clone().collect::<Vec<_>>();
-            let screenshot_path = &screenshot_path_vec.as_slice()[*selection];
-            let file_name = screenshot_path.split('/').last().unwrap();
-            println!("Uploading: {file_name}");
-            let id = create_image_from_device(screenshot_path.to_string(), &selected_folder).await;
-            let figure = CO_FIGURES[*selection];
-            let placeholder = match figure {
+        for screenshot in CO_FIGURES {
+            // read the content after every placeholder replacement is essential
+            let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
+            let placeholder = match screenshot.as_ref() {
                 "entrypoint.png" => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
                 "context_accounts.png" => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
                 "validations.png" => CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
                 "handler.png" => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
                 _ => todo!(),
             };
-            if fs::read_to_string(&started_co_file_path)
-                .unwrap()
-                .contains(placeholder)
-            {
-                fs::write(
-                    &started_co_file_path,
-                    fs::read_to_string(&started_co_file_path)
-                        .unwrap()
-                        .replace(placeholder, &id),
-                )
-                .unwrap();
-            }
+            let screenshot_path =
+                format!("{selected_co_started_path}/{selected_folder}/{screenshot}");
+            println!("Creating image in Miro for: {screenshot}");
+            let id = create_image_from_device(screenshot_path.to_string(), &selected_folder).await;
+            fs::write(
+                &started_co_file_path,
+                &to_start_file_content.replace(placeholder, &id),
+            )
+            .unwrap();
         }
+        // connect screenshots
+        let entrypoint_id = get_screenshot_id("entrypoint.png", &started_co_file_path);
+        let context_accounts_id = get_screenshot_id("context_accounts.png", &started_co_file_path);
+        let validations_id = get_screenshot_id("validations.png", &started_co_file_path);
+        let handler_id = get_screenshot_id("handler.png", &started_co_file_path);
+        println!("Connecting screenshots in Miro");
+        create_connector(&entrypoint_id, &context_accounts_id).await;
+        create_connector(&context_accounts_id, &validations_id).await;
+        create_connector(&validations_id, &handler_id).await;
+        create_git_commit(
+            GitCommit::DeployMiro,
+            Some(vec![selected_folder.to_string()]),
+        )
     } else {
-        println!("No files selected");
+        // update images
+        let prompt_text = format!("select the images to update for {selected_folder}");
+        let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+            .with_prompt(prompt_text)
+            .items(CO_FIGURES)
+            .defaults(&[true, true, true, true])
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+        if !selections.is_empty() {
+            for selection in selections.iter() {
+                let screenshot_path_vec = &screenshot_paths.clone().collect::<Vec<_>>();
+                let screenshot_path = &screenshot_path_vec.as_slice()[*selection];
+                let file_name = screenshot_path.split('/').last().unwrap();
+                println!("Updating: {file_name}");
+                let item_id = get_screenshot_id(file_name, &started_co_file_path);
+                update_image_from_device(screenshot_path.to_string(), &selected_folder, &item_id)
+                    .await
+            }
+            create_git_commit(
+                GitCommit::UpdateMiro,
+                Some(vec![selected_folder.to_string()]),
+            )
+        } else {
+            println!("No files selected");
+        }
     }
-    create_git_commit(
-        GitCommit::DeployMiro,
-        Some(vec![selected_folder.to_string()]),
-    )
+}
+
+fn get_screenshot_id(file_name: &str, started_co_file_path: &String) -> String {
+    let screenshot_contains = match file_name {
+        "entrypoint.png" => "- entrypoint",
+        "context_accounts.png" => "- context",
+        "validations.png" => "- validations",
+        "handler.png" => "- handler",
+        _ => todo!(),
+    };
+    let file_content = fs::read_to_string(started_co_file_path).unwrap();
+    let item_id = file_content
+        .lines()
+        .find(|line| line.contains(screenshot_contains))
+        .unwrap()
+        .split("id: ")
+        .last()
+        .unwrap();
+    item_id.to_string()
 }
 
 fn count_filtered(dir_to_count: ReadDir) -> usize {
