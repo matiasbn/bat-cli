@@ -88,8 +88,8 @@ pub mod miro_api {
                               "y": 0
                          },
                          "geometry": {
-                            "width": 3400,
-                            "height": 1800
+                            "width": 3392,
+                            "height": 1908
                        }
                     })
                     .to_string(),
