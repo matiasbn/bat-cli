@@ -229,10 +229,10 @@ pub mod miro_api {
             let frame_id = get_frame_id(entrypoint_name.as_str());
             // let started_file_path
             let (x_position, y_position) = match file_name.clone().as_str() {
-                "entrypoint.png" => (800, 250),
-                "context_accounts.png" => (1800, 350),
-                "validations.png" => (2800, 500),
-                "handler.png" => (2800, 1400),
+                "entrypoint.png" => (1200, 250),
+                "context_accounts.png" => (2200, 350),
+                "validations.png" => (3000, 500),
+                "handler.png" => (2900, 1400),
                 _ => todo!(),
             };
             // let x_position = x + x_move;
