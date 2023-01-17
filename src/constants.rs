@@ -28,7 +28,7 @@ pub const AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER: &str =
     "AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER";
 
 // Base repository
-pub const BASE_REPOSTORY_URL: &str = "git@git.kudelski.com:TVRM/bat-base-repository.git";
+pub const BASE_REPOSTORY_URL: &str = "git@github.com:matiasbn/bat-base-repository.git";
 pub const BASE_REPOSTORY_NAME: &str = "bat-base-repository";
 
 pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
