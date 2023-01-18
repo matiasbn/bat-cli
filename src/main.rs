@@ -88,28 +88,38 @@ async fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
         Commands::Create => commands::create::create_project(),
-        Commands::Init => commands::init::initialize_bat_project(),
+        Commands::Init => commands::init::initialize_bat_project().unwrap(),
         Commands::CO(CodeOverhaulActions::Start) => {
-            commands::code_overhaul::start_code_overhaul_file().await
+            commands::code_overhaul::start_code_overhaul_file()
+                .await
+                .unwrap()
         }
         Commands::CO(CodeOverhaulActions::Finish) => {
-            commands::code_overhaul::finish_code_overhaul_file().await
+            commands::code_overhaul::finish_code_overhaul_file()
+                .await
+                .unwrap()
         }
         Commands::CO(CodeOverhaulActions::Update) => {
-            commands::code_overhaul::update_code_overhaul_file()
+            commands::code_overhaul::update_code_overhaul_file().unwrap()
         }
-        Commands::CO(CodeOverhaulActions::Count) => commands::code_overhaul::count_co_files(),
-        Commands::CO(CodeOverhaulActions::Miro) => commands::code_overhaul::deploy_miro().await,
-        Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co().await,
+        Commands::CO(CodeOverhaulActions::Count) => {
+            commands::code_overhaul::count_co_files().unwrap()
+        }
+        Commands::CO(CodeOverhaulActions::Miro) => {
+            commands::code_overhaul::deploy_miro().await.unwrap()
+        }
+        Commands::CO(CodeOverhaulActions::Open) => {
+            commands::code_overhaul::open_co().await.unwrap()
+        }
 
-        Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
-        Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
-        Commands::Finding(FindingActions::Update) => commands::finding::update_finding(),
-        Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all(),
-        Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
-        Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
-        Commands::Update => commands::update::update_repository(),
-        Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None),
+        Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
+        Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
+        Commands::Finding(FindingActions::Update) => commands::finding::update_finding().unwrap(),
+        Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all().unwrap(),
+        Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
+        Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
+        Commands::Update => commands::update::update_repository().unwrap(),
+        Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None).unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Bump) => package::bump(false),

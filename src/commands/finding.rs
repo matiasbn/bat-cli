@@ -2,7 +2,7 @@ use console::Term;
 use dialoguer::{console, theme::ColorfulTheme, Input, Select};
 use std::{
     fs::{self, File},
-    io::{self, BufRead},
+    io::{self, BufRead, Result},
     path::{Path, PathBuf},
     process::Command,
     string::String,
@@ -14,10 +14,10 @@ use crate::{
     config::BatConfig,
 };
 
-pub fn reject() {
+pub fn reject() -> Result<()> {
     prepare_all();
     println!("Select the finding file to reject:");
-    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
+    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -36,9 +36,9 @@ pub fn reject() {
         Some(index) => {
             let rejected_file_name = review_files[index].clone();
             let rejected_path =
-                BatConfig::get_auditor_findings_rejected_path(Some(rejected_file_name.clone()));
+                BatConfig::get_auditor_findings_rejected_path(Some(rejected_file_name.clone()))?;
             let to_review_path =
-                BatConfig::get_auditor_findings_to_review_path(Some(rejected_file_name.clone()));
+                BatConfig::get_auditor_findings_to_review_path(Some(rejected_file_name.clone()))?;
             Command::new("mv")
                 .args([to_review_path, rejected_path])
                 .output()
@@ -47,12 +47,13 @@ pub fn reject() {
         }
         None => println!("User did not select anything"),
     }
+    Ok(())
 }
 
-pub fn accept_all() {
+pub fn accept_all() -> Result<()> {
     prepare_all();
-    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
-    let accepted_path = BatConfig::get_auditor_findings_accepted_path(None);
+    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
+    let accepted_path = BatConfig::get_auditor_findings_accepted_path(None)?;
     for file_result in fs::read_dir(&to_review_path).unwrap() {
         let file_name = file_result.unwrap().file_name();
         if file_name != ".gitkeep" {
@@ -66,9 +67,10 @@ pub fn accept_all() {
         }
     }
     println!("All files has been moved to the accepted folder");
+    Ok(())
 }
 
-pub fn create_finding() {
+pub fn create_finding() -> Result<()> {
     let mut finding_name: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Finding name:")
         .interact_text()
@@ -77,12 +79,13 @@ pub fn create_finding() {
     validate_config_create_finding_file(finding_name.clone());
     copy_template_to_findings_to_review(finding_name.clone());
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]));
-    let finding_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name));
-    vs_code_open_file_in_current_window(finding_file_path.as_str())
+    let finding_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name))?;
+    vs_code_open_file_in_current_window(finding_file_path.as_str());
+    Ok(())
 }
 
-pub fn finish_finding() {
-    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
+pub fn finish_finding() -> Result<()> {
+    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -103,15 +106,16 @@ pub fn finish_finding() {
             let finding_name = review_files[index].clone();
             validate_config_create_finding_file(finding_name.clone());
             let finding_file_path =
-                BatConfig::get_auditor_findings_to_review_path(Some(finding_name.clone()));
+                BatConfig::get_auditor_findings_to_review_path(Some(finding_name.clone()))?;
             validate_finished_finding_file(finding_file_path, finding_name.clone());
-            create_git_commit(GitCommit::FinishFinding, Some(vec![finding_name]))
+            create_git_commit(GitCommit::FinishFinding, Some(vec![finding_name]));
         }
-        None => println!("User did not select anything"),
+        None => panic!("User did not select anything"),
     }
+    Ok(())
 }
-pub fn update_finding() {
-    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
+pub fn update_finding() -> Result<()> {
+    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -131,14 +135,15 @@ pub fn update_finding() {
         Some(index) => {
             let finding_name = review_files[index].clone();
             validate_config_create_finding_file(finding_name.clone());
-            create_git_commit(GitCommit::UpdateFinding, Some(vec![finding_name]))
+            create_git_commit(GitCommit::UpdateFinding, Some(vec![finding_name]));
         }
-        None => println!("User did not select anything"),
+        None => panic!("User did not select anything"),
     }
+    Ok(())
 }
 
-pub fn prepare_all() {
-    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
+pub fn prepare_all() -> Result<()> {
+    let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
         let file_name = file.file_name();
@@ -183,7 +188,7 @@ pub fn prepare_all() {
                         file.path(),
                         PathBuf::from(BatConfig::get_auditor_findings_to_review_path(Some(
                             severity.to_string() + "-" + finding_name.replace(".md", "").as_str(),
-                        ))),
+                        ))?),
                     ])
                     .output()
                     .unwrap();
@@ -191,11 +196,12 @@ pub fn prepare_all() {
         }
     }
     create_git_commit(GitCommit::PrepareAllFinding, None);
-    println!("All to-review findings severity tags updated")
+    println!("All to-review findings severity tags updated");
+    Ok(())
 }
 
-fn validate_config_create_finding_file(finding_name: String) {
-    let findings_to_review_path = BatConfig::get_auditor_findings_to_review_path(None);
+fn validate_config_create_finding_file(finding_name: String) -> Result<()> {
+    let findings_to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     // check auditor/findings/to_review folder exists
     if !Path::new(&findings_to_review_path).is_dir() {
         panic!("Folder not found: {findings_to_review_path:#?}");
@@ -205,9 +211,10 @@ fn validate_config_create_finding_file(finding_name: String) {
     if Path::new(&finding_file_path).is_file() {
         panic!("Finding file already exists: {finding_file_path:#?}");
     }
+    Ok(())
 }
 
-fn copy_template_to_findings_to_review(finding_name: String) {
+fn copy_template_to_findings_to_review(finding_name: String) -> Result<()> {
     let options = vec!["yes", "no"];
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&options)
@@ -217,11 +224,11 @@ fn copy_template_to_findings_to_review(finding_name: String) {
         .unwrap();
 
     let template_path = if selection.unwrap() == 0 {
-        BatConfig::get_informational_template_path()
+        BatConfig::get_informational_template_path()?
     } else {
-        BatConfig::get_finding_template_path()
+        BatConfig::get_finding_template_path()?
     };
-    let new_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name));
+    let new_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name))?;
     let output = Command::new("cp")
         .args([template_path, new_file_path.clone()])
         .output()
@@ -232,6 +239,7 @@ fn copy_template_to_findings_to_review(finding_name: String) {
         panic!("Finding creation failed with reason: {output:#?}")
     };
     println!("Finding file successfully created at: {new_file_path:?}");
+    Ok(())
 }
 
 fn validate_finished_finding_file(file_path: String, file_name: String) {
