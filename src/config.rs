@@ -1,4 +1,10 @@
-use std::{fs, path::Path, str};
+use std::{
+    fmt::Error,
+    fs,
+    io::{self, Result},
+    path::Path,
+    str,
+};
 
 use serde::Deserialize;
 
@@ -40,19 +46,19 @@ pub struct AuditorConfig {
 }
 
 impl BatConfig {
-    pub fn get_validated_config() -> BatConfig {
-        let bat_config = Self::get_bat_config();
+    pub fn get_validated_config() -> Result<BatConfig> {
+        let bat_config = Self::get_bat_config().unwrap();
         Self::validate_bat_config(bat_config.clone(), true);
-        bat_config
+        Ok(bat_config)
     }
 
-    pub fn get_init_config() -> BatConfig {
-        let bat_config: BatConfig = Self::get_bat_config();
+    pub fn get_init_config() -> Result<BatConfig> {
+        let bat_config: BatConfig = Self::get_bat_config().unwrap();
         Self::validate_bat_config(bat_config.clone(), false);
-        bat_config
+        Ok(bat_config)
     }
 
-    fn get_bat_config() -> BatConfig {
+    fn get_bat_config() -> Result<BatConfig> {
         // Bat.toml
         let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
         if !bat_toml_path.is_file() {
@@ -75,10 +81,10 @@ impl BatConfig {
         let config: BatConfig =
             toml::from_str((bat_tom_file_string.to_string() + auditor_tom_file_string).as_str())
                 .unwrap();
-        config
+        Ok(config)
     }
 
-    fn validate_bat_config(bat_config: BatConfig, validate_auditor: bool) {
+    fn validate_bat_config(bat_config: BatConfig, validate_auditor: bool) -> Result<()> {
         let BatConfig {
             required, auditor, ..
         } = bat_config;
@@ -108,176 +114,187 @@ impl BatConfig {
             panic!("required parameter auditor_names is empty at Bat.toml");
         }
         if required.project_repository_url.is_empty() {
-            panic!("required parameter project_repository_url is empty at Bat.toml");
+            panic!("required parameter project_repository_url is empty at Bat.toml",);
         }
 
         // Validate auditor
         if validate_auditor && auditor.auditor_name.is_empty() {
             panic!("required parameter auditor_name is empty at BatAuditor.toml");
         }
+        Ok(())
     }
 
-    pub fn get_auditor_name() -> String {
-        Self::get_validated_config().auditor.auditor_name
+    pub fn get_auditor_name() -> Result<String> {
+        let auditor_name = Self::get_validated_config()?.auditor.auditor_name;
+        Ok(auditor_name)
     }
 
-    pub fn get_audit_folder_path(file_name: Option<String>) -> String {
+    pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String> {
         if let Some(file_name_option) = file_name {
-            Self::canonicalize_path(
-                Self::get_validated_config().required.audit_folder_path
+            Ok(Self::canonicalize_path(
+                Self::get_validated_config()
+                    .unwrap()
+                    .required
+                    .audit_folder_path
                     + "/"
                     + file_name_option.as_str(),
             )
+            .unwrap())
         } else {
-            Self::canonicalize_path(Self::get_validated_config().required.audit_folder_path)
+            Ok(
+                Self::canonicalize_path(Self::get_validated_config()?.required.audit_folder_path)
+                    .unwrap(),
+            )
         }
     }
 
-    pub fn get_audit_information_file_path() -> String {
-        Self::canonicalize_path(Self::get_audit_folder_path(None) + "/audit_information.md")
+    pub fn get_audit_information_file_path() -> Result<String> {
+        Self::canonicalize_path(Self::get_audit_folder_path(None)? + "/audit_information.md")
     }
 
-    pub fn get_program_lib_path() -> String {
-        Self::canonicalize_path(Self::get_validated_config().required.program_lib_path)
+    pub fn get_program_lib_path() -> Result<String> {
+        Self::canonicalize_path(Self::get_validated_config()?.required.program_lib_path)
     }
 
-    pub fn get_notes_path() -> String {
-        Self::get_audit_folder_path(None) + "/notes/"
+    pub fn get_notes_path() -> Result<String> {
+        Ok(Self::get_audit_folder_path(None)? + "/notes/")
     }
 
-    pub fn get_auditor_notes_path() -> String {
-        Self::get_notes_path() + &Self::get_auditor_name() + "-notes/"
+    pub fn get_auditor_notes_path() -> Result<String> {
+        Ok(Self::get_notes_path()? + &Self::get_auditor_name()? + "-notes/")
     }
     // Figures
-    pub fn get_auditor_figures_path() -> String {
-        Self::canonicalize_path(Self::get_auditor_notes_path() + "figures/")
+    pub fn get_auditor_figures_path() -> Result<String> {
+        Ok(Self::canonicalize_path(
+            Self::get_auditor_notes_path()? + "figures/",
+        )?)
     }
-    pub fn get_auditor_figures_entrypoints_path() -> String {
-        Self::canonicalize_path(Self::get_auditor_figures_path() + "entrypoints/")
+    pub fn get_auditor_figures_entrypoints_path() -> Result<String> {
+        Ok(Self::canonicalize_path(
+            Self::get_auditor_figures_path()? + "entrypoints/",
+        )?)
     }
 
     // Findings paths
-    pub fn get_auditor_findings_path() -> String {
-        Self::get_auditor_notes_path() + "findings/"
+    pub fn get_auditor_findings_path() -> Result<String> {
+        Ok(Self::get_auditor_notes_path()? + "findings/")
     }
 
-    pub fn get_auditor_findings_to_review_path(file_name: Option<String>) -> String {
+    pub fn get_auditor_findings_to_review_path(file_name: Option<String>) -> Result<String> {
         match file_name {
-            Some(name) => {
-                Self::get_auditor_findings_path() + "to-review/" + &name.replace(".md", "") + ".md"
-            }
-            None => Self::get_auditor_findings_path() + "to-review/",
+            Some(name) => Ok(Self::get_auditor_findings_path()?
+                + "to-review/"
+                + &name.replace(".md", "")
+                + ".md"),
+            None => Ok(Self::get_auditor_findings_path()? + "to-review/"),
         }
     }
 
-    pub fn get_auditor_findings_accepted_path(file_name: Option<String>) -> String {
+    pub fn get_auditor_findings_accepted_path(file_name: Option<String>) -> Result<String> {
         match file_name {
-            Some(name) => {
-                Self::get_auditor_findings_path() + "accepted/" + &name.replace(".md", "") + ".md"
-            }
-            None => Self::get_auditor_findings_path() + "accepted/",
+            Some(name) => Ok(Self::get_auditor_findings_path()?
+                + "accepted/"
+                + &name.replace(".md", "")
+                + ".md"),
+            None => Ok(Self::get_auditor_findings_path()? + "accepted/"),
         }
     }
 
-    pub fn get_auditor_findings_rejected_path(file_name: Option<String>) -> String {
+    pub fn get_auditor_findings_rejected_path(file_name: Option<String>) -> Result<String> {
         match file_name {
-            Some(name) => {
-                Self::get_auditor_findings_path() + "rejected/" + &name.replace(".md", "") + ".md"
-            }
-            None => Self::get_auditor_findings_path() + "rejected/",
+            Some(name) => Ok(Self::get_auditor_findings_path()?
+                + "rejected/"
+                + &name.replace(".md", "")
+                + ".md"),
+            None => Ok(Self::get_auditor_findings_path()? + "rejected/"),
         }
     }
 
     // Code overhaul paths
-    pub fn get_auditor_code_overhaul_path() -> String {
-        Self::get_auditor_notes_path() + "code-overhaul/"
+    pub fn get_auditor_code_overhaul_path() -> Result<String> {
+        Ok(Self::get_auditor_notes_path()? + "code-overhaul/")
     }
 
-    pub fn get_auditor_code_overhaul_to_review_path(file_name: Option<String>) -> String {
+    pub fn get_auditor_code_overhaul_to_review_path(file_name: Option<String>) -> Result<String> {
         match file_name {
-            Some(name) => {
-                Self::get_auditor_code_overhaul_path()
-                    + "to-review/"
-                    + &name.replace(".md", "")
-                    + ".md"
-            }
-            None => Self::get_auditor_code_overhaul_path() + "to-review/",
+            Some(name) => Ok(Self::get_auditor_code_overhaul_path()?
+                + "to-review/"
+                + &name.replace(".md", "")
+                + ".md"),
+            None => Ok(Self::get_auditor_code_overhaul_path()? + "to-review/"),
         }
     }
 
-    pub fn get_auditor_code_overhaul_finished_path(file_name: Option<String>) -> String {
+    pub fn get_auditor_code_overhaul_finished_path(file_name: Option<String>) -> Result<String> {
         match file_name {
-            Some(name) => {
-                Self::get_auditor_code_overhaul_path()
-                    + "finished/"
-                    + &name.replace(".md", "")
-                    + ".md"
-            }
-            None => Self::get_auditor_code_overhaul_path() + "finished/",
+            Some(name) => Ok(Self::get_auditor_code_overhaul_path()?
+                + "finished/"
+                + &name.replace(".md", "")
+                + ".md"),
+            None => Ok(Self::get_auditor_code_overhaul_path()? + "finished/"),
         }
     }
 
-    pub fn get_auditor_code_overhaul_started_path(file_name: Option<String>) -> String {
+    pub fn get_auditor_code_overhaul_started_path(file_name: Option<String>) -> Result<String> {
         match file_name {
             Some(name) => {
                 if MiroConfig::new().miro_enabled() {
                     let entrypoint_name = &name.replace(".md", "");
-                    Self::canonicalize_path(format!(
+                    Ok(Self::canonicalize_path(format!(
                         "{}/started/{entrypoint_name}/{entrypoint_name}.md",
-                        Self::get_auditor_code_overhaul_path()
-                    ))
+                        Self::get_auditor_code_overhaul_path()?
+                    ))?)
                 } else {
-                    Self::get_auditor_code_overhaul_path()
+                    Ok(Self::get_auditor_code_overhaul_path()?
                         + "started/"
                         + &name.replace(".md", "")
-                        + ".md"
+                        + ".md")
                 }
             }
-            None => Self::get_auditor_code_overhaul_path() + "started/",
+            None => Ok(Self::get_auditor_code_overhaul_path()? + "started/"),
         }
     }
 
     // Templates path
-    pub fn get_templates_path() -> String {
-        Self::get_audit_folder_path(None) + "/templates"
+    pub fn get_templates_path() -> Result<String> {
+        Ok(Self::get_audit_folder_path(None)? + "/templates")
     }
 
-    pub fn get_notes_folder_template_path() -> String {
-        Self::get_templates_path() + "/notes-folder-template"
+    pub fn get_notes_folder_template_path() -> Result<String> {
+        Ok(Self::get_templates_path()? + "/notes-folder-template")
     }
 
-    pub fn get_finding_template_path() -> String {
-        Self::get_templates_path() + "/finding.md"
+    pub fn get_finding_template_path() -> Result<String> {
+        Ok(Self::get_templates_path()? + "/finding.md")
     }
 
-    pub fn get_informational_template_path() -> String {
-        Self::get_templates_path() + "/informational.md"
+    pub fn get_informational_template_path() -> Result<String> {
+        Ok(Self::get_templates_path()? + "/informational.md")
     }
 
-    pub fn get_code_overhaul_template_path() -> String {
-        Self::get_templates_path() + "/code-overhaul.md"
+    pub fn get_code_overhaul_template_path() -> Result<String> {
+        Ok(Self::get_templates_path()? + "/code-overhaul.md")
     }
     // TODO: consider the case of subfolders
     // // Instructions
-    // pub fn get_instructions_folder_path() -> String {
+    // pub fn get_instructions_folder_path() -> Result<String> {
     //     Self::get_validated_config()
     //         .optional
     //         .program_instructions_path
     // }
-    // pub fn get_path_to_instruction(instruction_name: String) -> String {
+    // pub fn get_path_to_instruction(instruction_name: String) -> Result<String> {
     //     Self::get_instructions_folder_path()
     //         + "/"
     //         + instruction_name.replace(".rs", "").as_str()
     //         + ".rs"
     // }
 
-    fn canonicalize_path(path_to_canonicalize: String) -> String {
-        Path::new(&(path_to_canonicalize))
-            .canonicalize()
-            .unwrap()
+    fn canonicalize_path(path_to_canonicalize: String) -> Result<String> {
+        Ok(Path::new(&(path_to_canonicalize))
+            .canonicalize()?
             .into_os_string()
             .into_string()
-            .unwrap()
+            .unwrap())
     }
 }
 

@@ -3,11 +3,11 @@ pub struct FileInfo {
     pub path: String,
     pub name: String,
 }
-
 use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{MultiSelect, Select};
+use std::io::Result;
 
 use walkdir::WalkDir;
 
@@ -349,8 +349,8 @@ pub mod parse {
         fs::write(co_file_path, data).unwrap();
     }
 
-    pub fn function_parameters_into_co(co_file_path: String, co_file_name: String) {
-        let BatConfig { required, .. } = BatConfig::get_validated_config();
+    pub fn function_parameters_into_co(co_file_path: String, co_file_name: String) -> Result<()> {
+        let BatConfig { required, .. } = BatConfig::get_validated_config()?;
         let RequiredConfig {
             program_lib_path, ..
         } = required;
@@ -433,6 +433,7 @@ pub mod parse {
             );
             fs::write(co_file_path, data).unwrap();
         }
+        Ok(())
     }
 }
 pub mod get {
@@ -471,8 +472,8 @@ pub mod get {
         item_id.to_string()
     }
 
-    pub fn context_name(co_file_name: String) -> String {
-        let BatConfig { required, .. } = BatConfig::get_validated_config();
+    pub fn context_name(co_file_name: String) -> Result<String> {
+        let BatConfig { required, .. } = BatConfig::get_validated_config()?;
         let RequiredConfig {
             program_lib_path, ..
         } = required;
@@ -518,17 +519,20 @@ pub mod get {
             .map(|l| l.to_string())
             .collect::<Vec<String>>()[0]
             .clone();
-        parsed_context_name
+        Ok(parsed_context_name)
     }
 
-    pub fn context_lines(instruction_file_path: PathBuf, co_file_name: String) -> Vec<String> {
+    pub fn context_lines(
+        instruction_file_path: PathBuf,
+        co_file_name: String,
+    ) -> Result<Vec<String>> {
         let instruction_file = File::open(instruction_file_path.clone()).unwrap();
         let instruction_file_lines = io::BufReader::new(instruction_file)
             .lines()
             .map(|l| l.unwrap())
             .collect::<Vec<String>>();
 
-        let context_name = context_name(co_file_name.clone());
+        let context_name = context_name(co_file_name.clone())?;
         // get context lines
         let first_line_index_opt = instruction_file_lines.iter().position(|line| {
             line.contains(("pub struct ".to_string() + &context_name.clone() + "<").as_str())
@@ -543,7 +547,7 @@ pub mod get {
                     + first_line_index;
                 let context_lines: Vec<_> =
                     instruction_file_lines[first_line_index..=last_line_index].to_vec();
-                context_lines
+                Ok(context_lines)
             }
             // if the Context Accouns were not found in the file
             None => {
@@ -556,7 +560,7 @@ pub mod get {
                     .unwrap()
                     .to_string();
                 // tell the user to select the instruction file that has the context of the file
-                let instruction_files = super::get::instruction_files();
+                let instruction_files = super::get::instruction_files()?;
                 let instruction_files_names: Vec<&String> =
                     instruction_files.iter().map(|file| &file.name).collect();
                 // list the instruction files
@@ -593,7 +597,7 @@ pub mod get {
                     + first_line_index;
                 let context_lines: Vec<_> =
                     instruction_file_lines[first_line_index..=last_line_index].to_vec();
-                context_lines
+                Ok(context_lines)
             }
         }
     }
@@ -669,8 +673,8 @@ pub mod get {
         possible_validations
     }
 
-    pub fn instruction_files() -> Vec<FileInfo> {
-        let instructions_path = BatConfig::get_validated_config()
+    pub fn instruction_files() -> Result<Vec<FileInfo>> {
+        let instructions_path = BatConfig::get_validated_config()?
             .optional
             .program_instructions_path;
 
@@ -692,12 +696,12 @@ pub mod get {
             .filter(|file_info| file_info.name != "mod.rs" && file_info.name.contains(".rs"))
             .collect::<Vec<FileInfo>>();
         instruction_files_info.sort_by(|a, b| a.name.cmp(&b.name));
-        instruction_files_info
+        Ok(instruction_files_info)
     }
 
     // returns a list of folder and files names
-    pub fn started_entrypoints() -> Vec<String> {
-        let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    pub fn started_entrypoints() -> Result<Vec<String>> {
+        let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
         let started_files = fs::read_dir(started_path)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
@@ -706,11 +710,13 @@ pub mod get {
         if started_files.is_empty() {
             panic!("no started files in code-overhaul folder");
         }
-        started_files
+        Ok(started_files)
     }
 
-    pub fn get_instruction_file_with_prompts(to_start_file_name: &String) -> (String, String) {
-        let instruction_files_info = instruction_files();
+    pub fn get_instruction_file_with_prompts(
+        to_start_file_name: &String,
+    ) -> Result<(String, String)> {
+        let instruction_files_info = instruction_files()?;
 
         let entrypoint_name = to_start_file_name.replace(".md", "");
         let instruction_match = instruction_files_info
@@ -762,7 +768,7 @@ pub mod get {
             let name = instruction_files_info.as_slice()[selection].path.borrow();
             name
         };
-        (entrypoint_name.clone(), instruction_file_path.clone())
+        Ok((entrypoint_name.clone(), instruction_file_path.clone()))
     }
 }
 
@@ -814,7 +820,7 @@ pub mod check {
 
 pub mod count {
     use super::*;
-    pub fn count_filtered(dir_to_count: ReadDir) -> usize {
+    pub fn count_filtering_gitkeep(dir_to_count: ReadDir) -> usize {
         dir_to_count
             .filter(|file| {
                 !file
@@ -828,16 +834,16 @@ pub mod count {
             .collect::<Vec<_>>()
             .len()
     }
-    pub fn co_counter() -> (usize, usize, usize) {
-        let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
+    pub fn co_counter() -> Result<(usize, usize, usize)> {
+        let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None)?;
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
-        let to_review_count = count_filtered(to_review_folder);
-        let started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+        let to_review_count = count_filtering_gitkeep(to_review_folder);
+        let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
         let started_folder = fs::read_dir(started_path).unwrap();
-        let started_count = count_filtered(started_folder);
-        let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+        let started_count = count_filtering_gitkeep(started_folder);
+        let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
         let finished_folder = fs::read_dir(finished_path).unwrap();
-        let finished_count = count_filtered(finished_folder);
-        (to_review_count, started_count, finished_count)
+        let finished_count = count_filtering_gitkeep(finished_folder);
+        Ok((to_review_count, started_count, finished_count))
     }
 }

@@ -26,22 +26,22 @@ use crate::constants::{
 use std::borrow::{Borrow, BorrowMut};
 
 use std::fs::{File, ReadDir};
-use std::io::BufRead;
+use std::io::{BufRead, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::String;
 use std::{fs, io};
 
-pub fn create_overhaul_file(entrypoint_name: String) {
+pub fn create_overhaul_file(entrypoint_name: String) -> Result<()> {
     let code_overhaul_auditor_file_path =
-        BatConfig::get_auditor_code_overhaul_to_review_path(Some(entrypoint_name.clone()));
+        BatConfig::get_auditor_code_overhaul_to_review_path(Some(entrypoint_name.clone()))?;
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
         panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
     let output = Command::new("cp")
         .args([
             "-r",
-            BatConfig::get_code_overhaul_template_path().as_str(),
+            BatConfig::get_code_overhaul_template_path()?.as_str(),
             code_overhaul_auditor_file_path.as_str(),
         ])
         .output()
@@ -53,13 +53,14 @@ pub fn create_overhaul_file(entrypoint_name: String) {
         )
     };
     println!("code-overhaul file created: {entrypoint_name}.md");
+    Ok(())
 }
 
-pub async fn start_code_overhaul_file() {
+pub async fn start_code_overhaul_file() -> Result<()> {
     check_correct_branch();
 
     // check if program_lib_path is not empty or panic
-    let BatConfig { optional, .. } = BatConfig::get_validated_config();
+    let BatConfig { optional, .. } = BatConfig::get_validated_config()?;
 
     if optional.program_instructions_path.is_empty() {
         panic!("Optional program_instructions_path parameter not set in Bat.toml")
@@ -69,7 +70,7 @@ pub async fn start_code_overhaul_file() {
         panic!("program_instructions_path is not a correct folder")
     }
 
-    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None);
+    let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None)?;
     // get to-review files
     let mut review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -97,13 +98,13 @@ pub async fn start_code_overhaul_file() {
     };
 
     let to_review_file_path =
-        BatConfig::get_auditor_code_overhaul_to_review_path(Some(to_start_file_name.clone()));
+        BatConfig::get_auditor_code_overhaul_to_review_path(Some(to_start_file_name.clone()))?;
 
     let (entrypoint_name, instruction_file_path) =
-        helpers::get::get_instruction_file_with_prompts(&to_start_file_name);
+        helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
     let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
     let context_lines =
-        helpers::get::context_lines(instruction_file_path.clone(), to_start_file_name.clone());
+        helpers::get::context_lines(instruction_file_path.clone(), to_start_file_name.clone())?;
 
     // open instruction file in VSCode
     vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
@@ -132,7 +133,7 @@ pub async fn start_code_overhaul_file() {
     let miro_enabled = MiroConfig::new().miro_enabled();
     if miro_enabled {
         // if miro enabled, then create a subfolder
-        let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+        let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
         let started_co_folder_path = started_folder_path + entrypoint_name.clone().as_str();
         let started_co_file_path = format!("{started_co_folder_path}/{to_start_file_name}");
         // create the co subfolder
@@ -163,7 +164,7 @@ pub async fn start_code_overhaul_file() {
         vs_code_open_file_in_current_window(started_co_file_path.as_str());
     } else {
         let started_path =
-            BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()));
+            BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()))?;
         Command::new("mv")
             .args([to_review_file_path, started_path.clone()])
             .output()
@@ -175,12 +176,13 @@ pub async fn start_code_overhaul_file() {
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_path.as_str());
     }
+    Ok(())
 }
 
-pub async fn finish_code_overhaul_file() {
+pub async fn finish_code_overhaul_file() -> Result<()> {
     check_correct_branch();
     // get to-review files
-    let started_endpoints = helpers::get::started_entrypoints();
+    let started_endpoints = helpers::get::started_entrypoints()?;
 
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&started_endpoints)
@@ -195,8 +197,9 @@ pub async fn finish_code_overhaul_file() {
         Some(index) => {
             if MiroConfig::new().miro_enabled() {
                 let finished_endpoint = started_endpoints[index].clone();
-                let finished_folder_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
-                let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+                let finished_folder_path =
+                    BatConfig::get_auditor_code_overhaul_finished_path(None)?;
+                let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
                 let started_co_folder_path =
                     canonicalize_path(format!("{started_folder_path}/{finished_endpoint}"));
                 let started_co_file_path = canonicalize_path(format!(
@@ -207,7 +210,7 @@ pub async fn finish_code_overhaul_file() {
                     finished_endpoint.clone(),
                 );
                 // move Miro frame to final positon
-                let (_, _, finished_co) = helpers::count::co_counter();
+                let (_, _, finished_co) = helpers::count::co_counter()?;
                 miro::api::frame::update_frame_position(
                     finished_endpoint.clone(),
                     finished_co as i32,
@@ -229,10 +232,10 @@ pub async fn finish_code_overhaul_file() {
                 let finished_file_name = started_endpoints[index].clone();
                 let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(Some(
                     finished_file_name.clone(),
-                ));
+                ))?;
                 let started_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
                     finished_file_name.clone(),
-                ));
+                ))?;
                 helpers::check::code_overhaul_file_completed(
                     started_path.clone(),
                     finished_file_name.clone(),
@@ -245,13 +248,14 @@ pub async fn finish_code_overhaul_file() {
                 create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
             }
         }
-        None => println!("User did not select anything"),
+        None => panic!("User did not select anything"),
     }
+    Ok(())
 }
 
-pub fn update_code_overhaul_file() {
+pub fn update_code_overhaul_file() -> Result<()> {
     println!("Select the code-overhaul file to finish:");
-    let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
+    let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
     // get to-review files
     let finished_files = fs::read_dir(finished_path)
         .unwrap()
@@ -277,13 +281,14 @@ pub fn update_code_overhaul_file() {
             let finished_file_name = finished_files[index].clone();
             check_correct_branch();
             create_git_commit(GitCommit::UpdateCO, Some(vec![finished_file_name]));
+            Ok(())
         }
-        None => println!("User did not select anything"),
+        None => panic!("User did not select anything"),
     }
 }
 
-pub fn count_co_files() {
-    let (to_review_count, started_count, finished_count) = helpers::count::co_counter();
+pub fn count_co_files() -> Result<()> {
+    let (to_review_count, started_count, finished_count) = helpers::count::co_counter()?;
     println!("to-review co files: {}", format!("{to_review_count}").red());
     println!("started co files: {}", format!("{started_count}").yellow());
     println!("finished co files: {}", format!("{finished_count}").green());
@@ -291,13 +296,14 @@ pub fn count_co_files() {
         "total co files: {}",
         format!("{}", to_review_count + started_count + finished_count).purple()
     );
+    Ok(())
 }
 
-pub async fn deploy_miro() {
+pub async fn deploy_miro() -> Result<()> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
     // check empty images
     // get files and folders from started, filter .md files
-    let started_folders: Vec<String> = helpers::get::started_entrypoints()
+    let started_folders: Vec<String> = helpers::get::started_entrypoints()?
         .iter()
         .filter(|file| !file.contains(".md"))
         .map(|file| file.to_string())
@@ -315,7 +321,7 @@ pub async fn deploy_miro() {
         .unwrap();
 
     let selected_folder = &started_folders[selection];
-    let selected_co_started_path = BatConfig::get_auditor_code_overhaul_started_path(None);
+    let selected_co_started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
     let screenshot_paths = CO_FIGURES
         .iter()
         .map(|figure| format!("{selected_co_started_path}/{selected_folder}/{figure}"));
@@ -538,16 +544,17 @@ pub async fn deploy_miro() {
             create_git_commit(
                 GitCommit::UpdateMiro,
                 Some(vec![selected_folder.to_string()]),
-            )
+            );
         } else {
             println!("No files selected");
         }
+        Ok(())
     }
 }
 
-pub async fn open_co() {
+pub async fn open_co() -> Result<()> {
     // list to start
-    let started_entrypoints = helpers::get::started_entrypoints();
+    let started_entrypoints = helpers::get::started_entrypoints()?;
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&started_entrypoints)
         .default(0)
@@ -562,14 +569,14 @@ pub async fn open_co() {
             started_entrypoints[index].clone(),
             BatConfig::get_auditor_code_overhaul_started_path(Some(
                 started_entrypoints[index].clone(),
-            )),
+            ))?,
         ),
         None => panic!("User did not select anything"),
     };
     // select to start
     // get instruction
     let (_, instruction_file_path) =
-        helpers::get::get_instruction_file_with_prompts(&started_file_name);
+        helpers::get::get_instruction_file_with_prompts(&started_file_name)?;
 
     println!(
         "Opening {} in VS Code",
@@ -581,4 +588,5 @@ pub async fn open_co() {
         instruction_file_path.split("/").last().unwrap()
     );
     vs_code_open_file_in_current_window(&instruction_file_path);
+    Ok(())
 }
