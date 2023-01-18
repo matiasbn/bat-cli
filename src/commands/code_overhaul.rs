@@ -606,10 +606,12 @@ pub fn update_audit_results() -> Result<()> {
 
         // Result
         let title = format!("## {}\n\n", result.file_name);
-        let what_it_does_text =
-            format!("### What it does:\n\n {}\n\n", result.what_it_does_content);
-        let notes_text = format!("### Notes:\n\n {}\n\n", result.notes_content);
-        let miro_frame_text = format!("### Miro frame url:\n\n {}\n", result.miro_frame_url);
+        let what_it_does_text = format!(
+            "### What it does:\n\n{}\n\n",
+            result.what_it_does_content.trim()
+        );
+        let notes_text = format!("### Notes:\n\n{}\n\n", result.notes_content.trim());
+        let miro_frame_text = format!("### Miro frame url:\n\n{}\n", result.miro_frame_url.trim());
         final_result.push([title, what_it_does_text, notes_text, miro_frame_text].join(""));
     }
     table_of_contents.append(&mut final_result);
