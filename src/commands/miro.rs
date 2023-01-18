@@ -225,7 +225,6 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
-            update_item_position(entrypoint_name.to_string(), file_name, item_id.to_string()).await;
         }
         async fn update_item_position(entrypoint_name: String, file_name: String, item_id: String) {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
