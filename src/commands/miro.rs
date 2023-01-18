@@ -338,7 +338,7 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
-            // println!("connector response {response}");
+            println!("connector response {response}");
         }
         fn get_frame_id(entrypoint_name: &str) -> String {
             let started_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
@@ -406,7 +406,7 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
-            println!("sticky not response {response}");
+            // println!("sticky not response {response}");
             let response: Value = serde_json::from_str(&response.as_str()).unwrap();
             let id = response["id"].to_string().replace("\"", "");
             id
