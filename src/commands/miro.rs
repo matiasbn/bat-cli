@@ -1,8 +1,10 @@
 use crate::config::*;
 use normalize_url::normalizer;
-use reqwest::*;
+use reqwest;
 use serde_json::*;
-use std::fs;
+use std::result::Result;
+use std::{fs, io};
+use thiserror;
 
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{self};
@@ -10,6 +12,16 @@ use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 use crate::constants::*;
+
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum Error {
+    #[error("Wrong answer")]
+    WrongAnswer,
+    #[error("A little bit more")]
+    More,
+    #[error("A little bit less")]
+    Less,
+}
 
 pub struct MiroConfig {
     access_token: String,
@@ -39,8 +51,10 @@ impl MiroConfig {
         let url = normalizer::UrlNormalizer::new(
             format!("{}/?moveToWidget={frame_id}", self.board_url).as_str(),
         )
+        .unwrap()
+        .normalize(None)
         .unwrap();
-        url.normalize(None).unwrap()
+        url
     }
 }
 
@@ -56,7 +70,7 @@ pub mod api {
         }
 
         // returns the frame url
-        pub async fn create_frame(entrypoint_name: &str) -> MiroFrame {
+        pub async fn create_frame(entrypoint_name: &str) -> Result<MiroFrame, String> {
             let MiroConfig {
                 access_token,
                 board_id,
@@ -88,13 +102,17 @@ pub mod api {
                 .header(CONTENT_TYPE, "application/json")
                 .header(AUTHORIZATION, format!("Bearer {access_token}"))
                 .send()
-                .await
-                .unwrap();
-            let frame_id = super::helpers::get_id_from_response(board_response).await;
-            let frame_url = MiroConfig::new().get_frame_url(&frame_id);
-            MiroFrame {
-                id: frame_id,
-                url: frame_url,
+                .await;
+            match board_response {
+                Ok(response) => {
+                    let frame_id = super::helpers::get_id_from_response(response).await;
+                    let frame_url = MiroConfig::new().get_frame_url(&frame_id);
+                    Ok(MiroFrame {
+                        id: frame_id,
+                        url: frame_url,
+                    })
+                }
+                Err(err_message) => Err(err_message.to_string()),
             }
         }
         pub async fn get_frame_positon(frame_id: String) -> (u64, u64) {
@@ -175,7 +193,7 @@ pub mod api {
             let file = File::open(file_path.clone()).await.unwrap();
             // read file body stream
             let stream = FramedRead::new(file, BytesCodec::new());
-            let file_body = Body::wrap_stream(stream);
+            let file_body = reqwest::Body::wrap_stream(stream);
 
             //make form part of file
             let some_file = multipart::Part::stream(file_body)
@@ -218,7 +236,7 @@ pub mod api {
             let file = File::open(file_path.clone()).await.unwrap();
             // read file body stream
             let stream = FramedRead::new(file, BytesCodec::new());
-            let file_body = Body::wrap_stream(stream);
+            let file_body = reqwest::Body::wrap_stream(stream);
 
             //make form part of file
             let some_file = multipart::Part::stream(file_body)
