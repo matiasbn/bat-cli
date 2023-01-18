@@ -1,6 +1,6 @@
 use crate::config::*;
 use normalize_url::normalizer;
-use reqwest::Body;
+use reqwest::*;
 use serde_json::*;
 use std::fs;
 
@@ -33,6 +33,14 @@ impl MiroConfig {
 
     pub fn miro_enabled(&self) -> bool {
         !self.access_token.is_empty()
+    }
+
+    pub fn get_frame_url(&self, frame_id: &str) -> String {
+        let url = normalizer::UrlNormalizer::new(
+            format!("{}/?moveToWidget={frame_id}", self.board_url).as_str(),
+        )
+        .unwrap();
+        url.normalize(None).unwrap()
     }
 }
 
@@ -81,19 +89,9 @@ pub mod api {
                 .header(AUTHORIZATION, format!("Bearer {access_token}"))
                 .send()
                 .await
-                .unwrap()
-                .text()
-                .await
                 .unwrap();
-            let response: Value = serde_json::from_str(board_response.as_str()).unwrap();
-            let RequiredConfig { miro_board_url, .. } = BatConfig::get_validated_config().required;
-            let frame_id: String = response["id"].clone().to_string().replace('\"', "");
-            let frame_url = normalizer::UrlNormalizer::new(
-                format!("{miro_board_url}/?moveToWidget={frame_id}").as_str(),
-            )
-            .unwrap()
-            .normalize(None)
-            .unwrap();
+            let frame_id = super::helpers::get_id_from_response(board_response).await;
+            let frame_url = MiroConfig::new().get_frame_url(&frame_id);
             MiroFrame {
                 id: frame_id,
                 url: frame_url,
@@ -132,7 +130,7 @@ pub mod api {
                 miro_oauth_access_token,
                 ..
             } = BatConfig::get_validated_config().auditor;
-            let frame_id = get_frame_id(entrypoint_name.as_str());
+            let frame_id = super::helpers::get_frame_id_from_co_file(entrypoint_name.as_str());
             let x_modifier = co_finished_files % MIRO_BOARD_COLUMNS;
             let y_modifier = co_finished_files / MIRO_BOARD_COLUMNS;
             let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH + 100) * x_modifier;
@@ -161,25 +159,6 @@ pub mod api {
                 .await
                 .unwrap();
             // println!("update frame position response: {response}")
-        }
-
-        pub fn get_frame_id(entrypoint_name: &str) -> String {
-            let started_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
-                entrypoint_name.to_string(),
-            ));
-            let miro_url = fs::read_to_string(started_file_path)
-                .unwrap()
-                .lines()
-                .find(|line| line.contains("https://miro.com/app/board/"))
-                .unwrap()
-                .to_string();
-            let frame_id = miro_url
-                .split("moveToWidget=")
-                .last()
-                .unwrap()
-                .to_string()
-                .replace("\"", "");
-            frame_id
         }
     }
     pub mod image {
@@ -324,7 +303,7 @@ pub mod api {
                 miro_oauth_access_token,
                 ..
             } = BatConfig::get_init_config().auditor;
-            let frame_id = super::frame::get_frame_id(entrypoint_name.as_str());
+            let frame_id = super::helpers::get_frame_id_from_co_file(entrypoint_name.as_str());
             // let started_file_path
             let (x_position, y_position) = match file_name.to_string().as_str() {
                 ENTRYPOINT_PNG_NAME => (1300, 250),
@@ -545,6 +524,32 @@ pub mod api {
                 .await
                 .unwrap();
             // println!("connector response {response}");
+        }
+    }
+    pub mod helpers {
+        use super::*;
+        pub async fn get_id_from_response(response: reqwest::Response) -> String {
+            let respons_string = response.text().await.unwrap();
+            let response: Value = serde_json::from_str(&&respons_string.as_str()).unwrap();
+            response["id"].to_string().replace("\"", "")
+        }
+        pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> String {
+            let started_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
+                entrypoint_name.to_string(),
+            ));
+            let miro_url = fs::read_to_string(started_file_path)
+                .unwrap()
+                .lines()
+                .find(|line| line.contains("https://miro.com/app/board/"))
+                .unwrap()
+                .to_string();
+            let frame_id = miro_url
+                .split("moveToWidget=")
+                .last()
+                .unwrap()
+                .to_string()
+                .replace("\"", "");
+            frame_id
         }
     }
 }
