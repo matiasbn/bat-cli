@@ -541,7 +541,7 @@ pub async fn deploy_miro() -> Result<()> {
             create_git_commit(
                 GitCommit::UpdateMiro,
                 Some(vec![selected_folder.to_string()]),
-            );
+            )?;
         } else {
             println!("No files selected");
         }
