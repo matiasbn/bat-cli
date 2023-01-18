@@ -591,7 +591,10 @@ pub fn update_audit_results() -> Result<()> {
         BatConfig::get_audit_folder_path(Some(AUDIT_RESULT_FILE_NAME.to_string()))?;
     let finished_co_files = get_finished_co_files()?;
     let finished_co_audit_information = get_finished_co_files_info_for_results(finished_co_files)?;
-    let mut final_result: Vec<String> = vec!["# Code overhaul\n".to_string()];
+    let mut final_result: Vec<String> = vec![
+        "# Table of contents\n".to_string(),
+        "# Code overhaul\n".to_string(),
+    ];
     for result in finished_co_audit_information {
         let title = format!("## {}\n\n", result.file_name);
         let what_it_does_text = format!("### What it does:\n\n{}\n\n", result.what_it_does_content);
