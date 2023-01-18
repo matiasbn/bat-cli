@@ -32,6 +32,7 @@ use crate::constants::{
 
 use std::borrow::{Borrow, BorrowMut};
 
+use std::fmt::format;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -758,9 +759,16 @@ fn parse_validations_into_co(
     let mut prerequisites: Vec<String> = vec![];
 
     for validation in validations.iter() {
-        let options = vec!["account validation", "prerequisite"];
-        let prompt_text =
-            format!("is this validation an account validation or a prerequisite?: \n {validation}");
+        let options = vec![
+            format!("account validation").red(),
+            format!("prerequisite").yellow(),
+        ];
+        let prompt_text = format!(
+            "is this validation an {} or a {}?: \n {}",
+            options[0],
+            options[1],
+            format!("{validation}").green(),
+        );
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt_text)
             .items(&options)
@@ -836,7 +844,8 @@ fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
             // prompt the user to state if the comment is correct
             let signer_description = candidate_lines[0].split("// ").last().unwrap();
             let prompt_text = format!(
-                "is this a proper description of the signer '{signer}'?: '{signer_description}'"
+                "is this a proper description of the signer {}?: '{signer_description}'",
+                format!("{signer}").red()
             );
             let options = vec!["yes", "no"];
             let selection = Select::with_theme(&ColorfulTheme::default())
@@ -858,7 +867,7 @@ fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
         } else {
             // prompt the user to select the lines that contains the description and join them
             let prompt_text = format!(
-                "Use the spacebar to select the lines that describes the signer '{signer}'. \n Hit enter if is not a proper description:"
+                "Use the spacebar to select the lines that describes the signer {}. \n Hit enter if is not a proper description:", format!("{signer}").red()
             );
             candidate_lines.reverse();
             let formatted_candidate_lines: Vec<&str> = candidate_lines
@@ -883,7 +892,10 @@ fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
                         .push(formatted_candidate_lines.as_slice()[*selection].to_string());
                 }
                 signers_text.push(
-                    "- ".to_string() + &signer + ": " + signer_description_lines.join(" ").as_str(),
+                    "- ".to_string()
+                        + &signer
+                        + ": "
+                        + signer_description_lines.join(". ").as_str(),
                 );
             }
         }
@@ -1146,9 +1158,13 @@ fn get_possible_validations(
             && line.contains('(')
         {
             // single line validation
-            if line.contains(");") {
+            if line.contains(");") || line.contains(")?;") {
                 let validation = format!("\t{}", line.trim());
-                let prompt = format!("is the next line a validation? \n {validation}");
+                let prompt = format!(
+                    "is the next line a {}? \n {}",
+                    format!("validation").red(),
+                    format!("{validation}").bright_green()
+                );
                 let selection = Select::with_theme(&ColorfulTheme::default())
                     .with_prompt(prompt)
                     .item("yes")
@@ -1176,7 +1192,11 @@ fn get_possible_validations(
                 }
                 validation_candidate.push(validation_line);
                 let validation_string = validation_candidate.join("\n");
-                let prompt = format!("is the next function a validation? \n {validation_string}");
+                let prompt = format!(
+                    "is the next function a {}? \n {}",
+                    format!("validation").red(),
+                    format!("{validation_string}").bright_green(),
+                );
                 let selection = Select::with_theme(&ColorfulTheme::default())
                     .with_prompt(prompt)
                     .item("yes")
