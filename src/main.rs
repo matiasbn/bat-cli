@@ -3,7 +3,7 @@
 extern crate core;
 
 use clap::{Parser, Subcommand};
-use commands::git::GitCommit;
+
 
 mod command_line;
 mod commands;
