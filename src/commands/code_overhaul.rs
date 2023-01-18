@@ -262,7 +262,7 @@ pub async fn finish_code_overhaul_file() {
                 );
                 // move Miro frame to final positon
                 let (_, _, finished_co) = co_counter();
-                update_frame_position(finished_endpoint.clone(), finished_co).await;
+                update_frame_position(finished_endpoint.clone(), finished_co as i32).await;
                 // move into finished
                 Command::new("mv")
                     .args([started_co_file_path, finished_folder_path])

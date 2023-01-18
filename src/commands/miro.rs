@@ -270,7 +270,7 @@ pub mod miro_api {
                 .unwrap();
         }
 
-        pub async fn update_frame_position(entrypoint_name: String, co_finished_files: usize) {
+        pub async fn update_frame_position(entrypoint_name: String, co_finished_files: i32) {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_validated_config().required;
             let AuditorConfig {
                 miro_oauth_access_token,

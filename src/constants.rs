@@ -65,8 +65,8 @@ pub static CO_FIGURES: &[&str] = &[
 ];
 
 // miro config
-pub const MIRO_FRAME_WIDTH: usize = 3392;
-pub const MIRO_FRAME_HEIGHT: usize = 1908;
-pub const MIRO_BOARD_COLUMNS: usize = 5;
-pub const MIRO_INITIAL_X: usize = 0;
-pub const MIRO_INITIAL_Y: usize = 4000;
+pub const MIRO_FRAME_WIDTH: i32 = 3392;
+pub const MIRO_FRAME_HEIGHT: i32 = 1908;
+pub const MIRO_BOARD_COLUMNS: i32 = 5;
+pub const MIRO_INITIAL_X: i32 = -3400;
+pub const MIRO_INITIAL_Y: i32 = 5800;
