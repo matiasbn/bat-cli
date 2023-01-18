@@ -434,6 +434,8 @@ pub mod parse {
 }
 
 pub mod get {
+    use std::fs::DirEntry;
+
     use super::*;
     pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
         let signers_names: Vec<_> = context_lines
@@ -770,9 +772,13 @@ pub mod get {
 
     pub fn get_finished_co_files() -> Result<Vec<(String, String)>> {
         let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
-        let finished_folder = fs::read_dir(&finished_path)?;
+        let mut finished_folder = fs::read_dir(&finished_path)?
+            .map(|file| file.unwrap())
+            .collect::<Vec<DirEntry>>();
+        finished_folder.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
         let mut finished_files_content: Vec<(String, String)> = vec![];
-        for co_file in finished_folder.into_iter().map(|file| file.unwrap()) {
+
+        for co_file in finished_folder {
             let file_content = fs::read_to_string(co_file.path())?;
             let file_name = co_file.file_name();
             if file_name != ".gitkeep" {
