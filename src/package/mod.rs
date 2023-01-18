@@ -16,11 +16,13 @@ pub fn full() {
 
 pub fn clippy() {
     assert!(check_files_not_commited());
-    println!("Executing clippy --fix");
+    println!("Executing cargo clippy --fix");
     Command::new("cargo")
         .args(["clippy", "--fix"])
         .output()
         .unwrap();
+    println!("Executing cargo fix");
+    Command::new("cargo").args(["fix"]).output().unwrap();
     println!("Commiting clippy changes");
     create_commit(PublishCommit::Clippy, None);
 }
