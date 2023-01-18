@@ -370,7 +370,7 @@ pub mod parse {
             }
             program_lines.push(line)
         }
-        let entrypoint_text = "pub pub fn ".to_string() + co_file_name.replace(".md", "").as_str();
+        let entrypoint_text = "pub fn ".to_string() + co_file_name.replace(".md", "").as_str();
         let entrypoint_index = program_lines
             .iter()
             .position(|line| line.contains(entrypoint_text.clone().as_str()))
@@ -484,7 +484,7 @@ pub mod get {
         let entrypoint_index = lib_file
             .lines()
             .position(|line| {
-                if line.contains("pub pub fn") {
+                if line.contains("pub fn") {
                     let function_name = line.split('(').collect::<Vec<&str>>()[0]
                         .split_whitespace()
                         .last()
