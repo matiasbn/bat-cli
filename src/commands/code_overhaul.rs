@@ -65,7 +65,7 @@ pub fn create_overhaul_file(entrypoint_name: String) {
     println!("code-overhaul file created: {entrypoint_name}.md");
 }
 
-pub fn start_code_overhaul_file() {
+pub async fn start_code_overhaul_file() {
     check_correct_branch();
 
     // check if program_lib_path is not empty or panic
@@ -211,10 +211,16 @@ pub fn start_code_overhaul_file() {
             .unwrap();
         println!("Empty screenshots created, remember to complete them");
 
-        create_git_commit(GitCommit::StartCOMiro, Some(vec![to_start_file_name]));
+        create_git_commit(
+            GitCommit::StartCOMiro,
+            Some(vec![to_start_file_name.clone()]),
+        );
 
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_co_file_path.as_str());
+
+        // move frame to inital position
+        update_frame_position(to_start_file_name.clone(), 0 as i32, true).await;
     } else {
         let started_path =
             BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()));
@@ -262,7 +268,7 @@ pub async fn finish_code_overhaul_file() {
                 );
                 // move Miro frame to final positon
                 let (_, _, finished_co) = co_counter();
-                update_frame_position(finished_endpoint.clone(), finished_co as i32).await;
+                update_frame_position(finished_endpoint.clone(), finished_co as i32, false).await;
                 // move into finished
                 Command::new("mv")
                     .args([started_co_file_path, finished_folder_path])
