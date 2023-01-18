@@ -63,3 +63,10 @@ pub static CO_FIGURES: &[&str] = &[
     CONTEXT_ACCOUNTS_PNG_NAME,
     VALIDATIONS_PNG_NAME,
 ];
+
+// miro config
+pub const MIRO_FRAME_WIDTH: usize = 3392;
+pub const MIRO_FRAME_HEIGHT: usize = 1908;
+pub const MIRO_BOARD_COLUMNS: usize = 5;
+pub const MIRO_INITIAL_X: usize = 0;
+pub const MIRO_INITIAL_Y: usize = 4000;

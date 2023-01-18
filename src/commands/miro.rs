@@ -63,7 +63,7 @@ pub mod miro_api {
         use tokio::fs::File;
         use tokio_util::codec::{BytesCodec, FramedRead};
 
-        use crate::constants::CO_FIGURES;
+        use crate::constants::*;
         use crate::{
             commands::miro::MiroFrame,
             config::{AuditorConfig, BatConfig, RequiredConfig},
@@ -95,8 +95,8 @@ pub mod miro_api {
                               "y": 0
                          },
                          "geometry": {
-                            "width": 3392,
-                            "height": 1908
+                            "width": MIRO_FRAME_WIDTH,
+                            "height": MIRO_FRAME_HEIGHT
                        }
                     })
                     .to_string(),
@@ -186,14 +186,10 @@ pub mod miro_api {
                 .unwrap();
             let response: Value = serde_json::from_str(&response.as_str()).unwrap();
             let id = response["id"].to_string().replace("\"", "");
-            update_item_position(entrypoint_name.to_string(), file_name, id.clone()).await;
+            update_item_position(entrypoint_name.to_string(), &file_name, id.clone()).await;
             id
         }
-        pub async fn update_image_from_device(
-            file_path: String,
-            entrypoint_name: &str,
-            item_id: &str,
-        ) {
+        pub async fn update_image_from_device(file_path: String, item_id: &str) {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
             let AuditorConfig {
                 miro_oauth_access_token,
@@ -226,7 +222,11 @@ pub mod miro_api {
                 .await
                 .unwrap();
         }
-        async fn update_item_position(entrypoint_name: String, file_name: String, item_id: String) {
+        pub async fn update_item_position(
+            entrypoint_name: String,
+            file_name: &str,
+            item_id: String,
+        ) {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
             let AuditorConfig {
                 miro_oauth_access_token,
@@ -234,7 +234,7 @@ pub mod miro_api {
             } = BatConfig::get_init_config().auditor;
             let frame_id = get_frame_id(entrypoint_name.as_str());
             // let started_file_path
-            let (x_position, y_position) = match file_name.clone().as_str() {
+            let (x_position, y_position) = match file_name.to_string().as_str() {
                 ENTRYPOINT_PNG_NAME => (1300, 250),
                 CONTEXT_ACCOUNTS_PNG_NAME => (2200, 350),
                 VALIDATIONS_PNG_NAME => (3000, 500),
@@ -268,6 +268,43 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
+        }
+
+        pub async fn update_frame_position(entrypoint_name: String, co_finished_files: usize) {
+            let RequiredConfig { miro_board_id, .. } = BatConfig::get_validated_config().required;
+            let AuditorConfig {
+                miro_oauth_access_token,
+                ..
+            } = BatConfig::get_validated_config().auditor;
+            let frame_id = get_frame_id(entrypoint_name.as_str());
+            let x_modifier = co_finished_files % MIRO_BOARD_COLUMNS;
+            let y_modifier = co_finished_files / MIRO_BOARD_COLUMNS;
+            let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH + 100) * x_modifier;
+            let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT + 100) * y_modifier;
+            let client = reqwest::Client::new();
+            let response = client
+                .patch(format!(
+                    "https://api.miro.com/v2/boards/{miro_board_id}/frames/{frame_id}",
+                ))
+                .body(
+                    json!({
+                        "position": {
+                            "x": x_position,
+                            "y": y_position,
+                            "origin": "center",
+                        },
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            println!("update frame position response: {response}")
         }
 
         pub async fn create_connector(

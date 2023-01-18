@@ -15,7 +15,8 @@ use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::miro::miro_api::frame::{
     create_connector, create_frame, create_image_from_device, create_signer_sticky_note,
-    create_user_figure_for_signer, update_image_from_device, ConnectorOptions,
+    create_user_figure_for_signer, update_frame_position, update_image_from_device,
+    ConnectorOptions,
 };
 use crate::commands::miro::miro_api::miro_enabled;
 use crate::config::{BatConfig, RequiredConfig};
@@ -230,7 +231,7 @@ pub fn start_code_overhaul_file() {
     }
 }
 
-pub fn finish_code_overhaul_file() {
+pub async fn finish_code_overhaul_file() {
     check_correct_branch();
     // get to-review files
     let started_endpoints = get_started_entrypoints();
@@ -259,6 +260,9 @@ pub fn finish_code_overhaul_file() {
                     started_co_file_path.clone(),
                     finished_endpoint.clone(),
                 );
+                // move Miro frame to final positon
+                let (_, _, finished_co) = co_counter();
+                update_frame_position(finished_endpoint.clone(), finished_co).await;
                 // move into finished
                 Command::new("mv")
                     .args([started_co_file_path, finished_folder_path])
@@ -507,7 +511,6 @@ pub async fn deploy_miro() {
                 user_figure_id: user_figure_id,
                 validated_signer: signer.validated_signer,
             }
-            // move miro to new positon
         }
 
         for screenshot in CO_FIGURES {
@@ -531,11 +534,11 @@ pub async fn deploy_miro() {
             .unwrap();
         }
         // connect screenshots
-        let entrypoint_id = get_screenshot_id(ENTRYPOINT_PNG_NAME, &started_co_file_path);
+        let entrypoint_id = get_screenshot_id(&ENTRYPOINT_PNG_NAME, &started_co_file_path);
         let context_accounts_id =
-            get_screenshot_id(CONTEXT_ACCOUNTS_PNG_NAME, &started_co_file_path);
-        let validations_id = get_screenshot_id(VALIDATIONS_PNG_NAME, &started_co_file_path);
-        let handler_id = get_screenshot_id(HANDLER_PNG_NAME, &started_co_file_path);
+            get_screenshot_id(&CONTEXT_ACCOUNTS_PNG_NAME, &started_co_file_path);
+        let validations_id = get_screenshot_id(&VALIDATIONS_PNG_NAME, &started_co_file_path);
+        let handler_id = get_screenshot_id(&HANDLER_PNG_NAME, &started_co_file_path);
         println!("Connecting signers to entrypoint");
         for signer_miro_ids in signers_info {
             create_connector(
@@ -581,8 +584,7 @@ pub async fn deploy_miro() {
                 let file_name = screenshot_path.split('/').last().unwrap();
                 println!("Updating: {file_name}");
                 let item_id = get_screenshot_id(file_name, &started_co_file_path);
-                update_image_from_device(screenshot_path.to_string(), &selected_folder, &item_id)
-                    .await
+                update_image_from_device(screenshot_path.to_string(), &item_id).await
             }
             create_git_commit(
                 GitCommit::UpdateMiro,

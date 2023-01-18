@@ -91,7 +91,7 @@ async fn main() {
             commands::code_overhaul::start_code_overhaul_file()
         }
         Commands::CO(CodeOverhaulActions::Finish) => {
-            commands::code_overhaul::finish_code_overhaul_file()
+            commands::code_overhaul::finish_code_overhaul_file().await
         }
         Commands::CO(CodeOverhaulActions::Update) => {
             commands::code_overhaul::update_code_overhaul_file()
