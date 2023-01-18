@@ -45,11 +45,18 @@ pub mod miro_api {
         }
     }
     pub mod frame {
-        use std::fs;
+        #[derive(Debug)]
+        pub struct ConnectorOptions {
+            pub start_x_position: String,
+            pub start_y_position: String,
+            pub end_x_position: String,
+            pub end_y_position: String,
+        }
 
         use normalize_url::normalizer;
         use reqwest::Body;
         use serde_json::{json, Value};
+        use std::fs;
 
         use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
         use reqwest::multipart::{self};
@@ -229,7 +236,7 @@ pub mod miro_api {
             let frame_id = get_frame_id(entrypoint_name.as_str());
             // let started_file_path
             let (x_position, y_position) = match file_name.clone().as_str() {
-                "entrypoint.png" => (1200, 250),
+                "entrypoint.png" => (1300, 250),
                 "context_accounts.png" => (2200, 350),
                 "validations.png" => (3000, 500),
                 "handler.png" => (2900, 1400),
@@ -263,33 +270,66 @@ pub mod miro_api {
                 .await
                 .unwrap();
         }
-        pub async fn create_connector(start_item_id: &str, end_item_id: &str) {
+
+        pub async fn create_connector(
+            start_item_id: &str,
+            end_item_id: &str,
+            connect_options: Option<ConnectorOptions>,
+        ) {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
             let AuditorConfig {
                 miro_oauth_access_token,
                 ..
             } = BatConfig::get_init_config().auditor;
-            // let x_position = x + x_move;
+            let body = if let Some(options) = connect_options {
+                let ConnectorOptions {
+                    start_x_position,
+                    start_y_position,
+                    end_x_position,
+                    end_y_position,
+                } = options;
+                json!({
+                    "startItem": {
+                        "id": start_item_id,
+                        "position": {
+                            "x": start_x_position,
+                            "y": start_y_position,
+                        },
+                    },
+                    "endItem": {
+                        "id": end_item_id,
+                        "position": {
+                            "x": end_x_position,
+                            "y": end_y_position,
+                        },
+                    },
+                    "style": {
+                         "strokeWidth": "3"
+                    },
+                   "shape": "elbowed"
+                })
+                .to_string()
+            } else {
+                json!({
+                    "startItem": {
+                        "id": start_item_id
+                   },
+                   "endItem": {
+                        "id": end_item_id
+                   },
+                   "style": {
+                        "strokeWidth": "3"
+                   },
+                   "shape": "elbowed"
+                })
+                .to_string()
+            };
             let client = reqwest::Client::new();
             let response = client
                 .post(format!(
                     "https://api.miro.com/v2/boards/{miro_board_id}/connectors",
                 ))
-                .body(
-                    json!({
-                        "startItem": {
-                            "id": start_item_id
-                       },
-                       "endItem": {
-                            "id": end_item_id
-                       },
-                       "style": {
-                            "strokeWidth": "3"
-                       },
-                       "shape": "elbowed"
-                    })
-                    .to_string(),
-                )
+                .body(body)
                 .header(CONTENT_TYPE, "application/json")
                 .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
                 .send()
@@ -298,6 +338,7 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
+            // println!("connector response {response}");
         }
         fn get_frame_id(entrypoint_name: &str) -> String {
             let started_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
@@ -316,6 +357,105 @@ pub mod miro_api {
                 .to_string()
                 .replace("\"", "");
             frame_id
+        }
+        pub async fn create_signer_sticky_note(
+            signer_note_text: String,
+            signer_counter: usize,
+            miro_frame_id: String,
+        ) -> String {
+            let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
+            let AuditorConfig {
+                miro_oauth_access_token,
+                ..
+            } = BatConfig::get_init_config().auditor;
+            // let x_position = x + x_move;
+            let client = reqwest::Client::new();
+            let y_position = 150 + signer_counter * 270;
+            let response = client
+                .post(format!(
+                    "https://api.miro.com/v2/boards/{miro_board_id}/sticky_notes",
+                ))
+                .body(
+                    json!({
+                        "data": {
+                            "content": signer_note_text,
+                            "shape": "rectangle"
+                        },
+                        "style": {
+                            "fillColor": "violet"
+                        },
+                        "position": {
+                            "origin": "center",
+                            "x": 550,
+                            "y": y_position
+                        },
+                        "geometry": {
+                            "width": 374.5
+                        },
+                        "parent": {
+                            "id": miro_frame_id
+                        }
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            let response: Value = serde_json::from_str(&response.as_str()).unwrap();
+            let id = response["id"].to_string().replace("\"", "");
+            id
+        }
+        pub async fn create_user_figure_for_signer(
+            signer_counter: usize,
+            miro_frame_id: String,
+        ) -> String {
+            let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
+            let AuditorConfig {
+                miro_oauth_access_token,
+                ..
+            } = BatConfig::get_init_config().auditor;
+            // let x_position = x + x_move;
+            let client = reqwest::Client::new();
+            let y_position = 150 + signer_counter * 270;
+            let response = client
+                .post(format!(
+                    "https://api.miro.com/v2/boards/{miro_board_id}/images",
+                ))
+                .body(
+                    json!({
+                        "data": {
+                            "url": "https://mirostatic.com/app/static/12079327f83ff492.svg"
+                       },
+                       "position": {
+                            "origin": "center",
+                            "x": 150,
+                            "y": y_position
+                       },
+                       "geometry": {
+                            "height": 200.1
+                       },
+                       "parent": {
+                            "id": miro_frame_id
+                       }
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {miro_oauth_access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            let response: Value = serde_json::from_str(&response.as_str()).unwrap();
+            let id = response["id"].to_string().replace("\"", "");
+            id
         }
     }
     // pub mod token {

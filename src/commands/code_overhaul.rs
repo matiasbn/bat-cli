@@ -14,7 +14,8 @@ use walkdir::WalkDir;
 use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::miro::miro_api::frame::{
-    create_connector, create_frame, create_image_from_device, update_image_from_device,
+    create_connector, create_frame, create_image_from_device, create_signer_sticky_note,
+    create_user_figure_for_signer, update_image_from_device, ConnectorOptions,
 };
 use crate::commands::miro::miro_api::miro_enabled;
 use crate::config::{BatConfig, RequiredConfig};
@@ -394,6 +395,74 @@ pub async fn deploy_miro() {
     let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
     let is_deploying = to_start_file_content.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER);
     if is_deploying {
+        // check that the signers are finished
+        let current_content = fs::read_to_string(&started_co_file_path).unwrap();
+        if current_content.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
+            panic!("Please complete the signers description before deploying to Miro");
+        }
+        // get the signers name and description
+        let signers_section_index = current_content
+            .lines()
+            .position(|line| line.contains("# Signers:"))
+            .unwrap();
+        let function_parameters_section_index = current_content
+            .lines()
+            .position(|line| line.contains("# Function parameters:"))
+            .unwrap();
+        let mut signers_description: Vec<String> = vec![];
+        let current_content_lines: Vec<String> = current_content
+            .lines()
+            .map(|line| line.to_string())
+            .collect();
+        for idx in signers_section_index + 1..function_parameters_section_index - 1 {
+            if !current_content_lines[idx].is_empty() {
+                signers_description.push(current_content_lines[idx].clone());
+            }
+        }
+        struct SignerInfo {
+            signer_text: String,
+            sticky_note_id: String,
+            user_figure_id: String,
+        }
+        let mut signers_info: Vec<SignerInfo> = vec![];
+        for signer in signers_description.iter() {
+            let signer_name = signer
+                .split(":")
+                .next()
+                .unwrap()
+                .replace("-", "")
+                .trim()
+                .to_string();
+            let signer_description = signer.split(":").last().unwrap().trim().to_string();
+            // prompt the user to select signer content
+            let prompt_text = format!(
+                "select the content of the signer {} sticky note in Miro",
+                format!("{signer_name}").red()
+            );
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt(prompt_text)
+                .item(format!("Signer name: {}", signer_name.clone()))
+                .item(format!(
+                    "Signer description: {}",
+                    signer_description.clone()
+                ))
+                .default(0)
+                .interact_on_opt(&Term::stderr())
+                .unwrap()
+                .unwrap();
+            let signer_text = if selection == 0 {
+                signer_name.clone()
+            } else {
+                signer_description.clone()
+            };
+            signers_info.push(SignerInfo {
+                signer_text,
+                sticky_note_id: "".to_string(),
+                user_figure_id: "".to_string(),
+            })
+        }
+
+        println!("Creating frame in Miro for {selected_folder}");
         let miro_frame = create_frame(selected_folder).await;
         fs::write(
             &started_co_file_path,
@@ -401,6 +470,24 @@ pub async fn deploy_miro() {
                 .replace(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, &miro_frame.url),
         )
         .unwrap();
+
+        println!("Creating signers figures in Miro for {selected_folder}");
+        for (signer_index, signer) in signers_info.iter_mut().enumerate() {
+            // create the sticky note for every signer
+            let sticky_note_id = create_signer_sticky_note(
+                signer.signer_text.clone(),
+                signer_index,
+                miro_frame.id.clone(),
+            )
+            .await;
+            let user_figure_id =
+                create_user_figure_for_signer(signer_index, miro_frame.id.clone()).await;
+            *signer = SignerInfo {
+                signer_text: signer.signer_text.clone(),
+                sticky_note_id: sticky_note_id,
+                user_figure_id: user_figure_id,
+            }
+        }
 
         for screenshot in CO_FIGURES {
             // read the content after every placeholder replacement is essential
@@ -414,7 +501,7 @@ pub async fn deploy_miro() {
             };
             let screenshot_path =
                 format!("{selected_co_started_path}/{selected_folder}/{screenshot}");
-            println!("Creating image in Miro for: {screenshot}");
+            println!("Creating image in Miro for {screenshot}");
             let id = create_image_from_device(screenshot_path.to_string(), &selected_folder).await;
             fs::write(
                 &started_co_file_path,
@@ -427,10 +514,30 @@ pub async fn deploy_miro() {
         let context_accounts_id = get_screenshot_id("context_accounts.png", &started_co_file_path);
         let validations_id = get_screenshot_id("validations.png", &started_co_file_path);
         let handler_id = get_screenshot_id("handler.png", &started_co_file_path);
+        println!("Connecting signers to entrypoint");
+        for signer_miro_ids in signers_info {
+            create_connector(
+                &signer_miro_ids.user_figure_id,
+                &signer_miro_ids.sticky_note_id,
+                None,
+            )
+            .await;
+            create_connector(
+                &signer_miro_ids.sticky_note_id,
+                &entrypoint_id,
+                Some(ConnectorOptions {
+                    start_x_position: "100%".to_string(),
+                    start_y_position: "50%".to_string(),
+                    end_x_position: "0%".to_string(),
+                    end_y_position: "50%".to_string(),
+                }),
+            )
+            .await;
+        }
         println!("Connecting screenshots in Miro");
-        create_connector(&entrypoint_id, &context_accounts_id).await;
-        create_connector(&context_accounts_id, &validations_id).await;
-        create_connector(&validations_id, &handler_id).await;
+        create_connector(&entrypoint_id, &context_accounts_id, None).await;
+        create_connector(&context_accounts_id, &validations_id, None).await;
+        create_connector(&validations_id, &handler_id, None).await;
         create_git_commit(
             GitCommit::DeployMiro,
             Some(vec![selected_folder.to_string()]),
@@ -702,17 +809,7 @@ fn parse_validations_into_co(
 
 fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
     // signer names is only the name of the signer
-    let signers_names: Vec<_> = context_lines
-        .iter()
-        .filter(|line| line.contains("Signer"))
-        .map(|line| {
-            line.replace("pub ", "")
-                .replace("  ", "")
-                .split(':')
-                .collect::<Vec<&str>>()[0]
-                .to_string()
-        })
-        .collect();
+    let signers_names = get_signers_description_from_co_file(&context_lines);
     // array of signers description: - signer_name: SIGNER_DESCRIPTION
     let mut signers_text: Vec<String> = vec![];
     for signer in signers_names.clone() {
@@ -804,6 +901,21 @@ fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
         signers_text_to_replace.as_str(),
     );
     fs::write(co_file_path, data).unwrap();
+}
+
+fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
+    let signers_names: Vec<_> = context_lines
+        .iter()
+        .filter(|line| line.contains("Signer"))
+        .map(|line| {
+            line.replace("pub ", "")
+                .replace("  ", "")
+                .split(':')
+                .collect::<Vec<&str>>()[0]
+                .to_string()
+        })
+        .collect();
+    signers_names
 }
 
 fn parse_function_parameters_into_co(co_file_path: String, co_file_name: String) {
