@@ -362,6 +362,7 @@ pub mod miro_api {
             signer_note_text: String,
             signer_counter: usize,
             miro_frame_id: String,
+            validated_signer: bool,
         ) -> String {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_init_config().required;
             let AuditorConfig {
@@ -371,6 +372,7 @@ pub mod miro_api {
             // let x_position = x + x_move;
             let client = reqwest::Client::new();
             let y_position = 150 + signer_counter * 270;
+            let fill_color = if validated_signer { "red" } else { "dark_blue" };
             let response = client
                 .post(format!(
                     "https://api.miro.com/v2/boards/{miro_board_id}/sticky_notes",
@@ -382,7 +384,7 @@ pub mod miro_api {
                             "shape": "rectangle"
                         },
                         "style": {
-                            "fillColor": "dark_blue"
+                            "fillColor": fill_color
                         },
                         "position": {
                             "origin": "center",

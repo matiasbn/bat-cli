@@ -424,6 +424,7 @@ pub async fn deploy_miro() {
             signer_text: String,
             sticky_note_id: String,
             user_figure_id: String,
+            validated_signer: bool,
         }
         let mut signers_info: Vec<SignerInfo> = vec![];
         for signer in signers_description.iter() {
@@ -456,10 +457,25 @@ pub async fn deploy_miro() {
             } else {
                 signer_description.clone()
             };
+            let prompt_text = format!(
+                "is the signer {} a validated signer?",
+                format!("{signer_name}").red()
+            );
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt(prompt_text)
+                .item("yes")
+                .item("no")
+                .default(0)
+                .interact_on_opt(&Term::stderr())
+                .unwrap()
+                .unwrap();
+            let validated_signer = selection == 0;
+
             signers_info.push(SignerInfo {
                 signer_text,
                 sticky_note_id: "".to_string(),
                 user_figure_id: "".to_string(),
+                validated_signer,
             })
         }
 
@@ -479,6 +495,7 @@ pub async fn deploy_miro() {
                 signer.signer_text.clone(),
                 signer_index,
                 miro_frame.id.clone(),
+                signer.validated_signer,
             )
             .await;
             let user_figure_id =
@@ -487,6 +504,7 @@ pub async fn deploy_miro() {
                 signer_text: signer.signer_text.clone(),
                 sticky_note_id: sticky_note_id,
                 user_figure_id: user_figure_id,
+                validated_signer: signer.validated_signer,
             }
         }
 
