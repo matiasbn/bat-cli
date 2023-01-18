@@ -361,7 +361,10 @@ pub async fn deploy_miro() -> Result<()> {
             .map(|line| line.to_string())
             .collect();
         for idx in signers_section_index + 1..function_parameters_section_index - 1 {
-            if !current_content_lines[idx].is_empty() {
+            // filter empty lines and No signers found
+            if !current_content_lines[idx].is_empty()
+                && !current_content_lines[idx].contains("No signers found")
+            {
                 signers_description.push(current_content_lines[idx].clone());
             }
         }
@@ -372,55 +375,65 @@ pub async fn deploy_miro() -> Result<()> {
             validated_signer: bool,
         }
         let mut signers_info: Vec<SignerInfo> = vec![];
-        for signer in signers_description.iter() {
-            let signer_name = signer
-                .split(":")
-                .next()
-                .unwrap()
-                .replace("-", "")
-                .trim()
-                .to_string();
-            let signer_description = signer.split(":").last().unwrap().trim().to_string();
-            // prompt the user to select signer content
-            let prompt_text = format!(
-                "select the content of the signer {} sticky note in Miro",
-                format!("{signer_name}").red()
-            );
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt(prompt_text)
-                .item(format!("Signer name: {}", signer_name.clone()))
-                .item(format!(
-                    "Signer description: {}",
+        if !signers_description.is_empty() {
+            for signer in signers_description.iter() {
+                let signer_name = signer
+                    .split(":")
+                    .next()
+                    .unwrap()
+                    .replace("-", "")
+                    .trim()
+                    .to_string();
+                let signer_description = signer.split(":").last().unwrap().trim().to_string();
+                // prompt the user to select signer content
+                let prompt_text = format!(
+                    "select the content of the signer {} sticky note in Miro",
+                    format!("{signer_name}").red()
+                );
+                let selection = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt(prompt_text)
+                    .item(format!("Signer name: {}", signer_name.clone()))
+                    .item(format!(
+                        "Signer description: {}",
+                        signer_description.clone()
+                    ))
+                    .default(0)
+                    .interact_on_opt(&Term::stderr())
+                    .unwrap()
+                    .unwrap();
+                let signer_text = if selection == 0 {
+                    signer_name.clone()
+                } else {
                     signer_description.clone()
-                ))
-                .default(0)
-                .interact_on_opt(&Term::stderr())
-                .unwrap()
-                .unwrap();
-            let signer_text = if selection == 0 {
-                signer_name.clone()
-            } else {
-                signer_description.clone()
-            };
-            let prompt_text = format!(
-                "is the signer {} a validated signer?",
-                format!("{signer_name}").red()
-            );
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt(prompt_text)
-                .item("yes")
-                .item("no")
-                .default(0)
-                .interact_on_opt(&Term::stderr())
-                .unwrap()
-                .unwrap();
-            let validated_signer = selection == 0;
+                };
+                let prompt_text = format!(
+                    "is the signer {} a validated signer?",
+                    format!("{signer_name}").red()
+                );
+                let selection = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt(prompt_text)
+                    .item("yes")
+                    .item("no")
+                    .default(0)
+                    .interact_on_opt(&Term::stderr())
+                    .unwrap()
+                    .unwrap();
+                let validated_signer = selection == 0;
 
+                signers_info.push(SignerInfo {
+                    signer_text,
+                    sticky_note_id: "".to_string(),
+                    user_figure_id: "".to_string(),
+                    validated_signer,
+                })
+            }
+        } else {
+            // no signers, push template signer
             signers_info.push(SignerInfo {
-                signer_text,
+                signer_text: "User".to_string(),
                 sticky_note_id: "".to_string(),
                 user_figure_id: "".to_string(),
-                validated_signer,
+                validated_signer: false,
             })
         }
 
@@ -436,6 +449,7 @@ pub async fn deploy_miro() -> Result<()> {
         .unwrap();
 
         println!("Creating signers figures in Miro for {selected_folder}");
+
         for (signer_index, signer) in signers_info.iter_mut().enumerate() {
             // create the sticky note for every signer
             let sticky_note_id = miro::api::sticky_note::create_signer_sticky_note(
