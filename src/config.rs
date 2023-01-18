@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::commands::{
     create::{create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH},
-    miro::miro_api::miro_enabled,
+    miro::MiroConfig,
 };
 
 #[derive(Debug, Deserialize, Clone)]
@@ -220,7 +220,7 @@ impl BatConfig {
     pub fn get_auditor_code_overhaul_started_path(file_name: Option<String>) -> String {
         match file_name {
             Some(name) => {
-                if miro_enabled() {
+                if MiroConfig::new().miro_enabled() {
                     let entrypoint_name = &name.replace(".md", "");
                     Self::canonicalize_path(format!(
                         "{}/started/{entrypoint_name}/{entrypoint_name}.md",

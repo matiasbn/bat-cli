@@ -13,12 +13,9 @@ use walkdir::WalkDir;
 
 use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
-use crate::commands::miro::miro_api::frame::{
-    create_connector, create_frame, create_image_from_device, create_signer_sticky_note,
-    create_user_figure_for_signer, update_frame_position, update_image_from_device,
-    ConnectorOptions,
-};
-use crate::commands::miro::miro_api::miro_enabled;
+use crate::commands::miro::api::connector::ConnectorOptions;
+use crate::commands::miro::{self, api::*};
+use crate::commands::miro::{api, MiroConfig};
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
@@ -136,7 +133,7 @@ pub async fn start_code_overhaul_file() {
     println!("{to_start_file_name} file updated with instruction information");
 
     // create  co subfolder if user provided miro_oauth_access_token
-    let miro_enabled = miro_enabled();
+    let miro_enabled = MiroConfig::new().miro_enabled();
     if miro_enabled {
         // if miro enabled, then create a subfolder
         let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
@@ -256,7 +253,7 @@ pub async fn finish_code_overhaul_file() {
     match selection {
         // move selected file to finished
         Some(index) => {
-            if miro_enabled() {
+            if MiroConfig::new().miro_enabled() {
                 let finished_endpoint = started_endpoints[index].clone();
                 let finished_folder_path = BatConfig::get_auditor_code_overhaul_finished_path(None);
                 let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None);
@@ -271,7 +268,11 @@ pub async fn finish_code_overhaul_file() {
                 );
                 // move Miro frame to final positon
                 let (_, _, finished_co) = co_counter();
-                update_frame_position(finished_endpoint.clone(), finished_co as i32).await;
+                miro::api::frame::update_frame_position(
+                    finished_endpoint.clone(),
+                    finished_co as i32,
+                )
+                .await;
                 // move into finished
                 Command::new("mv")
                     .args([started_co_file_path, finished_folder_path])
@@ -366,7 +367,7 @@ pub fn co_counter() -> (usize, usize, usize) {
 }
 
 pub async fn deploy_miro() {
-    assert!(miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
+    assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
     // check empty images
     // get files and folders from started, filter .md files
     let started_folders: Vec<String> = get_started_entrypoints()
@@ -494,7 +495,7 @@ pub async fn deploy_miro() {
         }
 
         println!("Creating frame in Miro for {selected_folder}");
-        let miro_frame = create_frame(selected_folder).await;
+        let miro_frame = miro::api::frame::create_frame(selected_folder).await;
         fs::write(
             &started_co_file_path,
             &to_start_file_content
@@ -505,15 +506,18 @@ pub async fn deploy_miro() {
         println!("Creating signers figures in Miro for {selected_folder}");
         for (signer_index, signer) in signers_info.iter_mut().enumerate() {
             // create the sticky note for every signer
-            let sticky_note_id = create_signer_sticky_note(
+            let sticky_note_id = miro::api::sticky_note::create_signer_sticky_note(
                 signer.signer_text.clone(),
                 signer_index,
                 miro_frame.id.clone(),
                 signer.validated_signer,
             )
             .await;
-            let user_figure_id =
-                create_user_figure_for_signer(signer_index, miro_frame.id.clone()).await;
+            let user_figure_id = miro::api::image::create_user_figure_for_signer(
+                signer_index,
+                miro_frame.id.clone(),
+            )
+            .await;
             *signer = SignerInfo {
                 signer_text: signer.signer_text.clone(),
                 sticky_note_id: sticky_note_id,
@@ -535,7 +539,11 @@ pub async fn deploy_miro() {
             let screenshot_path =
                 format!("{selected_co_started_path}/{selected_folder}/{screenshot}");
             println!("Creating image in Miro for {screenshot}");
-            let id = create_image_from_device(screenshot_path.to_string(), &selected_folder).await;
+            let id = miro::api::image::create_image_from_device(
+                screenshot_path.to_string(),
+                &selected_folder,
+            )
+            .await;
             fs::write(
                 &started_co_file_path,
                 &to_start_file_content.replace(placeholder, &id),
@@ -550,13 +558,13 @@ pub async fn deploy_miro() {
         let handler_id = get_screenshot_id(&HANDLER_PNG_NAME, &started_co_file_path);
         println!("Connecting signers to entrypoint");
         for signer_miro_ids in signers_info {
-            create_connector(
+            miro::api::connector::create_connector(
                 &signer_miro_ids.user_figure_id,
                 &signer_miro_ids.sticky_note_id,
                 None,
             )
             .await;
-            create_connector(
+            miro::api::connector::create_connector(
                 &signer_miro_ids.sticky_note_id,
                 &entrypoint_id,
                 Some(ConnectorOptions {
@@ -569,9 +577,9 @@ pub async fn deploy_miro() {
             .await;
         }
         println!("Connecting screenshots in Miro");
-        create_connector(&entrypoint_id, &context_accounts_id, None).await;
-        create_connector(&context_accounts_id, &validations_id, None).await;
-        create_connector(&validations_id, &handler_id, None).await;
+        miro::api::connector::create_connector(&entrypoint_id, &context_accounts_id, None).await;
+        miro::api::connector::create_connector(&context_accounts_id, &validations_id, None).await;
+        miro::api::connector::create_connector(&validations_id, &handler_id, None).await;
         create_git_commit(
             GitCommit::DeployMiro,
             Some(vec![selected_folder.to_string()]),
@@ -593,7 +601,8 @@ pub async fn deploy_miro() {
                 let file_name = screenshot_path.split('/').last().unwrap();
                 println!("Updating: {file_name}");
                 let item_id = get_screenshot_id(file_name, &started_co_file_path);
-                update_image_from_device(screenshot_path.to_string(), &item_id).await
+                miro::api::image::update_image_from_device(screenshot_path.to_string(), &item_id)
+                    .await
             }
             create_git_commit(
                 GitCommit::UpdateMiro,
