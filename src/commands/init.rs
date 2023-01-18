@@ -1,5 +1,6 @@
 use std::fs::{self};
 
+use std::io::Result;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::String;
@@ -19,8 +20,8 @@ use crate::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
 
-pub fn initialize_bat_project() {
-    let bat_config: BatConfig = BatConfig::get_init_config();
+pub fn initialize_bat_project() -> Result<()> {
+    let bat_config: BatConfig = BatConfig::get_init_config()?;
     let BatConfig {
         required, auditor, ..
     } = bat_config.clone();
@@ -70,14 +71,15 @@ pub fn initialize_bat_project() {
     // commit to-review files
     create_git_commit(GitCommit::InitAuditor, None);
     println!("Project successfully initialized");
-    let lib_file_path = BatConfig::get_program_lib_path();
+    let lib_file_path = BatConfig::get_program_lib_path()?;
 
     println!("Opening lib.rs in VSCode");
     // Open lib.rs file in vscode
-    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())
+    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap());
+    Ok(())
 }
 
-fn update_audit_information_file() {
+fn update_audit_information_file() -> Result<()> {
     let RequiredConfig {
         project_name,
         client_name,
@@ -85,8 +87,8 @@ fn update_audit_information_file() {
         starting_date,
         miro_board_url,
         ..
-    } = BatConfig::get_init_config().required;
-    let audit_information_path = BatConfig::get_audit_information_file_path();
+    } = BatConfig::get_init_config()?.required;
+    let audit_information_path = BatConfig::get_audit_information_file_path()?;
     let data = fs::read_to_string(audit_information_path.clone()).unwrap();
     let updated_audit_information = data
         .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
@@ -95,6 +97,7 @@ fn update_audit_information_file() {
         .replace(AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, &miro_board_url)
         .replace(AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, &starting_date);
     fs::write(audit_information_path, updated_audit_information).expect("Could not write to file!");
+    Ok(())
 }
 
 fn get_auditor_name(auditor_names: Vec<String>) -> String {
@@ -123,10 +126,10 @@ fn update_auditor_toml(auditor_name: String, miro_oauth_access_token: Option<&st
     fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
 }
 
-fn validate_init_config() {
+fn validate_init_config() -> Result<()> {
     // audit notes folder should not exist
-    let BatConfig { required, .. } = BatConfig::get_validated_config();
-    let auditor_folder_path = BatConfig::get_auditor_notes_path();
+    let BatConfig { required, .. } = BatConfig::get_validated_config()?;
+    let auditor_folder_path = BatConfig::get_auditor_notes_path()?;
     if Path::new(&auditor_folder_path).is_dir() {
         panic!("auditor folder {:?} already exist", &auditor_folder_path);
     }
@@ -136,10 +139,11 @@ fn validate_init_config() {
             &required.program_lib_path
         );
     }
+    Ok(())
 }
 
-fn initialize_project_repository() {
-    let BatConfig { required, .. } = BatConfig::get_validated_config();
+fn initialize_project_repository() -> Result<()> {
+    let BatConfig { required, .. } = BatConfig::get_validated_config()?;
     let RequiredConfig {
         project_repository_url,
         auditor_names,
@@ -219,21 +223,22 @@ fn initialize_project_repository() {
     Command::new("git")
         .args([
             "checkout",
-            (BatConfig::get_auditor_name() + "-notes").as_str(),
+            (BatConfig::get_auditor_name()? + "-notes").as_str(),
         ])
         .output()
         .unwrap();
+    Ok(())
 }
 
-fn create_auditor_notes_folder() {
-    let dest_path = BatConfig::get_auditor_notes_path();
+fn create_auditor_notes_folder() -> Result<()> {
+    let dest_path = BatConfig::get_auditor_notes_path()?;
     println!("creating {dest_path}");
 
     let mut output = Command::new("cp")
         .args([
             "-r",
-            BatConfig::get_notes_folder_template_path().as_str(),
-            BatConfig::get_notes_path().as_str(),
+            BatConfig::get_notes_folder_template_path()?.as_str(),
+            BatConfig::get_notes_path()?.as_str(),
         ])
         .output()
         .unwrap();
@@ -245,10 +250,10 @@ fn create_auditor_notes_folder() {
     };
 
     output = Command::new("mv")
-        .current_dir(BatConfig::get_notes_path())
+        .current_dir(BatConfig::get_notes_path()?)
         .args([
             "notes-folder-template",
-            (BatConfig::get_auditor_name() + "-notes").as_str(),
+            (BatConfig::get_auditor_name()? + "-notes").as_str(),
         ])
         .output()
         .unwrap();
@@ -258,12 +263,14 @@ fn create_auditor_notes_folder() {
             std::str::from_utf8(output.stderr.as_slice()).unwrap()
         )
     };
+    Ok(())
 }
 
-fn initialize_code_overhaul_files() {
-    let entrypoints_names = get_entrypoints_names();
+fn initialize_code_overhaul_files() -> Result<()> {
+    let entrypoints_names = get_entrypoints_names()?;
 
     for entrypoint_name in entrypoints_names {
         create_overhaul_file(entrypoint_name.clone());
     }
+    Ok(())
 }

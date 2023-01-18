@@ -2,13 +2,13 @@ pub mod entrypoints {
     use std::{
         borrow::BorrowMut,
         fs::File,
-        io::{self, BufRead},
+        io::{self, BufRead, Result},
     };
 
     use crate::config::{BatConfig, RequiredConfig};
 
-    pub fn get_entrypoints_names() -> Vec<String> {
-        let BatConfig { required, .. } = BatConfig::get_validated_config();
+    pub fn get_entrypoints_names() -> Result<Vec<String>> {
+        let BatConfig { required, .. } = BatConfig::get_validated_config()?;
 
         let RequiredConfig {
             program_lib_path, ..
@@ -34,6 +34,6 @@ pub mod entrypoints {
             .map(|line| String::from(line.split('(').collect::<Vec<&str>>()[0]))
             .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))
             .collect::<Vec<String>>();
-        entrypoints_names
+        Ok(entrypoints_names)
     }
 }

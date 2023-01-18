@@ -26,6 +26,7 @@ tokio-util = { version = "0.7.3", features = ["codec"] }
 serde_json = "1.0.91"
 colored = "2.0.0"
 normalize_url = "0.2.0"
+thiserror = "1.0.38"
 
 [profile.dev]
 overflow-checks = true
