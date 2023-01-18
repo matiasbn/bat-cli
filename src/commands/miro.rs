@@ -304,7 +304,7 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
-            println!("update frame position response: {response}")
+            // println!("update frame position response: {response}")
         }
 
         pub async fn create_connector(
