@@ -7,8 +7,6 @@ use std::io::Result;
 use std::{fs, process::Command};
 
 pub fn update_repository() -> Result<()> {
-    let BatConfig { required: _, .. } = BatConfig::get_validated_config()?;
-
     // clone base repository
     println!("Cloning base repository");
     clone_base_repository();
@@ -102,7 +100,7 @@ pub fn update_repository() -> Result<()> {
             std::str::from_utf8(output.stderr.as_slice()).unwrap()
         )
     };
-    create_git_commit(GitCommit::UpdateRepo, None);
+    create_git_commit(GitCommit::UpdateRepo, None)?;
     println!("Repository successfully updated");
     Ok(())
 }
