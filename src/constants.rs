@@ -27,6 +27,10 @@ pub const AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER: &str = "AUDIT_INFORMATION_MIR
 pub const AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER: &str =
     "AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER";
 
+// Audit information file
+pub const AUDIT_RESULT_CO_RESULTS_PLACEHOLDER: &str = "AUDIT_RESULT_CO_RESULTS";
+pub const AUDIT_RESULT_FILE_NAME: &str = "audit_result.md";
+
 // Base repository
 pub const BASE_REPOSTORY_URL: &str = "git@github.com:matiasbn/bat-base-repository.git";
 pub const BASE_REPOSTORY_NAME: &str = "bat-base-repository";

@@ -6,15 +6,19 @@ use dialoguer::{MultiSelect, Select};
 use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::helpers;
+use crate::commands::helpers::get::{
+    get_finished_co_files, get_finished_co_files_info_for_results,
+};
 use crate::commands::miro::api::connector::ConnectorOptions;
 use crate::commands::miro::{self, MiroConfig};
 use crate::config::BatConfig;
 use crate::constants::{
+    AUDIT_RESULT_CO_RESULTS_PLACEHOLDER, AUDIT_RESULT_FILE_NAME,
     CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
     CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER, CODE_OVERHAUL_HANDLER_PLACEHOLDER,
-    CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
-    CONTEXT_ACCOUNTS_PNG_NAME, CO_FIGURES, ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME,
-    VALIDATIONS_PNG_NAME,
+    CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER,
+    CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER, CONTEXT_ACCOUNTS_PNG_NAME, CO_FIGURES,
+    ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
 };
 
 use std::fs;
@@ -95,7 +99,7 @@ pub async fn start_code_overhaul_file() -> Result<()> {
         helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
     let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
     let context_lines =
-        helpers::get::context_lines(instruction_file_path.clone(), to_start_file_name.clone())?;
+        helpers::get::get_context_lines(instruction_file_path.clone(), to_start_file_name.clone())?;
 
     // open instruction file in VSCode
     vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
@@ -173,7 +177,7 @@ pub async fn start_code_overhaul_file() -> Result<()> {
 pub async fn finish_code_overhaul_file() -> Result<()> {
     check_correct_branch()?;
     // get to-review files
-    let started_endpoints = helpers::get::started_entrypoints()?;
+    let started_endpoints = helpers::get::get_started_entrypoints()?;
 
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&started_endpoints)
@@ -294,7 +298,7 @@ pub async fn deploy_miro() -> Result<()> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
     // check empty images
     // get files and folders from started, filter .md files
-    let started_folders: Vec<String> = helpers::get::started_entrypoints()?
+    let started_folders: Vec<String> = helpers::get::get_started_entrypoints()?
         .iter()
         .filter(|file| !file.contains(".md"))
         .map(|file| file.to_string())
@@ -545,7 +549,7 @@ pub async fn deploy_miro() -> Result<()> {
 
 pub async fn open_co() -> Result<()> {
     // list to start
-    let started_entrypoints = helpers::get::started_entrypoints()?;
+    let started_entrypoints = helpers::get::get_started_entrypoints()?;
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&started_entrypoints)
         .default(0)
@@ -579,5 +583,29 @@ pub async fn open_co() -> Result<()> {
         instruction_file_path.split("/").last().unwrap()
     );
     vs_code_open_file_in_current_window(&instruction_file_path);
+    Ok(())
+}
+
+pub fn update_audit_results() -> Result<()> {
+    let audit_file_path =
+        BatConfig::get_audit_folder_path(Some(AUDIT_RESULT_FILE_NAME.to_string()))?;
+    let finished_co_files = get_finished_co_files()?;
+    let finished_co_audit_information = get_finished_co_files_info_for_results(finished_co_files)?;
+    let mut final_result: Vec<String> = vec!["# Code overhaul\n".to_string()];
+    for result in finished_co_audit_information {
+        let title = format!("## {}\n\n", result.file_name);
+        let what_it_does_text = format!("### What it does:\n\n{}\n\n", result.what_it_does_content);
+        let notes_text = format!("### Notes:\n\n{}\n\n", result.notes_content);
+        let miro_frame_text = format!("### Miro frame url:\n\n{}\n", result.miro_frame_url);
+        final_result.push([title, what_it_does_text, notes_text, miro_frame_text].join(""));
+    }
+    fs::write(
+        audit_file_path,
+        final_result
+            .join("\n")
+            .replace(CODE_OVERHAUL_NOTES_PLACEHOLDER, "No notes")
+            .as_str(),
+    )
+    .unwrap();
     Ok(())
 }

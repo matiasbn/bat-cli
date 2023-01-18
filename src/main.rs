@@ -70,6 +70,8 @@ enum CodeOverhaulActions {
     Count,
     /// Opens the co file and the instruction of a started entrypoint
     Open,
+    /// Updates the results file in the root of the audit to show co files
+    Results,
 }
 
 #[derive(Subcommand, Debug)]
@@ -110,6 +112,9 @@ async fn main() {
         }
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
+        }
+        Commands::CO(CodeOverhaulActions::Results) => {
+            commands::code_overhaul::update_audit_results().unwrap()
         }
 
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),

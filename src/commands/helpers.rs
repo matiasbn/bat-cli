@@ -11,18 +11,15 @@ use std::io::Result;
 
 use walkdir::WalkDir;
 
-
-
-
-
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
-    CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER, CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
-    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
+    CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
+    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
+    CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER,
+    CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
-    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
-    CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER, CONTEXT_ACCOUNTS_PNG_NAME,
-    ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
+    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
+    CONTEXT_ACCOUNTS_PNG_NAME, ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
 };
 
 use std::borrow::{Borrow, BorrowMut};
@@ -129,8 +126,10 @@ pub mod parse {
             .map(|line| line.replace('\t', ""))
             .collect();
         let validations_strings = vec!["require", "valid", "assert"];
-        let mut validations: Vec<String> =
-            super::get::possible_validations(instruction_file_path, validations_strings.clone());
+        let mut validations: Vec<String> = super::get::get_possible_validations(
+            instruction_file_path,
+            validations_strings.clone(),
+        );
         for (line_number, line) in filtered_lines.iter().enumerate() {
             if line.contains("#[account(") {
                 let mut idx = 1;
@@ -247,7 +246,7 @@ pub mod parse {
 
     pub fn signers_into_co(co_file_path: String, context_lines: Vec<String>) {
         // signer names is only the name of the signer
-        let signers_names = super::get::signers_description_from_co_file(&context_lines);
+        let signers_names = super::get::get_signers_description_from_co_file(&context_lines);
         // array of signers description: - signer_name: SIGNER_DESCRIPTION
         let mut signers_text: Vec<String> = vec![];
         for signer in signers_names.clone() {
@@ -433,9 +432,10 @@ pub mod parse {
         Ok(())
     }
 }
+
 pub mod get {
     use super::*;
-    pub fn signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
+    pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
         let signers_names: Vec<_> = context_lines
             .iter()
             .filter(|line| line.contains("Signer"))
@@ -469,7 +469,7 @@ pub mod get {
         item_id.to_string()
     }
 
-    pub fn context_name(co_file_name: String) -> Result<String> {
+    pub fn get_context_name(co_file_name: String) -> Result<String> {
         let BatConfig { required, .. } = BatConfig::get_validated_config()?;
         let RequiredConfig {
             program_lib_path, ..
@@ -519,7 +519,7 @@ pub mod get {
         Ok(parsed_context_name)
     }
 
-    pub fn context_lines(
+    pub fn get_context_lines(
         instruction_file_path: PathBuf,
         co_file_name: String,
     ) -> Result<Vec<String>> {
@@ -529,7 +529,7 @@ pub mod get {
             .map(|l| l.unwrap())
             .collect::<Vec<String>>();
 
-        let context_name = context_name(co_file_name.clone())?;
+        let context_name = get_context_name(co_file_name.clone())?;
         // get context lines
         let first_line_index_opt = instruction_file_lines.iter().position(|line| {
             line.contains(("pub struct ".to_string() + &context_name.clone() + "<").as_str())
@@ -557,7 +557,7 @@ pub mod get {
                     .unwrap()
                     .to_string();
                 // tell the user to select the instruction file that has the context of the file
-                let instruction_files = super::get::instruction_files()?;
+                let instruction_files = super::get::get_instruction_files()?;
                 let instruction_files_names: Vec<&String> =
                     instruction_files.iter().map(|file| &file.name).collect();
                 // list the instruction files
@@ -599,7 +599,7 @@ pub mod get {
         }
     }
 
-    pub fn possible_validations(
+    pub fn get_possible_validations(
         instruction_file_path: String,
         validations_strings: Vec<&str>,
     ) -> Vec<String> {
@@ -670,7 +670,7 @@ pub mod get {
         possible_validations
     }
 
-    pub fn instruction_files() -> Result<Vec<FileInfo>> {
+    pub fn get_instruction_files() -> Result<Vec<FileInfo>> {
         let instructions_path = BatConfig::get_validated_config()?
             .optional
             .program_instructions_path;
@@ -697,7 +697,7 @@ pub mod get {
     }
 
     // returns a list of folder and files names
-    pub fn started_entrypoints() -> Result<Vec<String>> {
+    pub fn get_started_entrypoints() -> Result<Vec<String>> {
         let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
         let started_files = fs::read_dir(started_path)
             .unwrap()
@@ -713,7 +713,7 @@ pub mod get {
     pub fn get_instruction_file_with_prompts(
         to_start_file_name: &String,
     ) -> Result<(String, String)> {
-        let instruction_files_info = instruction_files()?;
+        let instruction_files_info = get_instruction_files()?;
 
         let entrypoint_name = to_start_file_name.replace(".md", "");
         let instruction_match = instruction_files_info
@@ -766,6 +766,81 @@ pub mod get {
             name
         };
         Ok((entrypoint_name.clone(), instruction_file_path.clone()))
+    }
+
+    pub fn get_finished_co_files() -> Result<Vec<(String, String)>> {
+        let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_folder = fs::read_dir(&finished_path)?;
+        let mut finished_files_content: Vec<(String, String)> = vec![];
+        for co_file in finished_folder.into_iter().map(|file| file.unwrap()) {
+            let file_content = fs::read_to_string(co_file.path())?;
+            let file_name = co_file.file_name();
+            if file_name != ".gitkeep" {
+                finished_files_content.push((
+                    co_file.file_name().to_str().unwrap().to_string(),
+                    file_content,
+                ));
+            }
+        }
+        Ok(finished_files_content)
+    }
+    #[derive(Debug)]
+    pub struct FinishedCoFileContent {
+        pub file_name: String,
+        pub what_it_does_content: String,
+        pub notes_content: String,
+        pub miro_frame_url: String,
+    }
+    pub fn get_finished_co_files_info_for_results(
+        finished_co_files_content: Vec<(String, String)>,
+    ) -> Result<Vec<FinishedCoFileContent>> {
+        let mut finished_content: Vec<FinishedCoFileContent> = vec![];
+        // get necessary information from co files
+        for (file_name, file_content) in finished_co_files_content {
+            let what_it_does_index = file_content
+                .lines()
+                .position(|line| line.contains("# What it does?"))
+                .unwrap()
+                + 1;
+            let notes_index = file_content
+                .lines()
+                .position(|line| line.contains("# Notes"))
+                .unwrap()
+                + 1;
+            let signers_index = file_content
+                .lines()
+                .position(|line| line.contains("# Signers"))
+                .unwrap();
+            let content_vec: Vec<String> =
+                file_content.lines().map(|line| line.to_string()).collect();
+            let what_it_does_content: Vec<String> = content_vec.clone()
+                [what_it_does_index..notes_index - 1]
+                .to_vec()
+                .iter()
+                .filter(|line| !line.is_empty())
+                .map(|line| line.to_string())
+                .collect();
+            let notes_content: Vec<String> = content_vec.clone()[notes_index..signers_index - 1]
+                .to_vec()
+                .iter()
+                .filter(|line| !line.is_empty())
+                .map(|line| line.to_string())
+                .collect();
+            let miro_frame_url = content_vec
+                .iter()
+                .find(|line| line.contains("https://miro.com/app/board"))
+                .unwrap()
+                .split(": ")
+                .last()
+                .unwrap();
+            finished_content.push(FinishedCoFileContent {
+                file_name: file_name.replace(".md", ""),
+                what_it_does_content: what_it_does_content.join("\n"),
+                notes_content: notes_content.join("\n"),
+                miro_frame_url: miro_frame_url.to_string(),
+            });
+        }
+        Ok(finished_content)
     }
 }
 
