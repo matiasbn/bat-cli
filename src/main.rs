@@ -68,6 +68,8 @@ enum CodeOverhaulActions {
     Miro,
     /// Counts the to-review, started, finished and total co files
     Count,
+    /// Opens the co file and the instruction of a started entrypoint
+    Open,
 }
 
 #[derive(Subcommand, Debug)]
@@ -98,6 +100,7 @@ async fn main() {
         }
         Commands::CO(CodeOverhaulActions::Count) => commands::code_overhaul::count_co_files(),
         Commands::CO(CodeOverhaulActions::Miro) => commands::code_overhaul::deploy_miro().await,
+        Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co().await,
 
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),

@@ -109,58 +109,8 @@ pub async fn start_code_overhaul_file() {
     let to_review_file_path =
         BatConfig::get_auditor_code_overhaul_to_review_path(Some(to_start_file_name.clone()));
 
-    let instruction_files_info = get_instruction_files();
-
-    let entrypoint_name = to_start_file_name.replace(".md", "");
-    let instruction_match = instruction_files_info
-        .iter()
-        .filter(|ifile| ifile.name.replace(".rs", "") == entrypoint_name.as_str())
-        .collect::<Vec<&FileInfo>>();
-
-    // if instruction exists, prompt the user if the file is correct
-    let is_match = if instruction_match.len() == 1 {
-        let instruction_match_path = Path::new(&instruction_match[0].path)
-            .canonicalize()
-            .unwrap();
-        let options = vec!["yes", "no"];
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(
-                instruction_match_path
-                    .into_os_string()
-                    .into_string()
-                    .unwrap()
-                    + " <--- is this the correct instruction file?:",
-            )
-            .items(&options)
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-
-        options[selection] == "yes"
-    } else {
-        false
-    };
-
-    let instruction_file_path = if is_match {
-        &instruction_match[0].path
-    } else {
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select the instruction file: ")
-            .items(
-                &instruction_files_info
-                    .as_slice()
-                    .iter()
-                    .map(|f| &f.name)
-                    .collect::<Vec<&String>>(),
-            )
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-        let name = instruction_files_info.as_slice()[selection].path.borrow();
-        name
-    };
+    let (entrypoint_name, instruction_file_path) =
+        get_instruction_file_with_prompts(&to_start_file_name);
     let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
     let context_lines =
         get_context_lines(instruction_file_path.clone(), to_start_file_name.clone());
@@ -232,6 +182,62 @@ pub async fn start_code_overhaul_file() {
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_path.as_str());
     }
+}
+
+fn get_instruction_file_with_prompts(to_start_file_name: &String) -> (String, String) {
+    let instruction_files_info = get_instruction_files();
+
+    let entrypoint_name = to_start_file_name.replace(".md", "");
+    let instruction_match = instruction_files_info
+        .iter()
+        .filter(|ifile| ifile.name.replace(".rs", "") == entrypoint_name.as_str())
+        .collect::<Vec<&FileInfo>>();
+
+    // if instruction exists, prompt the user if the file is correct
+    let is_match = if instruction_match.len() == 1 {
+        let instruction_match_path = Path::new(&instruction_match[0].path)
+            .canonicalize()
+            .unwrap();
+        let options = vec!["yes", "no"];
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(
+                instruction_match_path
+                    .into_os_string()
+                    .into_string()
+                    .unwrap()
+                    + " <--- is this the correct instruction file?:",
+            )
+            .items(&options)
+            .default(0)
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+
+        options[selection] == "yes"
+    } else {
+        false
+    };
+
+    let instruction_file_path = if is_match {
+        &instruction_match[0].path
+    } else {
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select the instruction file: ")
+            .items(
+                &instruction_files_info
+                    .as_slice()
+                    .iter()
+                    .map(|f| &f.name)
+                    .collect::<Vec<&String>>(),
+            )
+            .default(0)
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+        let name = instruction_files_info.as_slice()[selection].path.borrow();
+        name
+    };
+    (entrypoint_name.clone(), instruction_file_path.clone())
 }
 
 pub async fn finish_code_overhaul_file() {
@@ -616,6 +622,43 @@ fn get_screenshot_id(file_name: &str, started_co_file_path: &String) -> String {
         .last()
         .unwrap();
     item_id.to_string()
+}
+
+pub async fn open_co() {
+    // list to start
+    let started_entrypoints = get_started_entrypoints();
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .items(&started_entrypoints)
+        .default(0)
+        .with_prompt("Select the code-overhaul file to open:")
+        .interact_on_opt(&Term::stderr())
+        .unwrap();
+
+    // user select file
+    let (started_file_name, started_file_path) = match selection {
+        // move selected file to finished
+        Some(index) => (
+            started_entrypoints[index].clone(),
+            BatConfig::get_auditor_code_overhaul_started_path(Some(
+                started_entrypoints[index].clone(),
+            )),
+        ),
+        None => panic!("User did not select anything"),
+    };
+    // select to start
+    // get instruction
+    let (_, instruction_file_path) = get_instruction_file_with_prompts(&started_file_name);
+
+    println!(
+        "Opening {} in VS Code",
+        started_file_path.split("/").last().unwrap()
+    );
+    vs_code_open_file_in_current_window(&started_file_path);
+    println!(
+        "Opening {} in VS Code",
+        instruction_file_path.split("/").last().unwrap()
+    );
+    vs_code_open_file_in_current_window(&instruction_file_path);
 }
 
 fn count_filtered(dir_to_count: ReadDir) -> usize {
