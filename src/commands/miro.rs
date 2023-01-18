@@ -382,7 +382,7 @@ pub mod miro_api {
                             "shape": "rectangle"
                         },
                         "style": {
-                            "fillColor": "dark-blue"
+                            "fillColor": "dark_blue"
                         },
                         "position": {
                             "origin": "center",
@@ -406,6 +406,7 @@ pub mod miro_api {
                 .text()
                 .await
                 .unwrap();
+            println!("sticky not response {response}");
             let response: Value = serde_json::from_str(&response.as_str()).unwrap();
             let id = response["id"].to_string().replace("\"", "");
             id

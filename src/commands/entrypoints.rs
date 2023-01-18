@@ -36,12 +36,4 @@ pub mod entrypoints {
             .collect::<Vec<String>>();
         entrypoints_names
     }
-
-    fn initialize_code_overhaul_empty_images() {
-        let entrypoints_names = get_entrypoints_names();
-        let _entrypoints_figures_path = BatConfig::get_auditor_figures_entrypoints_path();
-        for _name in entrypoints_names.iter() {
-            // create a png file for every name
-        }
-    }
 }
