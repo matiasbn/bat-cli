@@ -52,9 +52,14 @@ auditor_name = ""
 miro_oauth_access_token = ""
 "#;
 
+pub const ENTRYPOINT_PNG_NAME: &str = "entrypoint.png";
+pub const HANDLER_PNG_NAME: &str = "handler.png";
+pub const CONTEXT_ACCOUNTS_PNG_NAME: &str = "context_accounts.png";
+pub const VALIDATIONS_PNG_NAME: &str = "validations.png";
+
 pub static CO_FIGURES: &[&str] = &[
-    "entrypoint.png",
-    "handler.png",
-    "context_accounts.png",
-    "validations.png",
+    ENTRYPOINT_PNG_NAME,
+    HANDLER_PNG_NAME,
+    CONTEXT_ACCOUNTS_PNG_NAME,
+    VALIDATIONS_PNG_NAME,
 ];

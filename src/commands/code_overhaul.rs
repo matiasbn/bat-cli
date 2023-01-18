@@ -27,7 +27,8 @@ use crate::constants::{
     CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
     CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
-    CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER, CO_FIGURES,
+    CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER, CONTEXT_ACCOUNTS_PNG_NAME, CO_FIGURES,
+    ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
 };
 
 use std::borrow::{Borrow, BorrowMut};
@@ -506,16 +507,17 @@ pub async fn deploy_miro() {
                 user_figure_id: user_figure_id,
                 validated_signer: signer.validated_signer,
             }
+            // move miro to new positon
         }
 
         for screenshot in CO_FIGURES {
             // read the content after every placeholder replacement is essential
             let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
-            let placeholder = match screenshot.as_ref() {
-                "entrypoint.png" => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
-                "context_accounts.png" => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
-                "validations.png" => CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
-                "handler.png" => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
+            let placeholder = match screenshot.to_string().as_str() {
+                ENTRYPOINT_PNG_NAME => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
+                CONTEXT_ACCOUNTS_PNG_NAME => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
+                VALIDATIONS_PNG_NAME => CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
+                HANDLER_PNG_NAME => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
                 _ => todo!(),
             };
             let screenshot_path =
@@ -529,10 +531,11 @@ pub async fn deploy_miro() {
             .unwrap();
         }
         // connect screenshots
-        let entrypoint_id = get_screenshot_id("entrypoint.png", &started_co_file_path);
-        let context_accounts_id = get_screenshot_id("context_accounts.png", &started_co_file_path);
-        let validations_id = get_screenshot_id("validations.png", &started_co_file_path);
-        let handler_id = get_screenshot_id("handler.png", &started_co_file_path);
+        let entrypoint_id = get_screenshot_id(ENTRYPOINT_PNG_NAME, &started_co_file_path);
+        let context_accounts_id =
+            get_screenshot_id(CONTEXT_ACCOUNTS_PNG_NAME, &started_co_file_path);
+        let validations_id = get_screenshot_id(VALIDATIONS_PNG_NAME, &started_co_file_path);
+        let handler_id = get_screenshot_id(HANDLER_PNG_NAME, &started_co_file_path);
         println!("Connecting signers to entrypoint");
         for signer_miro_ids in signers_info {
             create_connector(
@@ -593,10 +596,10 @@ pub async fn deploy_miro() {
 
 fn get_screenshot_id(file_name: &str, started_co_file_path: &String) -> String {
     let screenshot_contains = match file_name {
-        "entrypoint.png" => "- entrypoint",
-        "context_accounts.png" => "- context",
-        "validations.png" => "- validations",
-        "handler.png" => "- handler",
+        ENTRYPOINT_PNG_NAME => "- entrypoint",
+        CONTEXT_ACCOUNTS_PNG_NAME => "- context",
+        VALIDATIONS_PNG_NAME => "- validations",
+        HANDLER_PNG_NAME => "- handler",
         _ => todo!(),
     };
     let file_content = fs::read_to_string(started_co_file_path).unwrap();
