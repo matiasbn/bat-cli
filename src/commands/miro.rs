@@ -382,7 +382,7 @@ pub mod miro_api {
                             "shape": "rectangle"
                         },
                         "style": {
-                            "fillColor": "violet"
+                            "fillColor": "dark-blue"
                         },
                         "position": {
                             "origin": "center",
