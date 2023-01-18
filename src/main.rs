@@ -9,7 +9,7 @@ mod command_line;
 mod commands;
 mod config;
 mod constants;
-mod publish;
+mod package;
 // use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
@@ -109,13 +109,13 @@ async fn main() {
         Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None),
         // only for dev
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Bump) => publish::bump(false),
+        Commands::Package(PackageActions::Bump) => package::bump(false),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Clippy) => publish::clippy(),
+        Commands::Package(PackageActions::Clippy) => package::clippy(),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Publish) => publish::publish(),
+        Commands::Package(PackageActions::Publish) => package::publish(),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Full) => publish::full(),
+        Commands::Package(PackageActions::Full) => package::full(),
         _ => unimplemented!("Command only implemented for dev opetions"),
     }
 }
