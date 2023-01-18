@@ -784,7 +784,7 @@ pub mod get {
         }
         Ok(finished_files_content)
     }
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct FinishedCoFileContent {
         pub file_name: String,
         pub what_it_does_content: String,
@@ -841,6 +841,27 @@ pub mod get {
             });
         }
         Ok(finished_content)
+    }
+    pub fn get_table_of_contents_for_results(
+        result: FinishedCoFileContent,
+        result_idx: usize,
+    ) -> Result<String> {
+        let result_id = if result_idx == 0 {
+            "".to_string()
+        } else {
+            format!("-{result_idx}")
+        };
+        let toc_title = format!(
+            "  - [{}](#{})",
+            result.file_name.replace("_", "\\_"),
+            result.file_name
+        );
+        let toc_wid = format!("    - [What it does:](#what-it-does{})", result_id);
+        let toc_notes = format!("    - [Notes:](#notes{})", result_id);
+        let toc_miro = format!("    - [Miro frame url:](#miro-frame-url{})", result_id);
+
+        let insert_contents = vec![toc_title, toc_wid, toc_notes, toc_miro].join("\n");
+        Ok(insert_contents)
     }
 }
 

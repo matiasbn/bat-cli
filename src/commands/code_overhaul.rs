@@ -27,6 +27,8 @@ use std::path::Path;
 use std::process::Command;
 use std::string::String;
 
+use super::helpers::get::get_table_of_contents_for_results;
+
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<()> {
     let code_overhaul_auditor_file_path =
         BatConfig::get_auditor_code_overhaul_to_review_path(Some(entrypoint_name.clone()))?;
@@ -591,20 +593,29 @@ pub fn update_audit_results() -> Result<()> {
         BatConfig::get_audit_folder_path(Some(AUDIT_RESULT_FILE_NAME.to_string()))?;
     let finished_co_files = get_finished_co_files()?;
     let finished_co_audit_information = get_finished_co_files_info_for_results(finished_co_files)?;
-    let mut final_result: Vec<String> = vec![
+    let mut final_result: Vec<String> = vec!["\n# Code overhaul\n".to_string()];
+    let mut table_of_contents: Vec<String> = vec![
         "# Table of contents\n".to_string(),
-        "# Code overhaul\n".to_string(),
+        "- [Table of contents](#table-of-contents)".to_string(),
+        "- [Code overhaul](#code-overhaul)".to_string(),
     ];
-    for result in finished_co_audit_information {
+    for (idx, result) in finished_co_audit_information.iter().enumerate() {
+        // Table of contents
+        let insert_contents = get_table_of_contents_for_results(result.clone(), idx)?;
+        table_of_contents.push(insert_contents);
+
+        // Result
         let title = format!("## {}\n\n", result.file_name);
-        let what_it_does_text = format!("### What it does:\n\n{}\n\n", result.what_it_does_content);
-        let notes_text = format!("### Notes:\n\n{}\n\n", result.notes_content);
-        let miro_frame_text = format!("### Miro frame url:\n\n{}\n", result.miro_frame_url);
+        let what_it_does_text =
+            format!("### What it does:\n\n {}\n\n", result.what_it_does_content);
+        let notes_text = format!("### Notes:\n\n {}\n\n", result.notes_content);
+        let miro_frame_text = format!("### Miro frame url:\n\n {}\n", result.miro_frame_url);
         final_result.push([title, what_it_does_text, notes_text, miro_frame_text].join(""));
     }
+    table_of_contents.append(&mut final_result);
     fs::write(
         audit_file_path,
-        final_result
+        table_of_contents
             .join("\n")
             .replace(CODE_OVERHAUL_NOTES_PLACEHOLDER, "No notes")
             .as_str(),
