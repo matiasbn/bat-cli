@@ -125,7 +125,7 @@ pub async fn start_code_overhaul_file() -> Result<()> {
     helpers::parse::function_parameters_into_co(
         to_review_file_path.clone(),
         to_start_file_name.clone(),
-    );
+    )?;
 
     println!("{to_start_file_name} file updated with instruction information");
 
@@ -158,7 +158,7 @@ pub async fn start_code_overhaul_file() -> Result<()> {
         create_git_commit(
             GitCommit::StartCOMiro,
             Some(vec![to_start_file_name.clone()]),
-        );
+        )?;
 
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_co_file_path.as_str());
@@ -171,7 +171,7 @@ pub async fn start_code_overhaul_file() -> Result<()> {
             .unwrap();
         println!("{to_start_file_name} file moved to started");
 
-        create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]));
+        create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]))?;
 
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_path.as_str());
@@ -180,7 +180,7 @@ pub async fn start_code_overhaul_file() -> Result<()> {
 }
 
 pub async fn finish_code_overhaul_file() -> Result<()> {
-    check_correct_branch();
+    check_correct_branch()?;
     // get to-review files
     let started_endpoints = helpers::get::started_entrypoints()?;
 
@@ -215,7 +215,7 @@ pub async fn finish_code_overhaul_file() -> Result<()> {
                     finished_endpoint.clone(),
                     finished_co as i32,
                 )
-                .await;
+                .await?;
                 // move into finished
                 Command::new("mv")
                     .args([started_co_file_path, finished_folder_path])
@@ -227,7 +227,7 @@ pub async fn finish_code_overhaul_file() -> Result<()> {
                     .output()
                     .unwrap();
                 println!("{finished_endpoint} moved to finished");
-                create_git_commit(GitCommit::FinishCOMiro, Some(vec![finished_endpoint]));
+                create_git_commit(GitCommit::FinishCOMiro, Some(vec![finished_endpoint]))?;
             } else {
                 let finished_file_name = started_endpoints[index].clone();
                 let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(Some(
@@ -245,7 +245,7 @@ pub async fn finish_code_overhaul_file() -> Result<()> {
                     .output()
                     .unwrap();
                 println!("{finished_file_name} file moved to finished");
-                create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]));
+                create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]))?;
             }
         }
         None => panic!("User did not select anything"),
@@ -279,8 +279,8 @@ pub fn update_code_overhaul_file() -> Result<()> {
         // move selected file to finished
         Some(index) => {
             let finished_file_name = finished_files[index].clone();
-            check_correct_branch();
-            create_git_commit(GitCommit::UpdateCO, Some(vec![finished_file_name]));
+            check_correct_branch()?;
+            create_git_commit(GitCommit::UpdateCO, Some(vec![finished_file_name]))?;
             Ok(())
         }
         None => panic!("User did not select anything"),
