@@ -270,11 +270,7 @@ pub mod miro_api {
                 .unwrap();
         }
 
-        pub async fn update_frame_position(
-            entrypoint_name: String,
-            co_finished_files: i32,
-            initial: bool,
-        ) {
+        pub async fn update_frame_position(entrypoint_name: String, co_finished_files: i32) {
             let RequiredConfig { miro_board_id, .. } = BatConfig::get_validated_config().required;
             let AuditorConfig {
                 miro_oauth_access_token,
@@ -283,18 +279,8 @@ pub mod miro_api {
             let frame_id = get_frame_id(entrypoint_name.as_str());
             let x_modifier = co_finished_files % MIRO_BOARD_COLUMNS;
             let y_modifier = co_finished_files / MIRO_BOARD_COLUMNS;
-            let x_position = MIRO_INITIAL_X
-                + if !initial {
-                    (MIRO_FRAME_WIDTH + 100) * x_modifier
-                } else {
-                    0
-                };
-            let y_position = MIRO_INITIAL_Y
-                + if !initial {
-                    (MIRO_FRAME_HEIGHT + 100) * y_modifier
-                } else {
-                    0
-                };
+            let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH + 100) * x_modifier;
+            let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT + 100) * y_modifier;
             let client = reqwest::Client::new();
             let response = client
                 .patch(format!(
