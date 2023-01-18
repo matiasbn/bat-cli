@@ -3,34 +3,29 @@ use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{MultiSelect, Select};
 
-use walkdir::WalkDir;
+
 
 use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::helpers;
 use crate::commands::miro::api::connector::ConnectorOptions;
 use crate::commands::miro::{self, MiroConfig};
-use crate::config::{BatConfig, RequiredConfig};
+use crate::config::{BatConfig};
 use crate::constants::{
-    CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
     CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
-    CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-    CODE_OVERHAUL_HANDLER_PLACEHOLDER, CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
-    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
-    CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
-    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
-    CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER, CONTEXT_ACCOUNTS_PNG_NAME, CO_FIGURES,
+    CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
+    CODE_OVERHAUL_HANDLER_PLACEHOLDER, CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER, CONTEXT_ACCOUNTS_PNG_NAME, CO_FIGURES,
     ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
 };
 
-use std::borrow::{Borrow, BorrowMut};
 
-use std::fs::{File, ReadDir};
+
+
 use std::io::{BufRead, Result};
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use std::process::Command;
 use std::string::String;
-use std::{fs, io};
+use std::{fs};
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<()> {
     let code_overhaul_auditor_file_path =

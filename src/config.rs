@@ -1,7 +1,6 @@
 use std::{
-    fmt::Error,
     fs,
-    io::{self, Result},
+    io::{Result},
     path::Path,
     str,
 };

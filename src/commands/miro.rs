@@ -147,7 +147,7 @@ pub mod api {
             let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH + 100) * x_modifier;
             let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT + 100) * y_modifier;
             let client = reqwest::Client::new();
-            let response = client
+            let _response = client
                 .patch(format!(
                     "https://api.miro.com/v2/boards/{board_id}/frames/{frame_id}",
                 ))
@@ -238,7 +238,7 @@ pub mod api {
             //create the multipart form
             let form = multipart::Form::new().part("resource", some_file);
             let client = reqwest::Client::new();
-            let response = client
+            let _response = client
                 .patch(format!(
                     "https://api.miro.com/v2/boards/{board_id}/images/{item_id}"
                 ))
@@ -322,7 +322,7 @@ pub mod api {
             };
             // let x_position = x + x_move;
             let client = reqwest::Client::new();
-            let response = client
+            let _response = client
                 .patch(format!(
                     "https://api.miro.com/v2/boards/{board_id}/images/{item_id}",
                 ))
@@ -517,7 +517,7 @@ pub mod api {
                 .to_string()
             };
             let client = reqwest::Client::new();
-            let response = client
+            let _response = client
                 .post(format!(
                     "https://api.miro.com/v2/boards/{board_id}/connectors",
                 ))
