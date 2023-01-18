@@ -607,5 +607,6 @@ pub fn update_audit_results() -> Result<()> {
             .as_str(),
     )
     .unwrap();
+    create_git_commit(GitCommit::Results, None)?;
     Ok(())
 }

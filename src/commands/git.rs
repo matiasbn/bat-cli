@@ -3,7 +3,7 @@ use std::{io::Result, process::Command, str};
 use crate::{
     command_line::execute_command,
     config::{BatConfig, RequiredConfig},
-    constants::BASE_REPOSTORY_URL,
+    constants::{self, AUDIT_RESULT_FILE_NAME, BASE_REPOSTORY_URL},
 };
 
 // Git
@@ -43,6 +43,7 @@ pub enum GitCommit {
     PrepareAllFinding,
     UpdateRepo,
     Notes,
+    Results,
 }
 
 pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String>>) -> Result<()> {
@@ -189,6 +190,18 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
                 commit_string,
                 vec![open_questions_path, smellies_path, threat_modeling_path],
             )
+        }
+        GitCommit::Results => {
+            println!(
+                "Creating a commit for {}",
+                constants::AUDIT_RESULT_FILE_NAME
+            );
+            let audit_result_path = BatConfig::get_audit_folder_path(Some(
+                constants::AUDIT_RESULT_FILE_NAME.to_string(),
+            ))?;
+            let commit_string = format!("notes: {} updated", AUDIT_RESULT_FILE_NAME);
+            println!("{commit_string}");
+            (commit_string, vec![audit_result_path])
         }
         _ => panic!("Wrong GitCommit type input"),
     };

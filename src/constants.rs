@@ -28,7 +28,6 @@ pub const AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER: &str =
     "AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER";
 
 // Audit information file
-pub const AUDIT_RESULT_CO_RESULTS_PLACEHOLDER: &str = "AUDIT_RESULT_CO_RESULTS";
 pub const AUDIT_RESULT_FILE_NAME: &str = "audit_result.md";
 
 // Base repository

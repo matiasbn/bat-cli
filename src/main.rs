@@ -35,6 +35,8 @@ enum Commands {
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
+    /// Updates the results file in the root of the audit to show co files
+    Results,
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageActions),
@@ -70,8 +72,6 @@ enum CodeOverhaulActions {
     Count,
     /// Opens the co file and the instruction of a started entrypoint
     Open,
-    /// Updates the results file in the root of the audit to show co files
-    Results,
 }
 
 #[derive(Subcommand, Debug)]
@@ -113,10 +113,6 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
         }
-        Commands::CO(CodeOverhaulActions::Results) => {
-            commands::code_overhaul::update_audit_results().unwrap()
-        }
-
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding().unwrap(),
@@ -124,7 +120,7 @@ async fn main() {
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
-        Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None).unwrap(),
+        Commands::Results => commands::code_overhaul::update_audit_results().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Bump) => package::bump(false),
