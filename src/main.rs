@@ -11,7 +11,9 @@ mod constants;
 mod package;
 mod structs;
 mod utils;
-// use serde::{Deserialize, Serialize};
+use std::{error, result};
+
+type Result<T> = result::Result<T, Box<dyn error::Error>>;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]

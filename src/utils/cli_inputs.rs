@@ -1,11 +1,10 @@
 use dialoguer::{console::Term, theme::ColorfulTheme, Input, MultiSelect, Select};
-use std::io::Result;
 
 pub fn multiselect<T>(
     prompt_text: &str,
     items: Vec<T>,
     default: Option<&Vec<bool>>,
-) -> Result<Vec<usize>>
+) -> Result<Vec<usize>, String>
 where
     T: ToString + Clone,
 {
@@ -18,17 +17,9 @@ where
     }
 
     Ok(dialog.interact_on_opt(&Term::stderr()).unwrap().unwrap())
-
-    // returns a Vec of the selections, by selecting the index of the enumerate
-    // Ok(items
-    //     .iter()
-    //     .enumerate()
-    //     .filter(|(idx, _)| selections.iter().any(|selection| selection == idx))
-    //     .map(|f| f.1.clone())
-    //     .collect::<Vec<T>>())
 }
 
-pub fn select<T>(prompt_text: &str, items: Vec<T>, default: Option<usize>) -> Result<usize>
+pub fn select<T>(prompt_text: &str, items: Vec<T>, default: Option<usize>) -> Result<usize, String>
 where
     T: ToString + Clone,
 {
@@ -45,7 +36,7 @@ where
     Ok(dialog.interact_on_opt(&Term::stderr()).unwrap().unwrap())
 }
 
-pub fn input(prompt_text: &str) -> Result<String> {
+pub fn input(prompt_text: &str) -> Result<String, String> {
     let colorful_theme = &ColorfulTheme::default();
     let mut input = Input::with_theme(colorful_theme);
     let dialog: String = input.with_prompt(prompt_text).interact_text().unwrap();

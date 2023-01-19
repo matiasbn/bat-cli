@@ -1,4 +1,4 @@
-use std::{io::Result, process::Command, str};
+use std::{process::Command, str};
 
 use crate::{
     command_line::execute_command,
@@ -7,7 +7,7 @@ use crate::{
 };
 
 // Git
-pub fn get_branch_name() -> Result<String> {
+pub fn get_branch_name() -> Result<String, String> {
     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
     let RequiredConfig {
         audit_folder_path, ..
@@ -46,7 +46,10 @@ pub enum GitCommit {
     Results,
 }
 
-pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String>>) -> Result<()> {
+pub fn create_git_commit(
+    commit_type: GitCommit,
+    commit_files: Option<Vec<String>>,
+) -> Result<(), String> {
     check_correct_branch();
     let (commit_message, commit_files_path): (String, Vec<String>) = match commit_type {
         GitCommit::Init => {
@@ -231,7 +234,7 @@ pub fn create_git_commit(commit_type: GitCommit, commit_files: Option<Vec<String
     Ok(())
 }
 
-pub fn check_correct_branch() -> Result<()> {
+pub fn check_correct_branch() -> Result<(), String> {
     let expected_auditor_branch = BatConfig::get_auditor_name()? + "-notes";
     if get_branch_name()? != expected_auditor_branch {
         panic!(

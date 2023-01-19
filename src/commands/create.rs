@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::io::Result;
 use std::path::Path;
 use std::{fs, io, process::Command};
 
@@ -14,13 +13,13 @@ use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
 };
 use crate::structs::FileInfo;
-use crate::utils::cli_inputs;
+use crate::utils::{cli_inputs, helpers};
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 
-pub fn create_project() -> Result<()> {
+pub fn create_project() -> Result<(), String> {
     // get project config
     let project_config = get_project_config()?;
     println!("Creating {project_config:#?} project");
@@ -52,7 +51,7 @@ pub fn create_project() -> Result<()> {
     Ok(())
 }
 
-fn get_project_config() -> Result<RequiredConfig> {
+fn get_project_config() -> Result<RequiredConfig, String> {
     let local_folders = fs::read_dir(".")
         .unwrap()
         .map(|f| f.unwrap())
@@ -134,10 +133,14 @@ fn get_project_config() -> Result<RequiredConfig> {
         .map(|l| l.to_string())
         .collect();
     let client_name: String = cli_inputs::input("Client name:")?;
-    let commit_hash_url: String = cli_inputs::input("Commit hash url:")?;
+    let mut commit_hash_url: String = cli_inputs::input("Commit hash url:")?;
+    commit_hash_url = helpers::normalize_url(&commit_hash_url).expect("incorrect commit hash url");
     let starting_date: String = cli_inputs::input("Starting date, example: (01/01/2023):")?;
-    let miro_board_id: String = cli_inputs::input("Miro board url:")?;
-    let miro_board_url = "https://miro.com/app/board/".to_string() + &miro_board_id;
+    let miro_board_url: String = cli_inputs::input("Miro board url:")?;
+    let normalized_miro_board_url = helpers::normalize_url(&miro_board_url)?;
+    println!("normalized url {}", normalized_miro_board_url);
+
+    // let miro_board_id = "https://miro.com/app/board/".to_string() + &miro_board_id;
     let project_repository_url: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Project repo url, where this audit folder would be pushed:")
         .interact_text()
@@ -148,7 +151,7 @@ fn get_project_config() -> Result<RequiredConfig> {
         project_name,
         client_name,
         miro_board_url,
-        miro_board_id,
+        miro_board_id: "".to_string(),
         starting_date,
         commit_hash_url,
         project_repository_url,

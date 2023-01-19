@@ -23,12 +23,12 @@ use crate::utils::helpers::get::{
 use crate::utils::*;
 
 use std::fs;
-use std::io::{BufRead, Result};
+use std::io::BufRead;
 use std::path::Path;
 use std::process::Command;
 use std::string::String;
 
-pub fn create_overhaul_file(entrypoint_name: String) -> Result<()> {
+pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     let code_overhaul_auditor_file_path =
         BatConfig::get_auditor_code_overhaul_to_review_path(Some(entrypoint_name.clone()))?;
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
@@ -52,7 +52,7 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn start_code_overhaul_file() -> Result<()> {
+pub async fn start_code_overhaul_file() -> Result<(), String> {
     check_correct_branch()?;
 
     // check if program_lib_path is not empty or panic
@@ -176,7 +176,7 @@ pub async fn start_code_overhaul_file() -> Result<()> {
     Ok(())
 }
 
-pub async fn finish_code_overhaul_file() -> Result<()> {
+pub async fn finish_code_overhaul_file() -> Result<(), String> {
     check_correct_branch()?;
     // get to-review files
     let started_endpoints = helpers::get::get_started_entrypoints()?;
@@ -250,7 +250,7 @@ pub async fn finish_code_overhaul_file() -> Result<()> {
     Ok(())
 }
 
-pub fn update_code_overhaul_file() -> Result<()> {
+pub fn update_code_overhaul_file() -> Result<(), String> {
     println!("Select the code-overhaul file to finish:");
     let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
     // get to-review files
@@ -284,7 +284,7 @@ pub fn update_code_overhaul_file() -> Result<()> {
     }
 }
 
-pub fn count_co_files() -> Result<()> {
+pub fn count_co_files() -> Result<(), String> {
     let (to_review_count, started_count, finished_count) = helpers::count::co_counter()?;
     println!("to-review co files: {}", format!("{to_review_count}").red());
     println!("started co files: {}", format!("{started_count}").yellow());
@@ -296,7 +296,7 @@ pub fn count_co_files() -> Result<()> {
     Ok(())
 }
 
-pub async fn deploy_miro() -> Result<()> {
+pub async fn deploy_miro() -> Result<(), String> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
     // check empty images
     // get files and folders from started, filter .md files
@@ -563,7 +563,7 @@ pub async fn deploy_miro() -> Result<()> {
     }
 }
 
-pub async fn open_co() -> Result<()> {
+pub async fn open_co() -> Result<(), String> {
     // list to start
     let started_entrypoints = helpers::get::get_started_entrypoints()?;
     let selection = Select::with_theme(&ColorfulTheme::default())
@@ -602,7 +602,7 @@ pub async fn open_co() -> Result<()> {
     Ok(())
 }
 
-pub fn update_audit_results() -> Result<()> {
+pub fn update_audit_results() -> Result<(), String> {
     let audit_file_path =
         BatConfig::get_audit_folder_path(Some(AUDIT_RESULT_FILE_NAME.to_string()))?;
     let finished_co_files = get_finished_co_files()?;

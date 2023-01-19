@@ -2,7 +2,7 @@ use console::Term;
 use dialoguer::{console, theme::ColorfulTheme, Input, Select};
 use std::{
     fs::{self, File},
-    io::{self, BufRead, Result},
+    io::{self, BufRead},
     path::{Path, PathBuf},
     process::Command,
     string::String,
@@ -14,7 +14,7 @@ use crate::{
     config::BatConfig,
 };
 
-pub fn reject() -> Result<()> {
+pub fn reject() -> Result<(), String> {
     prepare_all();
     println!("Select the finding file to reject:");
     let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
@@ -50,7 +50,7 @@ pub fn reject() -> Result<()> {
     Ok(())
 }
 
-pub fn accept_all() -> Result<()> {
+pub fn accept_all() -> Result<(), String> {
     prepare_all();
     let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     let accepted_path = BatConfig::get_auditor_findings_accepted_path(None)?;
@@ -70,7 +70,7 @@ pub fn accept_all() -> Result<()> {
     Ok(())
 }
 
-pub fn create_finding() -> Result<()> {
+pub fn create_finding() -> Result<(), String> {
     let mut finding_name: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Finding name:")
         .interact_text()
@@ -84,7 +84,7 @@ pub fn create_finding() -> Result<()> {
     Ok(())
 }
 
-pub fn finish_finding() -> Result<()> {
+pub fn finish_finding() -> Result<(), String> {
     let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
@@ -114,7 +114,7 @@ pub fn finish_finding() -> Result<()> {
     }
     Ok(())
 }
-pub fn update_finding() -> Result<()> {
+pub fn update_finding() -> Result<(), String> {
     let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
@@ -142,7 +142,7 @@ pub fn update_finding() -> Result<()> {
     Ok(())
 }
 
-pub fn prepare_all() -> Result<()> {
+pub fn prepare_all() -> Result<(), String> {
     let to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
@@ -200,7 +200,7 @@ pub fn prepare_all() -> Result<()> {
     Ok(())
 }
 
-fn validate_config_create_finding_file(finding_name: String) -> Result<()> {
+fn validate_config_create_finding_file(finding_name: String) -> Result<(), String> {
     let findings_to_review_path = BatConfig::get_auditor_findings_to_review_path(None)?;
     // check auditor/findings/to_review folder exists
     if !Path::new(&findings_to_review_path).is_dir() {
@@ -214,7 +214,7 @@ fn validate_config_create_finding_file(finding_name: String) -> Result<()> {
     Ok(())
 }
 
-fn copy_template_to_findings_to_review(finding_name: String) -> Result<()> {
+fn copy_template_to_findings_to_review(finding_name: String) -> Result<(), String> {
     let options = vec!["yes", "no"];
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&options)

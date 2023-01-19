@@ -3,10 +3,9 @@ use crate::{
     config::BatConfig,
     constants::BASE_REPOSTORY_NAME,
 };
-use std::io::Result;
 use std::{fs, process::Command};
 
-pub fn update_repository() -> Result<()> {
+pub fn update_repository() -> Result<(), String> {
     // clone base repository
     println!("Cloning base repository");
     clone_base_repository();

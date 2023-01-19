@@ -2,7 +2,7 @@ use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{MultiSelect, Select};
-use std::io::Result;
+use normalize_url::normalizer;
 
 use walkdir::WalkDir;
 
@@ -22,11 +22,11 @@ use std::borrow::{Borrow, BorrowMut};
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
-
 use std::string::String;
 use std::{fs, io};
 
 pub mod parse {
+
     use super::*;
 
     pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
@@ -458,7 +458,7 @@ pub mod parse {
     pub fn parse_function_parameters_into_co(
         co_file_path: String,
         co_file_name: String,
-    ) -> Result<()> {
+    ) -> Result<(), String> {
         let BatConfig { required, .. } = BatConfig::get_validated_config()?;
         let RequiredConfig {
             program_lib_path, ..
@@ -547,7 +547,7 @@ pub mod parse {
 }
 
 pub mod get {
-    use std::fs::DirEntry;
+    use std::{fs::DirEntry, io};
 
     use crate::structs::FileInfo;
 
@@ -586,7 +586,7 @@ pub mod get {
         item_id.to_string()
     }
 
-    pub fn get_context_name(co_file_name: String) -> Result<String> {
+    pub fn get_context_name(co_file_name: String) -> Result<String, String> {
         let BatConfig { required, .. } = BatConfig::get_validated_config()?;
         let RequiredConfig {
             program_lib_path, ..
@@ -639,7 +639,7 @@ pub mod get {
     pub fn get_context_lines(
         instruction_file_path: PathBuf,
         co_file_name: String,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<String>, String> {
         let instruction_file = File::open(instruction_file_path.clone()).unwrap();
         let instruction_file_lines = io::BufReader::new(instruction_file)
             .lines()
@@ -847,7 +847,7 @@ pub mod get {
         }
     }
 
-    pub fn get_instruction_files() -> Result<Vec<FileInfo>> {
+    pub fn get_instruction_files() -> Result<Vec<FileInfo>, String> {
         let instructions_path = BatConfig::get_validated_config()?
             .optional
             .program_instructions_path;
@@ -874,7 +874,7 @@ pub mod get {
     }
 
     // returns a list of folder and files names
-    pub fn get_started_entrypoints() -> Result<Vec<String>> {
+    pub fn get_started_entrypoints() -> Result<Vec<String>, String> {
         let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
         let started_files = fs::read_dir(started_path)
             .unwrap()
@@ -889,7 +889,7 @@ pub mod get {
 
     pub fn get_instruction_file_with_prompts(
         to_start_file_name: &String,
-    ) -> Result<(String, String)> {
+    ) -> Result<(String, String), String> {
         let instruction_files_info = get_instruction_files()?;
 
         let entrypoint_name = to_start_file_name.replace(".md", "");
@@ -945,16 +945,17 @@ pub mod get {
         Ok((entrypoint_name.clone(), instruction_file_path.clone()))
     }
 
-    pub fn get_finished_co_files() -> Result<Vec<(String, String)>> {
+    pub fn get_finished_co_files() -> Result<Vec<(String, String)>, String> {
         let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
-        let mut finished_folder = fs::read_dir(&finished_path)?
+        let mut finished_folder = fs::read_dir(&finished_path)
+            .unwrap()
             .map(|file| file.unwrap())
             .collect::<Vec<DirEntry>>();
         finished_folder.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
         let mut finished_files_content: Vec<(String, String)> = vec![];
 
         for co_file in finished_folder {
-            let file_content = fs::read_to_string(co_file.path())?;
+            let file_content = fs::read_to_string(co_file.path()).unwrap();
             let file_name = co_file.file_name();
             if file_name != ".gitkeep" {
                 finished_files_content.push((
@@ -974,7 +975,7 @@ pub mod get {
     }
     pub fn get_finished_co_files_info_for_results(
         finished_co_files_content: Vec<(String, String)>,
-    ) -> Result<Vec<FinishedCoFileContent>> {
+    ) -> Result<Vec<FinishedCoFileContent>, String> {
         let mut finished_content: Vec<FinishedCoFileContent> = vec![];
         // get necessary information from co files
         for (file_name, file_content) in finished_co_files_content {
@@ -1026,7 +1027,7 @@ pub mod get {
     pub fn get_table_of_contents_for_results(
         result: FinishedCoFileContent,
         result_idx: usize,
-    ) -> Result<String> {
+    ) -> Result<String, String> {
         let result_id = if result_idx == 0 {
             "".to_string()
         } else {
@@ -1108,7 +1109,7 @@ pub mod count {
             .collect::<Vec<_>>()
             .len()
     }
-    pub fn co_counter() -> Result<(usize, usize, usize)> {
+    pub fn co_counter() -> Result<(usize, usize, usize), String> {
         let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None)?;
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
         let to_review_count = count_filtering_gitkeep(to_review_folder);
@@ -1120,4 +1121,12 @@ pub mod count {
         let finished_count = count_filtering_gitkeep(finished_folder);
         Ok((to_review_count, started_count, finished_count))
     }
+}
+
+pub fn normalize_url(url_to_normalize: &str) -> Result<String, String> {
+    let url = normalizer::UrlNormalizer::new(url_to_normalize)
+        .expect(format!("Bad formated url {}", url_to_normalize).as_str())
+        .normalize(None)
+        .expect(format!("Error normalizing url {}", url_to_normalize).as_str());
+    Ok(url)
 }

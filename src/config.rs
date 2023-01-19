@@ -1,9 +1,4 @@
-use std::{
-    fs,
-    io::{Result},
-    path::Path,
-    str,
-};
+use std::{fs, path::Path, str};
 
 use serde::Deserialize;
 
@@ -45,19 +40,19 @@ pub struct AuditorConfig {
 }
 
 impl BatConfig {
-    pub fn get_validated_config() -> Result<BatConfig> {
+    pub fn get_validated_config() -> Result<BatConfig, String> {
         let bat_config = Self::get_bat_config().unwrap();
         Self::validate_bat_config(bat_config.clone(), true);
         Ok(bat_config)
     }
 
-    pub fn get_init_config() -> Result<BatConfig> {
+    pub fn get_init_config() -> Result<BatConfig, String> {
         let bat_config: BatConfig = Self::get_bat_config().unwrap();
         Self::validate_bat_config(bat_config.clone(), false);
         Ok(bat_config)
     }
 
-    fn get_bat_config() -> Result<BatConfig> {
+    fn get_bat_config() -> Result<BatConfig, String> {
         // Bat.toml
         let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
         if !bat_toml_path.is_file() {
@@ -83,7 +78,7 @@ impl BatConfig {
         Ok(config)
     }
 
-    fn validate_bat_config(bat_config: BatConfig, validate_auditor: bool) -> Result<()> {
+    fn validate_bat_config(bat_config: BatConfig, validate_auditor: bool) -> Result<(), String> {
         let BatConfig {
             required, auditor, ..
         } = bat_config;
@@ -123,12 +118,12 @@ impl BatConfig {
         Ok(())
     }
 
-    pub fn get_auditor_name() -> Result<String> {
+    pub fn get_auditor_name() -> Result<String, String> {
         let auditor_name = Self::get_validated_config()?.auditor.auditor_name;
         Ok(auditor_name)
     }
 
-    pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String> {
+    pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String, String> {
         if let Some(file_name_option) = file_name {
             Ok(Self::canonicalize_path(
                 Self::get_validated_config()
@@ -147,39 +142,41 @@ impl BatConfig {
         }
     }
 
-    pub fn get_audit_information_file_path() -> Result<String> {
+    pub fn get_audit_information_file_path() -> Result<String, String> {
         Self::canonicalize_path(Self::get_audit_folder_path(None)? + "/audit_information.md")
     }
 
-    pub fn get_program_lib_path() -> Result<String> {
+    pub fn get_program_lib_path() -> Result<String, String> {
         Self::canonicalize_path(Self::get_validated_config()?.required.program_lib_path)
     }
 
-    pub fn get_notes_path() -> Result<String> {
+    pub fn get_notes_path() -> Result<String, String> {
         Ok(Self::get_audit_folder_path(None)? + "/notes/")
     }
 
-    pub fn get_auditor_notes_path() -> Result<String> {
+    pub fn get_auditor_notes_path() -> Result<String, String> {
         Ok(Self::get_notes_path()? + &Self::get_auditor_name()? + "-notes/")
     }
     // Figures
-    pub fn get_auditor_figures_path() -> Result<String> {
+    pub fn get_auditor_figures_path() -> Result<String, String> {
         Ok(Self::canonicalize_path(
             Self::get_auditor_notes_path()? + "figures/",
         )?)
     }
-    pub fn get_auditor_figures_entrypoints_path() -> Result<String> {
+    pub fn get_auditor_figures_entrypoints_path() -> Result<String, String> {
         Ok(Self::canonicalize_path(
             Self::get_auditor_figures_path()? + "entrypoints/",
         )?)
     }
 
     // Findings paths
-    pub fn get_auditor_findings_path() -> Result<String> {
+    pub fn get_auditor_findings_path() -> Result<String, String> {
         Ok(Self::get_auditor_notes_path()? + "findings/")
     }
 
-    pub fn get_auditor_findings_to_review_path(file_name: Option<String>) -> Result<String> {
+    pub fn get_auditor_findings_to_review_path(
+        file_name: Option<String>,
+    ) -> Result<String, String> {
         match file_name {
             Some(name) => Ok(Self::get_auditor_findings_path()?
                 + "to-review/"
@@ -189,7 +186,7 @@ impl BatConfig {
         }
     }
 
-    pub fn get_auditor_findings_accepted_path(file_name: Option<String>) -> Result<String> {
+    pub fn get_auditor_findings_accepted_path(file_name: Option<String>) -> Result<String, String> {
         match file_name {
             Some(name) => Ok(Self::get_auditor_findings_path()?
                 + "accepted/"
@@ -199,7 +196,7 @@ impl BatConfig {
         }
     }
 
-    pub fn get_auditor_findings_rejected_path(file_name: Option<String>) -> Result<String> {
+    pub fn get_auditor_findings_rejected_path(file_name: Option<String>) -> Result<String, String> {
         match file_name {
             Some(name) => Ok(Self::get_auditor_findings_path()?
                 + "rejected/"
@@ -210,11 +207,13 @@ impl BatConfig {
     }
 
     // Code overhaul paths
-    pub fn get_auditor_code_overhaul_path() -> Result<String> {
+    pub fn get_auditor_code_overhaul_path() -> Result<String, String> {
         Ok(Self::get_auditor_notes_path()? + "code-overhaul/")
     }
 
-    pub fn get_auditor_code_overhaul_to_review_path(file_name: Option<String>) -> Result<String> {
+    pub fn get_auditor_code_overhaul_to_review_path(
+        file_name: Option<String>,
+    ) -> Result<String, String> {
         match file_name {
             Some(name) => Ok(Self::get_auditor_code_overhaul_path()?
                 + "to-review/"
@@ -224,7 +223,9 @@ impl BatConfig {
         }
     }
 
-    pub fn get_auditor_code_overhaul_finished_path(file_name: Option<String>) -> Result<String> {
+    pub fn get_auditor_code_overhaul_finished_path(
+        file_name: Option<String>,
+    ) -> Result<String, String> {
         match file_name {
             Some(name) => Ok(Self::get_auditor_code_overhaul_path()?
                 + "finished/"
@@ -234,7 +235,9 @@ impl BatConfig {
         }
     }
 
-    pub fn get_auditor_code_overhaul_started_path(file_name: Option<String>) -> Result<String> {
+    pub fn get_auditor_code_overhaul_started_path(
+        file_name: Option<String>,
+    ) -> Result<String, String> {
         match file_name {
             Some(name) => {
                 if MiroConfig::new().miro_enabled() {
@@ -255,42 +258,43 @@ impl BatConfig {
     }
 
     // Templates path
-    pub fn get_templates_path() -> Result<String> {
+    pub fn get_templates_path() -> Result<String, String> {
         Ok(Self::get_audit_folder_path(None)? + "/templates")
     }
 
-    pub fn get_notes_folder_template_path() -> Result<String> {
+    pub fn get_notes_folder_template_path() -> Result<String, String> {
         Ok(Self::get_templates_path()? + "/notes-folder-template")
     }
 
-    pub fn get_finding_template_path() -> Result<String> {
+    pub fn get_finding_template_path() -> Result<String, String> {
         Ok(Self::get_templates_path()? + "/finding.md")
     }
 
-    pub fn get_informational_template_path() -> Result<String> {
+    pub fn get_informational_template_path() -> Result<String, String> {
         Ok(Self::get_templates_path()? + "/informational.md")
     }
 
-    pub fn get_code_overhaul_template_path() -> Result<String> {
+    pub fn get_code_overhaul_template_path() -> Result<String, String> {
         Ok(Self::get_templates_path()? + "/code-overhaul.md")
     }
     // TODO: consider the case of subfolders
     // // Instructions
-    // pub fn get_instructions_folder_path() -> Result<String> {
+    // pub fn get_instructions_folder_path() -> Result<String,String> {
     //     Self::get_validated_config()
     //         .optional
     //         .program_instructions_path
     // }
-    // pub fn get_path_to_instruction(instruction_name: String) -> Result<String> {
+    // pub fn get_path_to_instruction(instruction_name: String) -> Result<String,String> {
     //     Self::get_instructions_folder_path()
     //         + "/"
     //         + instruction_name.replace(".rs", "").as_str()
     //         + ".rs"
     // }
 
-    fn canonicalize_path(path_to_canonicalize: String) -> Result<String> {
+    fn canonicalize_path(path_to_canonicalize: String) -> Result<String, String> {
         Ok(Path::new(&(path_to_canonicalize))
-            .canonicalize()?
+            .canonicalize()
+            .unwrap()
             .into_os_string()
             .into_string()
             .unwrap())

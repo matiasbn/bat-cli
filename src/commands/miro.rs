@@ -135,7 +135,7 @@ pub mod api {
         pub async fn update_frame_position(
             entrypoint_name: String,
             co_finished_files: i32,
-        ) -> super::io::Result<()> {
+        ) -> Result<(), String> {
             let MiroConfig {
                 access_token,
                 board_id,
@@ -305,7 +305,7 @@ pub mod api {
             entrypoint_name: String,
             file_name: &str,
             item_id: String,
-        ) -> super::io::Result<()> {
+        ) -> Result<(), String> {
             let MiroConfig {
                 access_token,
                 board_id,
@@ -540,7 +540,7 @@ pub mod api {
             let response: Value = serde_json::from_str(&&respons_string.as_str()).unwrap();
             response["id"].to_string().replace("\"", "")
         }
-        pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> super::io::Result<String> {
+        pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> Result<String, String> {
             let started_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
                 entrypoint_name.to_string(),
             ))?;

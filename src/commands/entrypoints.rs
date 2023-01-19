@@ -2,12 +2,12 @@ pub mod entrypoints {
     use std::{
         borrow::BorrowMut,
         fs::File,
-        io::{self, BufRead, Result},
+        io::{self, BufRead},
     };
 
     use crate::config::{BatConfig, RequiredConfig};
 
-    pub fn get_entrypoints_names() -> Result<Vec<String>> {
+    pub fn get_entrypoints_names() -> Result<Vec<String>, String> {
         let BatConfig { required, .. } = BatConfig::get_validated_config()?;
 
         let RequiredConfig {

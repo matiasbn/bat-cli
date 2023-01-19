@@ -1,6 +1,5 @@
 use std::fs::{self};
 
-use std::io::Result;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::String;
@@ -21,7 +20,7 @@ use crate::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
 
-pub fn initialize_bat_project() -> Result<()> {
+pub fn initialize_bat_project() -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;
     let BatConfig {
         required, auditor, ..
@@ -83,7 +82,7 @@ pub fn initialize_bat_project() -> Result<()> {
     Ok(())
 }
 
-fn update_audit_information_file() -> Result<()> {
+fn update_audit_information_file() -> Result<(), String> {
     let RequiredConfig {
         project_name,
         client_name,
@@ -130,7 +129,7 @@ fn update_auditor_toml(auditor_name: String, miro_oauth_access_token: Option<&st
     fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
 }
 
-fn validate_init_config() -> Result<()> {
+fn validate_init_config() -> Result<(), String> {
     // audit notes folder should not exist
     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
     let auditor_folder_path = BatConfig::get_auditor_notes_path()?;
@@ -146,7 +145,7 @@ fn validate_init_config() -> Result<()> {
     Ok(())
 }
 
-fn initialize_project_repository() -> Result<()> {
+fn initialize_project_repository() -> Result<(), String> {
     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
     let RequiredConfig {
         project_repository_url,
@@ -234,7 +233,7 @@ fn initialize_project_repository() -> Result<()> {
     Ok(())
 }
 
-fn create_auditor_notes_folder() -> Result<()> {
+fn create_auditor_notes_folder() -> Result<(), String> {
     let dest_path = BatConfig::get_auditor_notes_path()?;
     println!("creating {dest_path}");
 
@@ -270,7 +269,7 @@ fn create_auditor_notes_folder() -> Result<()> {
     Ok(())
 }
 
-fn initialize_code_overhaul_files() -> Result<()> {
+fn initialize_code_overhaul_files() -> Result<(), String> {
     let entrypoints_names = get_entrypoints_names()?;
 
     for entrypoint_name in entrypoints_names {
