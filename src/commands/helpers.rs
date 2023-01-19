@@ -34,7 +34,7 @@ use std::{fs, io};
 pub mod parse {
     use super::*;
 
-    pub fn context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
+    pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
         let filtered_context_account_lines: Vec<_> = context_lines
             .iter()
             .map(|line| {
@@ -115,7 +115,7 @@ pub mod parse {
         fs::write(co_file_path, data).unwrap();
     }
 
-    pub fn validations_into_co(
+    pub fn parse_validations_into_co(
         co_file_path: String,
         context_lines: Vec<String>,
         instruction_file_path: String,
@@ -187,33 +187,147 @@ pub mod parse {
         let mut account_validations: Vec<String> = vec![];
         let mut prerequisites: Vec<String> = vec![];
 
-        for validation in validations.iter() {
-            let options = vec![
-                format!("account validation").red(),
-                format!("prerequisite").yellow(),
-            ];
-            let prompt_text = format!(
-                "is this validation an {} or a {}?: \n {}",
-                options[0],
-                options[1],
-                format!("{validation}").green(),
-            );
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt(prompt_text)
-                .items(&options)
-                .default(0)
-                .interact_on_opt(&Term::stderr())
-                .unwrap()
-                .unwrap();
-
-            if options[selection] == options[0] {
+        for validation in validations.iter().map(|val| val.to_string()) {
+            // parse if validations differently
+            if validation.contains("if") {
+                println!("validation {}", validation);
+                // save the else lines
+                let filtered_else = validation
+                    .lines()
+                    .filter(|line| line.contains("} else"))
+                    .collect::<Vec<_>>();
+                let if_validation_formatted = validation.replace("else if", "else");
+                let if_validation_tokenized =
+                    if_validation_formatted.split("else").collect::<Vec<_>>();
+                let mut acc_validations: Vec<Vec<String>> =
+                    vec![vec![]; if_validation_tokenized.len()];
+                let mut prereq_validations: Vec<Vec<String>> =
+                    vec![vec![]; if_validation_tokenized.len()];
+                let closing_brace = validation.clone().lines().last().unwrap().to_string();
+                println!("tokenized {:?}", if_validation_tokenized);
+                for (tokenized_index, if_tokenized) in if_validation_tokenized.iter().enumerate() {
+                    for (val_index, val_line) in if_tokenized.clone().lines().enumerate() {
+                        // if is the first line
+                        if val_index == 0 {
+                            // if is an if statement copy val_line
+                            if tokenized_index == 0 {
+                                acc_validations[tokenized_index].push(val_line.to_string().clone());
+                                prereq_validations[tokenized_index]
+                                    .push(val_line.to_string().clone());
+                                // else, is an else statement
+                            } else {
+                                acc_validations[tokenized_index]
+                                    .push(filtered_else[tokenized_index - 1].to_string());
+                                prereq_validations[tokenized_index]
+                                    .push(filtered_else[tokenized_index - 1].to_string());
+                            }
+                        }
+                        // if the line contains any of the validations and has a parenthesis
+                        if validations_strings
+                            .iter()
+                            .any(|validation| val_line.contains(validation))
+                            && val_line.contains('(')
+                        {
+                            // single line validation
+                            let validation_string: String;
+                            println!("val line {}", val_line);
+                            if val_line.contains(");") || val_line.contains(")?;") {
+                                validation_string =
+                                    super::get::get_single_line_validation(val_line.clone());
+                            } else {
+                                // multi line validation
+                                validation_string = super::get::get_multiple_line_validation(
+                                    val_line.clone(),
+                                    &if_tokenized.to_string().clone(),
+                                    val_index,
+                                );
+                            }
+                            if !validation_string.is_empty() {
+                                println!("here {} {}", validation_string, tokenized_index);
+                                let selection = prompt_acc_val_or_prereq(validation_string.clone());
+                                // 0 is acc validation
+                                if selection == 0 {
+                                    // tokenized index == 0 means inside and if
+                                    acc_validations[tokenized_index]
+                                        .push(validation_string.to_string());
+                                // not 0 is prereq
+                                } else {
+                                    prereq_validations[tokenized_index]
+                                        .push(validation_string.to_string());
+                                    // tokenized index == 0 means inside and if
+                                }
+                            }
+                        }
+                    }
+                }
+                // acc validations
+                println!("acc val {:#?}", acc_validations);
+                let mut acc_validations_vec: Vec<String> = vec![];
+                if acc_validations.iter().any(|vec| vec.len() > 1) {
+                    for (acc_val_index, acc_val) in acc_validations.iter().enumerate() {
+                        acc_validations_vec.append(&mut acc_val.clone());
+                        // empty validation
+                        // if acc_val.len() == 1 {
+                        //     acc_validations_vec.push(format!(
+                        //         "\n{}\n",
+                        //         format!("{}", closing_brace.replace("}", "NO_ACCOUNT_VALIDATION")),
+                        //     ));
+                        // }
+                        if acc_val_index == acc_validations.len() - 1 {
+                            acc_validations_vec.push(closing_brace.clone());
+                        }
+                    }
+                }
                 account_validations.push("- ```rust".to_string());
-                account_validations.push(validation.to_string());
+                account_validations.push(acc_validations_vec.join("\n"));
                 account_validations.push("   ```".to_string());
+                // prereq validations
+                println!("prereq val {:#?}", prereq_validations);
+                let mut prereq_validations_vec: Vec<String> = vec![];
+                if prereq_validations.iter().any(|vec| vec.len() > 1) {
+                    for (prereq_val_index, prereq_val) in prereq_validations.iter().enumerate() {
+                        prereq_validations_vec.append(&mut prereq_val.clone());
+                        // empty validation
+                        // if prereq_val.len() == 1 {
+                        //     prereq_validations_vec.push(format!(
+                        //         "\n{}\n",
+                        //         format!("{}", closing_brace.replace("}", "NO_PREREQUISITE")),
+                        //     ));
+                        // }
+                        if prereq_val_index == prereq_validations.len() - 1 {
+                            prereq_validations_vec.push(closing_brace.clone());
+                        }
+                    }
+                    prerequisites.push("- ```rust".to_string());
+                    prerequisites.push(prereq_validations_vec.join("\n"));
+                    prerequisites.push("   ```".to_string());
+                    println!("prereq vec{:#?}", prerequisites);
+                }
+
+                // // prereq validations
+                // println!("prereq val {:#?}", prereq_validations);
+                // if prereq_validations.iter().any(|vec| vec.len() > 1) {
+                //     let mut prereq_validations_vec: Vec<String> = vec![];
+                //     for val in prereq_validations.iter_mut() {
+                //         if val.len() > 1 {
+                //             prereq_validations_vec.append(val);
+                //         }
+                //     }
+                //     prerequisites.push("- ```rust".to_string());
+                //     prerequisites.push(prereq_validations_vec.join("\n"));
+                //     prerequisites.push("   ```".to_string());
             } else {
-                prerequisites.push("- ```rust".to_string());
-                prerequisites.push(validation.to_string());
-                prerequisites.push("   ```".to_string());
+                let selection = prompt_acc_val_or_prereq(validation.clone());
+                // 0 is acc validation
+                if selection == 0 {
+                    account_validations.push("- ```rust".to_string());
+                    account_validations.push(validation.to_string());
+                    account_validations.push("   ```".to_string());
+                } else {
+                    prerequisites.push("- ```rust".to_string());
+                    prerequisites.push(validation.to_string());
+                    prerequisites.push("   ```".to_string());
+                }
             }
         }
 
@@ -244,7 +358,28 @@ pub mod parse {
         .unwrap();
     }
 
-    pub fn signers_into_co(co_file_path: String, context_lines: Vec<String>) {
+    fn prompt_acc_val_or_prereq(validation: String) -> usize {
+        let options = vec![
+            format!("account validation").red(),
+            format!("prerequisite").yellow(),
+        ];
+        let prompt_text = format!(
+            "is this validation an {} or a {}?: \n {}",
+            options[0],
+            options[1],
+            format!("{validation}").green(),
+        );
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(prompt_text)
+            .items(&options)
+            .default(0)
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+        selection
+    }
+
+    pub fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
         // signer names is only the name of the signer
         let signers_names = super::get::get_signers_description_from_co_file(&context_lines);
         // array of signers description: - signer_name: SIGNER_DESCRIPTION
@@ -345,7 +480,10 @@ pub mod parse {
         fs::write(co_file_path, data).unwrap();
     }
 
-    pub fn function_parameters_into_co(co_file_path: String, co_file_name: String) -> Result<()> {
+    pub fn parse_function_parameters_into_co(
+        co_file_path: String,
+        co_file_name: String,
+    ) -> Result<()> {
         let BatConfig { required, .. } = BatConfig::get_validated_config()?;
         let RequiredConfig {
             program_lib_path, ..
@@ -607,8 +745,50 @@ pub mod get {
     ) -> Vec<String> {
         let instruction_file = fs::read_to_string(&instruction_file_path).unwrap();
         let mut possible_validations: Vec<String> = Vec::new();
-        let lines_enumerate = instruction_file.lines().enumerate();
-        for (line_index, line) in lines_enumerate {
+        let mut last_reviewed_line = 0;
+        for (line_index, line) in instruction_file.lines().clone().enumerate() {
+            if line_index <= last_reviewed_line {
+                continue;
+            }
+            // check the if statements
+            if line.contains("if") {
+                // check that is not in comment
+                if line.contains("//") {
+                    let tokenized_line = line.split_whitespace();
+                    let comment_position =
+                        tokenized_line.clone().position(|word| word.contains("//"));
+                    let if_position = tokenized_line.clone().position(|word| word.contains("if"));
+                    // if the if is after the comment, continue
+                    if if_position >= comment_position {
+                        continue;
+                    }
+                }
+                let mut instruction_lines = instruction_file.lines().enumerate();
+                let (opening_brace_index, opening_brace_line) = instruction_lines
+                    .find(|(l_index, line)| line.contains("{") && l_index >= &line_index)
+                    .unwrap();
+                let (mut closing_brace_index, mut closing_brace_line) = instruction_lines
+                    .find(|(l_index, line)| line.contains("}") && l_index >= &line_index)
+                    .unwrap();
+                // if closing line contains an else (or else if)
+                while !(closing_brace_line.contains("}") && !closing_brace_line.contains("else")) {
+                    (closing_brace_index, closing_brace_line) = instruction_lines.next().unwrap();
+                }
+                // check if exists a validation inside the if
+                let if_lines = &instruction_file.lines().collect::<Vec<_>>()
+                    [opening_brace_index..=closing_brace_index];
+                // check if there are validations inside the if
+                if if_lines.clone().to_vec().iter().any(|if_line| {
+                    validations_strings
+                        .clone()
+                        .iter()
+                        .any(|validation| if_line.contains(validation))
+                }) {
+                    last_reviewed_line = closing_brace_index;
+                    possible_validations.push(if_lines.to_vec().join("\n"))
+                }
+            }
+
             // if the line contains any of the validations and has a parenthesis
             if validations_strings
                 .iter()
@@ -616,60 +796,78 @@ pub mod get {
                 && line.contains('(')
             {
                 // single line validation
+                let validation: String;
                 if line.contains(");") || line.contains(")?;") {
-                    let validation = format!("\t{}", line.trim());
-                    let prompt = format!(
-                        "is the next line a {}? \n {}",
-                        format!("validation").red(),
-                        format!("{validation}").bright_green()
-                    );
-                    let selection = Select::with_theme(&ColorfulTheme::default())
-                        .with_prompt(prompt)
-                        .item("yes")
-                        .item("no")
-                        .default(0)
-                        .interact_on_opt(&Term::stderr())
-                        .unwrap()
-                        .unwrap();
-                    if selection == 0 {
-                        possible_validations.push(validation);
-                    }
+                    validation = get_single_line_validation(line);
                 } else {
                     // multi line validation
-                    let mut validation_candidate: Vec<String> = vec![line.to_string()];
-                    let mut idx = 1;
-                    let mut validation_line = instruction_file.clone().lines().collect::<Vec<_>>()
-                        [line_index + idx]
-                        .to_string();
-                    while !(validation_line.contains(");") || validation_line.contains(")?;")) {
-                        validation_candidate.push(validation_line);
-                        idx += 1;
-                        validation_line = instruction_file.clone().lines().collect::<Vec<_>>()
-                            [line_index + idx]
-                            .to_string();
-                    }
-                    validation_candidate.push(validation_line);
-                    let validation_string = validation_candidate.join("\n");
-                    let prompt = format!(
-                        "is the next function a {}? \n {}",
-                        format!("validation").red(),
-                        format!("{validation_string}").bright_green(),
-                    );
-                    let selection = Select::with_theme(&ColorfulTheme::default())
-                        .with_prompt(prompt)
-                        .item("yes")
-                        .item("no")
-                        .default(0)
-                        .interact_on_opt(&Term::stderr())
-                        .unwrap()
-                        .unwrap();
-                    if selection == 0 {
-                        possible_validations.push(validation_string);
-                    }
+                    validation = get_multiple_line_validation(line, &instruction_file, line_index);
+                }
+                if !validation.is_empty() {
+                    possible_validations.push(validation)
                 }
             }
         }
         possible_validations
+    }
+
+    pub fn get_multiple_line_validation(
+        line: &str,
+        instruction_file: &String,
+        line_index: usize,
+    ) -> String {
+        let mut validation_candidate: Vec<String> = vec![line.clone().to_string()];
+        let mut idx = 1;
+        let mut validation_line =
+            instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
+        while !(validation_line.contains(");") || validation_line.contains(")?;")) {
+            validation_candidate.push(validation_line);
+            idx += 1;
+            validation_line =
+                instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
+        }
+        validation_candidate.push(validation_line);
+        let validation_string = validation_candidate.join("\n");
+        let prompt = format!(
+            "is the next function a {}? \n {}",
+            format!("validation").red(),
+            format!("{validation_string}").bright_green(),
+        );
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(prompt)
+            .item("yes")
+            .item("no")
+            .default(0)
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+        if selection == 0 {
+            validation_string
+        } else {
+            "".to_string()
+        }
+    }
+
+    pub fn get_single_line_validation(line: &str) -> String {
+        let validation = format!("\t{}", line.trim());
+        let prompt = format!(
+            "is the next line a {}? \n {}",
+            format!("validation").red(),
+            format!("{validation}").bright_green()
+        );
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(prompt)
+            .item("yes")
+            .item("no")
+            .default(0)
+            .interact_on_opt(&Term::stderr())
+            .unwrap()
+            .unwrap();
+        if selection == 0 {
+            validation
+        } else {
+            "".to_string()
+        }
     }
 
     pub fn get_instruction_files() -> Result<Vec<FileInfo>> {

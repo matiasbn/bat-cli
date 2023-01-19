@@ -54,7 +54,7 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<()> {
 }
 
 pub async fn start_code_overhaul_file() -> Result<()> {
-    check_correct_branch();
+    check_correct_branch()?;
 
     // check if program_lib_path is not empty or panic
     let BatConfig { optional, .. } = BatConfig::get_validated_config()?;
@@ -107,19 +107,20 @@ pub async fn start_code_overhaul_file() -> Result<()> {
     vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
 
     // parse text into co file
-    helpers::parse::context_accounts_into_co(
+    helpers::parse::parse_validations_into_co(
+        to_review_file_path.clone(),
+        context_lines.clone(),
+        instruction_file_path.to_str().unwrap().to_string(),
+    );
+    helpers::parse::parse_context_accounts_into_co(
         Path::new(&(to_review_file_path.clone()))
             .canonicalize()
             .unwrap(),
         context_lines.clone(),
     );
-    helpers::parse::validations_into_co(
-        to_review_file_path.clone(),
-        context_lines.clone(),
-        instruction_file_path.to_str().unwrap().to_string(),
-    );
-    helpers::parse::signers_into_co(to_review_file_path.clone(), context_lines);
-    helpers::parse::function_parameters_into_co(
+
+    helpers::parse::parse_signers_into_co(to_review_file_path.clone(), context_lines);
+    helpers::parse::parse_function_parameters_into_co(
         to_review_file_path.clone(),
         to_start_file_name.clone(),
     )?;
