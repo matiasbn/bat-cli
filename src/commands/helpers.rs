@@ -744,7 +744,7 @@ pub mod get {
                     }
                 }
                 let mut instruction_lines = instruction_file.lines().enumerate();
-                let (opening_brace_index, opening_brace_line) = instruction_lines
+                let (opening_brace_index, _opening_brace_line) = instruction_lines
                     .find(|(l_index, line)| line.contains("{") && l_index >= &line_index)
                     .unwrap();
                 let (mut closing_brace_index, mut closing_brace_line) = instruction_lines
