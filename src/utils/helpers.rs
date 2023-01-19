@@ -1,8 +1,3 @@
-#[derive(Debug)]
-pub struct FileInfo {
-    pub path: String,
-    pub name: String,
-}
 use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
@@ -553,6 +548,8 @@ pub mod parse {
 
 pub mod get {
     use std::fs::DirEntry;
+
+    use crate::structs::FileInfo;
 
     use super::*;
     pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {

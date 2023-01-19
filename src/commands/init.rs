@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::String;
 
+use colored::Colorize;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Input, Select};
 
@@ -28,7 +29,10 @@ pub fn initialize_bat_project() -> Result<()> {
     // if auditor.auditor is empty, prompt name
     if auditor.auditor_name.is_empty() {
         let auditor_name = get_auditor_name(required.auditor_names);
-        println!("Is great to have you here {auditor_name}!");
+        println!(
+            "Is great to have you here {}!",
+            format!("{}", auditor_name).green()
+        );
 
         // Ask the user if is going to use the Miro integration
         let options = ["yes", "no"];
@@ -55,21 +59,21 @@ pub fn initialize_bat_project() -> Result<()> {
 
     if !Path::new(".git").is_dir() {
         println!("Updating project information file");
-        update_audit_information_file();
+        update_audit_information_file()?;
         println!("Initializing project repository");
-        initialize_project_repository();
+        initialize_project_repository()?;
         println!("Project repository successfully initialized");
     } else {
         println!("Project repository already initialized");
     }
 
-    validate_init_config();
+    validate_init_config()?;
     // copy templates/notes-folder-template
-    create_auditor_notes_folder();
+    create_auditor_notes_folder()?;
     // create overhaul files
-    initialize_code_overhaul_files();
+    initialize_code_overhaul_files()?;
     // commit to-review files
-    create_git_commit(GitCommit::InitAuditor, None);
+    create_git_commit(GitCommit::InitAuditor, None)?;
     println!("Project successfully initialized");
     let lib_file_path = BatConfig::get_program_lib_path()?;
 
@@ -270,7 +274,7 @@ fn initialize_code_overhaul_files() -> Result<()> {
     let entrypoints_names = get_entrypoints_names()?;
 
     for entrypoint_name in entrypoints_names {
-        create_overhaul_file(entrypoint_name.clone());
+        create_overhaul_file(entrypoint_name.clone())?;
     }
     Ok(())
 }

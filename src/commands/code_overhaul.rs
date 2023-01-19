@@ -5,10 +5,6 @@ use dialoguer::{MultiSelect, Select};
 
 use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
 use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
-use crate::commands::helpers;
-use crate::commands::helpers::get::{
-    get_finished_co_files, get_finished_co_files_info_for_results,
-};
 use crate::commands::miro::api::connector::ConnectorOptions;
 use crate::commands::miro::{self, MiroConfig};
 use crate::config::BatConfig;
@@ -20,14 +16,17 @@ use crate::constants::{
     CONTEXT_ACCOUNTS_PNG_NAME, CO_FIGURES, ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME,
     VALIDATIONS_PNG_NAME,
 };
+use crate::utils::helpers::get::{
+    get_finished_co_files, get_finished_co_files_info_for_results,
+    get_table_of_contents_for_results,
+};
+use crate::utils::*;
 
 use std::fs;
 use std::io::{BufRead, Result};
 use std::path::Path;
 use std::process::Command;
 use std::string::String;
-
-use super::helpers::get::get_table_of_contents_for_results;
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<()> {
     let code_overhaul_auditor_file_path =

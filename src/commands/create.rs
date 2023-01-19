@@ -1,23 +1,28 @@
+use std::error::Error;
+use std::io::Result;
 use std::path::Path;
+use std::{fs, io, process::Command};
 
-use std::{fs, process::Command};
-
+use colored::Colorize;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
+use walkdir::WalkDir;
 
 use crate::commands::git::clone_base_repository;
 use crate::config::RequiredConfig;
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
 };
+use crate::structs::FileInfo;
+use crate::utils::cli_inputs;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 
-pub fn create_project() {
+pub fn create_project() -> Result<()> {
     // get project config
-    let project_config = get_project_config();
+    let project_config = get_project_config()?;
     println!("Creating {project_config:#?} project");
     // clone repository
     clone_base_repository();
@@ -44,49 +49,101 @@ pub fn create_project() {
         "Project {} succesfully created",
         project_config.project_name
     );
+    Ok(())
 }
 
-fn get_project_config() -> RequiredConfig {
-    let project_name: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Project name:")
-        .interact_text()
-        .unwrap();
+fn get_project_config() -> Result<RequiredConfig> {
+    let local_folders = fs::read_dir(".")
+        .unwrap()
+        .map(|f| f.unwrap())
+        .filter(|f| {
+            f.file_type().unwrap().is_dir()
+                && ![".", "target"]
+                    .iter()
+                    .any(|y| f.file_name().to_str().unwrap().contains(y))
+        })
+        .map(|f| f.file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
 
-    if Path::new(&project_name).is_dir() {
-        panic!("Project already exists");
+    // Folder with the program to audit selection
+    let prompt_text = "Select the folder with the program to audit";
+    let selection = cli_inputs::select(prompt_text, local_folders.clone(), None)?;
+    let selected_folder = &local_folders[selection];
+    let cargo_programs_files_info = WalkDir::new(format!("./{}", selected_folder))
+        .into_iter()
+        .map(|entry| {
+            let info = FileInfo {
+                path: entry
+                    .as_ref()
+                    .unwrap()
+                    .path()
+                    .display()
+                    .to_string()
+                    .replace("/Cargo.toml", ""),
+                name: entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap(),
+            };
+            info
+        })
+        .filter(|file_info| {
+            file_info.name.contains("Cargo.toml") && !file_info.path.contains("target")
+        })
+        .collect::<Vec<FileInfo>>();
+
+    // Program to audit selection
+    let prompt_text = "Select the program to audit";
+    let cargo_programs_paths = cargo_programs_files_info
+        .iter()
+        .map(|f| f.path.clone())
+        .collect::<Vec<_>>();
+    let selection = cli_inputs::select(prompt_text, cargo_programs_paths, None)?;
+    let selected_program = &cargo_programs_files_info[selection];
+    let program_name = selected_program.path.split("/").last().unwrap();
+    let lib_path = selected_program.path.clone() + "/src/lib.rs";
+
+    if !Path::new(&lib_path).is_file() {
+        panic!("lib.rs file not found in selected folder");
     }
 
-    let auditor_names_prompt: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Auditor names (comma separated, example: alice,bob):")
-        .interact_text()
-        .unwrap();
+    // Project name selection
+    let mut project_name: String = program_name.to_owned() + "-audit";
+    let prompt_text = format!(
+        "Do you want to use the name {} for this project?",
+        format!("{project_name}").yellow()
+    );
+    let options = vec!["yes", "no"];
+    let selection = cli_inputs::select(prompt_text.as_str(), options, None)?;
+    if selection == 1 {
+        project_name = cli_inputs::input("Project name:")?;
+    }
+    let project_path = format!("./{project_name}");
+
+    if Path::new(&project_path).is_dir() {
+        panic!("Folder {} already exists", project_name);
+    }
+
+    let auditor_names_prompt: String =
+        cli_inputs::input("Auditor names (comma separated, example: alice,bob):")?;
     let auditor_names: Vec<String> = auditor_names_prompt
         .split(',')
         .map(|l| l.to_string())
         .collect();
-    let client_name: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Client name:")
-        .interact_text()
-        .unwrap();
-    let commit_hash_url: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Commit hash url:")
-        .interact_text()
-        .unwrap();
-    let starting_date: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Starting date, example: (01/01/2023):")
-        .interact_text()
-        .unwrap();
-    let miro_board_id: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Miro board id:")
-        .interact_text()
-        .unwrap();
+    let client_name: String = cli_inputs::input("Client name:")?;
+    let commit_hash_url: String = cli_inputs::input("Commit hash url:")?;
+    let starting_date: String = cli_inputs::input("Starting date, example: (01/01/2023):")?;
+    let miro_board_id: String = cli_inputs::input("Miro board url:")?;
     let miro_board_url = "https://miro.com/app/board/".to_string() + &miro_board_id;
     let project_repository_url: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Project repo url, where this audit folder would be pushed:")
         .interact_text()
         .unwrap();
 
-    RequiredConfig {
+    Ok(RequiredConfig {
         auditor_names,
         project_name,
         client_name,
@@ -97,7 +154,7 @@ fn get_project_config() -> RequiredConfig {
         project_repository_url,
         audit_folder_path: "".to_string(),
         program_lib_path: "".to_string(),
-    }
+    })
 }
 
 fn create_bat_toml(project_config: RequiredConfig) {

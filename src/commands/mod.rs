@@ -3,7 +3,6 @@ pub mod create;
 pub mod entrypoints;
 pub mod finding;
 pub mod git;
-pub mod helpers;
 pub mod init;
 pub mod miro;
 pub mod update;

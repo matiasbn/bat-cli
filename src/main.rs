@@ -4,12 +4,13 @@ extern crate core;
 
 use clap::{Parser, Subcommand};
 
-
 mod command_line;
 mod commands;
 mod config;
 mod constants;
 mod package;
+mod structs;
+mod utils;
 // use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
@@ -89,7 +90,7 @@ enum PackageActions {
 async fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
-        Commands::Create => commands::create::create_project(),
+        Commands::Create => commands::create::create_project().unwrap(),
         Commands::Init => commands::init::initialize_bat_project().unwrap(),
         Commands::CO(CodeOverhaulActions::Start) => {
             commands::code_overhaul::start_code_overhaul_file()
