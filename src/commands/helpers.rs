@@ -190,7 +190,6 @@ pub mod parse {
         for validation in validations.iter().map(|val| val.to_string()) {
             // parse if validations differently
             if validation.contains("if") {
-                println!("validation {}", validation);
                 // save the else lines
                 let filtered_else = validation
                     .lines()
@@ -204,7 +203,6 @@ pub mod parse {
                 let mut prereq_validations: Vec<Vec<String>> =
                     vec![vec![]; if_validation_tokenized.len()];
                 let closing_brace = validation.clone().lines().last().unwrap().to_string();
-                println!("tokenized {:?}", if_validation_tokenized);
                 for (tokenized_index, if_tokenized) in if_validation_tokenized.iter().enumerate() {
                     for (val_index, val_line) in if_tokenized.clone().lines().enumerate() {
                         // if is the first line
@@ -230,7 +228,6 @@ pub mod parse {
                         {
                             // single line validation
                             let validation_string: String;
-                            println!("val line {}", val_line);
                             if val_line.contains(");") || val_line.contains(")?;") {
                                 validation_string =
                                     super::get::get_single_line_validation(val_line.clone());
@@ -243,7 +240,6 @@ pub mod parse {
                                 );
                             }
                             if !validation_string.is_empty() {
-                                println!("here {} {}", validation_string, tokenized_index);
                                 let selection = prompt_acc_val_or_prereq(validation_string.clone());
                                 // 0 is acc validation
                                 if selection == 0 {
@@ -261,7 +257,6 @@ pub mod parse {
                     }
                 }
                 // acc validations
-                println!("acc val {:#?}", acc_validations);
                 let mut acc_validations_vec: Vec<String> = vec![];
                 if acc_validations.iter().any(|vec| vec.len() > 1) {
                     for (acc_val_index, acc_val) in acc_validations.iter().enumerate() {
@@ -282,7 +277,6 @@ pub mod parse {
                 account_validations.push(acc_validations_vec.join("\n"));
                 account_validations.push("   ```".to_string());
                 // prereq validations
-                println!("prereq val {:#?}", prereq_validations);
                 let mut prereq_validations_vec: Vec<String> = vec![];
                 if prereq_validations.iter().any(|vec| vec.len() > 1) {
                     for (prereq_val_index, prereq_val) in prereq_validations.iter().enumerate() {
@@ -298,24 +292,10 @@ pub mod parse {
                             prereq_validations_vec.push(closing_brace.clone());
                         }
                     }
-                    prerequisites.push("- ```rust".to_string());
-                    prerequisites.push(prereq_validations_vec.join("\n"));
-                    prerequisites.push("   ```".to_string());
-                    println!("prereq vec{:#?}", prerequisites);
                 }
-
-                // // prereq validations
-                // println!("prereq val {:#?}", prereq_validations);
-                // if prereq_validations.iter().any(|vec| vec.len() > 1) {
-                //     let mut prereq_validations_vec: Vec<String> = vec![];
-                //     for val in prereq_validations.iter_mut() {
-                //         if val.len() > 1 {
-                //             prereq_validations_vec.append(val);
-                //         }
-                //     }
-                //     prerequisites.push("- ```rust".to_string());
-                //     prerequisites.push(prereq_validations_vec.join("\n"));
-                //     prerequisites.push("   ```".to_string());
+                prerequisites.push("- ```rust".to_string());
+                prerequisites.push(prereq_validations_vec.join("\n"));
+                prerequisites.push("   ```".to_string());
             } else {
                 let selection = prompt_acc_val_or_prereq(validation.clone());
                 // 0 is acc validation
