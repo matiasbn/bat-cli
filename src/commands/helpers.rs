@@ -272,10 +272,10 @@ pub mod parse {
                             acc_validations_vec.push(closing_brace.clone());
                         }
                     }
+                    account_validations.push("- ```rust".to_string());
+                    account_validations.push(acc_validations_vec.join("\n"));
+                    account_validations.push("   ```".to_string());
                 }
-                account_validations.push("- ```rust".to_string());
-                account_validations.push(acc_validations_vec.join("\n"));
-                account_validations.push("   ```".to_string());
                 // prereq validations
                 let mut prereq_validations_vec: Vec<String> = vec![];
                 if prereq_validations.iter().any(|vec| vec.len() > 1) {
@@ -292,10 +292,10 @@ pub mod parse {
                             prereq_validations_vec.push(closing_brace.clone());
                         }
                     }
+                    prerequisites.push("- ```rust".to_string());
+                    prerequisites.push(prereq_validations_vec.join("\n"));
+                    prerequisites.push("   ```".to_string());
                 }
-                prerequisites.push("- ```rust".to_string());
-                prerequisites.push(prereq_validations_vec.join("\n"));
-                prerequisites.push("   ```".to_string());
             } else {
                 let selection = prompt_acc_val_or_prereq(validation.clone());
                 // 0 is acc validation
