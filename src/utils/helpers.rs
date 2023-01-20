@@ -27,6 +27,8 @@ use std::{fs, io};
 
 pub mod parse {
 
+    use std::fmt::Display;
+
     use super::*;
 
     pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
@@ -588,12 +590,49 @@ pub mod parse {
         }
         Ok(())
     }
+
+    pub fn parse_lines_between_two_strings_in_file<T>(
+        file_path: T,
+        lines_to_parse: &str,
+        inital_str: &str,
+        final_str: &str,
+    ) -> Result<(), String>
+    where
+        T: Clone + AsRef<std::path::Path> + Display,
+    {
+        let file_string = fs::read_to_string(file_path.clone()).unwrap();
+        let file_string_lines_vec = file_string.lines().collect::<Vec<_>>();
+        let first_line_index = file_string
+            .lines()
+            .into_iter()
+            .position(|l| l.contains(inital_str))
+            .expect(format!("Cant find {} in:\n{}", inital_str, file_path).as_str());
+        let last_line_index = file_string
+            .lines()
+            .into_iter()
+            .position(|l| l.contains(final_str))
+            .expect(format!("Cant find {} in:\n{}", final_str, file_path).as_str());
+        let result_lines = &file_string_lines_vec[first_line_index + 1..=last_line_index];
+        fs::write(
+            file_path.clone(),
+            file_string.replace(
+                result_lines.to_vec().join("\n").as_str(),
+                format!(
+                    "\n{lines_to_parse}\n\n{}",
+                    file_string_lines_vec[last_line_index]
+                )
+                .as_str(),
+            ),
+        )
+        .expect(format!("Cant write to:\n{}", file_path).as_str());
+        Ok(())
+    }
 }
 
 pub mod get {
-    use std::{fs::DirEntry, io};
+    use std::{fmt::Display, fs::DirEntry, io};
 
-    use crate::structs::FileInfo;
+    use crate::{structs::FileInfo, utils};
 
     use super::*;
     pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
@@ -1102,6 +1141,66 @@ pub mod get {
         let insert_contents = vec![toc_title, toc_wid, toc_notes, toc_miro].join("\n");
         Ok(insert_contents)
     }
+    pub fn get_only_files_from_folder(folder_path: String) -> Result<Vec<FileInfo>, String> {
+        let state_folder_files_info = WalkDir::new(format!("./{}", folder_path))
+            .into_iter()
+            .filter(|f| f.as_ref().unwrap().metadata().unwrap().is_file())
+            .map(|entry| {
+                let info = FileInfo {
+                    path: utils::helpers::canonicalize_path(
+                        entry.as_ref().unwrap().path().display().to_string(),
+                    )
+                    .unwrap(),
+                    name: entry
+                        .as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_os_string()
+                        .into_string()
+                        .unwrap(),
+                };
+                info
+            })
+            .collect::<Vec<FileInfo>>();
+        Ok(state_folder_files_info)
+    }
+    pub fn get_structs_in_files(state_file_infos: Vec<FileInfo>) -> Result<Vec<String>, String> {
+        let mut structs_in_state_files: Vec<String> = vec![];
+        for file in state_file_infos {
+            let file_string = fs::read_to_string(file.path.clone())
+                .expect(&format!("Error reading the {} file", file.path.clone()));
+            let mut last_read_line = 0;
+            for (file_line_index, _) in file_string.lines().into_iter().enumerate() {
+                if last_read_line < file_line_index {
+                    continue;
+                }
+                let start_index = file_string.lines().into_iter().enumerate().position(|l| {
+                    l.1.contains("struct") && l.1.contains("{") && l.0 > last_read_line
+                });
+                let start_struct_index = if let Some(start_index) = start_index {
+                    start_index
+                } else {
+                    continue;
+                };
+                let final_struct_index = file_string
+                    .lines()
+                    .into_iter()
+                    .enumerate()
+                    .position(|l| l.1.trim() == "}" && l.0 > start_struct_index)
+                    .expect(&format!(
+                        "Error looking for opening line of struct in {} file",
+                        file.path.clone()
+                    ));
+                let struct_lines = file_string.clone().lines().collect::<Vec<_>>()
+                    [start_struct_index..=final_struct_index]
+                    .to_vec()
+                    .join("\n");
+                structs_in_state_files.push(struct_lines.clone());
+                last_read_line = final_struct_index;
+            }
+        }
+        Ok(structs_in_state_files)
+    }
 }
 
 pub mod check {
@@ -1177,6 +1276,38 @@ pub mod count {
         let finished_folder = fs::read_dir(finished_path).unwrap();
         let finished_count = count_filtering_gitkeep(finished_folder);
         Ok((to_review_count, started_count, finished_count))
+    }
+}
+
+pub mod format {
+
+    pub fn format_to_rust_comment(comment: &str) -> String {
+        let mut formmated_comment_lines: Vec<String> = vec![];
+        for (comment_line_index, comment_line) in comment.lines().enumerate() {
+            let trimmed = comment_line.trim();
+            if comment_line_index == 0
+                || comment_line_index == comment.lines().collect::<Vec<_>>().len() - 1
+            {
+                formmated_comment_lines.push(format!("  {}", trimmed))
+            } else {
+                formmated_comment_lines.push(format!("    {}", trimmed))
+            }
+        }
+        format!("- ```rust\n{}\n  ```", formmated_comment_lines.join("\n"))
+    }
+}
+
+pub mod print {
+    use std::fmt::Display;
+
+    pub fn print_string_vector<T: Display>(to_print: Vec<T>, comment: &str) {
+        for text in to_print {
+            println!("{}:\n {}\n", comment, text);
+        }
+    }
+
+    pub fn print_string<T: Display>(to_print: T, comment: T) {
+        println!("{}:\n {}\n", comment, to_print);
     }
 }
 

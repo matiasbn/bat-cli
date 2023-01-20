@@ -190,7 +190,7 @@ fn get_optional_config(program_lib_path: String) -> Result<OptionalConfig, Strin
 
     let prompt_text = "Do you want to include the state path?";
     let include_state_path = cli_inputs::select_yes_or_no(prompt_text)?;
-    let program_state_path = if include_instructions_path {
+    let program_state_path = if include_state_path {
         let prompt_text = "Select the state folder:";
         let option = cli_inputs::select(prompt_text, folders.clone(), None)?;
         folders[option].clone().replace("../", ".")

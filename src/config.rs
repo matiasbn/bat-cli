@@ -46,13 +46,13 @@ pub struct AuditorConfig {
 impl BatConfig {
     pub fn get_validated_config() -> Result<BatConfig, String> {
         let bat_config = Self::get_bat_config().unwrap();
-        Self::validate_bat_config(bat_config.clone(), true);
+        Self::validate_bat_config(bat_config.clone(), true)?;
         Ok(bat_config)
     }
 
     pub fn get_init_config() -> Result<BatConfig, String> {
         let bat_config: BatConfig = Self::get_bat_config().unwrap();
-        Self::validate_bat_config(bat_config.clone(), false);
+        Self::validate_bat_config(bat_config.clone(), false)?;
         Ok(bat_config)
     }
 
@@ -160,17 +160,6 @@ impl BatConfig {
 
     pub fn get_auditor_notes_path() -> Result<String, String> {
         Ok(Self::get_notes_path()? + &Self::get_auditor_name()? + "-notes/")
-    }
-    // Figures
-    pub fn get_auditor_figures_path() -> Result<String, String> {
-        Ok(canonicalize_path(
-            Self::get_auditor_notes_path()? + "figures/",
-        )?)
-    }
-    pub fn get_auditor_figures_entrypoints_path() -> Result<String, String> {
-        Ok(canonicalize_path(
-            Self::get_auditor_figures_path()? + "entrypoints/",
-        )?)
     }
 
     // Findings paths
@@ -280,6 +269,11 @@ impl BatConfig {
 
     pub fn get_code_overhaul_template_path() -> Result<String, String> {
         Ok(Self::get_templates_path()? + "/code-overhaul.md")
+    }
+
+    // Threat modeling file
+    pub fn get_auditor_threat_modeling_path() -> Result<String, String> {
+        Ok(Self::get_auditor_notes_path()? + "threat_modeling.md")
     }
 }
 
