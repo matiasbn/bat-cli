@@ -3,6 +3,7 @@
 extern crate core;
 
 use clap::{Parser, Subcommand};
+use commands::git::GitCommit;
 
 mod command_line;
 mod commands;
@@ -123,6 +124,7 @@ async fn main() {
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
+        Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None).unwrap(),
         Commands::Results => commands::code_overhaul::update_audit_results().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
@@ -133,6 +135,6 @@ async fn main() {
         Commands::Package(PackageActions::Publish) => package::publish(),
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Full) => package::full(),
-        _ => unimplemented!("Command only implemented for dev opetions"),
+        _ => unimplemented!("Command only implemented for dev operations"),
     }
 }
