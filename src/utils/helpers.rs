@@ -1130,3 +1130,14 @@ pub fn normalize_url(url_to_normalize: &str) -> Result<String, String> {
         .expect(format!("Error normalizing url {}", url_to_normalize).as_str());
     Ok(url)
 }
+
+pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, String> {
+    let error_message = format!("Error canonicalizing path: {}", path_to_canonicalize);
+    let canonicalized_path = Path::new(&(path_to_canonicalize))
+        .canonicalize()
+        .expect(&error_message)
+        .into_os_string()
+        .into_string()
+        .expect(&error_message);
+    Ok(canonicalized_path)
+}

@@ -8,7 +8,7 @@ use dialoguer::Input;
 use walkdir::WalkDir;
 
 use crate::commands::git::clone_base_repository;
-use crate::config::RequiredConfig;
+use crate::config::{OptionalConfig, RequiredConfig};
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
 };
@@ -21,37 +21,38 @@ pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 
 pub fn create_project() -> Result<(), String> {
     // get project config
-    let project_config = get_project_config()?;
-    println!("Creating {project_config:#?} project");
+    let required_config = get_required_config()?;
+    let optional_config = get_optional_config(required_config.program_lib_path.clone())?;
+    println!("Creating {:#?} project", required_config);
     // clone repository
     clone_base_repository();
     // change folder name
     Command::new("mv")
-        .args([BASE_REPOSTORY_NAME, project_config.project_name.as_str()])
+        .args([BASE_REPOSTORY_NAME, required_config.project_name.as_str()])
         .output()
         .unwrap();
     // Remove .git folder
     Command::new("rm")
         .args([
             "-rf",
-            (project_config.project_name.clone() + "/.git").as_str(),
+            (required_config.project_name.clone() + "/.git").as_str(),
         ])
         .output()
         .unwrap();
     // create config files
-    create_bat_toml(project_config.clone());
+    create_bat_toml(required_config.clone(), optional_config);
     create_auditor_toml();
     // move config files to repo
-    move_config_files(project_config.project_name.clone());
+    move_config_files(required_config.project_name.clone());
 
     println!(
         "Project {} succesfully created",
-        project_config.project_name
+        required_config.project_name
     );
     Ok(())
 }
 
-fn get_project_config() -> Result<RequiredConfig, String> {
+fn get_required_config() -> Result<RequiredConfig, String> {
     let local_folders = fs::read_dir(".")
         .unwrap()
         .map(|f| f.unwrap())
@@ -103,9 +104,11 @@ fn get_project_config() -> Result<RequiredConfig, String> {
     let selection = cli_inputs::select(prompt_text, cargo_programs_paths, None)?;
     let selected_program = &cargo_programs_files_info[selection];
     let program_name = selected_program.path.split("/").last().unwrap();
-    let lib_path = selected_program.path.clone() + "/src/lib.rs";
+    let program_lib_path = selected_program.path.clone() + "/src/lib.rs";
 
-    if !Path::new(&lib_path).is_file() {
+    let normalized_to_audit_program_lib_path = program_lib_path.replace("./", "../");
+
+    if !Path::new(&program_lib_path).is_file() {
         panic!("lib.rs file not found in selected folder");
     }
 
@@ -133,34 +136,65 @@ fn get_project_config() -> Result<RequiredConfig, String> {
         .map(|l| l.to_string())
         .collect();
     let client_name: String = cli_inputs::input("Client name:")?;
-    let mut commit_hash_url: String = cli_inputs::input("Commit hash url:")?;
-    commit_hash_url = helpers::normalize_url(&commit_hash_url).expect("incorrect commit hash url");
+    let commit_hash_url: String = cli_inputs::input("Commit hash url:")?;
     let starting_date: String = cli_inputs::input("Starting date, example: (01/01/2023):")?;
-    let miro_board_url: String = cli_inputs::input("Miro board url:")?;
-    let normalized_miro_board_url = helpers::normalize_url(&miro_board_url)?;
-    println!("normalized url {}", normalized_miro_board_url);
+    let mut miro_board_url: String = cli_inputs::input("Miro board url:")?;
+    miro_board_url = helpers::normalize_url(&miro_board_url)?;
+    let error_msg = format!(
+        "Error obtaining the miro board id for the url: {}",
+        miro_board_url
+    );
+    let miro_board_id = miro_board_url
+        .split("board/")
+        .last()
+        .expect(&error_msg)
+        .split("/")
+        .next()
+        .expect(&error_msg)
+        .to_string();
 
     // let miro_board_id = "https://miro.com/app/board/".to_string() + &miro_board_id;
-    let project_repository_url: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Project repo url, where this audit folder would be pushed:")
-        .interact_text()
-        .unwrap();
+    let project_repository_url: String =
+        cli_inputs::input("Project repo url, where this audit folder would be pushed:")?;
 
     Ok(RequiredConfig {
         auditor_names,
         project_name,
         client_name,
         miro_board_url,
-        miro_board_id: "".to_string(),
+        miro_board_id,
         starting_date,
         commit_hash_url,
         project_repository_url,
         audit_folder_path: "".to_string(),
-        program_lib_path: "".to_string(),
+        program_lib_path: normalized_to_audit_program_lib_path,
     })
 }
 
-fn create_bat_toml(project_config: RequiredConfig) {
+fn get_optional_config(program_lib_path: String) -> Result<OptionalConfig, String> {
+    let lib_path = program_lib_path.replace("../", "./").replace("lib.rs", "");
+    let prompt_text = "Do you want to include the instructions path?";
+    let include_instructions_path = cli_inputs::select_yes_or_no(prompt_text)?;
+    let program_instructions_path = if include_instructions_path {
+        let error_message = format!("Incorrect program lib path: {}", lib_path);
+        let files_in_lib_path = fs::read_dir(lib_path).expect(&error_message);
+        let folders = files_in_lib_path
+            .filter(|f| f.as_ref().unwrap().metadata().unwrap().is_dir())
+            .map(|f| f.unwrap().path().to_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        let prompt_text = "Select the instructions file:";
+        let option = cli_inputs::select(prompt_text, folders.clone(), None)?;
+        folders[option].clone().replace("../", ".")
+    } else {
+        "".to_string()
+    };
+
+    Ok(OptionalConfig {
+        program_instructions_path,
+    })
+}
+
+fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalConfig) {
     let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
     let RequiredConfig {
         project_name,
@@ -172,7 +206,11 @@ fn create_bat_toml(project_config: RequiredConfig) {
         project_repository_url,
         miro_board_url,
         ..
-    } = project_config;
+    } = required_config;
+
+    let OptionalConfig {
+        program_instructions_path,
+    } = optional_config;
 
     if bat_toml_path.exists() {
         panic!("Bat.toml file already exist in {bat_toml_path:?}, aborting")
@@ -212,6 +250,10 @@ fn create_bat_toml(project_config: RequiredConfig) {
         .replace(
             &String::from("auditor_names = [\""),
             &("auditor_names = [\"".to_string() + &auditor_names.join("\",\"")),
+        )
+        .replace(
+            &String::from("program_instructions_path = \""),
+            &("program_instructions_path = \"".to_string() + &program_instructions_path),
         );
 
     fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");

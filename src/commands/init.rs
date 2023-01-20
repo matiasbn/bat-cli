@@ -13,12 +13,13 @@ use super::create::AUDITOR_TOML_INITIAL_PATH;
 use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::command_line::vs_code_open_file_in_current_window;
 use crate::commands::git::{create_git_commit, GitCommit};
-use crate::config::{BatConfig, RequiredConfig};
+use crate::config::{BatConfig, OptionalConfig, RequiredConfig};
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
     AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER,
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
+use crate::utils::cli_inputs;
 
 pub fn initialize_bat_project() -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;
@@ -34,15 +35,10 @@ pub fn initialize_bat_project() -> Result<(), String> {
         );
 
         // Ask the user if is going to use the Miro integration
-        let options = ["yes", "no"];
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Do you want to use the Miro integration?")
-            .default(0)
-            .items(&options)
-            .interact()
-            .unwrap();
+        let prompt_text = "Do you want to use the Miro integration?";
+        let include_miro = cli_inputs::select_yes_or_no(prompt_text)?;
         let token: String;
-        let moat: Option<&str> = if options[selection] == "yes" {
+        let moat: Option<&str> = if include_miro {
             token = Input::with_theme(&ColorfulTheme::default())
                 .with_prompt("Miro OAuth access token")
                 .interact_text()
@@ -271,6 +267,7 @@ fn create_auditor_notes_folder() -> Result<(), String> {
 
 fn initialize_code_overhaul_files() -> Result<(), String> {
     let entrypoints_names = get_entrypoints_names()?;
+    println!("entry {:#?}", entrypoints_names);
 
     for entrypoint_name in entrypoints_names {
         create_overhaul_file(entrypoint_name.clone())?;

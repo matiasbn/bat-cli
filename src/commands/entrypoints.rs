@@ -29,7 +29,7 @@ pub mod entrypoints {
         }
         let entrypoints_names = program_lines
             .iter()
-            .filter(|line| line.contains("pub pub fn"))
+            .filter(|line| line.contains("pub fn"))
             .map(|line| line.replace("pub fn ", "").replace("<'info>", ""))
             .map(|line| String::from(line.split('(').collect::<Vec<&str>>()[0]))
             .map(|line| String::from(line.split_whitespace().collect::<Vec<&str>>()[0]))

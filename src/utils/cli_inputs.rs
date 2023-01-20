@@ -36,6 +36,18 @@ where
     Ok(dialog.interact_on_opt(&Term::stderr()).unwrap().unwrap())
 }
 
+pub fn select_yes_or_no(prompt_text: &str) -> Result<bool, String> {
+    let colorful_theme = &ColorfulTheme::default();
+    let mut select = Select::with_theme(colorful_theme);
+    let mut dialog = select
+        .with_prompt(prompt_text)
+        .item("yes")
+        .item("no")
+        .default(0);
+
+    Ok(dialog.interact_on_opt(&Term::stderr()).unwrap().unwrap() == 0)
+}
+
 pub fn input(prompt_text: &str) -> Result<String, String> {
     let colorful_theme = &ColorfulTheme::default();
     let mut input = Input::with_theme(colorful_theme);

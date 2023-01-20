@@ -7,6 +7,8 @@ use crate::commands::{
     miro::MiroConfig,
 };
 
+use crate::utils::helpers::canonicalize_path;
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct BatConfig {
     pub required: RequiredConfig,
@@ -125,7 +127,7 @@ impl BatConfig {
 
     pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String, String> {
         if let Some(file_name_option) = file_name {
-            Ok(Self::canonicalize_path(
+            Ok(canonicalize_path(
                 Self::get_validated_config()
                     .unwrap()
                     .required
@@ -136,18 +138,18 @@ impl BatConfig {
             .unwrap())
         } else {
             Ok(
-                Self::canonicalize_path(Self::get_validated_config()?.required.audit_folder_path)
+                canonicalize_path(Self::get_validated_config()?.required.audit_folder_path)
                     .unwrap(),
             )
         }
     }
 
     pub fn get_audit_information_file_path() -> Result<String, String> {
-        Self::canonicalize_path(Self::get_audit_folder_path(None)? + "/audit_information.md")
+        canonicalize_path(Self::get_audit_folder_path(None)? + "/audit_information.md")
     }
 
     pub fn get_program_lib_path() -> Result<String, String> {
-        Self::canonicalize_path(Self::get_validated_config()?.required.program_lib_path)
+        canonicalize_path(Self::get_validated_config()?.required.program_lib_path)
     }
 
     pub fn get_notes_path() -> Result<String, String> {
@@ -159,12 +161,12 @@ impl BatConfig {
     }
     // Figures
     pub fn get_auditor_figures_path() -> Result<String, String> {
-        Ok(Self::canonicalize_path(
+        Ok(canonicalize_path(
             Self::get_auditor_notes_path()? + "figures/",
         )?)
     }
     pub fn get_auditor_figures_entrypoints_path() -> Result<String, String> {
-        Ok(Self::canonicalize_path(
+        Ok(canonicalize_path(
             Self::get_auditor_figures_path()? + "entrypoints/",
         )?)
     }
@@ -242,7 +244,7 @@ impl BatConfig {
             Some(name) => {
                 if MiroConfig::new().miro_enabled() {
                     let entrypoint_name = &name.replace(".md", "");
-                    Ok(Self::canonicalize_path(format!(
+                    Ok(canonicalize_path(format!(
                         "{}/started/{entrypoint_name}/{entrypoint_name}.md",
                         Self::get_auditor_code_overhaul_path()?
                     ))?)
@@ -290,15 +292,6 @@ impl BatConfig {
     //         + instruction_name.replace(".rs", "").as_str()
     //         + ".rs"
     // }
-
-    fn canonicalize_path(path_to_canonicalize: String) -> Result<String, String> {
-        Ok(Path::new(&(path_to_canonicalize))
-            .canonicalize()
-            .unwrap()
-            .into_os_string()
-            .into_string()
-            .unwrap())
-    }
 }
 
 pub trait TestConfig {
