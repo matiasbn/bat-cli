@@ -630,7 +630,7 @@ pub mod parse {
 }
 
 pub mod get {
-    use std::{fmt::Display, fs::DirEntry, io};
+    use std::{fs::DirEntry, io};
 
     use crate::{structs::FileInfo, utils};
 

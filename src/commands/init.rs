@@ -6,7 +6,7 @@ use std::string::String;
 
 use colored::Colorize;
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Input, Select};
+use dialoguer::{Select};
 
 use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
