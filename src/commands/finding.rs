@@ -76,11 +76,11 @@ pub fn create_finding() -> Result<(), String> {
         .interact_text()
         .unwrap();
     finding_name = finding_name.replace('-', "_");
-    validate_config_create_finding_file(finding_name.clone());
-    copy_template_to_findings_to_review(finding_name.clone());
-    create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]));
+    validate_config_create_finding_file(finding_name.clone())?;
+    copy_template_to_findings_to_review(finding_name.clone())?;
+    create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]))?;
     let finding_file_path = BatConfig::get_auditor_findings_to_review_path(Some(finding_name))?;
-    vs_code_open_file_in_current_window(finding_file_path.as_str());
+    vs_code_open_file_in_current_window(finding_file_path.as_str())?;
     Ok(())
 }
 

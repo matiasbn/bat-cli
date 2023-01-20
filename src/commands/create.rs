@@ -1,9 +1,7 @@
-
 use std::path::Path;
 use std::{fs, process::Command};
 
 use colored::Colorize;
-
 
 use walkdir::WalkDir;
 
@@ -253,7 +251,8 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
         )
         .replace(
             &String::from("program_instructions_path = \""),
-            &("program_instructions_path = \"".to_string() + &program_instructions_path),
+            &("program_instructions_path = \"".to_string()
+                + &program_instructions_path.replace("./", "../")),
         );
 
     fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");

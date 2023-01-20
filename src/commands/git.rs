@@ -258,13 +258,13 @@ pub fn git_push() {
 }
 
 // returns false if there are files to commit
-pub fn check_files_not_commited() -> bool {
+pub fn check_files_not_commited() -> Result<bool, String> {
     let output = execute_command(
         "git".to_string(),
         vec!["status", "--porcelain"],
         "error running git status".to_string(),
-    );
-    output.is_empty()
+    )?;
+    Ok(output.is_empty())
 }
 
 #[test]

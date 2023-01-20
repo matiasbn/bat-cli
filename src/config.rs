@@ -39,6 +39,7 @@ pub struct OptionalConfig {
 pub struct AuditorConfig {
     pub auditor_name: String,
     pub miro_oauth_access_token: String,
+    pub vs_code_integration: bool,
 }
 
 impl BatConfig {
@@ -321,6 +322,7 @@ impl TestConfig for BatConfig {
         let auditor = AuditorConfig {
             auditor_name: "matias".to_string(),
             miro_oauth_access_token: "!".to_string(),
+            vs_code_integration: true,
         };
 
         BatConfig {
