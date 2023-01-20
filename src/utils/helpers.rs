@@ -183,7 +183,6 @@ pub mod parse {
 
         let mut account_validations: Vec<String> = vec![];
         let mut prerequisites: Vec<String> = vec![];
-
         for validation in validations.iter().map(|val| val.to_string()) {
             let validation_first_word = validation.split_whitespace().next().unwrap();
             // parse if validations differently
@@ -294,9 +293,9 @@ pub mod parse {
                     prerequisites.push(prereq_validations_vec.join("\n"));
                     prerequisites.push("   ```".to_string());
                 }
-            } else {
+            } else if validation.contains("#[account") {
+                // check "#[account" type validations
                 let validation_lines_amount = validation.lines().collect::<Vec<_>>().len();
-                // multi line validation
                 if validation_lines_amount > 1 {
                     let mut acc_multline: Vec<String> = vec![];
                     let mut prereq_multline: Vec<String> = vec![];
@@ -307,8 +306,8 @@ pub mod parse {
                         }
                         // only check validations
                         if !(line_index == 0) && !(line_index == (validation_lines_amount - 1)) {
-                            let is_acc = prompt_acc_val_or_prereq(line.to_string());
-                            if is_acc == 0 {
+                            let is_acc = prompt_acc_val_or_prereq(line.to_string()) == 0;
+                            if is_acc {
                                 acc_multline.push(line.to_string());
                             } else {
                                 prereq_multline.push(line.to_string());
@@ -333,21 +332,19 @@ pub mod parse {
                         prerequisites.push(prereq_val);
                         prerequisites.push("   ```".to_string());
                     }
+                }
+            } else {
+                // single line validation
+                let selection = prompt_acc_val_or_prereq(validation.clone());
+                // 0 is acc validation
+                if selection == 0 {
+                    account_validations.push("- ```rust".to_string());
+                    account_validations.push(validation.to_string());
+                    account_validations.push("   ```".to_string());
                 } else {
-                    println!("not bigger {:#?}", validation_lines_amount);
-
-                    // single line validation
-                    let selection = prompt_acc_val_or_prereq(validation.clone());
-                    // 0 is acc validation
-                    if selection == 0 {
-                        account_validations.push("- ```rust".to_string());
-                        account_validations.push(validation.to_string());
-                        account_validations.push("   ```".to_string());
-                    } else {
-                        prerequisites.push("- ```rust".to_string());
-                        prerequisites.push(validation.to_string());
-                        prerequisites.push("   ```".to_string());
-                    }
+                    prerequisites.push("- ```rust".to_string());
+                    prerequisites.push(validation.to_string());
+                    prerequisites.push("   ```".to_string());
                 }
             }
         }
@@ -770,15 +767,16 @@ pub mod get {
         let instruction_file = fs::read_to_string(&instruction_file_path).unwrap();
         let mut possible_validations: Vec<String> = Vec::new();
         let mut last_reviewed_line = 0;
-        for (line_index, line) in instruction_file.lines().clone().enumerate() {
-            if line_index <= last_reviewed_line {
+        for (line_index, line) in instruction_file.clone().lines().enumerate() {
+            if line_index <= last_reviewed_line || line.is_empty() {
                 continue;
             }
             // check the if statements
-            if line.contains("if") {
+            let is_if = line.clone().trim().split(" ").next().unwrap() == "if";
+            if is_if {
                 // check that is not in comment
                 if line.contains("//") {
-                    let tokenized_line = line.split_whitespace();
+                    let tokenized_line = line.clone().split_whitespace();
                     let comment_position =
                         tokenized_line.clone().position(|word| word.contains("//"));
                     let if_position = tokenized_line.clone().position(|word| word.contains("if"));
@@ -791,13 +789,12 @@ pub mod get {
                 let mut instruction_lines = instruction_clone.lines().enumerate();
                 let find_brace = instruction_lines
                     .find(|(l_index, line)| line.contains("{") && l_index >= &line_index);
-                let (opening_brace_index, mut _opening_brace_line) = (0, "");
                 // check that the if is indeed a function by looking up {
-                if let Some(found) = find_brace {
-                    (_, _opening_brace_line) = found
+                let (opening_brace_index, _) = if let Some(found) = find_brace {
+                    found
                 } else {
                     continue;
-                }
+                };
                 let (mut closing_brace_index, mut closing_brace_line) = instruction_lines
                     .find(|(l_index, line)| line.contains("}") && l_index >= &line_index)
                     .unwrap();
