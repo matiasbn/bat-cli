@@ -27,6 +27,8 @@ use std::{fs, io};
 
 pub mod parse {
 
+    use clap::builder::Str;
+
     use super::*;
 
     pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
@@ -164,7 +166,6 @@ pub mod parse {
             })
             .map(|validation| validation.to_string())
             .collect();
-
         // replace in co file
         if validations.is_empty() {
             let data = fs::read_to_string(co_file_path.clone())
@@ -185,7 +186,6 @@ pub mod parse {
 
         for validation in validations.iter().map(|val| val.to_string()) {
             let validation_first_word = validation.split_whitespace().next().unwrap();
-            // println!("{:#?}", validation_first_line);
             // parse if validations differently
             if validation_first_word == "if" {
                 // save the else lines
@@ -295,16 +295,59 @@ pub mod parse {
                     prerequisites.push("   ```".to_string());
                 }
             } else {
-                let selection = prompt_acc_val_or_prereq(validation.clone());
-                // 0 is acc validation
-                if selection == 0 {
-                    account_validations.push("- ```rust".to_string());
-                    account_validations.push(validation.to_string());
-                    account_validations.push("   ```".to_string());
+                let validation_lines_amount = validation.lines().collect::<Vec<_>>().len();
+                // multi line validation
+                if validation_lines_amount > 1 {
+                    let mut acc_multline: Vec<String> = vec![];
+                    let mut prereq_multline: Vec<String> = vec![];
+                    for (line_index, line) in validation.lines().enumerate() {
+                        if line_index == 0 {
+                            acc_multline.push(line.to_string());
+                            prereq_multline.push(line.to_string());
+                        }
+                        // only check validations
+                        if !(line_index == 0) && !(line_index == (validation_lines_amount - 1)) {
+                            let is_acc = prompt_acc_val_or_prereq(line.to_string());
+                            if is_acc == 0 {
+                                acc_multline.push(line.to_string());
+                            } else {
+                                prereq_multline.push(line.to_string());
+                            }
+                        }
+                        if line_index == (validation_lines_amount - 1) {
+                            acc_multline.push(line.to_string());
+                            prereq_multline.push(line.to_string());
+                        }
+                    }
+                    // if theres's more than 1 acc val
+                    if acc_multline.len() > 2 {
+                        let acc_val = acc_multline.join("\n");
+                        account_validations.push("- ```rust".to_string());
+                        account_validations.push(acc_val);
+                        account_validations.push("   ```".to_string());
+                    }
+                    // if theres's more than 1 prereq val
+                    if acc_multline.len() > 2 {
+                        let prereq_val = prereq_multline.join("\n");
+                        prerequisites.push("- ```rust".to_string());
+                        prerequisites.push(prereq_val);
+                        prerequisites.push("   ```".to_string());
+                    }
                 } else {
-                    prerequisites.push("- ```rust".to_string());
-                    prerequisites.push(validation.to_string());
-                    prerequisites.push("   ```".to_string());
+                    println!("not bigger {:#?}", validation_lines_amount);
+
+                    // single line validation
+                    let selection = prompt_acc_val_or_prereq(validation.clone());
+                    // 0 is acc validation
+                    if selection == 0 {
+                        account_validations.push("- ```rust".to_string());
+                        account_validations.push(validation.to_string());
+                        account_validations.push("   ```".to_string());
+                    } else {
+                        prerequisites.push("- ```rust".to_string());
+                        prerequisites.push(validation.to_string());
+                        prerequisites.push("   ```".to_string());
+                    }
                 }
             }
         }
@@ -347,6 +390,7 @@ pub mod parse {
             options[1],
             format!("{validation}").green(),
         );
+
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt_text)
             .items(&options)
