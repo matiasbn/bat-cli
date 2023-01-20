@@ -72,9 +72,8 @@ pub fn initialize_bat_project() -> Result<(), String> {
     println!("Project successfully initialized");
     let lib_file_path = BatConfig::get_program_lib_path()?;
 
-    println!("Opening lib.rs in VSCode");
     // Open lib.rs file in vscode
-    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap());
+    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())?;
     Ok(())
 }
 
@@ -113,7 +112,7 @@ fn get_auditor_name(auditor_names: Vec<String>) -> String {
 fn update_auditor_toml(
     auditor_name: String,
     miro_oauth_access_token: Option<&str>,
-    vscode_integration: bool,
+    vs_code_integration: bool,
 ) {
     let mut new_auditor_file_content = AUDITOR_TOML_INITIAL_CONFIG_STR.replace(
         "auditor_name = \"",
@@ -125,11 +124,9 @@ fn update_auditor_toml(
             ("miro_oauth_access_token = \"".to_string() + moat).as_str(),
         )
     }
-    if vscode_integration {
-        new_auditor_file_content = new_auditor_file_content.replace(
-            "vs_code_integration = \"",
-            ("vs_code_integration = \"".to_string() + "yes").as_str(),
-        )
+    if vs_code_integration {
+        new_auditor_file_content = new_auditor_file_content
+            .replace("vs_code_integration = false", "vs_code_integration = true")
     }
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
     fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
