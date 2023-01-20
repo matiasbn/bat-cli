@@ -39,7 +39,7 @@ where
 pub fn select_yes_or_no(prompt_text: &str) -> Result<bool, String> {
     let colorful_theme = &ColorfulTheme::default();
     let mut select = Select::with_theme(colorful_theme);
-    let mut dialog = select
+    let dialog = select
         .with_prompt(prompt_text)
         .item("yes")
         .item("no")

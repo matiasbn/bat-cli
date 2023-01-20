@@ -1,10 +1,10 @@
-use std::error::Error;
+
 use std::path::Path;
-use std::{fs, io, process::Command};
+use std::{fs, process::Command};
 
 use colored::Colorize;
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::Input;
+
+
 use walkdir::WalkDir;
 
 use crate::commands::git::clone_base_repository;

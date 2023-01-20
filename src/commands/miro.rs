@@ -3,7 +3,7 @@ use normalize_url::normalizer;
 use reqwest;
 use serde_json::*;
 use std::result::Result;
-use std::{fs, io};
+use std::{fs};
 
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{self};
