@@ -7,15 +7,16 @@ use crate::{
     commands::git::{check_files_not_commited, git_push},
 };
 
-pub fn full() {
-    assert!(check_files_not_commited());
+pub fn full() -> Result<(), String> {
+    assert!(check_files_not_commited()?);
     println!("Executing full package publish");
     clippy();
     publish();
+    Ok(())
 }
 
-pub fn clippy() {
-    assert!(check_files_not_commited());
+pub fn clippy() -> Result<(), String> {
+    assert!(check_files_not_commited()?);
     println!("Executing cargo clippy --fix");
     Command::new("cargo")
         .args(["clippy", "--fix"])
@@ -25,17 +26,19 @@ pub fn clippy() {
     Command::new("cargo").args(["fix"]).output().unwrap();
     println!("Commiting clippy changes");
     create_commit(PublishCommit::Clippy, None);
+    Ok(())
 }
 
-pub fn publish() {
-    assert!(check_files_not_commited());
+pub fn publish() -> Result<(), String> {
+    assert!(check_files_not_commited()?);
     bump(true);
     println!("Executing cargo publish");
     Command::new("cargo").arg("publish").output().unwrap();
+    Ok(())
 }
 
-pub fn bump(push: bool) {
-    assert!(check_files_not_commited());
+pub fn bump(push: bool) -> Result<(), String> {
+    assert!(check_files_not_commited()?);
     let prompt_text = "select the version bump:".to_string();
     let cargo_toml = fs::read_to_string("Cargo.toml").unwrap();
     let version_line_index = cargo_toml
@@ -110,6 +113,7 @@ pub fn bump(push: bool) {
             git_push();
         }
     }
+    Ok(())
 }
 
 enum PublishCommit {

@@ -39,15 +39,15 @@ pub fn initialize_bat_project() -> Result<(), String> {
         let include_miro = cli_inputs::select_yes_or_no(prompt_text)?;
         let token: String;
         let moat: Option<&str> = if include_miro {
-            token = Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Miro OAuth access token")
-                .interact_text()
-                .unwrap();
+            let prompt_text = "Miro OAuth access token";
+            token = cli_inputs::input(&prompt_text)?;
             Some(token.as_str())
         } else {
             None
         };
-        update_auditor_toml(auditor_name, moat);
+        let prompt_text = "Do you want to use the VS Code integration?";
+        let include_vs_code = cli_inputs::select_yes_or_no(prompt_text)?;
+        update_auditor_toml(auditor_name, moat, include_vs_code);
     }
     println!("creating project for the next config: ");
     println!("{bat_config:#?}");
@@ -110,7 +110,11 @@ fn get_auditor_name(auditor_names: Vec<String>) -> String {
     auditor_names[selection].clone()
 }
 
-fn update_auditor_toml(auditor_name: String, miro_oauth_access_token: Option<&str>) {
+fn update_auditor_toml(
+    auditor_name: String,
+    miro_oauth_access_token: Option<&str>,
+    vscode_integration: bool,
+) {
     let mut new_auditor_file_content = AUDITOR_TOML_INITIAL_CONFIG_STR.replace(
         "auditor_name = \"",
         ("auditor_name = \"".to_string() + &auditor_name).as_str(),
@@ -119,6 +123,12 @@ fn update_auditor_toml(auditor_name: String, miro_oauth_access_token: Option<&st
         new_auditor_file_content = new_auditor_file_content.replace(
             "miro_oauth_access_token = \"",
             ("miro_oauth_access_token = \"".to_string() + moat).as_str(),
+        )
+    }
+    if vscode_integration {
+        new_auditor_file_content = new_auditor_file_content.replace(
+            "vs_code_integration = \"",
+            ("vs_code_integration = \"".to_string() + "yes").as_str(),
         )
     }
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);

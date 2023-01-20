@@ -128,13 +128,13 @@ async fn main() {
         Commands::Results => commands::code_overhaul::update_audit_results().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Bump) => package::bump(false),
+        Commands::Package(PackageActions::Bump) => package::bump(false).unwrap(),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Clippy) => package::clippy(),
+        Commands::Package(PackageActions::Clippy) => package::clippy().unwrap(),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Publish) => package::publish(),
+        Commands::Package(PackageActions::Publish) => package::publish().unwrap(),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Full) => package::full(),
+        Commands::Package(PackageActions::Full) => package::full().unwrap(),
         _ => unimplemented!("Command only implemented for dev operations"),
     }
 }

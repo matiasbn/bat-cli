@@ -1,10 +1,6 @@
 // VSCode
 
-use std::{
-    path::{Path},
-    process::Command,
-    str::from_utf8,
-};
+use std::{path::Path, process::Command, str::from_utf8};
 
 pub fn vs_code_open_file_in_current_window(path_to_file: &str) {
     let command_name = "code".to_string();
@@ -17,7 +13,7 @@ pub fn execute_command(
     command_name: String,
     command_args: Vec<&str>,
     error_message: String,
-) -> String {
+) -> Result<String, String> {
     let output = Command::new(command_name)
         .args(command_args)
         .output()
@@ -29,7 +25,7 @@ pub fn execute_command(
             from_utf8(output.stderr.as_slice()).unwrap()
         )
     };
-    from_utf8(output.stdout.as_slice()).unwrap().to_string()
+    Ok(from_utf8(output.stdout.as_slice()).unwrap().to_string())
 }
 
 pub fn canonicalize_path(path_to_canonicalize: String) -> String {
