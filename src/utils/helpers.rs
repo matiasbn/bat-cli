@@ -145,7 +145,6 @@ pub mod parse {
                     idx += 1;
                 }
                 // end of md section
-                println!("asda {:#?}", account_string);
                 account_string.push(filtered_lines[line_number + idx].clone());
                 // filter empty lines, like accounts without nothing or account mut
                 if !(account_string[1].contains("#[account(") && account_string[2].contains(")]"))
