@@ -48,6 +48,7 @@ miro_board_url = ""
 miro_board_id = ""
 [optional]
 program_instructions_path = ""
+program_state_path = ""
 "#;
 pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
 [auditor]
