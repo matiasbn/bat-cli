@@ -136,6 +136,7 @@ pub mod parse {
                 while !filtered_lines[line_number + idx].contains("pub ")
                     || line_number == filtered_lines.len() - 1
                 {
+                    // constraint, has_one or end of account section
                     if filtered_lines[line_number + idx].contains("constraint =")
                         || filtered_lines[line_number + idx].contains("has_one")
                         || filtered_lines[line_number + idx].trim() == ")]"
