@@ -639,7 +639,6 @@ pub mod get {
         let lib_file = fs::read_to_string(program_lib_path).unwrap();
         let lib_file_lines: Vec<&str> = lib_file.lines().collect();
 
-        println!("{}", co_file_name);
         let entrypoint_index = lib_file
             .lines()
             .position(|line| {
@@ -654,7 +653,6 @@ pub mod get {
                         .split_whitespace()
                         .last()
                         .unwrap();
-                    println!("function name {}", function_name);
                     function_name == co_file_name.replace(".md", "")
                 } else {
                     false
