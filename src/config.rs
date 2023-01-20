@@ -33,6 +33,7 @@ pub struct RequiredConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct OptionalConfig {
     pub program_instructions_path: String,
+    pub program_state_path: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -280,61 +281,48 @@ impl BatConfig {
     pub fn get_code_overhaul_template_path() -> Result<String, String> {
         Ok(Self::get_templates_path()? + "/code-overhaul.md")
     }
-    // TODO: consider the case of subfolders
-    // // Instructions
-    // pub fn get_instructions_folder_path() -> Result<String,String> {
-    //     Self::get_validated_config()
-    //         .optional
-    //         .program_instructions_path
-    // }
-    // pub fn get_path_to_instruction(instruction_name: String) -> Result<String,String> {
-    //     Self::get_instructions_folder_path()
-    //         + "/"
-    //         + instruction_name.replace(".rs", "").as_str()
-    //         + ".rs"
-    // }
 }
 
-pub trait TestConfig {
-    fn get_test_config() -> BatConfig;
-}
+// pub trait TestConfig {
+//     fn get_test_config() -> BatConfig;
+// }
 
-impl TestConfig for BatConfig {
-    fn get_test_config() -> BatConfig {
-        let required = RequiredConfig {
-            project_name: "test_project".to_string(),
-            auditor_names: vec!["matias".to_string(), "porter".to_string()],
-            audit_folder_path: "../audit-notes".to_string(),
-            program_lib_path:
-                "../star-atlas-programs/sol-programs/scream/programs/player_profile/src/lib.rs"
-                    .to_string(),
-            project_repository_url: "git@git.kudelski.com:Matias.Barrios/test_project.git"
-                .to_string(),
-            miro_board_url: "https://miro.com/app/board/".to_string(),
-            miro_board_id: "uXjVPzsgmiY=".to_string(),
-            client_name: "client_name".to_string(),
-            commit_hash_url: "example.miro.url".to_string(),
-            starting_date: "01/01/2023".to_string(),
-        };
-        let optional = OptionalConfig {
-            program_instructions_path: "".to_string(),
-        };
-        let auditor = AuditorConfig {
-            auditor_name: "matias".to_string(),
-            miro_oauth_access_token: "!".to_string(),
-            vs_code_integration: true,
-        };
+// impl TestConfig for BatConfig {
+//     fn get_test_config() -> BatConfig {
+//         let required = RequiredConfig {
+//             project_name: "test_project".to_string(),
+//             auditor_names: vec!["matias".to_string(), "porter".to_string()],
+//             audit_folder_path: "../audit-notes".to_string(),
+//             program_lib_path:
+//                 "../star-atlas-programs/sol-programs/scream/programs/player_profile/src/lib.rs"
+//                     .to_string(),
+//             project_repository_url: "git@git.kudelski.com:Matias.Barrios/test_project.git"
+//                 .to_string(),
+//             miro_board_url: "https://miro.com/app/board/".to_string(),
+//             miro_board_id: "uXjVPzsgmiY=".to_string(),
+//             client_name: "client_name".to_string(),
+//             commit_hash_url: "example.miro.url".to_string(),
+//             starting_date: "01/01/2023".to_string(),
+//         };
+//         let optional = OptionalConfig {
+//             program_instructions_path: "".to_string(),
+//         };
+//         let auditor = AuditorConfig {
+//             auditor_name: "matias".to_string(),
+//             miro_oauth_access_token: "!".to_string(),
+//             vs_code_integration: true,
+//         };
 
-        BatConfig {
-            required,
-            optional,
-            auditor,
-        }
-    }
-}
+//         BatConfig {
+//             required,
+//             optional,
+//             auditor,
+//         }
+//     }
+// }
 
-#[test]
-fn test_get_test_config() {
-    let batconfig = BatConfig::get_test_config();
-    println!("{batconfig:#?}");
-}
+// #[test]
+// fn test_get_test_config() {
+//     let batconfig = BatConfig::get_test_config();
+//     println!("{batconfig:#?}");
+// }

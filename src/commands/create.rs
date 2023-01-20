@@ -172,15 +172,26 @@ fn get_required_config() -> Result<RequiredConfig, String> {
 fn get_optional_config(program_lib_path: String) -> Result<OptionalConfig, String> {
     let lib_path = program_lib_path.replace("../", "./").replace("lib.rs", "");
     let prompt_text = "Do you want to include the instructions path?";
+    let error_message = format!("Incorrect program lib path: {}", lib_path);
+    let files_in_lib_path = fs::read_dir(lib_path).expect(&error_message);
+    let folders = files_in_lib_path
+        .filter(|f| f.as_ref().unwrap().metadata().unwrap().is_dir())
+        .map(|f| f.unwrap().path().to_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+
     let include_instructions_path = cli_inputs::select_yes_or_no(prompt_text)?;
     let program_instructions_path = if include_instructions_path {
-        let error_message = format!("Incorrect program lib path: {}", lib_path);
-        let files_in_lib_path = fs::read_dir(lib_path).expect(&error_message);
-        let folders = files_in_lib_path
-            .filter(|f| f.as_ref().unwrap().metadata().unwrap().is_dir())
-            .map(|f| f.unwrap().path().to_str().unwrap().to_string())
-            .collect::<Vec<_>>();
-        let prompt_text = "Select the instructions file:";
+        let prompt_text = "Select the instructions folder:";
+        let option = cli_inputs::select(prompt_text, folders.clone(), None)?;
+        folders[option].clone().replace("../", ".")
+    } else {
+        "".to_string()
+    };
+
+    let prompt_text = "Do you want to include the state path?";
+    let include_state_path = cli_inputs::select_yes_or_no(prompt_text)?;
+    let program_state_path = if include_instructions_path {
+        let prompt_text = "Select the state folder:";
         let option = cli_inputs::select(prompt_text, folders.clone(), None)?;
         folders[option].clone().replace("../", ".")
     } else {
@@ -189,6 +200,7 @@ fn get_optional_config(program_lib_path: String) -> Result<OptionalConfig, Strin
 
     Ok(OptionalConfig {
         program_instructions_path,
+        program_state_path,
     })
 }
 
@@ -208,6 +220,7 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
 
     let OptionalConfig {
         program_instructions_path,
+        program_state_path,
     } = optional_config;
 
     if bat_toml_path.exists() {
@@ -253,6 +266,10 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
             &String::from("program_instructions_path = \""),
             &("program_instructions_path = \"".to_string()
                 + &program_instructions_path.replace("./", "../")),
+        )
+        .replace(
+            &String::from("program_state_path = \""),
+            &("program_state_path = \"".to_string() + &program_state_path.replace("./", "../")),
         );
 
     fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");
