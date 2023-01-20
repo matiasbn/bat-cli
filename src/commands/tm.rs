@@ -32,11 +32,27 @@ pub fn update_accounts() -> Result<(), String> {
     }
     let tm_file_path = BatConfig::get_auditor_threat_modeling_path()?;
     println!("tm path {}", tm_file_path);
+    let account_string = if account_structs.is_empty() {
+        "-".to_string()
+    } else {
+        account_structs.join("\n")
+    };
+    let not_account_string = if not_account_structs.is_empty() {
+        "-".to_string()
+    } else {
+        not_account_structs.join("\n")
+    };
     helpers::parse::parse_lines_between_two_strings_in_file(
-        tm_file_path,
-        account_structs.join("\n").as_str(),
+        &tm_file_path,
+        &account_string,
         "### Accounts",
         "### Other",
+    )?;
+    helpers::parse::parse_lines_between_two_strings_in_file(
+        &tm_file_path,
+        &not_account_string,
+        "### Others",
+        "## Actors",
     )?;
     Ok(())
 }

@@ -592,7 +592,7 @@ pub mod parse {
     }
 
     pub fn parse_lines_between_two_strings_in_file<T>(
-        file_path: T,
+        file_path: &T,
         lines_to_parse: &str,
         inital_str: &str,
         final_str: &str,
