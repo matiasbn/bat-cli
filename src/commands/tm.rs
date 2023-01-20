@@ -10,6 +10,8 @@ use crate::{
     utils::{self, helpers},
 };
 
+use super::git::{create_git_commit, GitCommit};
+
 pub fn update_accounts() -> Result<(), String> {
     let program_state_folder_path = BatConfig::get_validated_config()?
         .optional
@@ -31,7 +33,6 @@ pub fn update_accounts() -> Result<(), String> {
         }
     }
     let tm_file_path = BatConfig::get_auditor_threat_modeling_path()?;
-    println!("tm path {}", tm_file_path);
     let account_string = if account_structs.is_empty() {
         "-".to_string()
     } else {
@@ -54,6 +55,7 @@ pub fn update_accounts() -> Result<(), String> {
         "### Others",
         "## Actors",
     )?;
+    create_git_commit(GitCommit::TMAccounts, None)?;
     Ok(())
 }
 
