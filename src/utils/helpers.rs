@@ -131,17 +131,21 @@ pub mod parse {
                 // set the first line as a rust snippet on md
                 let mut account_string = vec![line.to_string()];
                 // if next line is pub
-                while !filtered_lines[line_number + idx].contains("pub ") {
+
+                // until pub or end of file
+                while !filtered_lines[line_number + idx].contains("pub ")
+                    || line_number == filtered_lines.len() - 1
+                {
                     if filtered_lines[line_number + idx].contains("constraint =")
                         || filtered_lines[line_number + idx].contains("has_one")
-                        || filtered_lines[line_number + idx].contains(")]")
-                        || filtered_lines[line_number + idx].contains("pub ")
+                        || filtered_lines[line_number + idx].trim() == ")]"
                     {
                         account_string.push(filtered_lines[line_number + idx].to_string());
                     }
                     idx += 1;
                 }
                 // end of md section
+                println!("asda {:#?}", account_string);
                 account_string.push(filtered_lines[line_number + idx].clone());
                 // filter empty lines, like accounts without nothing or account mut
                 if !(account_string[1].contains("#[account(") && account_string[2].contains(")]"))
@@ -747,7 +751,7 @@ pub mod get {
                 let (mut opening_brace_index, mut _opening_brace_line) = (0, "");
                 // check that the if is indeed a function by looking up {
                 if let Some(found) = find_brace {
-                    (opening_brace_index, _opening_brace_line) = found
+                    (_, _opening_brace_line) = found
                 } else {
                     continue;
                 }
