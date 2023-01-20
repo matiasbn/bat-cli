@@ -748,7 +748,7 @@ pub mod get {
                 let mut instruction_lines = instruction_clone.lines().enumerate();
                 let find_brace = instruction_lines
                     .find(|(l_index, line)| line.contains("{") && l_index >= &line_index);
-                let (mut opening_brace_index, mut _opening_brace_line) = (0, "");
+                let (opening_brace_index, mut _opening_brace_line) = (0, "");
                 // check that the if is indeed a function by looking up {
                 if let Some(found) = find_brace {
                     (_, _opening_brace_line) = found
