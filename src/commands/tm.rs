@@ -1,12 +1,10 @@
-use std::fs;
+
 
 use colored::Colorize;
-use walkdir::WalkDir;
+
 
 use crate::{
-    commands::tm,
     config::BatConfig,
-    structs::FileInfo,
     utils::{self, helpers},
 };
 
