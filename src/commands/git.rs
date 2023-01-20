@@ -44,6 +44,7 @@ pub enum GitCommit {
     UpdateRepo,
     Notes,
     Results,
+    TMAccounts,
 }
 
 pub fn create_git_commit(
@@ -203,8 +204,13 @@ pub fn create_git_commit(
                 constants::AUDIT_RESULT_FILE_NAME.to_string(),
             ))?;
             let commit_string = format!("notes: {} updated", AUDIT_RESULT_FILE_NAME);
-            println!("{commit_string}");
             (commit_string, vec![audit_result_path])
+        }
+        GitCommit::TMAccounts => {
+            println!("Creating a commit for threat_modeling.md");
+            let tm_path = BatConfig::get_auditor_threat_modeling_path()?;
+            let commit_string = format!("notes: threat_modeling.md updated");
+            (commit_string, vec![tm_path])
         }
         _ => panic!("Wrong GitCommit type input"),
     };

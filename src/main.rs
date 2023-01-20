@@ -35,6 +35,9 @@ enum Commands {
     /// findings files management
     #[command(subcommand)]
     Finding(FindingActions),
+    /// threat modeling operations
+    #[command(subcommand)]
+    TM(TMActions),
     /// Update the templates folder and the package.json of the audit repository
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
@@ -44,6 +47,12 @@ enum Commands {
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageActions),
+}
+
+#[derive(Subcommand, Debug)]
+enum TMActions {
+    /// Updates the threat_modeling.md Assets/Accounts section
+    Accounts,
 }
 
 #[derive(Subcommand, Debug)]
@@ -117,6 +126,7 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
         }
+        Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding().unwrap(),
