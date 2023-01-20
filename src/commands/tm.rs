@@ -1,7 +1,4 @@
-
-
 use colored::Colorize;
-
 
 use crate::{
     config::BatConfig,

@@ -10,12 +10,12 @@ use crate::{
 pub fn full() -> Result<(), String> {
     assert!(check_files_not_commited()?);
     println!("Executing full package publish");
-    clippy();
-    publish();
+    format()?;
+    publish()?;
     Ok(())
 }
 
-pub fn clippy() -> Result<(), String> {
+pub fn format() -> Result<(), String> {
     assert!(check_files_not_commited()?);
     println!("Executing cargo clippy --fix");
     Command::new("cargo")
@@ -24,6 +24,8 @@ pub fn clippy() -> Result<(), String> {
         .unwrap();
     println!("Executing cargo fix");
     Command::new("cargo").args(["fix"]).output().unwrap();
+    println!("Executing cargo format");
+    Command::new("cargo").args(["format"]).output().unwrap();
     println!("Commiting clippy changes");
     create_commit(PublishCommit::Clippy, None);
     Ok(())
@@ -31,7 +33,7 @@ pub fn clippy() -> Result<(), String> {
 
 pub fn publish() -> Result<(), String> {
     assert!(check_files_not_commited()?);
-    bump(true);
+    bump(true)?;
     println!("Executing cargo publish");
     Command::new("cargo").arg("publish").output().unwrap();
     Ok(())
@@ -130,7 +132,8 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
                 "git".to_string(),
                 vec!["add", "Cargo.toml"],
                 "error adding Cargo.toml to commit files".to_string(),
-            );
+            )
+            .unwrap();
 
             execute_command(
                 "git".to_string(),
@@ -140,7 +143,8 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
                     format!("package: version bump {version}").as_str(),
                 ],
                 "error creating commit for Cargo.toml".to_string(),
-            );
+            )
+            .unwrap();
         }
         PublishCommit::Clippy => {
             // commit all files
@@ -148,7 +152,8 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
                 "git".to_string(),
                 vec!["add", "--all"],
                 "error adding Cargo.toml to commit files".to_string(),
-            );
+            )
+            .unwrap();
             execute_command(
                 "git".to_string(),
                 vec![
@@ -157,7 +162,8 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
                     "package: clippy commit".to_string().as_str(),
                 ],
                 "error creating commit for clippy".to_string(),
-            );
+            )
+            .unwrap();
         }
     }
 }

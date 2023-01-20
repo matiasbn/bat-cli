@@ -94,7 +94,7 @@ enum PackageActions {
     /// Bump version and publish to crates.io
     Publish,
     /// run cargo clippy and commit the changes
-    Clippy,
+    Format,
     /// run cargo clippy, bump the version (commit again) and publish to crates.io
     Full,
 }
@@ -140,7 +140,7 @@ async fn main() {
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Bump) => package::bump(false).unwrap(),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Clippy) => package::clippy().unwrap(),
+        Commands::Package(PackageActions::Format) => package::format().unwrap(),
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Publish) => package::publish().unwrap(),
         #[cfg(debug_assertions)]
