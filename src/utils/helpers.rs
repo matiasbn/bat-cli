@@ -147,11 +147,16 @@ pub mod parse {
                     }
                     idx += 1;
                 }
-                // end of md section
+                account_string.push(filtered_lines[line_number + idx].to_string());
                 // accounts without validations inside are length = 2
                 if account_string.len() > 2 {
                     validations.push(account_string.join("\n"));
                 }
+            // single line "#[account("
+            } else if line.contains("#[account(") {
+                validations.push(
+                    line.to_string().replace("mut,", "") + "\n" + &filtered_lines[line_number + 1],
+                );
             }
         }
         // filter only validations
@@ -293,19 +298,20 @@ pub mod parse {
                     prerequisites.push(prereq_validations_vec.join("\n"));
                     prerequisites.push("   ```".to_string());
                 }
-            } else if validation.contains("#[account") {
+            } else if validation.contains("#[account")
+                && validation.lines().collect::<Vec<_>>().len() > 2
+            {
                 // check "#[account" type validations
                 let validation_lines_amount = validation.lines().collect::<Vec<_>>().len();
                 if validation_lines_amount > 1 {
                     let mut acc_multline: Vec<String> = vec![];
                     let mut prereq_multline: Vec<String> = vec![];
-                    for (line_index, line) in validation.lines().enumerate() {
-                        if line_index == 0 {
+                    for line in validation.lines() {
+                        if line.contains("#[account") || line.contains("pub") || line.contains(")]")
+                        {
                             acc_multline.push(line.to_string());
                             prereq_multline.push(line.to_string());
-                        }
-                        // only check validations
-                        if !(line_index == 0) && !(line_index == (validation_lines_amount - 1)) {
+                        } else {
                             let is_acc = prompt_acc_val_or_prereq(line.to_string()) == 0;
                             if is_acc {
                                 acc_multline.push(line.to_string());
@@ -313,20 +319,16 @@ pub mod parse {
                                 prereq_multline.push(line.to_string());
                             }
                         }
-                        if line_index == (validation_lines_amount - 1) {
-                            acc_multline.push(line.to_string());
-                            prereq_multline.push(line.to_string());
-                        }
                     }
                     // if theres's more than 1 acc val
-                    if acc_multline.len() > 2 {
+                    if acc_multline.len() > 3 {
                         let acc_val = acc_multline.join("\n");
                         account_validations.push("- ```rust".to_string());
                         account_validations.push(acc_val);
                         account_validations.push("   ```".to_string());
                     }
                     // if theres's more than 1 prereq val
-                    if acc_multline.len() > 2 {
+                    if prereq_multline.len() > 3 {
                         let prereq_val = prereq_multline.join("\n");
                         prerequisites.push("- ```rust".to_string());
                         prerequisites.push(prereq_val);
