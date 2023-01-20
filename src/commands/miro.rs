@@ -2,8 +2,8 @@ use crate::config::*;
 use normalize_url::normalizer;
 use reqwest;
 use serde_json::*;
+use std::fs;
 use std::result::Result;
-use std::{fs};
 
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{self};
@@ -351,12 +351,14 @@ pub mod api {
         }
     }
     pub mod sticky_note {
+        use crate::structs::SignerType;
+
         use super::*;
         pub async fn create_signer_sticky_note(
             signer_note_text: String,
             signer_counter: usize,
             miro_frame_id: String,
-            validated_signer: bool,
+            signer_type: SignerType,
         ) -> String {
             let MiroConfig {
                 access_token,
@@ -366,7 +368,11 @@ pub mod api {
             // let x_position = x + x_move;
             let client = reqwest::Client::new();
             let y_position = 150 + signer_counter * 270;
-            let fill_color = if validated_signer { "red" } else { "dark_blue" };
+            let fill_color = match signer_type {
+                SignerType::Verified => "red",
+                SignerType::NotVerified => "dark_blue",
+                SignerType::NotSigner => "gray",
+            };
             let response = client
                 .post(format!(
                     "https://api.miro.com/v2/boards/{board_id}/sticky_notes",

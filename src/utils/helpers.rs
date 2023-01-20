@@ -126,7 +126,7 @@ pub mod parse {
             validations_strings.clone(),
         );
         for (line_number, line) in filtered_lines.iter().enumerate() {
-            if line.contains("#[account(") {
+            if line.trim() == "#[account(" {
                 let mut idx = 1;
                 // set the first line as a rust snippet on md
                 let mut account_string = vec![line.to_string()];
@@ -146,11 +146,8 @@ pub mod parse {
                     idx += 1;
                 }
                 // end of md section
-                account_string.push(filtered_lines[line_number + idx].clone());
-                // filter empty lines, like accounts without nothing or account mut
-                if !(account_string[1].contains("#[account(") && account_string[2].contains(")]"))
-                    && !account_string[1].contains("#[account(mut)]")
-                {
+                // accounts without validations inside are length = 2
+                if account_string.len() > 2 {
                     validations.push(account_string.join("\n"));
                 }
             }
@@ -187,8 +184,10 @@ pub mod parse {
         let mut prerequisites: Vec<String> = vec![];
 
         for validation in validations.iter().map(|val| val.to_string()) {
+            let validation_first_word = validation.split_whitespace().next().unwrap();
+            // println!("{:#?}", validation_first_line);
             // parse if validations differently
-            if validation.contains("if") {
+            if validation_first_word == "if" {
                 // save the else lines
                 let filtered_else = validation
                     .lines()

@@ -16,6 +16,7 @@ use crate::constants::{
     CONTEXT_ACCOUNTS_PNG_NAME, CO_FIGURES, ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME,
     VALIDATIONS_PNG_NAME,
 };
+use crate::structs::{SignerInfo, SignerType};
 use crate::utils::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
     get_table_of_contents_for_results,
@@ -368,12 +369,7 @@ pub async fn deploy_miro() -> Result<(), String> {
                 signers_description.push(current_content_lines[idx].clone());
             }
         }
-        struct SignerInfo {
-            signer_text: String,
-            sticky_note_id: String,
-            user_figure_id: String,
-            validated_signer: bool,
-        }
+
         let mut signers_info: Vec<SignerInfo> = vec![];
         if !signers_description.is_empty() {
             for signer in signers_description.iter() {
@@ -410,30 +406,33 @@ pub async fn deploy_miro() -> Result<(), String> {
                     "is the signer {} a validated signer?",
                     format!("{signer_name}").red()
                 );
-                let selection = Select::with_theme(&ColorfulTheme::default())
-                    .with_prompt(prompt_text)
-                    .item("yes")
-                    .item("no")
-                    .default(0)
-                    .interact_on_opt(&Term::stderr())
-                    .unwrap()
-                    .unwrap();
-                let validated_signer = selection == 0;
+                let selection = cli_inputs::select_yes_or_no(&prompt_text)?;
+                let signer_type = if selection {
+                    SignerType::Verified
+                } else {
+                    SignerType::NotVerified
+                };
+
+                let signer_title = if selection {
+                    format!("Verified signer:\n{}", signer_text)
+                } else {
+                    format!("Not verified signer:\n{}", signer_text)
+                };
 
                 signers_info.push(SignerInfo {
-                    signer_text,
+                    signer_text: signer_title,
                     sticky_note_id: "".to_string(),
                     user_figure_id: "".to_string(),
-                    validated_signer,
+                    signer_type,
                 })
             }
         } else {
             // no signers, push template signer
             signers_info.push(SignerInfo {
-                signer_text: "User".to_string(),
+                signer_text: "Permissionless".to_string(),
                 sticky_note_id: "".to_string(),
                 user_figure_id: "".to_string(),
-                validated_signer: false,
+                signer_type: SignerType::NotSigner,
             })
         }
 
@@ -456,7 +455,7 @@ pub async fn deploy_miro() -> Result<(), String> {
                 signer.signer_text.clone(),
                 signer_index,
                 miro_frame.id.clone(),
-                signer.validated_signer,
+                signer.signer_type,
             )
             .await;
             let user_figure_id = miro::api::image::create_user_figure_for_signer(
@@ -468,7 +467,7 @@ pub async fn deploy_miro() -> Result<(), String> {
                 signer_text: signer.signer_text.clone(),
                 sticky_note_id: sticky_note_id,
                 user_figure_id: user_figure_id,
-                validated_signer: signer.validated_signer,
+                signer_type: SignerType::NotSigner,
             }
         }
 
