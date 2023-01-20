@@ -740,10 +740,17 @@ pub mod get {
                         continue;
                     }
                 }
-                let mut instruction_lines = instruction_file.lines().enumerate();
-                let (opening_brace_index, _opening_brace_line) = instruction_lines
-                    .find(|(l_index, line)| line.contains("{") && l_index >= &line_index)
-                    .unwrap();
+                let instruction_clone = instruction_file.clone();
+                let mut instruction_lines = instruction_clone.lines().enumerate();
+                let find_brace = instruction_lines
+                    .find(|(l_index, line)| line.contains("{") && l_index >= &line_index);
+                let (mut opening_brace_index, mut _opening_brace_line) = (0, "");
+                // check that the if is indeed a function by looking up {
+                if let Some(found) = find_brace {
+                    (opening_brace_index, _opening_brace_line) = found
+                } else {
+                    continue;
+                }
                 let (mut closing_brace_index, mut closing_brace_line) = instruction_lines
                     .find(|(l_index, line)| line.contains("}") && l_index >= &line_index)
                     .unwrap();
