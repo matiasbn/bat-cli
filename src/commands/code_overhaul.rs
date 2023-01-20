@@ -104,7 +104,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         helpers::get::get_context_lines(instruction_file_path.clone(), to_start_file_name.clone())?;
 
     // open instruction file in VSCode
-    vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap());
+    vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap())?;
 
     // parse text into co file
     helpers::parse::parse_validations_into_co(
@@ -159,7 +159,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         )?;
 
         // open co file in VSCode
-        vs_code_open_file_in_current_window(started_co_file_path.as_str());
+        vs_code_open_file_in_current_window(started_co_file_path.as_str())?;
     } else {
         let started_path =
             BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()))?;
@@ -172,7 +172,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]))?;
 
         // open co file in VSCode
-        vs_code_open_file_in_current_window(started_path.as_str());
+        vs_code_open_file_in_current_window(started_path.as_str())?;
     }
     Ok(())
 }
@@ -588,16 +588,8 @@ pub async fn open_co() -> Result<(), String> {
     let (_, instruction_file_path) =
         helpers::get::get_instruction_file_with_prompts(&started_file_name)?;
 
-    println!(
-        "Opening {} in VS Code",
-        started_file_path.split("/").last().unwrap()
-    );
-    vs_code_open_file_in_current_window(&started_file_path);
-    println!(
-        "Opening {} in VS Code",
-        instruction_file_path.split("/").last().unwrap()
-    );
-    vs_code_open_file_in_current_window(&instruction_file_path);
+    vs_code_open_file_in_current_window(&started_file_path)?;
+    vs_code_open_file_in_current_window(&instruction_file_path)?;
     Ok(())
 }
 

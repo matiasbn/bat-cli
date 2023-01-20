@@ -53,6 +53,7 @@ pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
 [auditor]
 auditor_name = ""
 miro_oauth_access_token = ""
+vs_code_integration = false
 "#;
 
 pub const ENTRYPOINT_PNG_NAME: &str = "entrypoint.png";

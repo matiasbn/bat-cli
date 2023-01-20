@@ -27,8 +27,6 @@ use std::{fs, io};
 
 pub mod parse {
 
-    
-
     use super::*;
 
     pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
@@ -641,14 +639,22 @@ pub mod get {
         let lib_file = fs::read_to_string(program_lib_path).unwrap();
         let lib_file_lines: Vec<&str> = lib_file.lines().collect();
 
+        println!("{}", co_file_name);
         let entrypoint_index = lib_file
             .lines()
             .position(|line| {
                 if line.contains("pub fn") {
-                    let function_name = line.split('(').collect::<Vec<&str>>()[0]
+                    let function_name = line
+                        .split('(')
+                        .next()
+                        .unwrap()
+                        .split('<')
+                        .next()
+                        .unwrap()
                         .split_whitespace()
                         .last()
                         .unwrap();
+                    println!("function name {}", function_name);
                     function_name == co_file_name.replace(".md", "")
                 } else {
                     false
