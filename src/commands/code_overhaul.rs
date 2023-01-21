@@ -408,15 +408,15 @@ pub async fn deploy_miro() -> Result<(), String> {
                 );
                 let selection = cli_inputs::select_yes_or_no(&prompt_text)?;
                 let signer_type = if selection {
-                    SignerType::Verified
+                    SignerType::Validated
                 } else {
-                    SignerType::NotVerified
+                    SignerType::NotValidated
                 };
 
                 let signer_title = if selection {
-                    format!("Verified signer:\n{}", signer_text)
+                    format!("Validated signer:\n {}", signer_text)
                 } else {
-                    format!("Not verified signer:\n{}", signer_text)
+                    format!("Not validated signer:\n {}", signer_text)
                 };
 
                 signers_info.push(SignerInfo {
