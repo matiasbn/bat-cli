@@ -1,10 +1,12 @@
 use crate::config::*;
+use crate::utils::git::*;
 use normalize_url::normalizer;
 use reqwest;
 use serde_json::*;
 use std::fs;
 use std::result::Result;
 
+use crate::utils::helpers;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{self};
 use tokio::fs::File;
@@ -49,6 +51,7 @@ impl MiroConfig {
 }
 
 pub mod api {
+
     use super::*;
     pub mod frame {
         use super::*;
@@ -177,7 +180,10 @@ pub mod api {
         use super::*;
 
         // uploads the image in file_path to the board
-        pub async fn create_image_from_device(file_path: String, entrypoint_name: &str) -> String {
+        pub async fn create_image_from_device(
+            file_path: String,
+            entrypoint_name: &str,
+        ) -> Result<String, String> {
             let MiroConfig {
                 access_token,
                 board_id,
@@ -215,7 +221,7 @@ pub mod api {
                 id.clone(),
             )
             .await;
-            id
+            Ok(id)
         }
 
         pub async fn update_image_from_device(file_path: String, item_id: &str) {
@@ -563,6 +569,278 @@ pub mod api {
                 .to_string()
                 .replace("\"", "");
             Ok(frame_id)
+        }
+    }
+}
+
+pub mod commands {
+    use colored::Colorize;
+
+    use crate::{
+        commands::miro::api::connector::ConnectorOptions,
+        structs::{SignerInfo, SignerType},
+        utils,
+    };
+
+    use super::*;
+    pub async fn deploy_miro() -> Result<(), String> {
+        assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
+        // check empty images
+        // get files and folders from started, filter .md files
+        let started_folders: Vec<String> = helpers::get::get_started_entrypoints()?
+            .iter()
+            .filter(|file| !file.contains(".md"))
+            .map(|file| file.to_string())
+            .collect();
+        if started_folders.is_empty() {
+            panic!("No folders found in started folder for the auditor")
+        }
+        let prompt_text = "select the folder to deploy to Miro".to_string();
+        let selection = utils::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
+
+        let selected_folder = &started_folders[selection];
+        let selected_co_started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+        let screenshot_paths = CO_FIGURES
+            .iter()
+            .map(|figure| format!("{selected_co_started_path}/{selected_folder}/{figure}"));
+
+        // check if some of the screenshots is empty
+        for path in screenshot_paths.clone() {
+            let screenshot_file = fs::read(&path).unwrap();
+            let screenshot_name = path.split('/').clone().last().unwrap();
+            if screenshot_file.is_empty() {
+                panic!("{screenshot_name} screenshot file is empty, please complete it");
+            }
+        }
+
+        // create the Miro frame
+        // Replace placeholder with Miro url
+        let started_co_file_path =
+            format!("{selected_co_started_path}/{selected_folder}/{selected_folder}.md");
+
+        // only create the frame if it was not created yet
+        let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
+        let is_deploying =
+            to_start_file_content.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER);
+        if is_deploying {
+            // check that the signers are finished
+            let current_content = fs::read_to_string(&started_co_file_path).unwrap();
+            if current_content.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
+                panic!("Please complete the signers description before deploying to Miro");
+            }
+            // get the signers name and description
+            let signers_section_index = current_content
+                .lines()
+                .position(|line| line.contains("# Signers:"))
+                .unwrap();
+            let function_parameters_section_index = current_content
+                .lines()
+                .position(|line| line.contains("# Function parameters:"))
+                .unwrap();
+            let mut signers_description: Vec<String> = vec![];
+            let current_content_lines: Vec<String> = current_content
+                .lines()
+                .map(|line| line.to_string())
+                .collect();
+            for idx in signers_section_index + 1..function_parameters_section_index - 1 {
+                // filter empty lines and No signers found
+                if !current_content_lines[idx].is_empty()
+                    && !current_content_lines[idx].contains("No signers found")
+                {
+                    signers_description.push(current_content_lines[idx].clone());
+                }
+            }
+
+            let mut signers_info: Vec<SignerInfo> = vec![];
+            if !signers_description.is_empty() {
+                for signer in signers_description.iter() {
+                    let signer_name = signer
+                        .split(":")
+                        .next()
+                        .unwrap()
+                        .replace("-", "")
+                        .trim()
+                        .to_string();
+                    let signer_description = signer.split(":").last().unwrap().trim().to_string();
+                    // prompt the user to select signer content
+                    let prompt_text = format!(
+                        "select the content of the signer {} sticky note in Miro",
+                        format!("{signer_name}").red()
+                    );
+                    let selection = utils::cli_inputs::select(
+                        &prompt_text,
+                        vec![
+                            format!("Signer name: {}", signer_name.clone()),
+                            format!("Signer description: {}", signer_description.clone()),
+                        ],
+                        None,
+                    )?;
+                    let signer_text = if selection == 0 {
+                        signer_name.clone()
+                    } else {
+                        signer_description.clone()
+                    };
+                    let prompt_text = format!(
+                        "is the signer {} a validated signer?",
+                        format!("{signer_name}").red()
+                    );
+                    let selection = utils::cli_inputs::select_yes_or_no(&prompt_text)?;
+                    let signer_type = if selection {
+                        SignerType::Validated
+                    } else {
+                        SignerType::NotValidated
+                    };
+
+                    let signer_title = if selection {
+                        format!("Validated signer:\n {}", signer_text)
+                    } else {
+                        format!("Not validated signer:\n {}", signer_text)
+                    };
+
+                    signers_info.push(SignerInfo {
+                        signer_text: signer_title,
+                        sticky_note_id: "".to_string(),
+                        user_figure_id: "".to_string(),
+                        signer_type,
+                    })
+                }
+            } else {
+                // no signers, push template signer
+                signers_info.push(SignerInfo {
+                    signer_text: "Permissionless".to_string(),
+                    sticky_note_id: "".to_string(),
+                    user_figure_id: "".to_string(),
+                    signer_type: SignerType::NotSigner,
+                })
+            }
+
+            println!("Creating frame in Miro for {selected_folder}");
+            let miro_frame = super::api::frame::create_frame(selected_folder)
+                .await
+                .unwrap();
+            fs::write(
+                &started_co_file_path,
+                &to_start_file_content
+                    .replace(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, &miro_frame.url),
+            )
+            .unwrap();
+
+            println!("Creating signers figures in Miro for {selected_folder}");
+
+            for (signer_index, signer) in signers_info.iter_mut().enumerate() {
+                // create the sticky note for every signer
+                let sticky_note_id = super::api::sticky_note::create_signer_sticky_note(
+                    signer.signer_text.clone(),
+                    signer_index,
+                    miro_frame.id.clone(),
+                    signer.signer_type,
+                )
+                .await;
+                let user_figure_id = super::api::image::create_user_figure_for_signer(
+                    signer_index,
+                    miro_frame.id.clone(),
+                )
+                .await;
+                *signer = SignerInfo {
+                    signer_text: signer.signer_text.clone(),
+                    sticky_note_id: sticky_note_id,
+                    user_figure_id: user_figure_id,
+                    signer_type: SignerType::NotSigner,
+                }
+            }
+
+            for screenshot in CO_FIGURES {
+                // read the content after every placeholder replacement is essential
+                let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
+                let placeholder = match screenshot.to_string().as_str() {
+                    ENTRYPOINT_PNG_NAME => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
+                    CONTEXT_ACCOUNTS_PNG_NAME => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
+                    VALIDATIONS_PNG_NAME => CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
+                    HANDLER_PNG_NAME => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
+                    _ => todo!(),
+                };
+                let screenshot_path =
+                    format!("{selected_co_started_path}/{selected_folder}/{screenshot}");
+                println!("Creating image in Miro for {screenshot}");
+                let id = super::api::image::create_image_from_device(
+                    screenshot_path.to_string(),
+                    &selected_folder,
+                )
+                .await?;
+                fs::write(
+                    &started_co_file_path,
+                    &to_start_file_content.replace(placeholder, &id),
+                )
+                .unwrap();
+            }
+            // connect screenshots
+            let entrypoint_id =
+                helpers::get::get_screenshot_id(&ENTRYPOINT_PNG_NAME, &started_co_file_path);
+            let context_accounts_id =
+                helpers::get::get_screenshot_id(&CONTEXT_ACCOUNTS_PNG_NAME, &started_co_file_path);
+            let validations_id =
+                helpers::get::get_screenshot_id(&VALIDATIONS_PNG_NAME, &started_co_file_path);
+            let handler_id =
+                helpers::get::get_screenshot_id(&HANDLER_PNG_NAME, &started_co_file_path);
+            println!("Connecting signers to entrypoint");
+            for signer_miro_ids in signers_info {
+                super::api::connector::create_connector(
+                    &signer_miro_ids.user_figure_id,
+                    &signer_miro_ids.sticky_note_id,
+                    None,
+                )
+                .await;
+                super::api::connector::create_connector(
+                    &signer_miro_ids.sticky_note_id,
+                    &entrypoint_id,
+                    Some(ConnectorOptions {
+                        start_x_position: "100%".to_string(),
+                        start_y_position: "50%".to_string(),
+                        end_x_position: "0%".to_string(),
+                        end_y_position: "50%".to_string(),
+                    }),
+                )
+                .await;
+            }
+            println!("Connecting screenshots in Miro");
+            super::api::connector::create_connector(&entrypoint_id, &context_accounts_id, None)
+                .await;
+            super::api::connector::create_connector(&context_accounts_id, &validations_id, None)
+                .await;
+            super::api::connector::create_connector(&validations_id, &handler_id, None).await;
+            create_git_commit(
+                GitCommit::DeployMiro,
+                Some(vec![selected_folder.to_string()]),
+            )
+        } else {
+            // update images
+            let prompt_text = format!("select the images to update for {selected_folder}");
+            let selections = utils::cli_inputs::multiselect(
+                &prompt_text,
+                CO_FIGURES.to_vec(),
+                Some(&vec![true, true, true, true]),
+            )?;
+            if !selections.is_empty() {
+                for selection in selections.iter() {
+                    let screenshot_path_vec = &screenshot_paths.clone().collect::<Vec<_>>();
+                    let screenshot_path = &screenshot_path_vec.as_slice()[*selection];
+                    let file_name = screenshot_path.split('/').last().unwrap();
+                    println!("Updating: {file_name}");
+                    let item_id = helpers::get::get_screenshot_id(file_name, &started_co_file_path);
+                    super::api::image::update_image_from_device(
+                        screenshot_path.to_string(),
+                        &item_id,
+                    )
+                    .await
+                }
+                create_git_commit(
+                    GitCommit::UpdateMiro,
+                    Some(vec![selected_folder.to_string()]),
+                )?;
+            } else {
+                println!("No files selected");
+            }
+            Ok(())
         }
     }
 }

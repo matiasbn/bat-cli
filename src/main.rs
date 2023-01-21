@@ -38,6 +38,9 @@ enum Commands {
     /// threat modeling operations
     #[command(subcommand)]
     TM(TMActions),
+    /// Miro integration
+    #[command(subcommand)]
+    Miro(MiroActions),
     /// Update the templates folder and the package.json of the audit repository
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
@@ -49,6 +52,15 @@ enum Commands {
     Package(PackageActions),
 }
 
+#[derive(Subcommand, Debug)]
+enum MiroActions {
+    /// Creates a code-overhaul frame
+    Create,
+    /// Updates a code-overhaul frame
+    Update,
+    // /// Creates or updates the Accounts frame
+    // Accounts,
+}
 #[derive(Subcommand, Debug)]
 enum TMActions {
     /// Updates the threat_modeling.md Assets/Accounts section
@@ -121,7 +133,7 @@ async fn main() {
             commands::code_overhaul::count_co_files().unwrap()
         }
         Commands::CO(CodeOverhaulActions::Miro) => {
-            commands::code_overhaul::deploy_miro().await.unwrap()
+            commands::miro::commands::deploy_miro().await.unwrap()
         }
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
