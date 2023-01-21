@@ -23,7 +23,7 @@ use crate::constants::{
 };
 use crate::utils::cli_inputs;
 use crate::utils::helpers::get::get_only_files_from_folder;
-use crate::utils::helpers::print::print_string;
+
 
 pub fn initialize_bat_project() -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;
