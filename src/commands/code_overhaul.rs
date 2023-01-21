@@ -118,7 +118,6 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     // parse text into co file
     utils::helpers::parse::parse_validations_into_co(
         to_review_file_path.clone(),
-        context_lines.clone(),
         instruction_file_path.to_str().unwrap().to_string(),
     );
     utils::helpers::parse::parse_context_accounts_into_co(
