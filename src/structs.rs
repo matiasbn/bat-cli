@@ -6,8 +6,8 @@ pub struct FileInfo {
 
 #[derive(Clone, Copy)]
 pub enum SignerType {
-    Verified,
-    NotVerified,
+    Validated,
+    NotValidated,
     NotSigner,
 }
 pub struct SignerInfo {
