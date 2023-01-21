@@ -108,33 +108,33 @@ pub mod api {
                 Err(err_message) => Err(err_message.to_string()),
             }
         }
-        pub async fn get_frame_positon(frame_id: String) -> (u64, u64) {
-            let MiroConfig {
-                access_token,
-                board_id,
-                ..
-            } = MiroConfig::new();
-            let client = reqwest::Client::new();
-            let board_response = client
-                .get(format!(
-                    "https://api.miro.com/v2/boards/{board_id}/frames/{frame_id}"
-                ))
-                .header(CONTENT_TYPE, "application/json")
-                .header(AUTHORIZATION, format!("Bearer {access_token}"))
-                .send()
-                .await
-                .unwrap()
-                .text()
-                .await
-                .unwrap();
-            let response: Value = serde_json::from_str(board_response.as_str()).unwrap();
-            let x_position = response["position"]["x"].clone();
-            let y_position = response["position"]["y"].clone();
-            (
-                x_position.as_f64().unwrap() as u64,
-                y_position.as_f64().unwrap() as u64,
-            )
-        }
+        // pub async fn get_frame_positon(frame_id: String) -> (u64, u64) {
+        //     let MiroConfig {
+        //         access_token,
+        //         board_id,
+        //         ..
+        //     } = MiroConfig::new();
+        //     let client = reqwest::Client::new();
+        //     let board_response = client
+        //         .get(format!(
+        //             "https://api.miro.com/v2/boards/{board_id}/frames/{frame_id}"
+        //         ))
+        //         .header(CONTENT_TYPE, "application/json")
+        //         .header(AUTHORIZATION, format!("Bearer {access_token}"))
+        //         .send()
+        //         .await
+        //         .unwrap()
+        //         .text()
+        //         .await
+        //         .unwrap();
+        //     let response: Value = serde_json::from_str(board_response.as_str()).unwrap();
+        //     let x_position = response["position"]["x"].clone();
+        //     let y_position = response["position"]["y"].clone();
+        //     (
+        //         x_position.as_f64().unwrap() as u64,
+        //         y_position.as_f64().unwrap() as u64,
+        //     )
+        // }
         pub async fn update_frame_position(
             entrypoint_name: String,
             co_finished_files: i32,
@@ -553,10 +553,9 @@ pub mod api {
             response["id"].to_string().replace("\"", "")
         }
         pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> Result<String, String> {
-            let started_file_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(Some(
-                    entrypoint_name.to_string(),
-                ))?;
+            let started_file_path = utils::path::get_auditor_code_overhaul_started_file_path(
+                Some(entrypoint_name.to_string()),
+            )?;
             let miro_url = fs::read_to_string(started_file_path)
                 .unwrap()
                 .lines()
@@ -584,8 +583,7 @@ pub mod commands {
         utils::{
             self,
             helpers::get::{
-                get_context_name, get_string_between_two_index_from_string,
-                get_string_between_two_str_from_string,
+                get_string_between_two_index_from_string, get_string_between_two_str_from_string,
             },
         },
     };
@@ -868,7 +866,7 @@ pub mod commands {
         let selection = utils::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
         let selected_folder = &started_folders[selection];
         let selected_co_started_file_path =
-            utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(Some(
+            utils::path::get_auditor_code_overhaul_started_file_path(Some(
                 selected_folder.clone(),
             ))?;
         Ok((

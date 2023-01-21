@@ -58,7 +58,7 @@ pub fn create_git_commit(
             let commit_string = "initial commit".to_string();
             (
                 commit_string,
-                vec![utils::helpers::get::path::get_audit_folder_path(None)?],
+                vec![utils::path::get_audit_folder_path(None)?],
             )
         }
         GitCommit::InitAuditor => {
@@ -67,10 +67,7 @@ pub fn create_git_commit(
                 "co: project {} initialized for {}",
                 bat_config.required.project_name, bat_config.auditor.auditor_name
             );
-            (
-                commit_string,
-                vec![utils::helpers::get::path::get_auditor_notes_path()?],
-            )
+            (commit_string, vec![utils::path::get_auditor_notes_path()?])
         }
         GitCommit::StartCO => {
             let commit_file = &commit_files.unwrap()[0];
@@ -78,13 +75,10 @@ pub fn create_git_commit(
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
             println!("code-overhaul file started with commit: {commit_string:?}");
             let file_to_delete_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_to_review_path(Some(
-                    commit_file.clone(),
-                ))?;
-            let file_to_add_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(Some(
-                    commit_file.clone(),
-                ))?;
+                utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
+            let file_to_add_path = utils::path::get_auditor_code_overhaul_started_file_path(Some(
+                commit_file.clone(),
+            ))?;
             (commit_string, vec![file_to_delete_path, file_to_add_path])
         }
         GitCommit::StartCOMiro => {
@@ -93,11 +87,8 @@ pub fn create_git_commit(
             let commit_string = format!("co: {commit_file_name} started");
             println!("code-overhaul file started with commit: {commit_string}");
             let file_to_delete_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_to_review_path(Some(
-                    commit_file.clone(),
-                ))?;
-            let file_to_add_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(None)?;
+                utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
+            let file_to_add_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
             (
                 commit_string,
                 vec![
@@ -112,14 +103,11 @@ pub fn create_git_commit(
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
             println!("code-overhaul file finished with commit: {commit_string:?}");
-            let file_to_delete_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(Some(
-                    commit_file.clone(),
-                ))?;
+            let file_to_delete_path = utils::path::get_auditor_code_overhaul_started_file_path(
+                Some(commit_file.clone()),
+            )?;
             let file_to_add_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_finished_path(Some(
-                    commit_file.clone(),
-                ))?;
+                utils::path::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()))?;
             (commit_string, vec![file_to_delete_path, file_to_add_path])
         }
         GitCommit::FinishCOMiro => {
@@ -127,11 +115,9 @@ pub fn create_git_commit(
             let commit_file_name = commit_file.clone().replace(".md", "");
             let commit_string = "co: ".to_string() + &commit_file_name + " finished";
             println!("code-overhaul file finished with commit: {commit_string:?}");
-            let started_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(None)?;
+            let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
             let folder_to_delete_path = format!("{started_path}/{commit_file_name}");
-            let finished_folder_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_finished_path(None)?;
+            let finished_folder_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
             let file_to_add_path = format!("{finished_folder_path}{commit_file}.md");
             (commit_string, vec![folder_to_delete_path, file_to_add_path])
         }
@@ -139,8 +125,7 @@ pub fn create_git_commit(
             let entrypoint_name = &commit_files.unwrap()[0];
             let commit_string = "co: ".to_string() + entrypoint_name + " deployed to Miro";
             println!("code-overhaul files deployed to Miro with commit: {commit_string:?}");
-            let started_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(None)?;
+            let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
             let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
             (commit_string, vec![folder_to_add_path])
         }
@@ -148,8 +133,7 @@ pub fn create_git_commit(
             let entrypoint_name = &commit_files.unwrap()[0];
             let commit_string = "co: ".to_string() + entrypoint_name + " updated in Miro";
             println!("code-overhaul files updated in Miro with commit: {commit_string:?}");
-            let started_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(None)?;
+            let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
             let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
             (commit_string, vec![folder_to_add_path])
         }
@@ -159,9 +143,7 @@ pub fn create_git_commit(
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
             println!("code-overhaul file updated with commit: {commit_string:?}");
             let file_to_add_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_finished_path(Some(
-                    commit_file.clone(),
-                ))?;
+                utils::path::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()))?;
             (commit_string, vec![file_to_add_path])
         }
         GitCommit::StartFinding => {
@@ -169,9 +151,8 @@ pub fn create_git_commit(
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
             println!("finding file created with commit: \"{commit_string}\"");
-            let file_to_add_path = utils::helpers::get::path::get_auditor_findings_to_review_path(
-                Some(commit_file.clone()),
-            )?;
+            let file_to_add_path =
+                utils::path::get_auditor_findings_to_review_path(Some(commit_file.clone()))?;
             (commit_string, vec![file_to_add_path])
         }
         GitCommit::FinishFinding => {
@@ -179,9 +160,8 @@ pub fn create_git_commit(
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
             println!("finding file finished with commit: \"{commit_string}\"");
-            let file_to_add_path = utils::helpers::get::path::get_auditor_findings_to_review_path(
-                Some(commit_file.clone()),
-            )?;
+            let file_to_add_path =
+                utils::path::get_auditor_findings_to_review_path(Some(commit_file.clone()))?;
             (commit_string, vec![file_to_add_path])
         }
         GitCommit::UpdateFinding => {
@@ -189,25 +169,22 @@ pub fn create_git_commit(
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
             println!("finding file updated with commit: \"{commit_string}\"");
-            let file_to_add_path = utils::helpers::get::path::get_auditor_findings_to_review_path(
-                Some(commit_file.clone()),
-            )?;
+            let file_to_add_path =
+                utils::path::get_auditor_findings_to_review_path(Some(commit_file.clone()))?;
             (commit_string, vec![file_to_add_path])
         }
         GitCommit::PrepareAllFinding => {
             let commit_string = "finding: to-review findings severity updated".to_string();
             println!("updating findings severity in repository");
-            let file_to_add_path =
-                utils::helpers::get::path::get_auditor_findings_to_review_path(None)?;
+            let file_to_add_path = utils::path::get_auditor_findings_to_review_path(None)?;
             (commit_string, vec![file_to_add_path])
         }
         GitCommit::UpdateRepo => {
             let commit_string = "repo: templates and package.json update".to_string();
-            let file_to_add_path =
-                utils::helpers::get::path::get_auditor_code_overhaul_to_review_path(None)?;
+            let file_to_add_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
             let packagejson_path =
-                utils::helpers::get::path::get_audit_folder_path(Some("package.json".to_string()))?;
-            let templates_path = utils::helpers::get::path::get_templates_path()?;
+                utils::path::get_audit_folder_path(Some("package.json".to_string()))?;
+            let templates_path = utils::path::get_templates_path()?;
             (
                 commit_string,
                 vec![file_to_add_path, templates_path, packagejson_path],
@@ -215,7 +192,7 @@ pub fn create_git_commit(
         }
         GitCommit::Notes => {
             println!("Creating a commit for open_questions.md, smellies.md and threat_modeling.md");
-            let auditor_notes_path = utils::helpers::get::path::get_auditor_notes_path()?;
+            let auditor_notes_path = utils::path::get_auditor_notes_path()?;
             let open_questions_path = auditor_notes_path.clone() + "open_questions.md";
             let smellies_path = auditor_notes_path.clone() + "smellies.md";
             let threat_modeling_path = auditor_notes_path + "threat_modeling.md";
@@ -232,7 +209,7 @@ pub fn create_git_commit(
                 "Creating a commit for {}",
                 constants::AUDIT_RESULT_FILE_NAME
             );
-            let audit_result_path = utils::helpers::get::path::get_audit_folder_path(Some(
+            let audit_result_path = utils::path::get_audit_folder_path(Some(
                 constants::AUDIT_RESULT_FILE_NAME.to_string(),
             ))?;
             let commit_string = format!("notes: {} updated", AUDIT_RESULT_FILE_NAME);
@@ -240,11 +217,10 @@ pub fn create_git_commit(
         }
         GitCommit::TMAccounts => {
             println!("Creating a commit for threat_modeling.md");
-            let tm_path = utils::helpers::get::path::get_auditor_threat_modeling_path()?;
+            let tm_path = utils::path::get_auditor_threat_modeling_path()?;
             let commit_string = format!("notes: threat_modeling.md updated");
             (commit_string, vec![tm_path])
         }
-        _ => panic!("Wrong GitCommit type input"),
     };
 
     for commit_file in commit_files_path {

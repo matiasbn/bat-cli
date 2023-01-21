@@ -793,10 +793,6 @@ pub mod get {
             Ok(get_audit_folder_path(None)? + "/templates")
         }
 
-        pub fn get_notes_folder_template_path() -> Result<String, String> {
-            Ok(get_templates_path()? + "/notes-folder-template")
-        }
-
         pub fn get_finding_template_path() -> Result<String, String> {
             Ok(get_templates_path()? + "/finding.md")
         }

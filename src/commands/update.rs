@@ -1,5 +1,4 @@
 use crate::{
-    config::BatConfig,
     constants::BASE_REPOSTORY_NAME,
     utils::{
         self,
@@ -15,7 +14,7 @@ pub fn update_repository() -> Result<(), String> {
 
     // delete templates folder
     println!("Updating templates folder");
-    let templates_path = utils::helpers::get::path::get_templates_path()?;
+    let templates_path = utils::path::get_templates_path()?;
     let output = Command::new("rm")
         .args(["-rf", templates_path.as_str()])
         .output()
@@ -44,7 +43,7 @@ pub fn update_repository() -> Result<(), String> {
 
     println!("Updating to-review files in code-overhaul folder");
     // move new templates to to-review in the auditor notes folder
-    let to_review_path = utils::helpers::get::path::get_auditor_code_overhaul_to_review_path(None)?;
+    let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
     // if the auditor to-review code overhaul folder exists
     if fs::read_dir(to_review_path.clone()).is_ok() {
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
@@ -52,10 +51,8 @@ pub fn update_repository() -> Result<(), String> {
             let file_name = file.unwrap().file_name().into_string().unwrap();
             if file_name != ".gitkeep" {
                 let file_path =
-                    utils::helpers::get::path::get_auditor_code_overhaul_to_review_path(Some(
-                        file_name.clone(),
-                    ))?;
-                let template_path = utils::helpers::get::path::get_code_overhaul_template_path()?;
+                    utils::path::get_auditor_code_overhaul_to_review_path(Some(file_name.clone()))?;
+                let template_path = utils::path::get_code_overhaul_template_path()?;
                 let output = Command::new("cp")
                     .args([template_path, file_path])
                     .output()
@@ -71,7 +68,7 @@ pub fn update_repository() -> Result<(), String> {
     };
 
     // replace package.json
-    let audit_folder_path = utils::helpers::get::path::get_audit_folder_path(None);
+    let audit_folder_path = utils::path::get_audit_folder_path(None);
     println!("Updating package.json");
     let output = Command::new("mv")
         .args([
