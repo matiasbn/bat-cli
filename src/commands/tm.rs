@@ -5,7 +5,7 @@ use crate::{
     utils::{self, helpers},
 };
 
-use super::git::{create_git_commit, GitCommit};
+use utils::git::{create_git_commit, GitCommit};
 
 pub fn update_accounts() -> Result<(), String> {
     let program_state_folder_path = BatConfig::get_validated_config()?

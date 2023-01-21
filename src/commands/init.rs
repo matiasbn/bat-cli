@@ -12,9 +12,6 @@ use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::command_line::vs_code_open_file_in_current_window;
-use crate::commands::git::{
-    check_if_branch_exists, create_git_commit, get_expected_current_branch, GitCommit,
-};
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
@@ -22,8 +19,10 @@ use crate::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
 use crate::utils::cli_inputs;
+use crate::utils::git::{
+    check_if_branch_exists, create_git_commit, get_expected_current_branch, GitCommit,
+};
 use crate::utils::helpers::get::get_only_files_from_folder;
-use crate::utils::helpers::print::print_string;
 
 pub fn initialize_bat_project() -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;

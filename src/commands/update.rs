@@ -1,7 +1,7 @@
 use crate::{
-    commands::git::{clone_base_repository, create_git_commit, GitCommit},
     config::BatConfig,
     constants::BASE_REPOSTORY_NAME,
+    utils::git::{clone_base_repository, create_git_commit, GitCommit},
 };
 use std::{fs, process::Command};
 

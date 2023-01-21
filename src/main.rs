@@ -3,7 +3,7 @@
 extern crate core;
 
 use clap::{Parser, Subcommand};
-use commands::git::GitCommit;
+use utils::git::GitCommit;
 
 mod command_line;
 mod commands;
@@ -38,6 +38,9 @@ enum Commands {
     /// threat modeling operations
     #[command(subcommand)]
     TM(TMActions),
+    /// Miro integration
+    #[command(subcommand)]
+    Miro(MiroActions),
     /// Update the templates folder and the package.json of the audit repository
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
@@ -49,6 +52,15 @@ enum Commands {
     Package(PackageActions),
 }
 
+#[derive(Subcommand, Debug)]
+enum MiroActions {
+    /// Deploy a code-overhaul frame
+    Deploy,
+    /// Updates a code-overhaul frame
+    Images,
+    // /// Creates or updates the Accounts frame
+    // Accounts,
+}
 #[derive(Subcommand, Debug)]
 enum TMActions {
     /// Updates the threat_modeling.md Assets/Accounts section
@@ -120,11 +132,14 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Count) => {
             commands::code_overhaul::count_co_files().unwrap()
         }
-        Commands::CO(CodeOverhaulActions::Miro) => {
-            commands::code_overhaul::deploy_miro().await.unwrap()
-        }
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
+        }
+        Commands::Miro(MiroActions::Deploy) => {
+            commands::miro::commands::deploy_miro().await.unwrap()
+        }
+        Commands::Miro(MiroActions::Images) => {
+            commands::miro::commands::create_co_snapshots().unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
@@ -134,7 +149,7 @@ async fn main() {
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
-        Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None).unwrap(),
+        Commands::Notes => utils::git::create_git_commit(GitCommit::Notes, None).unwrap(),
         Commands::Results => commands::code_overhaul::update_audit_results().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
