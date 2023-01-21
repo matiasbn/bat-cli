@@ -51,15 +51,18 @@ pub fn create_git_commit(
     commit_type: GitCommit,
     commit_files: Option<Vec<String>>,
 ) -> Result<(), String> {
-    check_correct_branch();
+    check_correct_branch()?;
     let (commit_message, commit_files_path): (String, Vec<String>) = match commit_type {
         GitCommit::Init => {
             let commit_string = "initial commit".to_string();
             (commit_string, vec![BatConfig::get_audit_folder_path(None)?])
         }
         GitCommit::InitAuditor => {
-            let commit_string =
-                "co: project initialized for ".to_string() + &BatConfig::get_auditor_name()?;
+            let bat_config = BatConfig::get_validated_config()?;
+            let commit_string = format!(
+                "co: project {} initialized for {}",
+                bat_config.required.project_name, bat_config.auditor.auditor_name
+            );
             (commit_string, vec![BatConfig::get_auditor_notes_path()?])
         }
         GitCommit::StartCO => {

@@ -1144,7 +1144,10 @@ pub mod get {
     pub fn get_only_files_from_folder(folder_path: String) -> Result<Vec<FileInfo>, String> {
         let state_folder_files_info = WalkDir::new(folder_path)
             .into_iter()
-            .filter(|f| f.as_ref().unwrap().metadata().unwrap().is_file())
+            .filter(|f| {
+                f.as_ref().unwrap().metadata().unwrap().is_file()
+                    && f.as_ref().unwrap().file_name() != ".gitkeep"
+            })
             .map(|entry| {
                 let info = FileInfo {
                     path: utils::helpers::canonicalize_path(

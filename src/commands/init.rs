@@ -12,7 +12,9 @@ use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::command_line::vs_code_open_file_in_current_window;
-use crate::commands::git::{check_if_branch_exists, create_git_commit, GitCommit};
+use crate::commands::git::{
+    check_if_branch_exists, create_git_commit, get_expected_current_branch, GitCommit,
+};
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
@@ -20,6 +22,7 @@ use crate::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
 use crate::utils::cli_inputs;
+use crate::utils::helpers::get::get_only_files_from_folder;
 use crate::utils::helpers::print::print_string;
 
 pub fn initialize_bat_project() -> Result<(), String> {
@@ -40,17 +43,19 @@ pub fn initialize_bat_project() -> Result<(), String> {
         println!("Initializing project repository");
         initialize_project_repository()?;
         println!("Project repository successfully initialized");
-    } else {
-        println!("Project repository already initialized");
     }
 
-    let audit_information_path = BatConfig::get_audit_information_file_path()?;
-    let audit_information_string = fs::read_to_string(audit_information_path.clone()).unwrap();
+    let readme_path = BatConfig::get_readme_file_path()?;
+    let readme_string = fs::read_to_string(readme_path.clone()).unwrap();
 
-    if audit_information_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
-        println!("Updating project information file");
-        update_audit_information_file()?;
+    if readme_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
+        println!("Updating README.md");
+        update_readme_file()?;
     }
+    Command::new("git")
+        .args(["add", &readme_path])
+        .output()
+        .unwrap();
 
     // create auditors branches from develop
     for auditor_name in required.auditor_names {
@@ -69,7 +74,7 @@ pub fn initialize_bat_project() -> Result<(), String> {
                 .unwrap();
         }
     }
-    let auditor_project_branch_name = format!("{}-{}", auditor.auditor_name, required.project_name);
+    let auditor_project_branch_name = get_expected_current_branch()?;
     println!("Checking out {:?} branch", auditor_project_branch_name);
     // checkout auditor branch
     Command::new("git")
@@ -78,22 +83,25 @@ pub fn initialize_bat_project() -> Result<(), String> {
         .unwrap();
 
     // validate_init_config()?;
-    // copy templates/notes-folder-template
     let auditor_notes_folder = BatConfig::get_auditor_notes_path()?;
-    if !Path::new(&auditor_notes_folder).is_dir() {
+    let auditor_notes_folder_exists = Path::new(&auditor_notes_folder).is_dir();
+    if auditor_notes_folder_exists {
+        let auditor_notes_files = get_only_files_from_folder(auditor_notes_folder.clone())?;
+        if auditor_notes_files.is_empty() {
+            create_auditor_notes_folder()?;
+            // create overhaul files
+            initialize_code_overhaul_files()?;
+            // commit to-review files
+        }
+    } else {
         create_auditor_notes_folder()?;
         // create overhaul files
         initialize_code_overhaul_files()?;
         // commit to-review files
-        create_git_commit(GitCommit::InitAuditor, None)?;
-        println!("Project successfully initialized");
-    } else {
-        print!(
-            "Auditor notes already initialized for {}",
-            bat_config.auditor.auditor_name
-        );
     }
 
+    println!("Project successfully initialized");
+    create_git_commit(GitCommit::InitAuditor, None)?;
     let lib_file_path = BatConfig::get_program_lib_path()?;
     // Open lib.rs file in vscode
     vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())?;
@@ -122,7 +130,7 @@ fn prompt_auditor_options(required: RequiredConfig) -> Result<(), String> {
     Ok(())
 }
 
-fn update_audit_information_file() -> Result<(), String> {
+fn update_readme_file() -> Result<(), String> {
     let RequiredConfig {
         project_name,
         client_name,
@@ -131,15 +139,15 @@ fn update_audit_information_file() -> Result<(), String> {
         miro_board_url,
         ..
     } = BatConfig::get_init_config()?.required;
-    let audit_information_path = BatConfig::get_audit_information_file_path()?;
-    let data = fs::read_to_string(audit_information_path.clone()).unwrap();
-    let updated_audit_information = data
+    let readme_path = BatConfig::get_readme_file_path()?;
+    let data = fs::read_to_string(readme_path.clone()).unwrap();
+    let updated_readme = data
         .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
         .replace(AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, &client_name)
         .replace(AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, &commit_hash_url)
         .replace(AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, &miro_board_url)
         .replace(AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, &starting_date);
-    fs::write(audit_information_path, updated_audit_information).expect("Could not write to file!");
+    fs::write(readme_path, updated_readme).expect("Could not write to file README.md");
     Ok(())
 }
 
@@ -248,12 +256,6 @@ fn initialize_project_repository() -> Result<(), String> {
         .output()
         .unwrap();
 
-    println!("Pushing all branches to origin");
-    // push all branches to remote
-    Command::new("git")
-        .args(["push", "origin", "--all"])
-        .output()
-        .unwrap();
     Ok(())
 }
 
