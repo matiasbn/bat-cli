@@ -12,7 +12,7 @@ use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::command_line::vs_code_open_file_in_current_window;
-use crate::commands::git::{create_git_commit, GitCommit};
+use crate::commands::git::{check_if_branch_exists, create_git_commit, GitCommit};
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
@@ -27,24 +27,55 @@ pub fn initialize_bat_project() -> Result<(), String> {
     let BatConfig {
         required, auditor, ..
     } = bat_config.clone();
-    if !Path::new(".BatAuditor.toml").is_file() || auditor.auditor_name.is_empty() {
-        prompt_auditor_options(required)?;
+    if !Path::new("BatAuditor.toml").is_file() || auditor.auditor_name.is_empty() {
+        prompt_auditor_options(required.clone())?;
     }
     let bat_config: BatConfig = BatConfig::get_validated_config()?;
     // if !Path::new(&bat_auditor_path).is_dir() {}
     // if auditor.auditor is empty, prompt name
     println!("creating project for the next config: ");
-    println!("{bat_config:#?}");
+    println!("{:#?}", bat_config);
 
     if !Path::new(".git").is_dir() {
-        println!("Updating project information file");
-        update_audit_information_file()?;
         println!("Initializing project repository");
         initialize_project_repository()?;
         println!("Project repository successfully initialized");
     } else {
         println!("Project repository already initialized");
     }
+
+    let audit_information_path = BatConfig::get_audit_information_file_path()?;
+    let audit_information_string = fs::read_to_string(audit_information_path.clone()).unwrap();
+
+    if audit_information_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
+        println!("Updating project information file");
+        update_audit_information_file()?;
+    }
+
+    // create auditors branches from develop
+    for auditor_name in required.auditor_names {
+        let auditor_project_branch_name = format!("{}-{}", auditor_name, required.project_name);
+        let auditor_project_branch_exists = check_if_branch_exists(&auditor_project_branch_name)?;
+        if !auditor_project_branch_exists {
+            println!("Creating branch {:?}", auditor_project_branch_name);
+            // checkout develop to create auditor project branch from there
+            Command::new("git")
+                .args(["checkout", "develop"])
+                .output()
+                .unwrap();
+            Command::new("git")
+                .args(["checkout", "-b", &auditor_project_branch_name])
+                .output()
+                .unwrap();
+        }
+    }
+    let auditor_project_branch_name = format!("{}-{}", auditor.auditor_name, required.project_name);
+    println!("Checking out {:?} branch", auditor_project_branch_name);
+    // checkout auditor branch
+    Command::new("git")
+        .args(["checkout", auditor_project_branch_name.as_str()])
+        .output()
+        .unwrap();
 
     // validate_init_config()?;
     // copy templates/notes-folder-template
@@ -166,7 +197,6 @@ fn initialize_project_repository() -> Result<(), String> {
     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
     let RequiredConfig {
         project_repository_url,
-        auditor_names,
         ..
     } = required;
     // git init
@@ -218,33 +248,10 @@ fn initialize_project_repository() -> Result<(), String> {
         .output()
         .unwrap();
 
-    // create auditors branches from develop
-    for auditor_name in auditor_names {
-        println!("Creating branch for {auditor_name:?}");
-        Command::new("git")
-            .args(["checkout", "-b", (auditor_name + "-notes").as_str()])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["checkout", "develop"])
-            .output()
-            .unwrap();
-    }
-
     println!("Pushing all branches to origin");
     // push all branches to remote
     Command::new("git")
         .args(["push", "origin", "--all"])
-        .output()
-        .unwrap();
-
-    println!("Checking out {:?}'s branch", BatConfig::get_auditor_name());
-    // checkout auditor branch
-    Command::new("git")
-        .args([
-            "checkout",
-            (BatConfig::get_auditor_name()? + "-notes").as_str(),
-        ])
         .output()
         .unwrap();
     Ok(())

@@ -241,14 +241,31 @@ pub fn create_git_commit(
 }
 
 pub fn check_correct_branch() -> Result<(), String> {
-    let expected_auditor_branch = BatConfig::get_auditor_name()? + "-notes";
+    let expected_auditor_branch = get_expected_current_branch()?;
     if get_branch_name()? != expected_auditor_branch {
         panic!(
             "You are in an incorrect branch, please run \"git checkout {:?}\"",
-            expected_auditor_branch.replace('\"', "")
+            expected_auditor_branch
         );
     }
     Ok(())
+}
+
+pub fn get_expected_current_branch() -> Result<String, String> {
+    let bat_config = BatConfig::get_validated_config()?;
+    let expected_auditor_branch = format!(
+        "{}-{}",
+        bat_config.auditor.auditor_name, bat_config.required.project_name
+    );
+    Ok(expected_auditor_branch)
+}
+
+pub fn check_if_branch_exists(branch_name: &str) -> Result<bool, String> {
+    let git_check_branch_exists = Command::new("git")
+        .args(["rev-parse", "--verify", branch_name])
+        .output()
+        .unwrap();
+    Ok(git_check_branch_exists.stderr.is_empty())
 }
 
 pub fn clone_base_repository() {
