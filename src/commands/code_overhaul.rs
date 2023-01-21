@@ -138,7 +138,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     let miro_enabled = MiroConfig::new().miro_enabled();
     if miro_enabled {
         // if miro enabled, then create a subfolder
-        let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+        let started_folder_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
         let started_co_folder_path = started_folder_path + entrypoint_name.clone().as_str();
         let started_co_file_path = format!("{started_co_folder_path}/{to_start_file_name}");
         // create the co subfolder
@@ -168,8 +168,9 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_co_file_path.as_str())?;
     } else {
-        let started_path =
-            BatConfig::get_auditor_code_overhaul_started_path(Some(to_start_file_name.clone()))?;
+        let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(Some(
+            to_start_file_name.clone(),
+        ))?;
         Command::new("mv")
             .args([to_review_file_path, started_path.clone()])
             .output()
@@ -204,7 +205,8 @@ pub async fn finish_code_overhaul_file() -> Result<(), String> {
                 let finished_endpoint = started_endpoints[index].clone();
                 let finished_folder_path =
                     BatConfig::get_auditor_code_overhaul_finished_path(None)?;
-                let started_folder_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+                let started_folder_path =
+                    BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
                 let started_co_folder_path =
                     canonicalize_path(format!("{started_folder_path}/{finished_endpoint}"));
                 let started_co_file_path = canonicalize_path(format!(
@@ -238,7 +240,7 @@ pub async fn finish_code_overhaul_file() -> Result<(), String> {
                 let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(Some(
                     finished_file_name.clone(),
                 ))?;
-                let started_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
+                let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(Some(
                     finished_file_name.clone(),
                 ))?;
                 helpers::check::code_overhaul_file_completed(
@@ -329,7 +331,7 @@ pub async fn open_co() -> Result<(), String> {
                 // move selected file to finished
                 Some(index) => (
                     started_entrypoints[index].clone(),
-                    BatConfig::get_auditor_code_overhaul_started_path(Some(
+                    BatConfig::get_auditor_code_overhaul_started_file_path(Some(
                         started_entrypoints[index].clone(),
                     ))?,
                 ),

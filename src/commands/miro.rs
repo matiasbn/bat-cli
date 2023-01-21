@@ -553,7 +553,7 @@ pub mod api {
             response["id"].to_string().replace("\"", "")
         }
         pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> Result<String, String> {
-            let started_file_path = BatConfig::get_auditor_code_overhaul_started_path(Some(
+            let started_file_path = BatConfig::get_auditor_code_overhaul_started_file_path(Some(
                 entrypoint_name.to_string(),
             ))?;
             let miro_url = fs::read_to_string(started_file_path)
@@ -574,8 +574,6 @@ pub mod api {
 }
 
 pub mod commands {
-
-    
 
     use colored::Colorize;
 
@@ -860,9 +858,12 @@ pub mod commands {
         let prompt_text = "select the folder:".to_string();
         let selection = utils::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
         let selected_folder = &started_folders[selection];
-        let selected_co_started_path =
-            BatConfig::get_auditor_code_overhaul_started_path(Some(selected_folder.clone()))?;
-        Ok((selected_folder.clone(), selected_co_started_path.clone()))
+        let selected_co_started_file_path =
+            BatConfig::get_auditor_code_overhaul_started_file_path(Some(selected_folder.clone()))?;
+        Ok((
+            selected_folder.clone(),
+            selected_co_started_file_path.clone(),
+        ))
     }
     pub fn create_co_snapshots() -> Result<(), String> {
         assert!(check_silicon_installed());
@@ -979,51 +980,16 @@ pub mod commands {
                 ),
                 snapshot_image_path,
                 snapshot_markdown_path,
-                Some(start_entrypoint_index),
+                Some(start_entrypoint_index - 1),
             ))
         } else {
-            let program_path = BatConfig::get_validated_config()?
-                .required
-                .program_lib_path
-                .replace("/lib.rs", "")
-                .replace("../", "");
-            let started_file_string = fs::read_to_string(selected_co_started_path.clone()).unwrap();
-            let instruction_file_path = started_file_string
-                .lines()
-                .into_iter()
-                .find(|f| f.contains(&program_path))
-                .unwrap();
-            let instruction_file_string =
-                fs::read_to_string(format!("../{}", instruction_file_path)).unwrap();
-            let context_name = get_context_name(selected_folder_name.clone())?;
-            let mut handler_string: String = "".to_string();
-            let mut start_index = 0;
-            for (line_index, line) in instruction_file_string.lines().enumerate() {
-                if line.contains("pub") && line.contains("fn") {
-                    let closing_index = instruction_file_string
-                        .clone()
-                        .lines()
-                        .into_iter()
-                        .enumerate()
-                        .position(|(l_index, l)| l == "}" && l_index > line_index)
-                        .unwrap();
-                    let handler_string_candidate = get_string_between_two_index_from_string(
-                        instruction_file_string.clone(),
-                        line_index,
-                        closing_index + 1,
-                    )?;
-                    if handler_string_candidate
-                        .lines()
-                        .into_iter()
-                        .any(|l| l.contains("Context") && l.contains(&context_name))
-                    {
-                        handler_string = handler_string_candidate;
-                        start_index = line_index;
-                    }
-                }
-            }
+            //
+            let (handler_string, instruction_file_path, start_index) =
+                utils::helpers::get::get_instruction_handler_of_entrypoint(
+                    selected_folder_name.clone(),
+                )?;
             let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
+                format!("{}.md", selected_folder_name.clone()).as_str(),
                 "handler.png",
             );
             let snapshot_markdown_path = selected_co_started_path.replace(
@@ -1035,7 +1001,7 @@ pub mod commands {
                 format!("///{}\n\n{}", instruction_file_path, handler_string),
                 snapshot_image_path,
                 snapshot_markdown_path,
-                Some(start_index),
+                Some(start_index - 1),
             ))
         }
     }
@@ -1054,16 +1020,6 @@ pub mod commands {
         } else {
             take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), 1);
         }
-        //resize image
-        // let (width, height) = image::image_dimensions(image_path.clone()).unwrap();
-        // let screenshot_image = image::open(image_path.clone()).unwrap();
-        // let resized = image::imageops::resize(
-        //     &screenshot_image,
-        //     width / 2,
-        //     height / 2,
-        //     image::imageops::FilterType::Lanczos3,
-        // );
-        // resized.save(image_path).unwrap();
 
         // delete the markdown
         delete_file(temporary_markdown_path);
@@ -1074,7 +1030,7 @@ pub mod commands {
         temporary_markdown_path: String,
         index: usize,
     ) {
-        let offset = format!("{}", index - 1);
+        let offset = format!("{}", index);
         let image_file_name = image_path.split("/").last().unwrap();
         let mut args = vec![
             "--no-window-controls",

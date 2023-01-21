@@ -73,7 +73,7 @@ pub fn create_git_commit(
             let file_to_delete_path =
                 BatConfig::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
             let file_to_add_path =
-                BatConfig::get_auditor_code_overhaul_started_path(Some(commit_file.clone()))?;
+                BatConfig::get_auditor_code_overhaul_started_file_path(Some(commit_file.clone()))?;
             (commit_string, vec![file_to_delete_path, file_to_add_path])
         }
         GitCommit::StartCOMiro => {
@@ -83,7 +83,7 @@ pub fn create_git_commit(
             println!("code-overhaul file started with commit: {commit_string}");
             let file_to_delete_path =
                 BatConfig::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
-            let file_to_add_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+            let file_to_add_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
             (
                 commit_string,
                 vec![
@@ -99,7 +99,7 @@ pub fn create_git_commit(
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
             println!("code-overhaul file finished with commit: {commit_string:?}");
             let file_to_delete_path =
-                BatConfig::get_auditor_code_overhaul_started_path(Some(commit_file.clone()))?;
+                BatConfig::get_auditor_code_overhaul_started_file_path(Some(commit_file.clone()))?;
             let file_to_add_path =
                 BatConfig::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()))?;
             (commit_string, vec![file_to_delete_path, file_to_add_path])
@@ -109,7 +109,7 @@ pub fn create_git_commit(
             let commit_file_name = commit_file.clone().replace(".md", "");
             let commit_string = "co: ".to_string() + &commit_file_name + " finished";
             println!("code-overhaul file finished with commit: {commit_string:?}");
-            let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+            let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
             let folder_to_delete_path = format!("{started_path}/{commit_file_name}");
             let finished_folder_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
             let file_to_add_path = format!("{finished_folder_path}{commit_file}.md");
@@ -119,7 +119,7 @@ pub fn create_git_commit(
             let entrypoint_name = &commit_files.unwrap()[0];
             let commit_string = "co: ".to_string() + entrypoint_name + " deployed to Miro";
             println!("code-overhaul files deployed to Miro with commit: {commit_string:?}");
-            let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+            let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
             let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
             (commit_string, vec![folder_to_add_path])
         }
@@ -127,7 +127,7 @@ pub fn create_git_commit(
             let entrypoint_name = &commit_files.unwrap()[0];
             let commit_string = "co: ".to_string() + entrypoint_name + " updated in Miro";
             println!("code-overhaul files updated in Miro with commit: {commit_string:?}");
-            let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+            let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
             let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
             (commit_string, vec![folder_to_add_path])
         }

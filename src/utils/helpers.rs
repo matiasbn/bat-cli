@@ -635,6 +635,208 @@ pub mod get {
     use crate::{structs::FileInfo, utils};
 
     use super::*;
+    pub mod path {
+        use super::*;
+        pub fn get_instruction_file_path_from_started_entrypoint_co_file(
+            entrypoint_name: String,
+        ) -> Result<String, String> {
+            let co_file_path = BatConfig::get_auditor_code_overhaul_started_file_path(Some(
+                entrypoint_name.clone(),
+            ))?;
+            let program_path = BatConfig::get_validated_config()?
+                .required
+                .program_lib_path
+                .replace("/lib.rs", "")
+                .replace("../", "");
+            let started_file_string = fs::read_to_string(co_file_path.clone()).unwrap();
+            let instruction_file_path = started_file_string
+                .lines()
+                .into_iter()
+                .find(|f| f.contains(&program_path))
+                .expect(&format!(
+                    "co file of {} does not contain the instruction path yet",
+                    entrypoint_name,
+                ))
+                .to_string();
+            Ok(instruction_file_path)
+        }
+        pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String, String> {
+            if let Some(file_name_option) = file_name {
+                Ok(canonicalize_path(
+                    BatConfig::get_validated_config()
+                        .unwrap()
+                        .required
+                        .audit_folder_path
+                        + "/"
+                        + file_name_option.as_str(),
+                )
+                .unwrap())
+            } else {
+                Ok(canonicalize_path(
+                    BatConfig::get_validated_config()?
+                        .required
+                        .audit_folder_path,
+                )
+                .unwrap())
+            }
+        }
+
+        pub fn get_readme_file_path() -> Result<String, String> {
+            canonicalize_path(Self::get_audit_folder_path(None)? + "/README.md")
+        }
+
+        pub fn get_program_lib_path() -> Result<String, String> {
+            canonicalize_path(BatConfig::get_validated_config()?.required.program_lib_path)
+        }
+
+        pub fn get_notes_path() -> Result<String, String> {
+            Ok(Self::get_audit_folder_path(None)? + "/notes/")
+        }
+
+        pub fn get_auditor_notes_path() -> Result<String, String> {
+            Ok(Self::get_notes_path()? + &Self::get_auditor_name()? + "-notes/")
+        }
+
+        // Findings paths
+        pub fn get_auditor_findings_path() -> Result<String, String> {
+            Ok(Self::get_auditor_notes_path()? + "findings/")
+        }
+
+        pub fn get_auditor_findings_to_review_path(
+            file_name: Option<String>,
+        ) -> Result<String, String> {
+            match file_name {
+                Some(name) => Ok(Self::get_auditor_findings_path()?
+                    + "to-review/"
+                    + &name.replace(".md", "")
+                    + ".md"),
+                None => Ok(Self::get_auditor_findings_path()? + "to-review/"),
+            }
+        }
+
+        pub fn get_auditor_findings_accepted_path(
+            file_name: Option<String>,
+        ) -> Result<String, String> {
+            match file_name {
+                Some(name) => Ok(Self::get_auditor_findings_path()?
+                    + "accepted/"
+                    + &name.replace(".md", "")
+                    + ".md"),
+                None => Ok(Self::get_auditor_findings_path()? + "accepted/"),
+            }
+        }
+
+        pub fn get_auditor_findings_rejected_path(
+            file_name: Option<String>,
+        ) -> Result<String, String> {
+            match file_name {
+                Some(name) => Ok(Self::get_auditor_findings_path()?
+                    + "rejected/"
+                    + &name.replace(".md", "")
+                    + ".md"),
+                None => Ok(Self::get_auditor_findings_path()? + "rejected/"),
+            }
+        }
+
+        // Code overhaul paths
+        pub fn get_auditor_code_overhaul_path() -> Result<String, String> {
+            Ok(Self::get_auditor_notes_path()? + "code-overhaul/")
+        }
+
+        pub fn get_auditor_code_overhaul_to_review_path(
+            file_name: Option<String>,
+        ) -> Result<String, String> {
+            match file_name {
+                Some(name) => Ok(Self::get_auditor_code_overhaul_path()?
+                    + "to-review/"
+                    + &name.replace(".md", "")
+                    + ".md"),
+                None => Ok(Self::get_auditor_code_overhaul_path()? + "to-review/"),
+            }
+        }
+
+        pub fn get_auditor_code_overhaul_finished_path(
+            file_name: Option<String>,
+        ) -> Result<String, String> {
+            match file_name {
+                Some(name) => Ok(Self::get_auditor_code_overhaul_path()?
+                    + "finished/"
+                    + &name.replace(".md", "")
+                    + ".md"),
+                None => Ok(Self::get_auditor_code_overhaul_path()? + "finished/"),
+            }
+        }
+
+        pub fn get_auditor_code_overhaul_started_file_path(
+            file_name: Option<String>,
+        ) -> Result<String, String> {
+            match file_name {
+                Some(name) => {
+                    if MiroConfig::new().miro_enabled() {
+                        let entrypoint_name = &name.replace(".md", "");
+                        Ok(canonicalize_path(format!(
+                            "{}/started/{entrypoint_name}/{entrypoint_name}.md",
+                            Self::get_auditor_code_overhaul_path()?
+                        ))?)
+                    } else {
+                        Ok(Self::get_auditor_code_overhaul_path()?
+                            + "started/"
+                            + &name.replace(".md", "")
+                            + ".md")
+                    }
+                }
+                None => Ok(Self::get_auditor_code_overhaul_path()? + "started/"),
+            }
+        }
+
+        pub fn get_auditor_code_overhaul_started_file_path(
+            file_name: Option<String>,
+        ) -> Result<String, String> {
+            match file_name {
+                Some(name) => {
+                    if MiroConfig::new().miro_enabled() {
+                        let entrypoint_name = &name.replace(".md", "");
+                        Ok(canonicalize_path(format!(
+                            "{}/started/{entrypoint_name}/{entrypoint_name}.md",
+                            Self::get_auditor_code_overhaul_path()?
+                        ))?)
+                    } else {
+                        Ok(Self::get_auditor_code_overhaul_path()?
+                            + "started/"
+                            + &name.replace(".md", "")
+                            + ".md")
+                    }
+                }
+                None => Ok(Self::get_auditor_code_overhaul_path()? + "started/"),
+            }
+        }
+
+        // Templates path
+        pub fn get_templates_path() -> Result<String, String> {
+            Ok(Self::get_audit_folder_path(None)? + "/templates")
+        }
+
+        pub fn get_notes_folder_template_path() -> Result<String, String> {
+            Ok(Self::get_templates_path()? + "/notes-folder-template")
+        }
+
+        pub fn get_finding_template_path() -> Result<String, String> {
+            Ok(Self::get_templates_path()? + "/finding.md")
+        }
+
+        pub fn get_informational_template_path() -> Result<String, String> {
+            Ok(Self::get_templates_path()? + "/informational.md")
+        }
+
+        pub fn get_code_overhaul_template_path() -> Result<String, String> {
+            Ok(Self::get_templates_path()? + "/code-overhaul.md")
+        }
+
+        // Threat modeling file
+        pub fn get_auditor_threat_modeling_path() -> Result<String, String> {
+            Ok(Self::get_auditor_notes_path()? + "threat_modeling.md")
+        }
+    }
     pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
         let signers_names: Vec<_> = context_lines
             .iter()
@@ -889,32 +1091,40 @@ pub mod get {
         instruction_file: &String,
         line_index: usize,
     ) -> String {
-        let mut validation_candidate: Vec<String> = vec![line.clone().to_string()];
-        let mut idx = 1;
-        let mut validation_line =
-            instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
-        while !(validation_line.contains(");") || validation_line.contains(")?;")) {
-            validation_candidate.push(validation_line);
-            idx += 1;
-            validation_line =
-                instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
-        }
-        validation_candidate.push(validation_line);
-        let validation_string = validation_candidate.join("\n");
-        let prompt = format!(
+        // let mut validation_candidate: Vec<String> = vec![line.clone().to_string()];
+        let instruction_file_lines = instruction_file.lines();
+        let validation_closing_index = instruction_file_lines
+            .clone()
+            .into_iter()
+            .enumerate()
+            .position(|(l_index, l)| {
+                (l.contains(");") || l.contains(")?;")) && l_index > line_index
+            })
+            .unwrap();
+        let validation_string = get_string_between_two_index_from_string(
+            instruction_file.to_string(),
+            line_index,
+            validation_closing_index,
+        )
+        .unwrap();
+        // let mut idx = 1;
+        // let mut validation_line =
+        //     instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
+        // while !(validation_line.contains(");") || validation_line.contains(")?;")) {
+        //     validation_candidate.push(validation_line);
+        //     idx += 1;
+        //     validation_line =
+        //         instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
+        // }
+        // validation_candidate.push(validation_line);
+        // let validation_string = validation_candidate.join("\n");
+        let prompt_text = format!(
             "is the next function a {}? \n {}",
             format!("validation").red(),
             format!("{validation_string}").bright_green(),
         );
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(prompt)
-            .item("yes")
-            .item("no")
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-        if selection == 0 {
+        let is_validation = utils::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+        if is_validation {
             validation_string
         } else {
             "".to_string()
@@ -971,7 +1181,7 @@ pub mod get {
 
     // returns a list of folder and files names
     pub fn get_started_entrypoints() -> Result<Vec<String>, String> {
-        let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+        let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
         let started_files = fs::read_dir(started_path)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
@@ -1234,6 +1444,46 @@ pub mod get {
             .join("\n");
         Ok(context_account_lines)
     }
+
+    /// Returns (instruction handler string, the starting index and the end index)
+    pub fn get_instruction_handler_of_entrypoint(
+        entrypoint_name: String,
+    ) -> Result<(String, usize, usize), String> {
+        let mut handler_string: String = "".to_string();
+        let instruction_file_path =
+            get_instruction_file_path_from_started_entrypoint_co_file(entrypoint_name.clone())?;
+        let instruction_file_string =
+            fs::read_to_string(format!("../{}", instruction_file_path)).unwrap();
+        let context_name = get_context_name(entrypoint_name.clone())?;
+        let mut start_index = 0;
+        let mut end_index = 0;
+        for (line_index, line) in instruction_file_string.lines().enumerate() {
+            if line.contains("pub") && line.contains("fn") {
+                let closing_index = instruction_file_string
+                    .clone()
+                    .lines()
+                    .into_iter()
+                    .enumerate()
+                    .position(|(l_index, l)| l == "}" && l_index > line_index)
+                    .unwrap();
+                let handler_string_candidate = get_string_between_two_index_from_string(
+                    instruction_file_string.clone(),
+                    line_index,
+                    closing_index + 1,
+                )?;
+                if handler_string_candidate
+                    .lines()
+                    .into_iter()
+                    .any(|l| l.contains("Context") && l.contains(&context_name))
+                {
+                    handler_string = handler_string_candidate;
+                    start_index = line_index;
+                    end_index = closing_index;
+                }
+            }
+        }
+        Ok((handler_string, start_index, end_index))
+    }
 }
 
 pub mod check {
@@ -1302,7 +1552,7 @@ pub mod count {
         let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None)?;
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
         let to_review_count = count_filtering_gitkeep(to_review_folder);
-        let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+        let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
         let started_folder = fs::read_dir(started_path).unwrap();
         let started_count = count_filtering_gitkeep(started_folder);
         let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
