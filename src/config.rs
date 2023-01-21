@@ -7,7 +7,7 @@ use crate::commands::{
     miro::MiroConfig,
 };
 
-use crate::utils::helpers::canonicalize_path;
+use crate::utils::path::canonicalize_path;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct BatConfig {

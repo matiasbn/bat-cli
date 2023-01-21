@@ -636,6 +636,8 @@ pub mod get {
 
     use super::*;
     pub mod path {
+        use crate::utils::path::canonicalize_path;
+
         use super::*;
         pub fn get_instruction_file_path_from_started_entrypoint_co_file(
             entrypoint_name: String,
@@ -1333,7 +1335,7 @@ pub mod get {
             })
             .map(|entry| {
                 let info = FileInfo {
-                    path: utils::helpers::canonicalize_path(
+                    path: utils::path::canonicalize_path(
                         entry.as_ref().unwrap().path().display().to_string(),
                     )
                     .unwrap(),
@@ -1575,15 +1577,4 @@ pub fn normalize_url(url_to_normalize: &str) -> Result<String, String> {
         .normalize(None)
         .expect(format!("Error normalizing url {}", url_to_normalize).as_str());
     Ok(url)
-}
-
-pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, String> {
-    let error_message = format!("Error canonicalizing path: {}", path_to_canonicalize);
-    let canonicalized_path = Path::new(&(path_to_canonicalize))
-        .canonicalize()
-        .expect(&error_message)
-        .into_os_string()
-        .into_string()
-        .expect(&error_message);
-    Ok(canonicalized_path)
 }
