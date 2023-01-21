@@ -132,11 +132,11 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Count) => {
             commands::code_overhaul::count_co_files().unwrap()
         }
-        Commands::CO(CodeOverhaulActions::Miro) => {
-            commands::miro::commands::deploy_miro().await.unwrap()
-        }
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
+        }
+        Commands::Miro(MiroActions::Create) => {
+            commands::miro::commands::deploy_miro().await.unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
