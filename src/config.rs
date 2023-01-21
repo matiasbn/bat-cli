@@ -146,8 +146,8 @@ impl BatConfig {
         }
     }
 
-    pub fn get_audit_information_file_path() -> Result<String, String> {
-        canonicalize_path(Self::get_audit_folder_path(None)? + "/audit_information.md")
+    pub fn get_readme_file_path() -> Result<String, String> {
+        canonicalize_path(Self::get_audit_folder_path(None)? + "/README.md")
     }
 
     pub fn get_program_lib_path() -> Result<String, String> {

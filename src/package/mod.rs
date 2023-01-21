@@ -34,6 +34,7 @@ pub fn format() -> Result<(), String> {
 pub fn publish() -> Result<(), String> {
     assert!(check_files_not_commited()?);
     bump(true)?;
+    println!("checkout main branch before pushing");
     println!("Executing cargo publish");
     Command::new("cargo").arg("publish").output().unwrap();
     Ok(())
