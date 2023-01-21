@@ -20,6 +20,7 @@ use crate::constants::{
 use std::borrow::{Borrow, BorrowMut};
 
 use crate::commands::miro::MiroConfig;
+use crate::utils;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -635,183 +636,184 @@ pub mod get {
     use crate::{structs::FileInfo, utils};
 
     use super::*;
-    pub mod path {
-        use crate::utils::path::canonicalize_path;
+    // pub mod path {
+    //     use crate::utils::path::canonicalize_path;
 
-        use super::*;
-        pub fn get_instruction_file_path_from_started_entrypoint_co_file(
-            entrypoint_name: String,
-        ) -> Result<String, String> {
-            let co_file_path =
-                get_auditor_code_overhaul_started_file_path(Some(entrypoint_name.clone()))?;
-            let program_path = BatConfig::get_validated_config()?
-                .required
-                .program_lib_path
-                .replace("/lib.rs", "")
-                .replace("../", "");
-            let started_file_string = fs::read_to_string(co_file_path.clone()).unwrap();
-            let instruction_file_path = started_file_string
-                .lines()
-                .into_iter()
-                .find(|f| f.contains(&program_path))
-                .expect(&format!(
-                    "co file of {} does not contain the instruction path yet",
-                    entrypoint_name,
-                ))
-                .to_string();
-            Ok(instruction_file_path)
-        }
-        pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String, String> {
-            if let Some(file_name_option) = file_name {
-                Ok(canonicalize_path(
-                    BatConfig::get_validated_config()
-                        .unwrap()
-                        .required
-                        .audit_folder_path
-                        + "/"
-                        + file_name_option.as_str(),
-                )
-                .unwrap())
-            } else {
-                Ok(canonicalize_path(
-                    BatConfig::get_validated_config()?
-                        .required
-                        .audit_folder_path,
-                )
-                .unwrap())
-            }
-        }
+    //     use super::*;
+    //     pub fn get_instruction_file_path_from_started_entrypoint_co_file(
+    //         entrypoint_name: String,
+    //     ) -> Result<String, String> {
+    //         let co_file_path =
+    //             get_auditor_code_overhaul_started_file_path(Some(entrypoint_name.clone()))?;
+    //         let program_path = BatConfig::get_validated_config()?
+    //             .required
+    //             .program_lib_path
+    //             .replace("/lib.rs", "")
+    //             .replace("../", "");
+    //         let started_file_string = fs::read_to_string(co_file_path.clone()).unwrap();
+    //         let instruction_file_path = started_file_string
+    //             .lines()
+    //             .into_iter()
+    //             .find(|f| f.contains(&program_path))
+    //             .expect(&format!(
+    //                 "co file of {} does not contain the instruction path yet",
+    //                 entrypoint_name,
+    //             ))
+    //             .to_string();
+    //         Ok(instruction_file_path)
+    //     }
+    //     pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String, String> {
+    //         if let Some(file_name_option) = file_name {
+    //             Ok(canonicalize_path(
+    //                 BatConfig::get_validated_config()
+    //                     .unwrap()
+    //                     .required
+    //                     .audit_folder_path
+    //                     + "/"
+    //                     + file_name_option.as_str(),
+    //             )
+    //             .unwrap())
+    //         } else {
+    //             Ok(canonicalize_path(
+    //                 BatConfig::get_validated_config()?
+    //                     .required
+    //                     .audit_folder_path,
+    //             )
+    //             .unwrap())
+    //         }
+    //     }
 
-        pub fn get_readme_file_path() -> Result<String, String> {
-            canonicalize_path(get_audit_folder_path(None)? + "/README.md")
-        }
+    //     pub fn get_readme_file_path() -> Result<String, String> {
+    //         canonicalize_path(get_audit_folder_path(None)? + "/README.md")
+    //     }
 
-        pub fn get_program_lib_path() -> Result<String, String> {
-            canonicalize_path(BatConfig::get_validated_config()?.required.program_lib_path)
-        }
+    //     pub fn get_program_lib_path() -> Result<String, String> {
+    //         canonicalize_path(BatConfig::get_validated_config()?.required.program_lib_path)
+    //     }
 
-        pub fn get_notes_path() -> Result<String, String> {
-            Ok(get_audit_folder_path(None)? + "/notes/")
-        }
+    //     pub fn get_notes_path() -> Result<String, String> {
+    //         Ok(get_audit_folder_path(None)? + "/notes/")
+    //     }
 
-        pub fn get_auditor_notes_path() -> Result<String, String> {
-            Ok(get_notes_path()? + &BatConfig::get_auditor_name()? + "-notes/")
-        }
+    //     pub fn get_auditor_notes_path() -> Result<String, String> {
+    //         Ok(get_notes_path()? + &BatConfig::get_auditor_name()? + "-notes/")
+    //     }
 
-        // Findings paths
-        pub fn get_auditor_findings_path() -> Result<String, String> {
-            Ok(get_auditor_notes_path()? + "findings/")
-        }
+    //     // Findings paths
+    //     pub fn get_auditor_findings_path() -> Result<String, String> {
+    //         Ok(get_auditor_notes_path()? + "findings/")
+    //     }
 
-        pub fn get_auditor_findings_to_review_path(
-            file_name: Option<String>,
-        ) -> Result<String, String> {
-            match file_name {
-                Some(name) => Ok(get_auditor_findings_path()?
-                    + "to-review/"
-                    + &name.replace(".md", "")
-                    + ".md"),
-                None => Ok(get_auditor_findings_path()? + "to-review/"),
-            }
-        }
+    //     pub fn get_auditor_findings_to_review_path(
+    //         file_name: Option<String>,
+    //     ) -> Result<String, String> {
+    //         match file_name {
+    //             Some(name) => Ok(get_auditor_findings_path()?
+    //                 + "to-review/"
+    //                 + &name.replace(".md", "")
+    //                 + ".md"),
+    //             None => Ok(get_auditor_findings_path()? + "to-review/"),
+    //         }
+    //     }
 
-        pub fn get_auditor_findings_accepted_path(
-            file_name: Option<String>,
-        ) -> Result<String, String> {
-            match file_name {
-                Some(name) => Ok(get_auditor_findings_path()?
-                    + "accepted/"
-                    + &name.replace(".md", "")
-                    + ".md"),
-                None => Ok(get_auditor_findings_path()? + "accepted/"),
-            }
-        }
+    //     pub fn get_auditor_findings_accepted_path(
+    //         file_name: Option<String>,
+    //     ) -> Result<String, String> {
+    //         match file_name {
+    //             Some(name) => Ok(get_auditor_findings_path()?
+    //                 + "accepted/"
+    //                 + &name.replace(".md", "")
+    //                 + ".md"),
+    //             None => Ok(get_auditor_findings_path()? + "accepted/"),
+    //         }
+    //     }
 
-        pub fn get_auditor_findings_rejected_path(
-            file_name: Option<String>,
-        ) -> Result<String, String> {
-            match file_name {
-                Some(name) => Ok(get_auditor_findings_path()?
-                    + "rejected/"
-                    + &name.replace(".md", "")
-                    + ".md"),
-                None => Ok(get_auditor_findings_path()? + "rejected/"),
-            }
-        }
+    //     pub fn get_auditor_findings_rejected_path(
+    //         file_name: Option<String>,
+    //     ) -> Result<String, String> {
+    //         match file_name {
+    //             Some(name) => Ok(get_auditor_findings_path()?
+    //                 + "rejected/"
+    //                 + &name.replace(".md", "")
+    //                 + ".md"),
+    //             None => Ok(get_auditor_findings_path()? + "rejected/"),
+    //         }
+    //     }
 
-        // Code overhaul paths
-        pub fn get_auditor_code_overhaul_path() -> Result<String, String> {
-            Ok(get_auditor_notes_path()? + "code-overhaul/")
-        }
+    //     // Code overhaul paths
+    //     pub fn get_auditor_code_overhaul_path() -> Result<String, String> {
+    //         Ok(get_auditor_notes_path()? + "code-overhaul/")
+    //     }
 
-        pub fn get_auditor_code_overhaul_to_review_path(
-            file_name: Option<String>,
-        ) -> Result<String, String> {
-            match file_name {
-                Some(name) => Ok(get_auditor_code_overhaul_path()?
-                    + "to-review/"
-                    + &name.replace(".md", "")
-                    + ".md"),
-                None => Ok(get_auditor_code_overhaul_path()? + "to-review/"),
-            }
-        }
+    //     pub fn get_auditor_code_overhaul_to_review_path(
+    //         file_name: Option<String>,
+    //     ) -> Result<String, String> {
+    //         match file_name {
+    //             Some(name) => Ok(get_auditor_code_overhaul_path()?
+    //                 + "to-review/"
+    //                 + &name.replace(".md", "")
+    //                 + ".md"),
+    //             None => Ok(get_auditor_code_overhaul_path()? + "to-review/"),
+    //         }
+    //     }
 
-        pub fn get_auditor_code_overhaul_finished_path(
-            file_name: Option<String>,
-        ) -> Result<String, String> {
-            match file_name {
-                Some(name) => Ok(get_auditor_code_overhaul_path()?
-                    + "finished/"
-                    + &name.replace(".md", "")
-                    + ".md"),
-                None => Ok(get_auditor_code_overhaul_path()? + "finished/"),
-            }
-        }
+    //     pub fn get_auditor_code_overhaul_finished_path(
+    //         file_name: Option<String>,
+    //     ) -> Result<String, String> {
+    //         match file_name {
+    //             Some(name) => Ok(get_auditor_code_overhaul_path()?
+    //                 + "finished/"
+    //                 + &name.replace(".md", "")
+    //                 + ".md"),
+    //             None => Ok(get_auditor_code_overhaul_path()? + "finished/"),
+    //         }
+    //     }
 
-        pub fn get_auditor_code_overhaul_started_file_path(
-            file_name: Option<String>,
-        ) -> Result<String, String> {
-            match file_name {
-                Some(name) => {
-                    if MiroConfig::new().miro_enabled() {
-                        let entrypoint_name = &name.replace(".md", "");
-                        Ok(canonicalize_path(format!(
-                            "{}/started/{entrypoint_name}/{entrypoint_name}.md",
-                            get_auditor_code_overhaul_path()?
-                        ))?)
-                    } else {
-                        Ok(get_auditor_code_overhaul_path()?
-                            + "started/"
-                            + &name.replace(".md", "")
-                            + ".md")
-                    }
-                }
-                None => Ok(get_auditor_code_overhaul_path()? + "started/"),
-            }
-        }
+    //     pub fn get_auditor_code_overhaul_started_file_path(
+    //         file_name: Option<String>,
+    //     ) -> Result<String, String> {
+    //         match file_name {
+    //             Some(name) => {
+    //                 if MiroConfig::new().miro_enabled() {
+    //                     let entrypoint_name = &name.replace(".md", "");
+    //                     Ok(canonicalize_path(format!(
+    //                         "{}/started/{entrypoint_name}/{entrypoint_name}.md",
+    //                         get_auditor_code_overhaul_path()?
+    //                     ))?)
+    //                 } else {
+    //                     Ok(get_auditor_code_overhaul_path()?
+    //                         + "started/"
+    //                         + &name.replace(".md", "")
+    //                         + ".md")
+    //                 }
+    //             }
+    //             None => Ok(get_auditor_code_overhaul_path()? + "started/"),
+    //         }
+    //     }
 
-        // Templates path
-        pub fn get_templates_path() -> Result<String, String> {
-            Ok(get_audit_folder_path(None)? + "/templates")
-        }
+    //     // Templates path
+    //     pub fn get_templates_path() -> Result<String, String> {
+    //         Ok(get_audit_folder_path(None)? + "/templates")
+    //     }
 
-        pub fn get_finding_template_path() -> Result<String, String> {
-            Ok(get_templates_path()? + "/finding.md")
-        }
+    //     pub fn get_finding_template_path() -> Result<String, String> {
+    //         Ok(get_templates_path()? + "/finding.md")
+    //     }
 
-        pub fn get_informational_template_path() -> Result<String, String> {
-            Ok(get_templates_path()? + "/informational.md")
-        }
+    //     pub fn get_informational_template_path() -> Result<String, String> {
+    //         Ok(get_templates_path()? + "/informational.md")
+    //     }
 
-        pub fn get_code_overhaul_template_path() -> Result<String, String> {
-            Ok(get_templates_path()? + "/code-overhaul.md")
-        }
+    //     pub fn get_code_overhaul_template_path() -> Result<String, String> {
+    //         Ok(get_templates_path()? + "/code-overhaul.md")
+    //     }
 
-        // Threat modeling file
-        pub fn get_auditor_threat_modeling_path() -> Result<String, String> {
-            Ok(get_auditor_notes_path()? + "threat_modeling.md")
-        }
-    }
+    //     // Threat modeling file
+    //     pub fn get_auditor_threat_modeling_path() -> Result<String, String> {
+    //         Ok(get_auditor_notes_path()? + "threat_modeling.md")
+    //     }
+    // }
+
     pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
         let signers_names: Vec<_> = context_lines
             .iter()
@@ -1156,7 +1158,7 @@ pub mod get {
 
     // returns a list of folder and files names
     pub fn get_started_entrypoints() -> Result<Vec<String>, String> {
-        let started_path = super::get::path::get_auditor_code_overhaul_started_file_path(None)?;
+        let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_files = fs::read_dir(started_path)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
@@ -1227,7 +1229,7 @@ pub mod get {
     }
 
     pub fn get_finished_co_files() -> Result<Vec<(String, String)>, String> {
-        let finished_path = super::get::path::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
         let mut finished_folder = fs::read_dir(&finished_path)
             .unwrap()
             .map(|file| file.unwrap())
@@ -1426,7 +1428,7 @@ pub mod get {
     ) -> Result<(String, usize, usize), String> {
         let mut handler_string: String = "".to_string();
         let instruction_file_path =
-            super::get::path::get_instruction_file_path_from_started_entrypoint_co_file(
+            utils::path::get_instruction_file_path_from_started_entrypoint_co_file(
                 entrypoint_name.clone(),
             )?;
         let instruction_file_string =
@@ -1526,13 +1528,13 @@ pub mod count {
             .len()
     }
     pub fn co_counter() -> Result<(usize, usize, usize), String> {
-        let to_review_path = super::get::path::get_auditor_code_overhaul_to_review_path(None)?;
+        let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
         let to_review_count = count_filtering_gitkeep(to_review_folder);
-        let started_path = super::get::path::get_auditor_code_overhaul_started_file_path(None)?;
+        let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_folder = fs::read_dir(started_path).unwrap();
         let started_count = count_filtering_gitkeep(started_folder);
-        let finished_path = super::get::path::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
         let finished_folder = fs::read_dir(finished_path).unwrap();
         let finished_count = count_filtering_gitkeep(finished_folder);
         Ok((to_review_count, started_count, finished_count))
