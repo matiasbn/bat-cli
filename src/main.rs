@@ -3,7 +3,7 @@
 extern crate core;
 
 use clap::{Parser, Subcommand};
-use commands::git::GitCommit;
+use utils::git::GitCommit;
 
 mod command_line;
 mod commands;
@@ -134,7 +134,7 @@ async fn main() {
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
-        Commands::Notes => commands::git::create_git_commit(GitCommit::Notes, None).unwrap(),
+        Commands::Notes => utils::git::create_git_commit(GitCommit::Notes, None).unwrap(),
         Commands::Results => commands::code_overhaul::update_audit_results().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]

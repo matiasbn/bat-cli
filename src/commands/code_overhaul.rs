@@ -4,7 +4,6 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::{MultiSelect, Select};
 
 use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
-use crate::commands::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::commands::miro::api::connector::ConnectorOptions;
 use crate::commands::miro::{self, MiroConfig};
 use crate::config::BatConfig;
@@ -17,6 +16,7 @@ use crate::constants::{
     VALIDATIONS_PNG_NAME,
 };
 use crate::structs::{SignerInfo, SignerType};
+use crate::utils::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::utils::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
     get_table_of_contents_for_results,

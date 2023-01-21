@@ -4,7 +4,7 @@ use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 
 use crate::{
     command_line::execute_command,
-    commands::git::{check_files_not_commited, git_push},
+    utils::git::{check_files_not_commited, git_push},
 };
 
 pub fn full() -> Result<(), String> {
