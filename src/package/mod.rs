@@ -4,7 +4,7 @@ use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 
 use crate::{
     command_line::execute_command,
-    commands::git::{check_files_not_commited, git_push},
+    utils::git::{check_files_not_commited, git_push},
 };
 
 pub fn full() -> Result<(), String> {
@@ -25,7 +25,10 @@ pub fn format() -> Result<(), String> {
     println!("Executing cargo fix");
     Command::new("cargo").args(["fix"]).output().unwrap();
     println!("Executing cargo format");
-    Command::new("cargo").args(["format"]).output().unwrap();
+    Command::new("cargo")
+        .args(["format", "--all"])
+        .output()
+        .unwrap();
     println!("Commiting clippy changes");
     create_commit(PublishCommit::Clippy, None);
     Ok(())
