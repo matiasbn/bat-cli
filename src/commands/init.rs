@@ -12,7 +12,9 @@ use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::command_line::vs_code_open_file_in_current_window;
-use crate::commands::git::{create_git_commit, GitCommit};
+use crate::commands::git::{
+    check_if_branch_exists, create_git_commit, get_expected_current_branch, GitCommit,
+};
 use crate::config::{BatConfig, RequiredConfig};
 use crate::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
@@ -20,64 +22,115 @@ use crate::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
 use crate::utils::cli_inputs;
+use crate::utils::helpers::get::get_only_files_from_folder;
+use crate::utils::helpers::print::print_string;
 
 pub fn initialize_bat_project() -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;
     let BatConfig {
         required, auditor, ..
     } = bat_config.clone();
-    // if auditor.auditor is empty, prompt name
-    if auditor.auditor_name.is_empty() {
-        let auditor_name = get_auditor_name(required.auditor_names);
-        println!(
-            "Is great to have you here {}!",
-            format!("{}", auditor_name).green()
-        );
-
-        // Ask the user if is going to use the Miro integration
-        let prompt_text = "Do you want to use the Miro integration?";
-        let include_miro = cli_inputs::select_yes_or_no(prompt_text)?;
-        let token: String;
-        let moat: Option<&str> = if include_miro {
-            let prompt_text = "Miro OAuth access token";
-            token = cli_inputs::input(&prompt_text)?;
-            Some(token.as_str())
-        } else {
-            None
-        };
-        let prompt_text = "Do you want to use the VS Code integration?";
-        let include_vs_code = cli_inputs::select_yes_or_no(prompt_text)?;
-        update_auditor_toml(auditor_name, moat, include_vs_code);
+    if !Path::new("BatAuditor.toml").is_file() || auditor.auditor_name.is_empty() {
+        prompt_auditor_options(required.clone())?;
     }
+    let bat_config: BatConfig = BatConfig::get_validated_config()?;
+    // if !Path::new(&bat_auditor_path).is_dir() {}
+    // if auditor.auditor is empty, prompt name
     println!("creating project for the next config: ");
-    println!("{bat_config:#?}");
+    println!("{:#?}", bat_config);
 
     if !Path::new(".git").is_dir() {
-        println!("Updating project information file");
-        update_audit_information_file()?;
         println!("Initializing project repository");
         initialize_project_repository()?;
         println!("Project repository successfully initialized");
-    } else {
-        println!("Project repository already initialized");
     }
 
-    validate_init_config()?;
-    // copy templates/notes-folder-template
-    create_auditor_notes_folder()?;
-    // create overhaul files
-    initialize_code_overhaul_files()?;
-    // commit to-review files
-    create_git_commit(GitCommit::InitAuditor, None)?;
-    println!("Project successfully initialized");
-    let lib_file_path = BatConfig::get_program_lib_path()?;
+    let readme_path = BatConfig::get_readme_file_path()?;
+    let readme_string = fs::read_to_string(readme_path.clone()).unwrap();
 
+    if readme_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
+        println!("Updating README.md");
+        update_readme_file()?;
+    }
+    Command::new("git")
+        .args(["add", &readme_path])
+        .output()
+        .unwrap();
+
+    // create auditors branches from develop
+    for auditor_name in required.auditor_names {
+        let auditor_project_branch_name = format!("{}-{}", auditor_name, required.project_name);
+        let auditor_project_branch_exists = check_if_branch_exists(&auditor_project_branch_name)?;
+        if !auditor_project_branch_exists {
+            println!("Creating branch {:?}", auditor_project_branch_name);
+            // checkout develop to create auditor project branch from there
+            Command::new("git")
+                .args(["checkout", "develop"])
+                .output()
+                .unwrap();
+            Command::new("git")
+                .args(["checkout", "-b", &auditor_project_branch_name])
+                .output()
+                .unwrap();
+        }
+    }
+    let auditor_project_branch_name = get_expected_current_branch()?;
+    println!("Checking out {:?} branch", auditor_project_branch_name);
+    // checkout auditor branch
+    Command::new("git")
+        .args(["checkout", auditor_project_branch_name.as_str()])
+        .output()
+        .unwrap();
+
+    // validate_init_config()?;
+    let auditor_notes_folder = BatConfig::get_auditor_notes_path()?;
+    let auditor_notes_folder_exists = Path::new(&auditor_notes_folder).is_dir();
+    if auditor_notes_folder_exists {
+        let auditor_notes_files = get_only_files_from_folder(auditor_notes_folder.clone())?;
+        if auditor_notes_files.is_empty() {
+            create_auditor_notes_folder()?;
+            // create overhaul files
+            initialize_code_overhaul_files()?;
+            // commit to-review files
+        }
+    } else {
+        create_auditor_notes_folder()?;
+        // create overhaul files
+        initialize_code_overhaul_files()?;
+        // commit to-review files
+    }
+
+    println!("Project successfully initialized");
+    create_git_commit(GitCommit::InitAuditor, None)?;
+    let lib_file_path = BatConfig::get_program_lib_path()?;
     // Open lib.rs file in vscode
     vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())?;
     Ok(())
 }
 
-fn update_audit_information_file() -> Result<(), String> {
+fn prompt_auditor_options(required: RequiredConfig) -> Result<(), String> {
+    let auditor_name = get_auditor_name(required.auditor_names);
+    println!(
+        "Is great to have you here {}!",
+        format!("{}", auditor_name).green()
+    );
+    let prompt_text = "Do you want to use the Miro integration?";
+    let include_miro = cli_inputs::select_yes_or_no(prompt_text)?;
+    let token: String;
+    let moat: Option<&str> = if include_miro {
+        let prompt_text = "Miro OAuth access token";
+        token = cli_inputs::input(&prompt_text)?;
+        Some(token.as_str())
+    } else {
+        None
+    };
+    let prompt_text = "Do you want to use the VS Code integration?";
+    let include_vs_code = cli_inputs::select_yes_or_no(prompt_text)?;
+    update_auditor_toml(auditor_name, moat, include_vs_code);
+    Ok(())
+}
+
+fn update_readme_file() -> Result<(), String> {
     let RequiredConfig {
         project_name,
         client_name,
@@ -86,15 +139,15 @@ fn update_audit_information_file() -> Result<(), String> {
         miro_board_url,
         ..
     } = BatConfig::get_init_config()?.required;
-    let audit_information_path = BatConfig::get_audit_information_file_path()?;
-    let data = fs::read_to_string(audit_information_path.clone()).unwrap();
-    let updated_audit_information = data
+    let readme_path = BatConfig::get_readme_file_path()?;
+    let data = fs::read_to_string(readme_path.clone()).unwrap();
+    let updated_readme = data
         .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
         .replace(AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, &client_name)
         .replace(AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, &commit_hash_url)
         .replace(AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, &miro_board_url)
         .replace(AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, &starting_date);
-    fs::write(audit_information_path, updated_audit_information).expect("Could not write to file!");
+    fs::write(readme_path, updated_readme).expect("Could not write to file README.md");
     Ok(())
 }
 
@@ -132,27 +185,26 @@ fn update_auditor_toml(
     fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
 }
 
-fn validate_init_config() -> Result<(), String> {
-    // audit notes folder should not exist
-    let BatConfig { required, .. } = BatConfig::get_validated_config()?;
-    let auditor_folder_path = BatConfig::get_auditor_notes_path()?;
-    if Path::new(&auditor_folder_path).is_dir() {
-        panic!("auditor folder {:?} already exist", &auditor_folder_path);
-    }
-    if !Path::new(&required.program_lib_path).is_file() {
-        panic!(
-            "program file at path \"{:?}\" does not exist, please update Bat.toml file",
-            &required.program_lib_path
-        );
-    }
-    Ok(())
-}
+// fn validate_init_config() -> Result<(), String> {
+//     // audit notes folder should not exist
+//     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
+//     let auditor_folder_path = BatConfig::get_auditor_notes_path()?;
+//     if Path::new(&auditor_folder_path).is_dir() {
+//         panic!("auditor folder {:?} already exist", &auditor_folder_path);
+//     }
+//     if !Path::new(&required.program_lib_path).is_file() {
+//         panic!(
+//             "program file at path \"{:?}\" does not exist, please update Bat.toml file",
+//             &required.program_lib_path
+//         );
+//     }
+//     Ok(())
+// }
 
 fn initialize_project_repository() -> Result<(), String> {
     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
     let RequiredConfig {
         project_repository_url,
-        auditor_names,
         ..
     } = required;
     // git init
@@ -204,35 +256,6 @@ fn initialize_project_repository() -> Result<(), String> {
         .output()
         .unwrap();
 
-    // create auditors branches from develop
-    for auditor_name in auditor_names {
-        println!("Creating branch for {auditor_name:?}");
-        Command::new("git")
-            .args(["checkout", "-b", (auditor_name + "-notes").as_str()])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["checkout", "develop"])
-            .output()
-            .unwrap();
-    }
-
-    println!("Pushing all branches to origin");
-    // push all branches to remote
-    Command::new("git")
-        .args(["push", "origin", "--all"])
-        .output()
-        .unwrap();
-
-    println!("Checking out {:?}'s branch", BatConfig::get_auditor_name());
-    // checkout auditor branch
-    Command::new("git")
-        .args([
-            "checkout",
-            (BatConfig::get_auditor_name()? + "-notes").as_str(),
-        ])
-        .output()
-        .unwrap();
     Ok(())
 }
 

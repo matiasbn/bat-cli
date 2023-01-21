@@ -51,15 +51,18 @@ pub fn create_git_commit(
     commit_type: GitCommit,
     commit_files: Option<Vec<String>>,
 ) -> Result<(), String> {
-    check_correct_branch();
+    check_correct_branch()?;
     let (commit_message, commit_files_path): (String, Vec<String>) = match commit_type {
         GitCommit::Init => {
             let commit_string = "initial commit".to_string();
             (commit_string, vec![BatConfig::get_audit_folder_path(None)?])
         }
         GitCommit::InitAuditor => {
-            let commit_string =
-                "co: project initialized for ".to_string() + &BatConfig::get_auditor_name()?;
+            let bat_config = BatConfig::get_validated_config()?;
+            let commit_string = format!(
+                "co: project {} initialized for {}",
+                bat_config.required.project_name, bat_config.auditor.auditor_name
+            );
             (commit_string, vec![BatConfig::get_auditor_notes_path()?])
         }
         GitCommit::StartCO => {
@@ -241,14 +244,31 @@ pub fn create_git_commit(
 }
 
 pub fn check_correct_branch() -> Result<(), String> {
-    let expected_auditor_branch = BatConfig::get_auditor_name()? + "-notes";
+    let expected_auditor_branch = get_expected_current_branch()?;
     if get_branch_name()? != expected_auditor_branch {
         panic!(
             "You are in an incorrect branch, please run \"git checkout {:?}\"",
-            expected_auditor_branch.replace('\"', "")
+            expected_auditor_branch
         );
     }
     Ok(())
+}
+
+pub fn get_expected_current_branch() -> Result<String, String> {
+    let bat_config = BatConfig::get_validated_config()?;
+    let expected_auditor_branch = format!(
+        "{}-{}",
+        bat_config.auditor.auditor_name, bat_config.required.project_name
+    );
+    Ok(expected_auditor_branch)
+}
+
+pub fn check_if_branch_exists(branch_name: &str) -> Result<bool, String> {
+    let git_check_branch_exists = Command::new("git")
+        .args(["rev-parse", "--verify", branch_name])
+        .output()
+        .unwrap();
+    Ok(git_check_branch_exists.stderr.is_empty())
 }
 
 pub fn clone_base_repository() {
@@ -275,5 +295,5 @@ pub fn check_files_not_commited() -> Result<bool, String> {
 
 #[test]
 fn test_create_git_commit() {
-    create_git_commit(GitCommit::FinishCO, Some(vec!["test_co_file".to_string()]));
+    create_git_commit(GitCommit::FinishCO, Some(vec!["test_co_file".to_string()])).unwrap();
 }
