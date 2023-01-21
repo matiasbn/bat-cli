@@ -220,7 +220,7 @@ pub mod api {
                 &file_name,
                 id.clone(),
             )
-            .await;
+            .await?;
             Ok(id)
         }
 
@@ -574,15 +574,19 @@ pub mod api {
 }
 
 pub mod commands {
-    use std::path;
 
-    use clap::Command;
     use colored::Colorize;
 
     use crate::{
         commands::miro::api::connector::ConnectorOptions,
         structs::{SignerInfo, SignerType},
-        utils::{self, helpers::get::get_string_between_two_str_from_string},
+        utils::{
+            self,
+            helpers::get::{
+                get_context_name, get_string_between_two_index_from_string,
+                get_string_between_two_str_from_string,
+            },
+        },
     };
 
     use super::*;
@@ -591,9 +595,14 @@ pub mod commands {
         // check empty images
         // get files and folders from started, filter .md files
         let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
-        let snapshot_paths = CO_FIGURES
-            .iter()
-            .map(|figure| format!("{selected_co_started_path}/{selected_folder}/{figure}"));
+        let snapshot_paths = CO_FIGURES.iter().map(|figure| {
+            format!(
+                "{}",
+                selected_co_started_path
+                    .clone()
+                    .replace(format!("{}.md", selected_folder).as_str(), figure)
+            )
+        });
 
         // check if some of the snapshots is empty
         for path in snapshot_paths.clone() {
@@ -606,16 +615,14 @@ pub mod commands {
 
         // create the Miro frame
         // Replace placeholder with Miro url
-        let started_co_file_path =
-            format!("{selected_co_started_path}/{selected_folder}/{selected_folder}.md");
 
         // only create the frame if it was not created yet
-        let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
+        let to_start_file_content = fs::read_to_string(&selected_co_started_path).unwrap();
         let is_deploying =
             to_start_file_content.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER);
         if is_deploying {
             // check that the signers are finished
-            let current_content = fs::read_to_string(&started_co_file_path).unwrap();
+            let current_content = fs::read_to_string(selected_co_started_path.clone()).unwrap();
             if current_content.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
                 panic!("Please complete the signers description before deploying to Miro");
             }
@@ -710,7 +717,7 @@ pub mod commands {
                 .await
                 .unwrap();
             fs::write(
-                &started_co_file_path,
+                &selected_co_started_path,
                 &to_start_file_content
                     .replace(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, &miro_frame.url),
             )
@@ -742,7 +749,7 @@ pub mod commands {
 
             for snapshot in CO_FIGURES {
                 // read the content after every placeholder replacement is essential
-                let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
+                let to_start_file_content = fs::read_to_string(&selected_co_started_path).unwrap();
                 let placeholder = match snapshot.to_string().as_str() {
                     ENTRYPOINT_PNG_NAME => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
                     CONTEXT_ACCOUNTS_PNG_NAME => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
@@ -750,8 +757,12 @@ pub mod commands {
                     HANDLER_PNG_NAME => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
                     _ => todo!(),
                 };
-                let snapshot_path =
-                    format!("{selected_co_started_path}/{selected_folder}/{snapshot}");
+                let snapshot_path = format!(
+                    "{}",
+                    selected_co_started_path
+                        .clone()
+                        .replace(format!("{}.md", selected_folder).as_str(), snapshot)
+                );
                 println!("Creating image in Miro for {snapshot}");
                 let id = super::api::image::create_image_from_device(
                     snapshot_path.to_string(),
@@ -759,20 +770,22 @@ pub mod commands {
                 )
                 .await?;
                 fs::write(
-                    &started_co_file_path,
+                    &selected_co_started_path,
                     &to_start_file_content.replace(placeholder, &id),
                 )
                 .unwrap();
             }
             // connect snapshots
             let entrypoint_id =
-                helpers::get::get_screenshot_id(&ENTRYPOINT_PNG_NAME, &started_co_file_path);
-            let context_accounts_id =
-                helpers::get::get_screenshot_id(&CONTEXT_ACCOUNTS_PNG_NAME, &started_co_file_path);
+                helpers::get::get_screenshot_id(&ENTRYPOINT_PNG_NAME, &selected_co_started_path);
+            let context_accounts_id = helpers::get::get_screenshot_id(
+                &CONTEXT_ACCOUNTS_PNG_NAME,
+                &selected_co_started_path,
+            );
             let validations_id =
-                helpers::get::get_screenshot_id(&VALIDATIONS_PNG_NAME, &started_co_file_path);
+                helpers::get::get_screenshot_id(&VALIDATIONS_PNG_NAME, &selected_co_started_path);
             let handler_id =
-                helpers::get::get_screenshot_id(&HANDLER_PNG_NAME, &started_co_file_path);
+                helpers::get::get_screenshot_id(&HANDLER_PNG_NAME, &selected_co_started_path);
             println!("Connecting signers to entrypoint");
             for signer_miro_ids in signers_info {
                 super::api::connector::create_connector(
@@ -817,7 +830,8 @@ pub mod commands {
                     let snapshot_path = &snapshot_path_vec.as_slice()[*selection];
                     let file_name = snapshot_path.split('/').last().unwrap();
                     println!("Updating: {file_name}");
-                    let item_id = helpers::get::get_screenshot_id(file_name, &started_co_file_path);
+                    let item_id =
+                        helpers::get::get_screenshot_id(file_name, &selected_co_started_path);
                     super::api::image::update_image_from_device(snapshot_path.to_string(), &item_id)
                         .await
                 }
@@ -860,12 +874,12 @@ pub mod commands {
         );
         for figure in CO_FIGURES {
             let (file_lines, snapshot_image_path, snapshot_markdown_path) = get_data_for_snapshots(
-                co_file_string,
-                selected_co_started_path,
-                selected_folder,
+                co_file_string.clone(),
+                selected_co_started_path.clone(),
+                selected_folder.clone(),
                 figure.to_string(),
             )?;
-            create_snapshot(file_lines, snapshot_image_path, snapshot_markdown_path);
+            create_co_figure(file_lines, snapshot_image_path, snapshot_markdown_path);
         }
         //
         Ok(())
@@ -874,55 +888,158 @@ pub mod commands {
     fn get_data_for_snapshots(
         co_file_string: String,
         selected_co_started_path: String,
-        selected_folder: String,
+        selected_folder_name: String,
         snapshot_name: String,
     ) -> Result<(String, String, String), String> {
-        let context_account_lines = get_string_between_two_str_from_string(
-            co_file_string,
-            "# Context Accounts:",
-            "# Validations:",
-        )?;
-        let snapshot_image_path = selected_co_started_path.replace(
-            format!("{}.md", selected_folder).as_str(),
-            "context_account.png",
-        );
-        let snapshot_markdown_path = selected_co_started_path.replace(
-            format!("{}.md", selected_folder).as_str(),
-            "context_account.md",
-        );
-        Ok((
-            context_account_lines
-                .replace("\n- ```rust", "")
-                .replace("\n  ```", ""),
-            snapshot_image_path,
-            snapshot_markdown_path,
-        ))
+        if snapshot_name == CONTEXT_ACCOUNTS_PNG_NAME {
+            let context_account_lines = get_string_between_two_str_from_string(
+                co_file_string,
+                "# Context Accounts:",
+                "# Validations:",
+            )?;
+            let snapshot_image_path = selected_co_started_path.replace(
+                format!("{}.md", selected_folder_name).as_str(),
+                "context_accounts.png",
+            );
+            let snapshot_markdown_path = selected_co_started_path.replace(
+                format!("{}.md", selected_folder_name).as_str(),
+                "context_accounts.md",
+            );
+            Ok((
+                context_account_lines
+                    .replace("\n- ```rust", "")
+                    .replace("\n  ```", ""),
+                snapshot_image_path,
+                snapshot_markdown_path,
+            ))
+        } else if snapshot_name == VALIDATIONS_PNG_NAME {
+            let validation_lines = get_string_between_two_str_from_string(
+                co_file_string,
+                "# Validations:",
+                "# Miro board frame:",
+            )?;
+            let snapshot_image_path = selected_co_started_path.replace(
+                format!("{}.md", selected_folder_name).as_str(),
+                "validations.png",
+            );
+            let snapshot_markdown_path = selected_co_started_path.replace(
+                format!("{}.md", selected_folder_name).as_str(),
+                "validations.md",
+            );
+            Ok((
+                validation_lines,
+                snapshot_image_path,
+                snapshot_markdown_path,
+            ))
+        } else if snapshot_name == ENTRYPOINT_PNG_NAME {
+            let RequiredConfig {
+                program_lib_path, ..
+            } = BatConfig::get_validated_config()?.required;
+            let lib_file_string = fs::read_to_string(program_lib_path).unwrap();
+            let start_entrypoint_index = lib_file_string
+                .lines()
+                .into_iter()
+                .position(|f| f.contains("pub fn") && f.contains(&selected_folder_name))
+                .unwrap();
+            let end_entrypoint_index = lib_file_string
+                .lines()
+                .into_iter()
+                .enumerate()
+                .position(|(f_index, f)| f.trim() == "}" && f_index > start_entrypoint_index)
+                .unwrap();
+            let entrypoint_lines = get_string_between_two_index_from_string(
+                lib_file_string,
+                start_entrypoint_index,
+                end_entrypoint_index + 1,
+            )?;
+            let snapshot_image_path = selected_co_started_path.replace(
+                format!("{}.md", selected_folder_name).as_str(),
+                "entrypoint.png",
+            );
+            let snapshot_markdown_path = selected_co_started_path.replace(
+                format!("{}.md", selected_folder_name).as_str(),
+                "entrypoint.md",
+            );
+            Ok((
+                entrypoint_lines,
+                snapshot_image_path,
+                snapshot_markdown_path,
+            ))
+        } else {
+            let program_path = BatConfig::get_validated_config()?
+                .required
+                .program_lib_path
+                .replace("/lib.rs", "")
+                .replace("../", "");
+            let started_file_string = fs::read_to_string(selected_co_started_path.clone()).unwrap();
+            let instruction_file_path = started_file_string
+                .lines()
+                .into_iter()
+                .find(|f| f.contains(&program_path))
+                .unwrap();
+            let instruction_file_string =
+                fs::read_to_string(format!("../{}", instruction_file_path)).unwrap();
+            let context_name = get_context_name(selected_folder_name.clone())?;
+            let mut handler_string: String = "".to_string();
+            for (line_index, line) in instruction_file_string.lines().enumerate() {
+                if line.contains("pub") && line.contains("fn") {
+                    let closing_line = instruction_file_string
+                        .clone()
+                        .lines()
+                        .into_iter()
+                        .enumerate()
+                        .position(|(l_index, l)| l == "}" && l_index > line_index)
+                        .unwrap();
+                    let handler_string_candidate = get_string_between_two_index_from_string(
+                        instruction_file_string.clone(),
+                        line_index,
+                        closing_line + 1,
+                    )?;
+                    if handler_string_candidate
+                        .lines()
+                        .into_iter()
+                        .any(|l| l.contains("Context") && l.contains(&context_name))
+                    {
+                        handler_string = handler_string_candidate;
+                    }
+                }
+            }
+            let snapshot_image_path = selected_co_started_path.replace(
+                format!("{}.md", selected_folder_name).as_str(),
+                "handler.png",
+            );
+            let snapshot_markdown_path = selected_co_started_path.replace(
+                format!("{}.md", selected_folder_name).as_str(),
+                "handler.md",
+            );
+            // Handler
+            Ok((handler_string, snapshot_image_path, snapshot_markdown_path))
+        }
     }
 
-    fn create_snapshot(contents: String, image_path: String, temporary_markdown_path: String) {
+    fn create_co_figure(contents: String, image_path: String, temporary_markdown_path: String) {
         // write the temporary markdown file
         fs::write(temporary_markdown_path.clone(), contents).unwrap();
         // take the snapshot
         take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone());
         // delete the markdown
-        // delete_file(temporary_markdown_path);
+        delete_file(temporary_markdown_path);
     }
 
     fn take_silicon_snapshot(image_path: String, temporary_markdown_path: String) {
         std::process::Command::new("silicon")
             .args([
                 "--no-line-number",
-                "--no-window-controls",
                 "--language",
                 "Rust",
                 "--theme",
                 "Visual Studio Dark+",
                 "--pad-horiz",
-                "15",
+                "40",
                 "--pad-vert",
-                "15",
+                "40",
                 "--background",
-                "#004225",
+                "#d3d4d5",
                 "--output",
                 &image_path,
                 &temporary_markdown_path,

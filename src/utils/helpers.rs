@@ -1224,6 +1224,16 @@ pub mod get {
             .join("\n");
         Ok(context_account_lines)
     }
+    pub fn get_string_between_two_index_from_string(
+        content: String,
+        start_index: usize,
+        end_index: usize,
+    ) -> Result<String, String> {
+        let context_account_lines = content.lines().collect::<Vec<_>>()[start_index..end_index]
+            .to_vec()
+            .join("\n");
+        Ok(context_account_lines)
+    }
 }
 
 pub mod check {

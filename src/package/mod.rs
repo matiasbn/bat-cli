@@ -25,7 +25,10 @@ pub fn format() -> Result<(), String> {
     println!("Executing cargo fix");
     Command::new("cargo").args(["fix"]).output().unwrap();
     println!("Executing cargo format");
-    Command::new("cargo").args(["format"]).output().unwrap();
+    Command::new("cargo")
+        .args(["format", "--all"])
+        .output()
+        .unwrap();
     println!("Commiting clippy changes");
     create_commit(PublishCommit::Clippy, None);
     Ok(())

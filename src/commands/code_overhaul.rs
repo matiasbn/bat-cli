@@ -1,21 +1,17 @@
 use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::{MultiSelect, Select};
+use dialoguer::Select;
 
 use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
-use crate::commands::miro::api::connector::ConnectorOptions;
+
 use crate::commands::miro::{self, MiroConfig};
 use crate::config::BatConfig;
 use crate::constants::{
-    AUDIT_RESULT_FILE_NAME, CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
-    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
-    CODE_OVERHAUL_HANDLER_PLACEHOLDER, CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
-    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
-    CONTEXT_ACCOUNTS_PNG_NAME, CO_FIGURES, ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME,
-    VALIDATIONS_PNG_NAME,
+    AUDIT_RESULT_FILE_NAME, CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER,
+    CODE_OVERHAUL_NOTES_PLACEHOLDER, CO_FIGURES,
 };
-use crate::structs::{SignerInfo, SignerType};
+
 use crate::utils::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::utils::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
@@ -24,7 +20,7 @@ use crate::utils::helpers::get::{
 use crate::utils::*;
 
 use std::fs;
-use std::io::BufRead;
+
 use std::path::Path;
 use std::process::Command;
 use std::string::String;
@@ -99,6 +95,17 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
 
     let (entrypoint_name, instruction_file_path) =
         helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
+    let to_review_file_string = fs::read_to_string(to_review_file_path.clone()).unwrap();
+    fs::write(
+        to_review_file_path.clone(),
+        to_review_file_string
+            .replace(
+                CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER,
+                &instruction_file_path.replace("../", ""),
+            )
+            .as_str(),
+    )
+    .unwrap();
     let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
     let context_lines =
         helpers::get::get_context_lines(instruction_file_path.clone(), to_start_file_name.clone())?;

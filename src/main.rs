@@ -54,8 +54,8 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum MiroActions {
-    /// Creates a code-overhaul frame
-    Create,
+    /// Deploy a code-overhaul frame
+    Deploy,
     /// Updates a code-overhaul frame
     Images,
     // /// Creates or updates the Accounts frame
@@ -135,11 +135,11 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
         }
-        Commands::Miro(MiroActions::Create) => {
+        Commands::Miro(MiroActions::Deploy) => {
             commands::miro::commands::deploy_miro().await.unwrap()
         }
         Commands::Miro(MiroActions::Images) => {
-            commands::miro::commands::create_co_screenshots().unwrap()
+            commands::miro::commands::create_co_snapshots().unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
