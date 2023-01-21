@@ -20,35 +20,19 @@ use crate::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
 use crate::utils::cli_inputs;
+use crate::utils::helpers::print::print_string;
 
 pub fn initialize_bat_project() -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;
     let BatConfig {
         required, auditor, ..
     } = bat_config.clone();
-    // if auditor.auditor is empty, prompt name
-    if auditor.auditor_name.is_empty() {
-        let auditor_name = get_auditor_name(required.auditor_names);
-        println!(
-            "Is great to have you here {}!",
-            format!("{}", auditor_name).green()
-        );
-
-        // Ask the user if is going to use the Miro integration
-        let prompt_text = "Do you want to use the Miro integration?";
-        let include_miro = cli_inputs::select_yes_or_no(prompt_text)?;
-        let token: String;
-        let moat: Option<&str> = if include_miro {
-            let prompt_text = "Miro OAuth access token";
-            token = cli_inputs::input(&prompt_text)?;
-            Some(token.as_str())
-        } else {
-            None
-        };
-        let prompt_text = "Do you want to use the VS Code integration?";
-        let include_vs_code = cli_inputs::select_yes_or_no(prompt_text)?;
-        update_auditor_toml(auditor_name, moat, include_vs_code);
+    if !Path::new(".BatAuditor.toml").is_file() || auditor.auditor_name.is_empty() {
+        prompt_auditor_options(required)?;
     }
+    let bat_config: BatConfig = BatConfig::get_validated_config()?;
+    // if !Path::new(&bat_auditor_path).is_dir() {}
+    // if auditor.auditor is empty, prompt name
     println!("creating project for the next config: ");
     println!("{bat_config:#?}");
 
@@ -62,18 +46,48 @@ pub fn initialize_bat_project() -> Result<(), String> {
         println!("Project repository already initialized");
     }
 
-    validate_init_config()?;
+    // validate_init_config()?;
     // copy templates/notes-folder-template
-    create_auditor_notes_folder()?;
-    // create overhaul files
-    initialize_code_overhaul_files()?;
-    // commit to-review files
-    create_git_commit(GitCommit::InitAuditor, None)?;
-    println!("Project successfully initialized");
-    let lib_file_path = BatConfig::get_program_lib_path()?;
+    let auditor_notes_folder = BatConfig::get_auditor_notes_path()?;
+    if !Path::new(&auditor_notes_folder).is_dir() {
+        create_auditor_notes_folder()?;
+        // create overhaul files
+        initialize_code_overhaul_files()?;
+        // commit to-review files
+        create_git_commit(GitCommit::InitAuditor, None)?;
+        println!("Project successfully initialized");
+    } else {
+        print!(
+            "Auditor notes already initialized for {}",
+            bat_config.auditor.auditor_name
+        );
+    }
 
+    let lib_file_path = BatConfig::get_program_lib_path()?;
     // Open lib.rs file in vscode
     vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())?;
+    Ok(())
+}
+
+fn prompt_auditor_options(required: RequiredConfig) -> Result<(), String> {
+    let auditor_name = get_auditor_name(required.auditor_names);
+    println!(
+        "Is great to have you here {}!",
+        format!("{}", auditor_name).green()
+    );
+    let prompt_text = "Do you want to use the Miro integration?";
+    let include_miro = cli_inputs::select_yes_or_no(prompt_text)?;
+    let token: String;
+    let moat: Option<&str> = if include_miro {
+        let prompt_text = "Miro OAuth access token";
+        token = cli_inputs::input(&prompt_text)?;
+        Some(token.as_str())
+    } else {
+        None
+    };
+    let prompt_text = "Do you want to use the VS Code integration?";
+    let include_vs_code = cli_inputs::select_yes_or_no(prompt_text)?;
+    update_auditor_toml(auditor_name, moat, include_vs_code);
     Ok(())
 }
 
@@ -132,21 +146,21 @@ fn update_auditor_toml(
     fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
 }
 
-fn validate_init_config() -> Result<(), String> {
-    // audit notes folder should not exist
-    let BatConfig { required, .. } = BatConfig::get_validated_config()?;
-    let auditor_folder_path = BatConfig::get_auditor_notes_path()?;
-    if Path::new(&auditor_folder_path).is_dir() {
-        panic!("auditor folder {:?} already exist", &auditor_folder_path);
-    }
-    if !Path::new(&required.program_lib_path).is_file() {
-        panic!(
-            "program file at path \"{:?}\" does not exist, please update Bat.toml file",
-            &required.program_lib_path
-        );
-    }
-    Ok(())
-}
+// fn validate_init_config() -> Result<(), String> {
+//     // audit notes folder should not exist
+//     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
+//     let auditor_folder_path = BatConfig::get_auditor_notes_path()?;
+//     if Path::new(&auditor_folder_path).is_dir() {
+//         panic!("auditor folder {:?} already exist", &auditor_folder_path);
+//     }
+//     if !Path::new(&required.program_lib_path).is_file() {
+//         panic!(
+//             "program file at path \"{:?}\" does not exist, please update Bat.toml file",
+//             &required.program_lib_path
+//         );
+//     }
+//     Ok(())
+// }
 
 fn initialize_project_repository() -> Result<(), String> {
     let BatConfig { required, .. } = BatConfig::get_validated_config()?;

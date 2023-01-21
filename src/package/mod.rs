@@ -4,7 +4,7 @@ use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 
 use crate::{
     command_line::execute_command,
-    commands::git::{check_files_not_commited, checkout_main_branch, git_push},
+    commands::git::{check_files_not_commited, git_push},
 };
 
 pub fn full() -> Result<(), String> {
@@ -35,7 +35,6 @@ pub fn publish() -> Result<(), String> {
     assert!(check_files_not_commited()?);
     bump(true)?;
     println!("checkout main branch before pushing");
-    checkout_main_branch()?;
     println!("Executing cargo publish");
     Command::new("cargo").arg("publish").output().unwrap();
     Ok(())
