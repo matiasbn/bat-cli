@@ -284,5 +284,9 @@ pub fn checkout_main_branch() -> Result<(), String> {
 
 #[test]
 fn test_create_git_commit() {
-    create_git_commit(GitCommit::FinishCO, Some(vec!["test_co_file".to_string()]));
+    create_git_commit(GitCommit::FinishCO, Some(vec!["test_co_file".to_string()])).unwrap();
+}
+#[test]
+fn test_checkout_branch() {
+    checkout_main_branch().unwrap();
 }
