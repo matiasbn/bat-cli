@@ -19,12 +19,12 @@ use crate::constants::{
 
 use std::borrow::{Borrow, BorrowMut};
 
+use crate::commands::miro::MiroConfig;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::string::String;
 use std::{fs, io};
-
 pub mod parse {
 
     use std::fmt::Display;
@@ -640,9 +640,8 @@ pub mod get {
         pub fn get_instruction_file_path_from_started_entrypoint_co_file(
             entrypoint_name: String,
         ) -> Result<String, String> {
-            let co_file_path = BatConfig::get_auditor_code_overhaul_started_file_path(Some(
-                entrypoint_name.clone(),
-            ))?;
+            let co_file_path =
+                get_auditor_code_overhaul_started_file_path(Some(entrypoint_name.clone()))?;
             let program_path = BatConfig::get_validated_config()?
                 .required
                 .program_lib_path
@@ -682,7 +681,7 @@ pub mod get {
         }
 
         pub fn get_readme_file_path() -> Result<String, String> {
-            canonicalize_path(Self::get_audit_folder_path(None)? + "/README.md")
+            canonicalize_path(get_audit_folder_path(None)? + "/README.md")
         }
 
         pub fn get_program_lib_path() -> Result<String, String> {
@@ -690,27 +689,27 @@ pub mod get {
         }
 
         pub fn get_notes_path() -> Result<String, String> {
-            Ok(Self::get_audit_folder_path(None)? + "/notes/")
+            Ok(get_audit_folder_path(None)? + "/notes/")
         }
 
         pub fn get_auditor_notes_path() -> Result<String, String> {
-            Ok(Self::get_notes_path()? + &Self::get_auditor_name()? + "-notes/")
+            Ok(get_notes_path()? + &BatConfig::get_auditor_name()? + "-notes/")
         }
 
         // Findings paths
         pub fn get_auditor_findings_path() -> Result<String, String> {
-            Ok(Self::get_auditor_notes_path()? + "findings/")
+            Ok(get_auditor_notes_path()? + "findings/")
         }
 
         pub fn get_auditor_findings_to_review_path(
             file_name: Option<String>,
         ) -> Result<String, String> {
             match file_name {
-                Some(name) => Ok(Self::get_auditor_findings_path()?
+                Some(name) => Ok(get_auditor_findings_path()?
                     + "to-review/"
                     + &name.replace(".md", "")
                     + ".md"),
-                None => Ok(Self::get_auditor_findings_path()? + "to-review/"),
+                None => Ok(get_auditor_findings_path()? + "to-review/"),
             }
         }
 
@@ -718,11 +717,11 @@ pub mod get {
             file_name: Option<String>,
         ) -> Result<String, String> {
             match file_name {
-                Some(name) => Ok(Self::get_auditor_findings_path()?
+                Some(name) => Ok(get_auditor_findings_path()?
                     + "accepted/"
                     + &name.replace(".md", "")
                     + ".md"),
-                None => Ok(Self::get_auditor_findings_path()? + "accepted/"),
+                None => Ok(get_auditor_findings_path()? + "accepted/"),
             }
         }
 
@@ -730,28 +729,28 @@ pub mod get {
             file_name: Option<String>,
         ) -> Result<String, String> {
             match file_name {
-                Some(name) => Ok(Self::get_auditor_findings_path()?
+                Some(name) => Ok(get_auditor_findings_path()?
                     + "rejected/"
                     + &name.replace(".md", "")
                     + ".md"),
-                None => Ok(Self::get_auditor_findings_path()? + "rejected/"),
+                None => Ok(get_auditor_findings_path()? + "rejected/"),
             }
         }
 
         // Code overhaul paths
         pub fn get_auditor_code_overhaul_path() -> Result<String, String> {
-            Ok(Self::get_auditor_notes_path()? + "code-overhaul/")
+            Ok(get_auditor_notes_path()? + "code-overhaul/")
         }
 
         pub fn get_auditor_code_overhaul_to_review_path(
             file_name: Option<String>,
         ) -> Result<String, String> {
             match file_name {
-                Some(name) => Ok(Self::get_auditor_code_overhaul_path()?
+                Some(name) => Ok(get_auditor_code_overhaul_path()?
                     + "to-review/"
                     + &name.replace(".md", "")
                     + ".md"),
-                None => Ok(Self::get_auditor_code_overhaul_path()? + "to-review/"),
+                None => Ok(get_auditor_code_overhaul_path()? + "to-review/"),
             }
         }
 
@@ -759,11 +758,11 @@ pub mod get {
             file_name: Option<String>,
         ) -> Result<String, String> {
             match file_name {
-                Some(name) => Ok(Self::get_auditor_code_overhaul_path()?
+                Some(name) => Ok(get_auditor_code_overhaul_path()?
                     + "finished/"
                     + &name.replace(".md", "")
                     + ".md"),
-                None => Ok(Self::get_auditor_code_overhaul_path()? + "finished/"),
+                None => Ok(get_auditor_code_overhaul_path()? + "finished/"),
             }
         }
 
@@ -776,65 +775,43 @@ pub mod get {
                         let entrypoint_name = &name.replace(".md", "");
                         Ok(canonicalize_path(format!(
                             "{}/started/{entrypoint_name}/{entrypoint_name}.md",
-                            Self::get_auditor_code_overhaul_path()?
+                            get_auditor_code_overhaul_path()?
                         ))?)
                     } else {
-                        Ok(Self::get_auditor_code_overhaul_path()?
+                        Ok(get_auditor_code_overhaul_path()?
                             + "started/"
                             + &name.replace(".md", "")
                             + ".md")
                     }
                 }
-                None => Ok(Self::get_auditor_code_overhaul_path()? + "started/"),
-            }
-        }
-
-        pub fn get_auditor_code_overhaul_started_file_path(
-            file_name: Option<String>,
-        ) -> Result<String, String> {
-            match file_name {
-                Some(name) => {
-                    if MiroConfig::new().miro_enabled() {
-                        let entrypoint_name = &name.replace(".md", "");
-                        Ok(canonicalize_path(format!(
-                            "{}/started/{entrypoint_name}/{entrypoint_name}.md",
-                            Self::get_auditor_code_overhaul_path()?
-                        ))?)
-                    } else {
-                        Ok(Self::get_auditor_code_overhaul_path()?
-                            + "started/"
-                            + &name.replace(".md", "")
-                            + ".md")
-                    }
-                }
-                None => Ok(Self::get_auditor_code_overhaul_path()? + "started/"),
+                None => Ok(get_auditor_code_overhaul_path()? + "started/"),
             }
         }
 
         // Templates path
         pub fn get_templates_path() -> Result<String, String> {
-            Ok(Self::get_audit_folder_path(None)? + "/templates")
+            Ok(get_audit_folder_path(None)? + "/templates")
         }
 
         pub fn get_notes_folder_template_path() -> Result<String, String> {
-            Ok(Self::get_templates_path()? + "/notes-folder-template")
+            Ok(get_templates_path()? + "/notes-folder-template")
         }
 
         pub fn get_finding_template_path() -> Result<String, String> {
-            Ok(Self::get_templates_path()? + "/finding.md")
+            Ok(get_templates_path()? + "/finding.md")
         }
 
         pub fn get_informational_template_path() -> Result<String, String> {
-            Ok(Self::get_templates_path()? + "/informational.md")
+            Ok(get_templates_path()? + "/informational.md")
         }
 
         pub fn get_code_overhaul_template_path() -> Result<String, String> {
-            Ok(Self::get_templates_path()? + "/code-overhaul.md")
+            Ok(get_templates_path()? + "/code-overhaul.md")
         }
 
         // Threat modeling file
         pub fn get_auditor_threat_modeling_path() -> Result<String, String> {
-            Ok(Self::get_auditor_notes_path()? + "threat_modeling.md")
+            Ok(get_auditor_notes_path()? + "threat_modeling.md")
         }
     }
     pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
@@ -1181,7 +1158,7 @@ pub mod get {
 
     // returns a list of folder and files names
     pub fn get_started_entrypoints() -> Result<Vec<String>, String> {
-        let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
+        let started_path = super::get::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_files = fs::read_dir(started_path)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
@@ -1252,7 +1229,7 @@ pub mod get {
     }
 
     pub fn get_finished_co_files() -> Result<Vec<(String, String)>, String> {
-        let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_path = super::get::path::get_auditor_code_overhaul_finished_path(None)?;
         let mut finished_folder = fs::read_dir(&finished_path)
             .unwrap()
             .map(|file| file.unwrap())
@@ -1451,7 +1428,9 @@ pub mod get {
     ) -> Result<(String, usize, usize), String> {
         let mut handler_string: String = "".to_string();
         let instruction_file_path =
-            get_instruction_file_path_from_started_entrypoint_co_file(entrypoint_name.clone())?;
+            super::get::path::get_instruction_file_path_from_started_entrypoint_co_file(
+                entrypoint_name.clone(),
+            )?;
         let instruction_file_string =
             fs::read_to_string(format!("../{}", instruction_file_path)).unwrap();
         let context_name = get_context_name(entrypoint_name.clone())?;
@@ -1549,13 +1528,13 @@ pub mod count {
             .len()
     }
     pub fn co_counter() -> Result<(usize, usize, usize), String> {
-        let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None)?;
+        let to_review_path = super::get::path::get_auditor_code_overhaul_to_review_path(None)?;
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
         let to_review_count = count_filtering_gitkeep(to_review_folder);
-        let started_path = BatConfig::get_auditor_code_overhaul_started_file_path(None)?;
+        let started_path = super::get::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_folder = fs::read_dir(started_path).unwrap();
         let started_count = count_filtering_gitkeep(started_folder);
-        let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_path = super::get::path::get_auditor_code_overhaul_finished_path(None)?;
         let finished_folder = fs::read_dir(finished_path).unwrap();
         let finished_count = count_filtering_gitkeep(finished_folder);
         Ok((to_review_count, started_count, finished_count))

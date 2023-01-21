@@ -6,7 +6,7 @@ use serde_json::*;
 use std::fs;
 use std::result::Result;
 
-use crate::utils::helpers;
+use crate::utils;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{self};
 use tokio::fs::File;
@@ -553,9 +553,10 @@ pub mod api {
             response["id"].to_string().replace("\"", "")
         }
         pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> Result<String, String> {
-            let started_file_path = BatConfig::get_auditor_code_overhaul_started_file_path(Some(
-                entrypoint_name.to_string(),
-            ))?;
+            let started_file_path =
+                utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(Some(
+                    entrypoint_name.to_string(),
+                ))?;
             let miro_url = fs::read_to_string(started_file_path)
                 .unwrap()
                 .lines()
@@ -776,16 +777,22 @@ pub mod commands {
                 .unwrap();
             }
             // connect snapshots
-            let entrypoint_id =
-                helpers::get::get_screenshot_id(&ENTRYPOINT_PNG_NAME, &selected_co_started_path);
-            let context_accounts_id = helpers::get::get_screenshot_id(
+            let entrypoint_id = utils::helpers::get::get_screenshot_id(
+                &ENTRYPOINT_PNG_NAME,
+                &selected_co_started_path,
+            );
+            let context_accounts_id = utils::helpers::get::get_screenshot_id(
                 &CONTEXT_ACCOUNTS_PNG_NAME,
                 &selected_co_started_path,
             );
-            let validations_id =
-                helpers::get::get_screenshot_id(&VALIDATIONS_PNG_NAME, &selected_co_started_path);
-            let handler_id =
-                helpers::get::get_screenshot_id(&HANDLER_PNG_NAME, &selected_co_started_path);
+            let validations_id = utils::helpers::get::get_screenshot_id(
+                &VALIDATIONS_PNG_NAME,
+                &selected_co_started_path,
+            );
+            let handler_id = utils::helpers::get::get_screenshot_id(
+                &HANDLER_PNG_NAME,
+                &selected_co_started_path,
+            );
             println!("Connecting signers to entrypoint");
             for signer_miro_ids in signers_info {
                 super::api::connector::create_connector(
@@ -830,8 +837,10 @@ pub mod commands {
                     let snapshot_path = &snapshot_path_vec.as_slice()[*selection];
                     let file_name = snapshot_path.split('/').last().unwrap();
                     println!("Updating: {file_name}");
-                    let item_id =
-                        helpers::get::get_screenshot_id(file_name, &selected_co_started_path);
+                    let item_id = utils::helpers::get::get_screenshot_id(
+                        file_name,
+                        &selected_co_started_path,
+                    );
                     super::api::image::update_image_from_device(snapshot_path.to_string(), &item_id)
                         .await
                 }
@@ -847,7 +856,7 @@ pub mod commands {
     }
 
     fn prompt_select_started_co_folder() -> Result<(String, String), String> {
-        let started_folders: Vec<String> = helpers::get::get_started_entrypoints()?
+        let started_folders: Vec<String> = utils::helpers::get::get_started_entrypoints()?
             .iter()
             .filter(|file| !file.contains(".md"))
             .map(|file| file.to_string())
@@ -859,7 +868,9 @@ pub mod commands {
         let selection = utils::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
         let selected_folder = &started_folders[selection];
         let selected_co_started_file_path =
-            BatConfig::get_auditor_code_overhaul_started_file_path(Some(selected_folder.clone()))?;
+            utils::helpers::get::path::get_auditor_code_overhaul_started_file_path(Some(
+                selected_folder.clone(),
+            ))?;
         Ok((
             selected_folder.clone(),
             selected_co_started_file_path.clone(),

@@ -18,11 +18,11 @@ use crate::constants::{
     AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER,
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
-use crate::utils::cli_inputs;
 use crate::utils::git::{
     check_if_branch_exists, create_git_commit, get_expected_current_branch, GitCommit,
 };
 use crate::utils::helpers::get::get_only_files_from_folder;
+use crate::utils::{self, cli_inputs};
 
 pub fn initialize_bat_project() -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;
@@ -44,7 +44,7 @@ pub fn initialize_bat_project() -> Result<(), String> {
         println!("Project repository successfully initialized");
     }
 
-    let readme_path = BatConfig::get_readme_file_path()?;
+    let readme_path = utils::helpers::get::path::get_readme_file_path()?;
     let readme_string = fs::read_to_string(readme_path.clone()).unwrap();
 
     if readme_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
@@ -82,7 +82,7 @@ pub fn initialize_bat_project() -> Result<(), String> {
         .unwrap();
 
     // validate_init_config()?;
-    let auditor_notes_folder = BatConfig::get_auditor_notes_path()?;
+    let auditor_notes_folder = utils::helpers::get::path::get_auditor_notes_path()?;
     let auditor_notes_folder_exists = Path::new(&auditor_notes_folder).is_dir();
     if auditor_notes_folder_exists {
         let auditor_notes_files = get_only_files_from_folder(auditor_notes_folder.clone())?;
@@ -101,7 +101,7 @@ pub fn initialize_bat_project() -> Result<(), String> {
 
     println!("Project successfully initialized");
     create_git_commit(GitCommit::InitAuditor, None)?;
-    let lib_file_path = BatConfig::get_program_lib_path()?;
+    let lib_file_path = utils::helpers::get::path::get_program_lib_path()?;
     // Open lib.rs file in vscode
     vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())?;
     Ok(())
@@ -138,7 +138,7 @@ fn update_readme_file() -> Result<(), String> {
         miro_board_url,
         ..
     } = BatConfig::get_init_config()?.required;
-    let readme_path = BatConfig::get_readme_file_path()?;
+    let readme_path = utils::helpers::get::path::get_readme_file_path()?;
     let data = fs::read_to_string(readme_path.clone()).unwrap();
     let updated_readme = data
         .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
@@ -187,7 +187,7 @@ fn update_auditor_toml(
 // fn validate_init_config() -> Result<(), String> {
 //     // audit notes folder should not exist
 //     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
-//     let auditor_folder_path = BatConfig::get_auditor_notes_path()?;
+//     let auditor_folder_path = utils::helpers::get::path::get_auditor_notes_path()?;
 //     if Path::new(&auditor_folder_path).is_dir() {
 //         panic!("auditor folder {:?} already exist", &auditor_folder_path);
 //     }
@@ -259,14 +259,14 @@ fn initialize_project_repository() -> Result<(), String> {
 }
 
 fn create_auditor_notes_folder() -> Result<(), String> {
-    let dest_path = BatConfig::get_auditor_notes_path()?;
+    let dest_path = utils::helpers::get::path::get_auditor_notes_path()?;
     println!("creating {dest_path}");
 
     let mut output = Command::new("cp")
         .args([
             "-r",
-            BatConfig::get_notes_folder_template_path()?.as_str(),
-            BatConfig::get_notes_path()?.as_str(),
+            utils::helpers::get::path::get_notes_path()?.as_str(),
+            utils::helpers::get::path::get_notes_path()?.as_str(),
         ])
         .output()
         .unwrap();
@@ -278,7 +278,7 @@ fn create_auditor_notes_folder() -> Result<(), String> {
     };
 
     output = Command::new("mv")
-        .current_dir(BatConfig::get_notes_path()?)
+        .current_dir(utils::helpers::get::path::get_notes_path()?)
         .args([
             "notes-folder-template",
             (BatConfig::get_auditor_name()? + "-notes").as_str(),
