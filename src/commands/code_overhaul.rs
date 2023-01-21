@@ -563,33 +563,48 @@ pub async fn deploy_miro() -> Result<(), String> {
 }
 
 pub async fn open_co() -> Result<(), String> {
+    let BatConfig {
+        auditor, required, ..
+    } = BatConfig::get_validated_config()?;
     // list to start
-    let started_entrypoints = helpers::get::get_started_entrypoints()?;
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&started_entrypoints)
-        .default(0)
-        .with_prompt("Select the code-overhaul file to open:")
-        .interact_on_opt(&Term::stderr())
-        .unwrap();
+    if auditor.vs_code_integration {
+        let started_path = BatConfig::get_auditor_code_overhaul_path()? + "started";
+        let co_files = helpers::get::get_only_files_from_folder(started_path)?;
+        let co_files = co_files
+            .iter()
+            .filter(|f| f.name != ".gitkeep")
+            .collect::<Vec<_>>();
+        if !co_files.is_empty() {
+            let started_entrypoints = helpers::get::get_started_entrypoints()?;
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .items(&started_entrypoints)
+                .default(0)
+                .with_prompt("Select the code-overhaul file to open:")
+                .interact_on_opt(&Term::stderr())
+                .unwrap();
+            // user select file
+            let (started_file_name, started_file_path) = match selection {
+                // move selected file to finished
+                Some(index) => (
+                    started_entrypoints[index].clone(),
+                    BatConfig::get_auditor_code_overhaul_started_path(Some(
+                        started_entrypoints[index].clone(),
+                    ))?,
+                ),
+                None => panic!("User did not select anything"),
+            };
+            // select to start
+            // get instruction
+            let (_, instruction_file_path) =
+                helpers::get::get_instruction_file_with_prompts(&started_file_name)?;
 
-    // user select file
-    let (started_file_name, started_file_path) = match selection {
-        // move selected file to finished
-        Some(index) => (
-            started_entrypoints[index].clone(),
-            BatConfig::get_auditor_code_overhaul_started_path(Some(
-                started_entrypoints[index].clone(),
-            ))?,
-        ),
-        None => panic!("User did not select anything"),
-    };
-    // select to start
-    // get instruction
-    let (_, instruction_file_path) =
-        helpers::get::get_instruction_file_with_prompts(&started_file_name)?;
-
-    vs_code_open_file_in_current_window(&started_file_path)?;
-    vs_code_open_file_in_current_window(&instruction_file_path)?;
+            vs_code_open_file_in_current_window(&started_file_path)?;
+            vs_code_open_file_in_current_window(&instruction_file_path)?;
+        }
+        vs_code_open_file_in_current_window(&required.program_lib_path)?;
+    } else {
+        print!("VSCode integration not enabled");
+    }
     Ok(())
 }
 
