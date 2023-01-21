@@ -369,8 +369,8 @@ pub mod api {
             let client = reqwest::Client::new();
             let y_position = 150 + signer_counter * 270;
             let fill_color = match signer_type {
-                SignerType::Verified => "red",
-                SignerType::NotVerified => "dark_blue",
+                SignerType::Validated => "red",
+                SignerType::NotValidated => "dark_blue",
                 SignerType::NotSigner => "gray",
             };
             let response = client
