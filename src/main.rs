@@ -56,8 +56,8 @@ enum Commands {
 enum MiroActions {
     /// Creates a code-overhaul frame
     Create,
-    // /// Updates a code-overhaul frame
-    // Update,
+    /// Updates a code-overhaul frame
+    Images,
     // /// Creates or updates the Accounts frame
     // Accounts,
 }
@@ -137,6 +137,9 @@ async fn main() {
         }
         Commands::Miro(MiroActions::Create) => {
             commands::miro::commands::deploy_miro().await.unwrap()
+        }
+        Commands::Miro(MiroActions::Images) => {
+            commands::miro::commands::create_co_screenshots().unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),

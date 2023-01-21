@@ -215,7 +215,7 @@ pub mod api {
                 .unwrap();
             let response: Value = serde_json::from_str(&response.as_str()).unwrap();
             let id = response["id"].to_string().replace("\"", "");
-            super::item::update_screenshot_position(
+            super::item::update_snapshot_position(
                 entrypoint_name.to_string(),
                 &file_name,
                 id.clone(),
@@ -307,7 +307,7 @@ pub mod api {
     pub mod item {
         use super::*;
 
-        pub async fn update_screenshot_position(
+        pub async fn update_snapshot_position(
             entrypoint_name: String,
             file_name: &str,
             item_id: String,
@@ -574,12 +574,15 @@ pub mod api {
 }
 
 pub mod commands {
+    use std::path;
+
+    use clap::Command;
     use colored::Colorize;
 
     use crate::{
         commands::miro::api::connector::ConnectorOptions,
         structs::{SignerInfo, SignerType},
-        utils,
+        utils::{self, helpers::get::get_string_between_two_str_from_string},
     };
 
     use super::*;
@@ -587,29 +590,17 @@ pub mod commands {
         assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
         // check empty images
         // get files and folders from started, filter .md files
-        let started_folders: Vec<String> = helpers::get::get_started_entrypoints()?
-            .iter()
-            .filter(|file| !file.contains(".md"))
-            .map(|file| file.to_string())
-            .collect();
-        if started_folders.is_empty() {
-            panic!("No folders found in started folder for the auditor")
-        }
-        let prompt_text = "select the folder to deploy to Miro".to_string();
-        let selection = utils::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
-
-        let selected_folder = &started_folders[selection];
-        let selected_co_started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
-        let screenshot_paths = CO_FIGURES
+        let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
+        let snapshot_paths = CO_FIGURES
             .iter()
             .map(|figure| format!("{selected_co_started_path}/{selected_folder}/{figure}"));
 
-        // check if some of the screenshots is empty
-        for path in screenshot_paths.clone() {
-            let screenshot_file = fs::read(&path).unwrap();
-            let screenshot_name = path.split('/').clone().last().unwrap();
-            if screenshot_file.is_empty() {
-                panic!("{screenshot_name} screenshot file is empty, please complete it");
+        // check if some of the snapshots is empty
+        for path in snapshot_paths.clone() {
+            let snapshot_file = fs::read(&path).unwrap();
+            let snapshot_name = path.split('/').clone().last().unwrap();
+            if snapshot_file.is_empty() {
+                panic!("{snapshot_name} snapshot file is empty, please complete it");
             }
         }
 
@@ -715,7 +706,7 @@ pub mod commands {
             }
 
             println!("Creating frame in Miro for {selected_folder}");
-            let miro_frame = super::api::frame::create_frame(selected_folder)
+            let miro_frame = super::api::frame::create_frame(&selected_folder)
                 .await
                 .unwrap();
             fs::write(
@@ -749,21 +740,21 @@ pub mod commands {
                 }
             }
 
-            for screenshot in CO_FIGURES {
+            for snapshot in CO_FIGURES {
                 // read the content after every placeholder replacement is essential
                 let to_start_file_content = fs::read_to_string(&started_co_file_path).unwrap();
-                let placeholder = match screenshot.to_string().as_str() {
+                let placeholder = match snapshot.to_string().as_str() {
                     ENTRYPOINT_PNG_NAME => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
                     CONTEXT_ACCOUNTS_PNG_NAME => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
                     VALIDATIONS_PNG_NAME => CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
                     HANDLER_PNG_NAME => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
                     _ => todo!(),
                 };
-                let screenshot_path =
-                    format!("{selected_co_started_path}/{selected_folder}/{screenshot}");
-                println!("Creating image in Miro for {screenshot}");
+                let snapshot_path =
+                    format!("{selected_co_started_path}/{selected_folder}/{snapshot}");
+                println!("Creating image in Miro for {snapshot}");
                 let id = super::api::image::create_image_from_device(
-                    screenshot_path.to_string(),
+                    snapshot_path.to_string(),
                     &selected_folder,
                 )
                 .await?;
@@ -773,7 +764,7 @@ pub mod commands {
                 )
                 .unwrap();
             }
-            // connect screenshots
+            // connect snapshots
             let entrypoint_id =
                 helpers::get::get_screenshot_id(&ENTRYPOINT_PNG_NAME, &started_co_file_path);
             let context_accounts_id =
@@ -802,7 +793,7 @@ pub mod commands {
                 )
                 .await;
             }
-            println!("Connecting screenshots in Miro");
+            println!("Connecting snapshots in Miro");
             super::api::connector::create_connector(&entrypoint_id, &context_accounts_id, None)
                 .await;
             super::api::connector::create_connector(&context_accounts_id, &validations_id, None)
@@ -822,16 +813,13 @@ pub mod commands {
             )?;
             if !selections.is_empty() {
                 for selection in selections.iter() {
-                    let screenshot_path_vec = &screenshot_paths.clone().collect::<Vec<_>>();
-                    let screenshot_path = &screenshot_path_vec.as_slice()[*selection];
-                    let file_name = screenshot_path.split('/').last().unwrap();
+                    let snapshot_path_vec = &snapshot_paths.clone().collect::<Vec<_>>();
+                    let snapshot_path = &snapshot_path_vec.as_slice()[*selection];
+                    let file_name = snapshot_path.split('/').last().unwrap();
                     println!("Updating: {file_name}");
                     let item_id = helpers::get::get_screenshot_id(file_name, &started_co_file_path);
-                    super::api::image::update_image_from_device(
-                        screenshot_path.to_string(),
-                        &item_id,
-                    )
-                    .await
+                    super::api::image::update_image_from_device(snapshot_path.to_string(), &item_id)
+                        .await
                 }
                 create_git_commit(
                     GitCommit::UpdateMiro,
@@ -841,6 +829,126 @@ pub mod commands {
                 println!("No files selected");
             }
             Ok(())
+        }
+    }
+
+    fn prompt_select_started_co_folder() -> Result<(String, String), String> {
+        let started_folders: Vec<String> = helpers::get::get_started_entrypoints()?
+            .iter()
+            .filter(|file| !file.contains(".md"))
+            .map(|file| file.to_string())
+            .collect();
+        if started_folders.is_empty() {
+            panic!("No folders found in started folder for the auditor")
+        }
+        let prompt_text = "select the folder:".to_string();
+        let selection = utils::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
+        let selected_folder = &started_folders[selection];
+        let selected_co_started_path =
+            BatConfig::get_auditor_code_overhaul_started_path(Some(selected_folder.clone()))?;
+        Ok((selected_folder.clone(), selected_co_started_path.clone()))
+    }
+    pub fn create_co_snapshots() -> Result<(), String> {
+        assert!(check_silicon_installed());
+        let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
+        let co_file_string = fs::read_to_string(selected_co_started_path.clone()).expect(
+            format!(
+                "Error opening code-overhaul file at: {}",
+                selected_co_started_path.clone()
+            )
+            .as_str(),
+        );
+        for figure in CO_FIGURES {
+            let (file_lines, snapshot_image_path, snapshot_markdown_path) = get_data_for_snapshots(
+                co_file_string,
+                selected_co_started_path,
+                selected_folder,
+                figure.to_string(),
+            )?;
+            create_snapshot(file_lines, snapshot_image_path, snapshot_markdown_path);
+        }
+        //
+        Ok(())
+    }
+
+    fn get_data_for_snapshots(
+        co_file_string: String,
+        selected_co_started_path: String,
+        selected_folder: String,
+        snapshot_name: String,
+    ) -> Result<(String, String, String), String> {
+        let context_account_lines = get_string_between_two_str_from_string(
+            co_file_string,
+            "# Context Accounts:",
+            "# Validations:",
+        )?;
+        let snapshot_image_path = selected_co_started_path.replace(
+            format!("{}.md", selected_folder).as_str(),
+            "context_account.png",
+        );
+        let snapshot_markdown_path = selected_co_started_path.replace(
+            format!("{}.md", selected_folder).as_str(),
+            "context_account.md",
+        );
+        Ok((
+            context_account_lines
+                .replace("\n- ```rust", "")
+                .replace("\n  ```", ""),
+            snapshot_image_path,
+            snapshot_markdown_path,
+        ))
+    }
+
+    fn create_snapshot(contents: String, image_path: String, temporary_markdown_path: String) {
+        // write the temporary markdown file
+        fs::write(temporary_markdown_path.clone(), contents).unwrap();
+        // take the snapshot
+        take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone());
+        // delete the markdown
+        // delete_file(temporary_markdown_path);
+    }
+
+    fn take_silicon_snapshot(image_path: String, temporary_markdown_path: String) {
+        std::process::Command::new("silicon")
+            .args([
+                "--no-line-number",
+                "--no-window-controls",
+                "--language",
+                "Rust",
+                "--theme",
+                "Visual Studio Dark+",
+                "--pad-horiz",
+                "15",
+                "--pad-vert",
+                "15",
+                "--background",
+                "#004225",
+                "--output",
+                &image_path,
+                &temporary_markdown_path,
+            ])
+            .output()
+            .unwrap();
+        // match output {
+        //     Ok(_) => println!(""),
+        //     Err(_) => false,
+        // }
+    }
+
+    fn delete_file(path: String) {
+        std::process::Command::new("rm")
+            .args([path])
+            .output()
+            .unwrap();
+    }
+
+    fn check_silicon_installed() -> bool {
+        let output = std::process::Command::new("silicon")
+            .args(["--version"])
+            .output();
+        match output {
+            Ok(_) => true,
+            Err(_) => false,
         }
     }
 }

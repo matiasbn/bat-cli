@@ -122,7 +122,7 @@ pub mod parse {
             .filter(|line| !line.contains("///"))
             .map(|line| line.replace('\t', ""))
             .collect();
-        let validations_strings = vec!["require", "valid", "assert"];
+        let validations_strings = vec!["require", "valid", "assert", "verify"];
         let mut validations: Vec<String> = super::get::get_possible_validations(
             instruction_file_path,
             validations_strings.clone(),
@@ -1203,6 +1203,26 @@ pub mod get {
             }
         }
         Ok(structs_in_state_files)
+    }
+    pub fn get_string_between_two_str_from_string(
+        content: String,
+        str_start: &str,
+        str_end: &str,
+    ) -> Result<String, String> {
+        let start_index = content
+            .lines()
+            .into_iter()
+            .position(|f| f.contains(str_start))
+            .unwrap();
+        let end_index = content
+            .lines()
+            .into_iter()
+            .position(|f| f.contains(str_end))
+            .unwrap();
+        let context_account_lines = content.lines().collect::<Vec<_>>()[start_index..end_index]
+            .to_vec()
+            .join("\n");
+        Ok(context_account_lines)
     }
 }
 
