@@ -575,6 +575,8 @@ pub mod api {
 
 pub mod commands {
 
+    use std::path::Path;
+
     use colored::Colorize;
 
     use crate::{
@@ -1052,6 +1054,17 @@ pub mod commands {
         } else {
             take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), 1);
         }
+        //resize image
+        // let (width, height) = image::image_dimensions(image_path.clone()).unwrap();
+        // let screenshot_image = image::open(image_path.clone()).unwrap();
+        // let resized = image::imageops::resize(
+        //     &screenshot_image,
+        //     width / 2,
+        //     height / 2,
+        //     image::imageops::FilterType::Lanczos3,
+        // );
+        // resized.save(image_path).unwrap();
+
         // delete the markdown
         delete_file(temporary_markdown_path);
     }
@@ -1062,7 +1075,9 @@ pub mod commands {
         index: usize,
     ) {
         let offset = format!("{}", index - 1);
+        let image_file_name = image_path.split("/").last().unwrap();
         let mut args = vec![
+            "--no-window-controls",
             "--language",
             "Rust",
             "--line-offset",
@@ -1075,6 +1090,14 @@ pub mod commands {
             "40",
             "--background",
             "#d3d4d5",
+            "--font",
+            match image_file_name {
+                ENTRYPOINT_PNG_NAME => "Hack=15",
+                CONTEXT_ACCOUNTS_PNG_NAME => "Hack=15",
+                VALIDATIONS_PNG_NAME => "Hack=14",
+                HANDLER_PNG_NAME => "Hack=11",
+                _ => "Hack=13",
+            },
             "--output",
             &image_path,
             &temporary_markdown_path,
