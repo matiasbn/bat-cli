@@ -273,20 +273,7 @@ pub fn check_files_not_commited() -> Result<bool, String> {
     Ok(output.is_empty())
 }
 
-pub fn checkout_main_branch() -> Result<(), String> {
-    execute_command(
-        "git".to_string(),
-        vec!["checkout", "main"],
-        "error on running git checkout main".to_string(),
-    )?;
-    Ok(())
-}
-
 #[test]
 fn test_create_git_commit() {
     create_git_commit(GitCommit::FinishCO, Some(vec!["test_co_file".to_string()])).unwrap();
-}
-#[test]
-fn test_checkout_branch() {
-    checkout_main_branch().unwrap();
 }
