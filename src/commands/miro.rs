@@ -873,13 +873,20 @@ pub mod commands {
             .as_str(),
         );
         for figure in CO_FIGURES {
-            let (file_lines, snapshot_image_path, snapshot_markdown_path) = get_data_for_snapshots(
-                co_file_string.clone(),
-                selected_co_started_path.clone(),
-                selected_folder.clone(),
-                figure.to_string(),
-            )?;
-            create_co_figure(file_lines, snapshot_image_path, snapshot_markdown_path);
+            println!("creating {} image for {}", figure, selected_folder);
+            let (file_lines, snapshot_image_path, snapshot_markdown_path, index) =
+                get_data_for_snapshots(
+                    co_file_string.clone(),
+                    selected_co_started_path.clone(),
+                    selected_folder.clone(),
+                    figure.to_string(),
+                )?;
+            create_co_figure(
+                file_lines,
+                snapshot_image_path,
+                snapshot_markdown_path,
+                index,
+            );
         }
         //
         Ok(())
@@ -890,7 +897,7 @@ pub mod commands {
         selected_co_started_path: String,
         selected_folder_name: String,
         snapshot_name: String,
-    ) -> Result<(String, String, String), String> {
+    ) -> Result<(String, String, String, Option<usize>), String> {
         if snapshot_name == CONTEXT_ACCOUNTS_PNG_NAME {
             let context_account_lines = get_string_between_two_str_from_string(
                 co_file_string,
@@ -911,6 +918,7 @@ pub mod commands {
                     .replace("\n  ```", ""),
                 snapshot_image_path,
                 snapshot_markdown_path,
+                None,
             ))
         } else if snapshot_name == VALIDATIONS_PNG_NAME {
             let validation_lines = get_string_between_two_str_from_string(
@@ -930,12 +938,13 @@ pub mod commands {
                 validation_lines,
                 snapshot_image_path,
                 snapshot_markdown_path,
+                None,
             ))
         } else if snapshot_name == ENTRYPOINT_PNG_NAME {
             let RequiredConfig {
                 program_lib_path, ..
             } = BatConfig::get_validated_config()?.required;
-            let lib_file_string = fs::read_to_string(program_lib_path).unwrap();
+            let lib_file_string = fs::read_to_string(program_lib_path.clone()).unwrap();
             let start_entrypoint_index = lib_file_string
                 .lines()
                 .into_iter()
@@ -961,9 +970,14 @@ pub mod commands {
                 "entrypoint.md",
             );
             Ok((
-                entrypoint_lines,
+                format!(
+                    "///{}\n\n{}",
+                    program_lib_path.replace("../", ""),
+                    entrypoint_lines,
+                ),
                 snapshot_image_path,
                 snapshot_markdown_path,
+                Some(start_entrypoint_index),
             ))
         } else {
             let program_path = BatConfig::get_validated_config()?
@@ -981,9 +995,10 @@ pub mod commands {
                 fs::read_to_string(format!("../{}", instruction_file_path)).unwrap();
             let context_name = get_context_name(selected_folder_name.clone())?;
             let mut handler_string: String = "".to_string();
+            let mut start_index = 0;
             for (line_index, line) in instruction_file_string.lines().enumerate() {
                 if line.contains("pub") && line.contains("fn") {
-                    let closing_line = instruction_file_string
+                    let closing_index = instruction_file_string
                         .clone()
                         .lines()
                         .into_iter()
@@ -993,7 +1008,7 @@ pub mod commands {
                     let handler_string_candidate = get_string_between_two_index_from_string(
                         instruction_file_string.clone(),
                         line_index,
-                        closing_line + 1,
+                        closing_index + 1,
                     )?;
                     if handler_string_candidate
                         .lines()
@@ -1001,6 +1016,7 @@ pub mod commands {
                         .any(|l| l.contains("Context") && l.contains(&context_name))
                     {
                         handler_string = handler_string_candidate;
+                        start_index = line_index;
                     }
                 }
             }
@@ -1013,37 +1029,61 @@ pub mod commands {
                 "handler.md",
             );
             // Handler
-            Ok((handler_string, snapshot_image_path, snapshot_markdown_path))
+            Ok((
+                format!("///{}\n\n{}", instruction_file_path, handler_string),
+                snapshot_image_path,
+                snapshot_markdown_path,
+                Some(start_index),
+            ))
         }
     }
 
-    fn create_co_figure(contents: String, image_path: String, temporary_markdown_path: String) {
+    fn create_co_figure(
+        contents: String,
+        image_path: String,
+        temporary_markdown_path: String,
+        index: Option<usize>,
+    ) {
         // write the temporary markdown file
         fs::write(temporary_markdown_path.clone(), contents).unwrap();
         // take the snapshot
-        take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone());
+        if let Some(offset) = index {
+            take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), offset);
+        } else {
+            take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), 1);
+        }
         // delete the markdown
         delete_file(temporary_markdown_path);
     }
 
-    fn take_silicon_snapshot(image_path: String, temporary_markdown_path: String) {
+    fn take_silicon_snapshot<'a>(
+        image_path: String,
+        temporary_markdown_path: String,
+        index: usize,
+    ) {
+        let offset = format!("{}", index - 1);
+        let mut args = vec![
+            "--language",
+            "Rust",
+            "--line-offset",
+            &offset,
+            "--theme",
+            "Visual Studio Dark+",
+            "--pad-horiz",
+            "40",
+            "--pad-vert",
+            "40",
+            "--background",
+            "#d3d4d5",
+            "--output",
+            &image_path,
+            &temporary_markdown_path,
+        ];
+        if index == 1 {
+            args.insert(0, "--no-line-number");
+        }
         std::process::Command::new("silicon")
-            .args([
-                "--no-line-number",
-                "--language",
-                "Rust",
-                "--theme",
-                "Visual Studio Dark+",
-                "--pad-horiz",
-                "40",
-                "--pad-vert",
-                "40",
-                "--background",
-                "#d3d4d5",
-                "--output",
-                &image_path,
-                &temporary_markdown_path,
-            ])
+            .args(args)
             .output()
             .unwrap();
         // match output {
