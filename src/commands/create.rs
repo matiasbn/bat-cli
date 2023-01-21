@@ -101,7 +101,12 @@ fn get_required_config() -> Result<RequiredConfig, String> {
         .collect::<Vec<_>>();
     let selection = cli_inputs::select(prompt_text, cargo_programs_paths, None)?;
     let selected_program = &cargo_programs_files_info[selection];
-    let program_name = selected_program.path.split("/").last().unwrap();
+    let program_name = selected_program
+        .path
+        .split("/")
+        .last()
+        .unwrap()
+        .replace("_", "-");
     let program_lib_path = selected_program.path.clone() + "/src/lib.rs";
 
     let normalized_to_audit_program_lib_path = program_lib_path.replace("./", "../");

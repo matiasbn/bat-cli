@@ -56,8 +56,8 @@ enum Commands {
 enum MiroActions {
     /// Creates a code-overhaul frame
     Create,
-    /// Updates a code-overhaul frame
-    Update,
+    // /// Updates a code-overhaul frame
+    // Update,
     // /// Creates or updates the Accounts frame
     // Accounts,
 }
