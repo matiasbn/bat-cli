@@ -30,7 +30,13 @@ pub mod parse {
 
     use std::fmt::Display;
 
-    use super::{get::get_string_between_two_index_from_string, *};
+    use super::{
+        get::{
+            get_multiple_line_validation, get_single_line_validation,
+            get_string_between_two_index_from_string, prompt_check_validation,
+        },
+        *,
+    };
 
     pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
         let filtered_context_account_lines: Vec<_> = context_lines
@@ -130,13 +136,11 @@ pub mod parse {
             .enumerate()
             .map(|f| (f.0, f.1.to_string()))
         {
-            println!("line {}", line);
             if line_index < last_reviewed_line || line.is_empty() {
                 continue;
             }
             // check the if statements
             let is_if = line.clone().trim().split(" ").next().unwrap() == "if";
-            println!("is_if {}", is_if);
             if is_if {
                 // check that is not in comment
                 if line.contains("//") {
@@ -187,13 +191,13 @@ pub mod parse {
                 .any(|validation| line.contains(validation))
                 && line.contains('(')
             {
-                println!("validations strings line {}", line);
-
                 // single line validation
                 if line.contains(");") || line.contains(")?;") {
-                    validations.push(line);
+                    let is_validation = prompt_check_validation(line.clone());
+                    if is_validation {
+                        validations.push(line);
+                    }
                 } else {
-                    println!("line {}", line);
                     let instruction_file_lines = instruction_file_string.lines();
                     let validation_closing_index = instruction_file_lines
                         .clone()
@@ -213,10 +217,13 @@ pub mod parse {
                             closing_index + 1,
                         )
                         .unwrap();
-                        validations.push(validation_string);
+                        let is_validation = prompt_check_validation(validation_string.clone());
+                        if is_validation {
+                            validations.push(validation_string);
+                        }
                     };
                 }
-            // multi line account
+            // multi line account only has #[account(
             } else if line.trim() == "#[account(" {
                 let closing_account_index = instruction_file_string
                     .clone()
@@ -239,17 +246,27 @@ pub mod parse {
                     .len()
                     > 2
                 {
-                    validations.push(account_lines);
+                    let is_validation = prompt_check_validation(account_lines.clone());
+                    if is_validation {
+                        validations.push(account_lines);
+                    }
                 }
             // single line "#[account(", push the next lines which is the account name
             } else if line.contains("#[account(") {
-                validations.push(
-                    line.to_string().replace("mut,", "")
-                        + "\n"
-                        + &instruction_file_string.split("\n").collect::<Vec<_>>()[line_index + 1],
-                );
+                let possible_validation = line.to_string().replace("mut,", "")
+                    + "\n"
+                    + &instruction_file_string.split("\n").collect::<Vec<_>>()[line_index + 1];
+                if possible_validation.contains("has_one")
+                    || possible_validation.contains("constraint")
+                {
+                    let is_validation = prompt_check_validation(possible_validation.clone());
+                    if is_validation {
+                        validations.push(possible_validation);
+                    }
+                }
             }
         }
+
         // filter only validations
         validations = validations
             .iter()
@@ -262,7 +279,8 @@ pub mod parse {
             })
             .map(|validation| validation.to_string())
             .collect();
-        // replace in co file
+
+        // replace in co file if no validations where found
         if validations.is_empty() {
             let data = fs::read_to_string(co_file_path.clone())
                 .unwrap()
@@ -277,6 +295,7 @@ pub mod parse {
             fs::write(co_file_path.clone(), data).unwrap()
         }
 
+        // from now on, check if is an acc validation or a prerequisite
         let mut account_validations: Vec<String> = vec![];
         let mut prerequisites: Vec<String> = vec![];
         for validation in validations.iter().map(|val| val.to_string()) {
@@ -722,7 +741,10 @@ pub mod parse {
 pub mod get {
     use std::{fs::DirEntry, io};
 
-    use crate::{structs::FileInfo, utils};
+    use crate::{
+        structs::FileInfo,
+        utils::{self, cli_inputs::select_yes_or_no},
+    };
 
     use super::*;
 
@@ -914,17 +936,6 @@ pub mod get {
                 closing_index + 1,
             )
             .unwrap();
-            // let mut idx = 1;
-            // let mut validation_line =
-            //     instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
-            // while !(validation_line.contains(");") || validation_line.contains(")?;")) {
-            //     validation_candidate.push(validation_line);
-            //     idx += 1;
-            //     validation_line =
-            //         instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
-            // }
-            // validation_candidate.push(validation_line);
-            // let validation_string = validation_candidate.join("\n");
             let prompt_text = format!(
                 "is the next function a {}? \n {}",
                 format!("validation").red(),
@@ -940,27 +951,29 @@ pub mod get {
             "".to_string()
         }
     }
-
     pub fn get_single_line_validation(line: &str) -> String {
         let validation = format!("\t{}", line.trim());
         let prompt = format!(
-            "is the next line a {}? \n {}",
+            "is the next line a {}?: \n {}",
             format!("validation").red(),
             format!("{validation}").bright_green()
         );
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(prompt)
-            .item("yes")
-            .item("no")
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-        if selection == 0 {
+        let is_validation = select_yes_or_no(&prompt).unwrap();
+        if is_validation {
             validation
         } else {
             "".to_string()
         }
+    }
+
+    pub fn prompt_check_validation(possible_validation: String) -> bool {
+        let prompt = format!(
+            "is this a {}?: \n {}",
+            format!("validation").red(),
+            format!("{}", possible_validation).bright_green()
+        );
+        let is_validation = select_yes_or_no(&prompt).unwrap();
+        is_validation
     }
 
     pub fn get_instruction_files() -> Result<Vec<FileInfo>, String> {
@@ -1255,10 +1268,10 @@ pub mod get {
         Ok(context_account_lines)
     }
 
-    /// Returns (instruction handler string, the starting index and the end index)
+    /// Returns (instruction handler string, the instruction path,  the starting index and the end index)
     pub fn get_instruction_handler_of_entrypoint(
         entrypoint_name: String,
-    ) -> Result<(String, usize, usize), String> {
+    ) -> Result<(String, String, usize, usize), String> {
         let mut handler_string: String = "".to_string();
         let instruction_file_path =
             utils::path::get_instruction_file_path_from_started_entrypoint_co_file(
@@ -1294,7 +1307,12 @@ pub mod get {
                 }
             }
         }
-        Ok((handler_string, start_index, end_index))
+        Ok((
+            handler_string,
+            instruction_file_path,
+            start_index,
+            end_index,
+        ))
     }
 }
 

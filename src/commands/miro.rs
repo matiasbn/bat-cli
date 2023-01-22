@@ -993,7 +993,7 @@ pub mod commands {
             ))
         } else {
             //
-            let (handler_string, instruction_file_path, start_index) =
+            let (handler_string, instruction_file_path, start_index, _) =
                 utils::helpers::get::get_instruction_handler_of_entrypoint(
                     selected_folder_name.clone(),
                 )?;
