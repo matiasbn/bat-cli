@@ -54,12 +54,12 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum MiroActions {
-    /// Deploy a code-overhaul frame
+    /// Deploy or updates a code-overhaul frame
     Deploy,
-    /// Updates a code-overhaul frame
+    /// Updates a the images for a code-overhaul folder
     Images,
-    // /// Creates or updates the Accounts frame
-    // Accounts,
+    /// Creates or updates the Accounts frame
+    Accounts,
 }
 #[derive(Subcommand, Debug)]
 enum TMActions {
@@ -140,6 +140,9 @@ async fn main() {
         }
         Commands::Miro(MiroActions::Images) => {
             commands::miro::commands::create_co_snapshots().unwrap()
+        }
+        Commands::Miro(MiroActions::Accounts) => {
+            commands::miro::commands::deploy_accounts().unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),

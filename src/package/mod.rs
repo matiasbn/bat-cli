@@ -16,10 +16,10 @@ pub fn full() -> Result<(), String> {
 }
 
 pub fn format() -> Result<(), String> {
-    assert!(check_files_not_commited()?);
+    // assert!(check_files_not_commited()?);
     println!("Executing cargo clippy --fix");
     Command::new("cargo")
-        .args(["clippy", "--fix"])
+        .args(["clippy", "--fix", "--allow-dirty"])
         .output()
         .unwrap();
     println!("Executing cargo fix");

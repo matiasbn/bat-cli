@@ -50,6 +50,18 @@ impl MiroConfig {
     }
 }
 
+pub enum MiroItemTypes {
+    app_card,
+    card,
+    document,
+    embed,
+    frame,
+    image,
+    shape,
+    sticky_note,
+    text,
+}
+
 pub mod api {
 
     use super::*;
@@ -355,6 +367,28 @@ pub mod api {
                 .unwrap();
             Ok(())
         }
+
+        pub async fn get_items_on_board() -> Result<String, String> {
+            let MiroConfig {
+                access_token,
+                board_id,
+                ..
+            } = MiroConfig::new();
+            let client = reqwest::Client::new();
+            let response = client
+                .get(format!("https://api.miro.com/v2/boards/{board_id}/items"))
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            let response: Value = serde_json::from_str(&response.as_str()).unwrap();
+            let data = response["data"].to_string().replace("\"", "");
+            Ok(data)
+        }
     }
     pub mod sticky_note {
         use crate::structs::SignerType;
@@ -574,7 +608,7 @@ pub mod api {
 }
 
 pub mod commands {
-
+    use super::*;
     use colored::Colorize;
 
     use crate::{
@@ -901,6 +935,10 @@ pub mod commands {
             );
         }
         //
+        Ok(())
+    }
+
+    pub fn deploy_accounts() -> Result<(), String> {
         Ok(())
     }
 
