@@ -18,7 +18,8 @@ use std::vec;
 pub const METADATA_END_OF_FILE: &str = "<!-- Miro should be ever the last section -->";
 pub const MIRO_SECTION_HEADER: &str = "## Miro";
 pub const MIRO_SUBSECTIONS_HEADERS: &[&str] = &["### Entrypoints", "### Accounts"];
-pub const METADATA_CONTENT_ACCOUNT_NAME_SECTION: &str = "- account_name:";
+pub const METADATA_CONTENT_STICKY_NOTE_COLOR_SECTION: &str = "- sticky_note_color:";
+pub const METADATA_CONTENT_MIRO_ITEM_ID_SECTION: &str = "- miro_item_id:";
 pub const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
 pub const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
 pub const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
@@ -35,7 +36,7 @@ pub const STRUCT_SUBSECTIONS_HEADERS: &[&str] = &[
 
 #[derive(Debug, Clone)]
 pub struct MiroAccountMetadata {
-    color: String,
+    sticky_note_color: String,
     account_name: String,
     miro_item_id: String,
 }
@@ -241,8 +242,6 @@ pub fn update_miro() -> Result<(), String> {
         if miro_section_initialized {
             metadata_helpers::prompt_user_update_section("Miro")?;
         };
-        // get miro accounts subsection
-        let miro_accounts_subsection_content = get_miro_accounts_subsection_content_string()?;
         // get Structs accounts names
         let accounts_structs_names = structs_helpers::get_structs_names_from_metadata_file(Some(
             StructMetadataType::Account,
@@ -257,12 +256,43 @@ pub fn update_miro() -> Result<(), String> {
             let selected_color = miro_stickynote_colors[selection].clone();
             miro_stickynote_colors.remove(selection);
             let miro_metadata = MiroAccountMetadata {
-                color: selected_color.clone(),
+                sticky_note_color: selected_color.clone(),
                 account_name: struct_name,
                 miro_item_id: "".to_string(),
             };
             miro_metadata_vec.push(miro_metadata);
         }
+
+        let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+
+        let miro_accounts_string = miro_helpers::get_format_miro_accounts_to_result_string(
+            miro_metadata_vec.clone(),
+            MIRO_SUBSECTIONS_HEADERS[selection],
+        );
+
+        // parse into metadata.md
+        let metadata_content_string = fs::read_to_string(metadata_path.clone()).unwrap();
+
+        let miro_section_content = get_miro_section_content_string()?;
+
+        let miro_accounts_subsection_content = get_miro_accounts_subsection_content_string()?;
+
+        fs::write(
+            metadata_path,
+            metadata_content_string.replace(
+                miro_section_content.as_str(),
+                miro_section_content
+                    .replace(
+                        miro_accounts_subsection_content.as_str(),
+                        &miro_accounts_string,
+                    )
+                    .as_str(),
+            ),
+        )
+        .unwrap();
+        // create commit
+
+        utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
         return Ok(());
     }
     unimplemented!()
@@ -314,6 +344,34 @@ mod miro_helpers {
             })
             .collect::<Vec<_>>();
         Ok(!metadata_updated_structs.is_empty())
+    }
+    pub fn get_format_miro_accounts_to_result_string(
+        miro_accounts_vec: Vec<MiroAccountMetadata>,
+        subsection_header: &str,
+    ) -> String {
+        let mut sorted_vec = miro_accounts_vec.clone();
+        sorted_vec.sort_by(|miro_a, miro_b| miro_a.account_name.cmp(&miro_b.account_name));
+        let mut initial_vec = vec![format!("{}\n", subsection_header.to_string())];
+        let mut result_vec = sorted_vec
+            .iter()
+            .map(|miro_result| {
+                format!(
+                    "{}{}{}",
+                    format!("#### {}\n\n", miro_result.account_name),
+                    format!(
+                        "{} {}\n",
+                        METADATA_CONTENT_STICKY_NOTE_COLOR_SECTION,
+                        miro_result.sticky_note_color.to_string()
+                    ),
+                    format!(
+                        "{} {}\n",
+                        METADATA_CONTENT_MIRO_ITEM_ID_SECTION, miro_result.miro_item_id
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        initial_vec.append(&mut result_vec);
+        initial_vec.join("\n")
     }
 }
 
