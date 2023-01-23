@@ -47,9 +47,20 @@ enum Commands {
     Notes,
     /// Updates the results file in the root of the audit to show co files
     Results,
+    /// Updates the metadata.md file
+    #[command(subcommand)]
+    Metadata(MetadataActions),
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageActions),
+}
+
+#[derive(Subcommand, Debug)]
+enum MetadataActions {
+    /// Updates the Structs section of the metadata.md file
+    Structs,
+    /// Updates a the Functions section of the metadata.md file
+    Functions,
 }
 
 #[derive(Subcommand, Debug)]
@@ -142,7 +153,10 @@ async fn main() {
             commands::miro::commands::create_co_snapshots().unwrap()
         }
         Commands::Miro(MiroActions::Accounts) => {
-            commands::miro::commands::deploy_accounts().unwrap()
+            commands::miro::commands::deploy_accounts().await.unwrap()
+        }
+        Commands::Metadata(MetadataActions::Structs) => {
+            commands::metadata::structs::update_structs().unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),

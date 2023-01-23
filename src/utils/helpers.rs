@@ -1182,19 +1182,15 @@ pub mod get {
                     && f.as_ref().unwrap().file_name() != ".gitkeep"
             })
             .map(|entry| {
-                let info = FileInfo {
-                    path: utils::path::canonicalize_path(
-                        entry.as_ref().unwrap().path().display().to_string(),
-                    )
-                    .unwrap(),
-                    name: entry
-                        .as_ref()
-                        .unwrap()
-                        .file_name()
-                        .to_os_string()
-                        .into_string()
-                        .unwrap(),
-                };
+                let path = entry.as_ref().unwrap().path().display().to_string();
+                let name = entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap();
+                let info = FileInfo::new(path, name);
                 info
             })
             .collect::<Vec<FileInfo>>();
@@ -1257,15 +1253,52 @@ pub mod get {
             .join("\n");
         Ok(context_account_lines)
     }
+    pub fn get_string_between_two_str_from_path(
+        file_path: String,
+        str_start: &str,
+        str_end: &str,
+    ) -> Result<String, String> {
+        let content_string = fs::read_to_string(file_path.clone())
+            .expect(format!("Error reading: {}", file_path).as_str());
+        let content_lines = content_string.lines();
+        let start_index = content_lines
+            .clone()
+            .into_iter()
+            .position(|f| f.contains(str_start))
+            .unwrap();
+        let end_index = content_lines
+            .clone()
+            .into_iter()
+            .position(|f| f.contains(str_end))
+            .unwrap();
+        let context_account_lines = content_lines.clone().collect::<Vec<_>>()
+            [start_index..end_index]
+            .to_vec()
+            .join("\n");
+        Ok(context_account_lines)
+    }
     pub fn get_string_between_two_index_from_string(
         content: String,
         start_index: usize,
         end_index: usize,
     ) -> Result<String, String> {
-        let context_account_lines = content.lines().collect::<Vec<_>>()[start_index..end_index]
+        let content_result = content.lines().collect::<Vec<_>>()[start_index..end_index]
             .to_vec()
             .join("\n");
-        Ok(context_account_lines)
+        Ok(content_result)
+    }
+    pub fn get_string_between_two_index_from_path(
+        file_path: String,
+        start_index: usize,
+        end_index: usize,
+    ) -> Result<String, String> {
+        let content_string = fs::read_to_string(file_path.clone())
+            .expect(format!("Error reading: {}", file_path).as_str());
+        let content_lines = content_string.lines();
+        let content_result = content_lines.clone().collect::<Vec<_>>()[start_index..end_index]
+            .to_vec()
+            .join("\n");
+        Ok(content_result)
     }
 
     /// Returns (instruction handler string, the instruction path,  the starting index and the end index)

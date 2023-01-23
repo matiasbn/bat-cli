@@ -55,6 +55,24 @@ pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String, String
     }
 }
 
+pub fn get_audit_results_file_path() -> Result<String, String> {
+    Ok(canonicalize_path(
+        BatConfig::get_validated_config()
+            .unwrap()
+            .required
+            .audit_folder_path
+            + "/audit_result.md",
+    )
+    .unwrap())
+}
+
+pub fn get_program_path() -> Result<String, String> {
+    Ok(BatConfig::get_validated_config()?
+        .required
+        .program_lib_path
+        .replace("/lib.rs", ""))
+}
+
 pub fn get_readme_file_path() -> Result<String, String> {
     canonicalize_path(get_audit_folder_path(None)? + "/README.md")
 }
