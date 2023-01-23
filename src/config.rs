@@ -4,10 +4,9 @@ use serde::Deserialize;
 
 use crate::commands::{
     create::{create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH},
-    miro::MiroConfig,
 };
 
-use crate::utils::path::canonicalize_path;
+
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct BatConfig {

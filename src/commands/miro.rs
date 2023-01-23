@@ -4,7 +4,7 @@ use normalize_url::normalizer;
 use reqwest;
 use serde_json::*;
 use std::result::Result;
-use std::{fmt, fs};
+use std::{fs};
 
 use crate::utils;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -649,7 +649,7 @@ pub mod commands {
         },
     };
 
-    use super::*;
+    
     pub async fn deploy_miro() -> Result<(), String> {
         assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
         // check empty images

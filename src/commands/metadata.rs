@@ -5,7 +5,7 @@ use crate::{
     utils::{self, helpers::get::get_string_between_two_str_from_path},
 };
 use colored::Colorize;
-use std::borrow::BorrowMut;
+
 use std::fs;
 use std::vec;
 
@@ -459,7 +459,7 @@ pub mod structs {
 }
 
 pub mod metadata_helpers {
-    use super::*;
+    
 
     pub fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {
         let path = metadata_info_content
