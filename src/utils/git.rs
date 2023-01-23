@@ -270,7 +270,7 @@ pub fn check_correct_branch() -> Result<(), String> {
 pub fn get_expected_current_branch() -> Result<String, String> {
     let bat_config = BatConfig::get_validated_config()?;
     let expected_auditor_branch = format!(
-        "{}-{}",
+        "{}-notes-{}",
         bat_config.auditor.auditor_name, bat_config.required.project_name
     );
     Ok(expected_auditor_branch)
