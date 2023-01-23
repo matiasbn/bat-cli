@@ -1,12 +1,18 @@
+use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 use crate::{
-    commands::metadata::structs::helpers::get_structs_metadata_from_program,
+    commands::metadata::structs::structs_helpers::get_structs_metadata_from_program,
     utils::{self, helpers::get::get_string_between_two_str_from_path},
 };
 use colored::Colorize;
 use std::borrow::BorrowMut;
 use std::fs;
+use std::vec;
 
+pub const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
+pub const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
+pub const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
+pub const METADATA_CONTENT_END_LINE_INDEX_SECTION: &str = "- end_line_index:";
 pub const STRUCTS_SECTION_HEADER: &str = "## Structs";
 pub const FUNCTIONS_SECTION_HEADER: &str = "## Functions";
 pub const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
@@ -43,25 +49,43 @@ impl StructMetadata {
         }
     }
 
-    // fn new_from_metadata_name(name: String) -> Self {
-    //     StructMetadata {
-    //         path,
-    //         name,
-    //         struct_type,
-    //         start_line_index,
-    //         end_line_index,
-    //     }
-    // }
-
-    fn get_struct_content_string(&self) -> Result<String, String> {
-        let content = utils::helpers::get::get_string_between_two_index_from_path(
-            self.path.clone(),
-            self.start_line_index,
-            self.end_line_index,
+    fn new_from_metadata_name(struct_name: &str) -> Self {
+        let structs_section_metadata_string =
+            structs::structs_helpers::get_validated_struct_metadata_from_name(struct_name).unwrap();
+        println!(" struct metdata string {}", structs_section_metadata_string);
+        let path = metadata_helpers::parse_metadata_info_section(
+            &structs_section_metadata_string,
+            METADATA_CONTENT_PATH_SECTION,
+        );
+        let struct_type_string = metadata_helpers::parse_metadata_info_section(
+            &structs_section_metadata_string,
+            METADATA_CONTENT_TYPE_SECTION,
+        );
+        let struct_type_index = STRUCT_TYPES_STRING
+            .to_vec()
+            .into_iter()
+            .position(|struct_type| struct_type == struct_type_string)
+            .unwrap();
+        let struct_type = StructMetadataType::from_index(struct_type_index);
+        let start_line_index: usize = metadata_helpers::parse_metadata_info_section(
+            &structs_section_metadata_string,
+            METADATA_CONTENT_START_LINE_INDEX_SECTION,
         )
-        .unwrap()
-        .clone();
-        Ok(content)
+        .parse()
+        .unwrap();
+        let end_line_index: usize = metadata_helpers::parse_metadata_info_section(
+            &structs_section_metadata_string,
+            METADATA_CONTENT_END_LINE_INDEX_SECTION,
+        )
+        .parse()
+        .unwrap();
+        StructMetadata::new(
+            path,
+            struct_name.to_string(),
+            struct_type,
+            start_line_index,
+            end_line_index,
+        )
     }
 }
 
@@ -112,16 +136,19 @@ impl StructMetadataType {
 pub mod structs {
     use super::*;
 
+    // pub fn get_fleetstats_metadata() -> Result<(), String> {
+    //     let struct_metadata = StructMetadata::new_from_metadata_name("FleetStats");
+    //     println!("struct metadata {:#?}", struct_metadata);
+    //     Ok(())
+    // }
+
     pub fn update_structs() -> Result<(), String> {
         let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
-        let metadata_structs_content_string = get_string_between_two_str_from_path(
-            metadata_path.clone(),
-            STRUCTS_SECTION_HEADER,
-            FUNCTIONS_SECTION_HEADER,
-        )?;
+        let metadata_structs_content_string =
+            self::structs_helpers::get_structs_section_content_string()?;
         // check if empty
         let is_initialized =
-            self::helpers::check_structs_initialized(&metadata_structs_content_string)?;
+            self::structs_helpers::check_structs_initialized(&metadata_structs_content_string)?;
         // prompt the user if he wants to replace
         if is_initialized {
             let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
@@ -144,19 +171,20 @@ pub mod structs {
         ) = get_structs_metadata_from_program()?;
 
         let metadata_content_string = fs::read_to_string(metadata_path.clone()).unwrap();
-        let context_accounts_result_string = self::helpers::get_format_structs_to_result_string(
-            context_accounts_metadata_vec.clone(),
-            StructMetadataType::ContextAccounts.get_struct_metadata_subsection_header(),
-        );
-        let accounts_result_string = self::helpers::get_format_structs_to_result_string(
+        let context_accounts_result_string =
+            self::structs_helpers::get_format_structs_to_result_string(
+                context_accounts_metadata_vec.clone(),
+                StructMetadataType::ContextAccounts.get_struct_metadata_subsection_header(),
+            );
+        let accounts_result_string = self::structs_helpers::get_format_structs_to_result_string(
             accounts_metadata_vec.clone(),
             StructMetadataType::Account.get_struct_metadata_subsection_header(),
         );
-        let input_result_string = self::helpers::get_format_structs_to_result_string(
+        let input_result_string = self::structs_helpers::get_format_structs_to_result_string(
             input_metadata_vec.clone(),
             StructMetadataType::Input.get_struct_metadata_subsection_header(),
         );
-        let other_result_string = self::helpers::get_format_structs_to_result_string(
+        let other_result_string = self::structs_helpers::get_format_structs_to_result_string(
             other_metadata_vec.clone(),
             StructMetadataType::Other.get_struct_metadata_subsection_header(),
         );
@@ -185,12 +213,56 @@ pub mod structs {
         Ok(())
     }
 
-    pub mod helpers {
-        use std::vec;
-
-        use crate::structs::FileInfo;
-
+    pub mod structs_helpers {
         use super::*;
+
+        pub fn get_structs_section_content_string() -> Result<String, String> {
+            let metadata_path =
+                utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+            let metadata_structs_content_string = get_string_between_two_str_from_path(
+                metadata_path.clone(),
+                STRUCTS_SECTION_HEADER,
+                FUNCTIONS_SECTION_HEADER,
+            )?;
+            Ok(metadata_structs_content_string)
+        }
+
+        pub fn get_validated_struct_metadata_from_name(
+            struct_name: &str,
+        ) -> Result<String, String> {
+            let metadata_structs_section_content_string = get_structs_section_content_string()?;
+            let struct_metadata_header = get_struct_metadata_header_from_struct_name(struct_name);
+            if !metadata_structs_section_content_string.contains(&struct_metadata_header) {
+                panic!(
+                    "Struct {} not found in Structs section of metadata.md",
+                    struct_name
+                )
+            };
+            let start_index = metadata_structs_section_content_string
+                .lines()
+                .into_iter()
+                .position(|line| line.trim() == (&struct_metadata_header))
+                .unwrap();
+            let end_index = metadata_structs_section_content_string
+                .lines()
+                .into_iter()
+                .enumerate()
+                .position(|line| line.1.contains("###") && line.0 > start_index)
+                .unwrap();
+            let metadata_struct_content =
+                utils::helpers::get::get_string_between_two_index_from_string(
+                    metadata_structs_section_content_string,
+                    start_index,
+                    end_index,
+                )?;
+            Ok(metadata_struct_content)
+        }
+
+        pub fn get_struct_metadata_header_from_struct_name(struct_name: &str) -> String {
+            let struct_metadata_header = format!("#### {}", struct_name);
+            struct_metadata_header
+        }
+
         pub fn check_structs_initialized(metadata_structs_content: &str) -> Result<bool, String> {
             let metadata_updated_structs = metadata_structs_content
                 .lines()
@@ -358,10 +430,21 @@ pub mod structs {
                     format!(
                         "{}{}{}{}{}",
                         format!("#### {}\n\n", struct_result.name),
-                        format!("- type: {}\n", struct_result.struct_type.to_string()),
-                        format!("- path: {}\n", struct_result.path),
-                        format!("- start_line_index: {}\n", struct_result.start_line_index),
-                        format!("- end_line_index: {}\n", struct_result.end_line_index),
+                        format!(
+                            "{} {}\n",
+                            METADATA_CONTENT_TYPE_SECTION,
+                            struct_result.struct_type.to_string()
+                        ),
+                        format!("{} {}\n", METADATA_CONTENT_PATH_SECTION, struct_result.path),
+                        format!(
+                            "{} {}\n",
+                            METADATA_CONTENT_START_LINE_INDEX_SECTION,
+                            struct_result.start_line_index
+                        ),
+                        format!(
+                            "{} {}\n",
+                            METADATA_CONTENT_END_LINE_INDEX_SECTION, struct_result.end_line_index
+                        ),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -372,5 +455,20 @@ pub mod structs {
         // pub fn get_structs_metadata_content()-> {
 
         // }
+    }
+}
+
+pub mod metadata_helpers {
+    use super::*;
+
+    pub fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {
+        let path = metadata_info_content
+            .lines()
+            .find(|line| line.contains(section))
+            .unwrap()
+            .replace(section, "")
+            .trim()
+            .to_string();
+        path
     }
 }
