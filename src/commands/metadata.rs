@@ -133,6 +133,77 @@ impl StructMetadataType {
     }
 }
 
+pub fn update_structs() -> Result<(), String> {
+    let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+    let metadata_structs_content_string =
+        structs::structs_helpers::get_structs_section_content_string()?;
+    // check if empty
+    let is_initialized =
+        structs::structs_helpers::check_structs_initialized(&metadata_structs_content_string)?;
+    // prompt the user if he wants to replace
+    if is_initialized {
+        let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
+            format!(
+                "{}, are you sure you want to continue?",
+                format!("Structs in metadata.md are arealready initialized").bright_red()
+            )
+            .as_str(),
+        )?;
+        if !user_decided_to_continue {
+            panic!("User decided not to continue with the update process for structs metada")
+        }
+    }
+    // get structs in all files
+    let (
+        context_accounts_metadata_vec,
+        accounts_metadata_vec,
+        input_metadata_vec,
+        other_metadata_vec,
+    ) = get_structs_metadata_from_program()?;
+
+    let metadata_content_string = fs::read_to_string(metadata_path.clone()).unwrap();
+    let context_accounts_result_string =
+        structs::structs_helpers::get_format_structs_to_result_string(
+            context_accounts_metadata_vec.clone(),
+            StructMetadataType::ContextAccounts.get_struct_metadata_subsection_header(),
+        );
+    let accounts_result_string = structs::structs_helpers::get_format_structs_to_result_string(
+        accounts_metadata_vec.clone(),
+        StructMetadataType::Account.get_struct_metadata_subsection_header(),
+    );
+    let input_result_string = structs::structs_helpers::get_format_structs_to_result_string(
+        input_metadata_vec.clone(),
+        StructMetadataType::Input.get_struct_metadata_subsection_header(),
+    );
+    let other_result_string = structs::structs_helpers::get_format_structs_to_result_string(
+        other_metadata_vec.clone(),
+        StructMetadataType::Other.get_struct_metadata_subsection_header(),
+    );
+
+    // parse into metadata.md
+
+    fs::write(
+        metadata_path,
+        metadata_content_string.replace(
+            metadata_structs_content_string.as_str(),
+            format!(
+                "{}\n\n{}\n{}\n{}\n{}",
+                STRUCTS_SECTION_HEADER,
+                &context_accounts_result_string,
+                &accounts_result_string,
+                &input_result_string,
+                &other_result_string,
+            )
+            .as_str(),
+        ),
+    )
+    .unwrap();
+    // create commit
+
+    utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
+    Ok(())
+}
+
 pub mod structs {
     use super::*;
 
@@ -141,77 +212,6 @@ pub mod structs {
     //     println!("struct metadata {:#?}", struct_metadata);
     //     Ok(())
     // }
-
-    pub fn update_structs() -> Result<(), String> {
-        let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
-        let metadata_structs_content_string =
-            self::structs_helpers::get_structs_section_content_string()?;
-        // check if empty
-        let is_initialized =
-            self::structs_helpers::check_structs_initialized(&metadata_structs_content_string)?;
-        // prompt the user if he wants to replace
-        if is_initialized {
-            let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
-                format!(
-                    "{}, are you sure you want to continue?",
-                    format!("Structs in metadata.md are arealready initialized").bright_red()
-                )
-                .as_str(),
-            )?;
-            if !user_decided_to_continue {
-                panic!("User decided not to continue with the update process for structs metada")
-            }
-        }
-        // get structs in all files
-        let (
-            context_accounts_metadata_vec,
-            accounts_metadata_vec,
-            input_metadata_vec,
-            other_metadata_vec,
-        ) = get_structs_metadata_from_program()?;
-
-        let metadata_content_string = fs::read_to_string(metadata_path.clone()).unwrap();
-        let context_accounts_result_string =
-            self::structs_helpers::get_format_structs_to_result_string(
-                context_accounts_metadata_vec.clone(),
-                StructMetadataType::ContextAccounts.get_struct_metadata_subsection_header(),
-            );
-        let accounts_result_string = self::structs_helpers::get_format_structs_to_result_string(
-            accounts_metadata_vec.clone(),
-            StructMetadataType::Account.get_struct_metadata_subsection_header(),
-        );
-        let input_result_string = self::structs_helpers::get_format_structs_to_result_string(
-            input_metadata_vec.clone(),
-            StructMetadataType::Input.get_struct_metadata_subsection_header(),
-        );
-        let other_result_string = self::structs_helpers::get_format_structs_to_result_string(
-            other_metadata_vec.clone(),
-            StructMetadataType::Other.get_struct_metadata_subsection_header(),
-        );
-
-        // parse into metadata.md
-
-        fs::write(
-            metadata_path,
-            metadata_content_string.replace(
-                metadata_structs_content_string.as_str(),
-                format!(
-                    "{}\n\n{}\n{}\n{}\n{}",
-                    STRUCTS_SECTION_HEADER,
-                    &context_accounts_result_string,
-                    &accounts_result_string,
-                    &input_result_string,
-                    &other_result_string,
-                )
-                .as_str(),
-            ),
-        )
-        .unwrap();
-        // create commit
-
-        utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
-        Ok(())
-    }
 
     pub mod structs_helpers {
         use super::*;
@@ -459,7 +459,6 @@ pub mod structs {
 }
 
 pub mod metadata_helpers {
-    
 
     pub fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {
         let path = metadata_info_content
