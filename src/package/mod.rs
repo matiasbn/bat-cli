@@ -16,10 +16,10 @@ pub fn full() -> Result<(), String> {
 }
 
 pub fn format() -> Result<(), String> {
-    assert!(check_files_not_commited()?);
+    // assert!(check_files_not_commited()?);
     println!("Executing cargo clippy --fix");
     Command::new("cargo")
-        .args(["clippy", "--fix"])
+        .args(["clippy", "--fix", "--allow-dirty"])
         .output()
         .unwrap();
     println!("Executing cargo fix");
@@ -30,7 +30,7 @@ pub fn format() -> Result<(), String> {
         .output()
         .unwrap();
     println!("Commiting clippy changes");
-    create_commit(PublishCommit::Clippy, None);
+    create_commit(PublishCommit::Format, None);
     Ok(())
 }
 
@@ -124,7 +124,7 @@ pub fn bump(push: bool) -> Result<(), String> {
 
 enum PublishCommit {
     CommitCargo,
-    Clippy,
+    Format,
 }
 
 fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) {
@@ -150,7 +150,7 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
             )
             .unwrap();
         }
-        PublishCommit::Clippy => {
+        PublishCommit::Format => {
             // commit all files
             execute_command(
                 "git".to_string(),
@@ -163,7 +163,7 @@ fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) 
                 vec![
                     "commit",
                     "-m",
-                    "package: clippy commit".to_string().as_str(),
+                    "package: format commit".to_string().as_str(),
                 ],
                 "error creating commit for clippy".to_string(),
             )

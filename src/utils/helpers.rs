@@ -19,17 +19,20 @@ use crate::constants::{
 
 use std::borrow::{Borrow, BorrowMut};
 
+use crate::utils;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::string::String;
 use std::{fs, io};
-
 pub mod parse {
 
     use std::fmt::Display;
 
-    use super::*;
+    use super::{
+        get::{get_string_between_two_index_from_string, prompt_check_validation},
+        *,
+    };
 
     pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
         let filtered_context_account_lines: Vec<_> = context_lines
@@ -112,53 +115,154 @@ pub mod parse {
         fs::write(co_file_path, data).unwrap();
     }
 
-    pub fn parse_validations_into_co(
-        co_file_path: String,
-        context_lines: Vec<String>,
-        instruction_file_path: String,
-    ) {
-        let filtered_lines: Vec<_> = context_lines
-            .iter()
-            .filter(|line| !line.contains("///"))
-            .map(|line| line.replace('\t', ""))
-            .collect();
-        let validations_strings = vec!["require", "valid", "assert", "verify"];
-        let mut validations: Vec<String> = super::get::get_possible_validations(
-            instruction_file_path,
-            validations_strings.clone(),
-        );
-        for (line_number, line) in filtered_lines.iter().enumerate() {
-            if line.trim() == "#[account(" {
-                let mut idx = 1;
-                // set the first line as a rust snippet on md
-                let mut account_string = vec![line.to_string()];
-                // if next line is pub
+    pub fn parse_validations_into_co(co_file_path: String, instruction_file_path: String) {
+        let validations_strings = vec![
+            "require".to_string(),
+            "valid".to_string(),
+            "assert".to_string(),
+            "verify".to_string(),
+        ];
+        let mut validations: Vec<String> = vec![];
+        let instruction_file_string = fs::read_to_string(&instruction_file_path).unwrap();
 
-                // until pub or end of file
-                while !filtered_lines[line_number + idx].contains("pub ")
-                    || line_number == filtered_lines.len() - 1
-                {
-                    // constraint, has_one or end of account section
-                    if filtered_lines[line_number + idx].contains("constraint =")
-                        || filtered_lines[line_number + idx].contains("has_one")
-                        || filtered_lines[line_number + idx].trim() == ")]"
-                    {
-                        account_string.push(filtered_lines[line_number + idx].to_string());
+        let mut last_reviewed_line = 0;
+        for (line_index, line) in instruction_file_string
+            .lines()
+            .into_iter()
+            .enumerate()
+            .map(|f| (f.0, f.1.to_string()))
+        {
+            if line_index < last_reviewed_line || line.is_empty() {
+                continue;
+            }
+            // check the if statements
+            let is_if = line.clone().trim().split(" ").next().unwrap() == "if";
+            if is_if {
+                // check that is not in comment
+                if line.contains("//") {
+                    let tokenized_line = line.split_whitespace();
+                    let comment_position =
+                        tokenized_line.clone().position(|word| word.contains("//"));
+                    let if_position = tokenized_line.clone().position(|word| word.contains("if"));
+                    // if the if is after the comment, continue
+                    if if_position >= comment_position {
+                        continue;
                     }
-                    idx += 1;
                 }
-                account_string.push(filtered_lines[line_number + idx].to_string());
+                let instruction_clone = instruction_file_string.clone();
+                let mut instruction_lines = instruction_clone.lines().enumerate();
+                let find_brace = instruction_lines
+                    .find(|(l_index, line)| line.contains("{") && l_index >= &line_index);
+                // check that the if is correct by looking up {
+                if let Some(found) = find_brace {
+                    let (opening_brace_index, _) = found;
+                    let (mut closing_brace_index, mut closing_brace_line) = instruction_lines
+                        .find(|(l_index, line)| line.contains("}") && l_index >= &line_index)
+                        .unwrap();
+                    // if closing line contains an else (or else if)
+                    while !(closing_brace_line.contains("}")
+                        && !closing_brace_line.contains("else"))
+                    {
+                        (closing_brace_index, closing_brace_line) =
+                            instruction_lines.next().unwrap();
+                    }
+                    // check if exists a validation inside the if
+                    let if_lines = &instruction_file_string.lines().collect::<Vec<_>>()
+                        [opening_brace_index..=closing_brace_index];
+                    // check if there are validations inside the if
+                    if if_lines.clone().to_vec().iter().any(|if_line| {
+                        validations_strings
+                            .clone()
+                            .iter()
+                            .any(|validation| if_line.contains(validation))
+                    }) {
+                        last_reviewed_line = closing_brace_index;
+                        validations.push(if_lines.to_vec().join("\n"))
+                    }
+                };
+
+            // if the line contains any of the validations and has a an opening parenthesis
+            } else if validations_strings
+                .iter()
+                .any(|validation| line.contains(validation))
+                && line.contains('(')
+            {
+                // single line validation
+                if line.contains(");") || line.contains(")?;") {
+                    let is_validation = prompt_check_validation(line.clone());
+                    if is_validation {
+                        validations.push(line);
+                    }
+                } else {
+                    let instruction_file_lines = instruction_file_string.lines();
+                    let validation_closing_index = instruction_file_lines
+                        .clone()
+                        .into_iter()
+                        .enumerate()
+                        .position(|(l_index, l)| {
+                            (l.trim() == ");"
+                                || l.trim() == ")?;"
+                                || l.trim() == ")"
+                                || l.trim() == ")?")
+                                && l_index > line_index
+                        });
+                    if let Some(closing_index) = validation_closing_index {
+                        let validation_string = get_string_between_two_index_from_string(
+                            instruction_file_string.to_string(),
+                            line_index,
+                            closing_index,
+                        )
+                        .unwrap();
+                        let is_validation = prompt_check_validation(validation_string.clone());
+                        if is_validation {
+                            validations.push(validation_string);
+                        }
+                    };
+                }
+            // multi line account only has #[account(
+            } else if line.trim() == "#[account(" {
+                let closing_account_index = instruction_file_string
+                    .clone()
+                    .lines()
+                    .into_iter()
+                    .enumerate()
+                    .position(|(l_index, l)| l.trim() == ")]" && l_index > line_index)
+                    .unwrap();
+                let account_lines = get_string_between_two_index_from_string(
+                    instruction_file_string.clone(),
+                    line_index,
+                    closing_account_index,
+                )
+                .unwrap();
                 // accounts without validations inside are length = 2
-                if account_string.len() > 2 {
-                    validations.push(account_string.join("\n"));
+                if account_lines
+                    .split("\n")
+                    .filter(|l| l.contains("has_one") || l.contains("constraint"))
+                    .collect::<Vec<_>>()
+                    .len()
+                    > 2
+                {
+                    let is_validation = prompt_check_validation(account_lines.clone());
+                    if is_validation {
+                        validations.push(account_lines);
+                    }
                 }
-            // single line "#[account("
+            // single line "#[account(", push the next lines which is the account name
             } else if line.contains("#[account(") {
-                validations.push(
-                    line.to_string().replace("mut,", "") + "\n" + &filtered_lines[line_number + 1],
-                );
+                let possible_validation = line.to_string().replace("mut,", "")
+                    + "\n"
+                    + &instruction_file_string.split("\n").collect::<Vec<_>>()[line_index + 1];
+                if possible_validation.contains("has_one")
+                    || possible_validation.contains("constraint")
+                {
+                    let is_validation = prompt_check_validation(possible_validation.clone());
+                    if is_validation {
+                        validations.push(possible_validation);
+                    }
+                }
             }
         }
+
         // filter only validations
         validations = validations
             .iter()
@@ -171,7 +275,8 @@ pub mod parse {
             })
             .map(|validation| validation.to_string())
             .collect();
-        // replace in co file
+
+        // replace in co file if no validations where found
         if validations.is_empty() {
             let data = fs::read_to_string(co_file_path.clone())
                 .unwrap()
@@ -186,6 +291,7 @@ pub mod parse {
             fs::write(co_file_path.clone(), data).unwrap()
         }
 
+        // from now on, check if is an acc validation or a prerequisite
         let mut account_validations: Vec<String> = vec![];
         let mut prerequisites: Vec<String> = vec![];
         for validation in validations.iter().map(|val| val.to_string()) {
@@ -236,7 +342,6 @@ pub mod parse {
                             } else {
                                 // multi line validation
                                 validation_string = super::get::get_multiple_line_validation(
-                                    val_line.clone(),
                                     &if_tokenized.to_string().clone(),
                                     val_index,
                                 );
@@ -632,9 +737,13 @@ pub mod parse {
 pub mod get {
     use std::{fs::DirEntry, io};
 
-    use crate::{structs::FileInfo, utils};
+    use crate::{
+        structs::FileInfo,
+        utils::{self, cli_inputs::select_yes_or_no},
+    };
 
     use super::*;
+
     pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
         let signers_names: Vec<_> = context_lines
             .iter()
@@ -805,142 +914,62 @@ pub mod get {
         }
     }
 
-    pub fn get_possible_validations(
-        instruction_file_path: String,
-        validations_strings: Vec<&str>,
-    ) -> Vec<String> {
-        let instruction_file = fs::read_to_string(&instruction_file_path).unwrap();
-        let mut possible_validations: Vec<String> = Vec::new();
-        let mut last_reviewed_line = 0;
-        for (line_index, line) in instruction_file.clone().lines().enumerate() {
-            if line_index <= last_reviewed_line || line.is_empty() {
-                continue;
-            }
-            // check the if statements
-            let is_if = line.clone().trim().split(" ").next().unwrap() == "if";
-            if is_if {
-                // check that is not in comment
-                if line.contains("//") {
-                    let tokenized_line = line.clone().split_whitespace();
-                    let comment_position =
-                        tokenized_line.clone().position(|word| word.contains("//"));
-                    let if_position = tokenized_line.clone().position(|word| word.contains("if"));
-                    // if the if is after the comment, continue
-                    if if_position >= comment_position {
-                        continue;
-                    }
-                }
-                let instruction_clone = instruction_file.clone();
-                let mut instruction_lines = instruction_clone.lines().enumerate();
-                let find_brace = instruction_lines
-                    .find(|(l_index, line)| line.contains("{") && l_index >= &line_index);
-                // check that the if is indeed a function by looking up {
-                let (opening_brace_index, _) = if let Some(found) = find_brace {
-                    found
-                } else {
-                    continue;
-                };
-                let (mut closing_brace_index, mut closing_brace_line) = instruction_lines
-                    .find(|(l_index, line)| line.contains("}") && l_index >= &line_index)
-                    .unwrap();
-                // if closing line contains an else (or else if)
-                while !(closing_brace_line.contains("}") && !closing_brace_line.contains("else")) {
-                    (closing_brace_index, closing_brace_line) = instruction_lines.next().unwrap();
-                }
-                // check if exists a validation inside the if
-                let if_lines = &instruction_file.lines().collect::<Vec<_>>()
-                    [opening_brace_index..=closing_brace_index];
-                // check if there are validations inside the if
-                if if_lines.clone().to_vec().iter().any(|if_line| {
-                    validations_strings
-                        .clone()
-                        .iter()
-                        .any(|validation| if_line.contains(validation))
-                }) {
-                    last_reviewed_line = closing_brace_index;
-                    possible_validations.push(if_lines.to_vec().join("\n"))
-                }
-            }
-
-            // if the line contains any of the validations and has a parenthesis
-            if validations_strings
-                .iter()
-                .any(|validation| line.contains(validation))
-                && line.contains('(')
-            {
-                // single line validation
-                let validation: String;
-                if line.contains(");") || line.contains(")?;") {
-                    validation = get_single_line_validation(line);
-                } else {
-                    // multi line validation
-                    validation = get_multiple_line_validation(line, &instruction_file, line_index);
-                }
-                if !validation.is_empty() {
-                    possible_validations.push(validation)
-                }
-            }
-        }
-        possible_validations
-    }
-
-    pub fn get_multiple_line_validation(
-        line: &str,
-        instruction_file: &String,
-        line_index: usize,
-    ) -> String {
-        let mut validation_candidate: Vec<String> = vec![line.clone().to_string()];
-        let mut idx = 1;
-        let mut validation_line =
-            instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
-        while !(validation_line.contains(");") || validation_line.contains(")?;")) {
-            validation_candidate.push(validation_line);
-            idx += 1;
-            validation_line =
-                instruction_file.clone().lines().collect::<Vec<_>>()[line_index + idx].to_string();
-        }
-        validation_candidate.push(validation_line);
-        let validation_string = validation_candidate.join("\n");
-        let prompt = format!(
-            "is the next function a {}? \n {}",
-            format!("validation").red(),
-            format!("{validation_string}").bright_green(),
-        );
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(prompt)
-            .item("yes")
-            .item("no")
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
+    pub fn get_multiple_line_validation(instruction_file: &String, line_index: usize) -> String {
+        // let mut validation_candidate: Vec<String> = vec![line.clone().to_string()];
+        let instruction_file_lines = instruction_file.lines();
+        let validation_closing_index = instruction_file_lines
+            .clone()
+            .into_iter()
+            .enumerate()
+            .position(|(l_index, l)| {
+                (l.trim() == ");" || l.trim() == ")?;" || l.trim() == ")" || l.trim() == ")?")
+                    && l_index > line_index
+            });
+        if let Some(closing_index) = validation_closing_index {
+            let validation_string = get_string_between_two_index_from_string(
+                instruction_file.to_string(),
+                line_index,
+                closing_index,
+            )
             .unwrap();
-        if selection == 0 {
-            validation_string
+            let prompt_text = format!(
+                "is the next function a {}? \n {}",
+                format!("validation").red(),
+                format!("{validation_string}").bright_green(),
+            );
+            let is_validation = utils::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+            if is_validation {
+                validation_string
+            } else {
+                "".to_string()
+            }
         } else {
             "".to_string()
         }
     }
-
     pub fn get_single_line_validation(line: &str) -> String {
         let validation = format!("\t{}", line.trim());
         let prompt = format!(
-            "is the next line a {}? \n {}",
+            "is the next line a {}?: \n {}",
             format!("validation").red(),
             format!("{validation}").bright_green()
         );
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(prompt)
-            .item("yes")
-            .item("no")
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-        if selection == 0 {
+        let is_validation = select_yes_or_no(&prompt).unwrap();
+        if is_validation {
             validation
         } else {
             "".to_string()
         }
+    }
+
+    pub fn prompt_check_validation(possible_validation: String) -> bool {
+        let prompt = format!(
+            "is this a {}?: \n {}",
+            format!("validation").red(),
+            format!("{}", possible_validation).bright_green()
+        );
+        let is_validation = select_yes_or_no(&prompt).unwrap();
+        is_validation
     }
 
     pub fn get_instruction_files() -> Result<Vec<FileInfo>, String> {
@@ -971,7 +1000,7 @@ pub mod get {
 
     // returns a list of folder and files names
     pub fn get_started_entrypoints() -> Result<Vec<String>, String> {
-        let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+        let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_files = fs::read_dir(started_path)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
@@ -1042,7 +1071,7 @@ pub mod get {
     }
 
     pub fn get_finished_co_files() -> Result<Vec<(String, String)>, String> {
-        let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
         let mut finished_folder = fs::read_dir(&finished_path)
             .unwrap()
             .map(|file| file.unwrap())
@@ -1149,19 +1178,15 @@ pub mod get {
                     && f.as_ref().unwrap().file_name() != ".gitkeep"
             })
             .map(|entry| {
-                let info = FileInfo {
-                    path: utils::helpers::canonicalize_path(
-                        entry.as_ref().unwrap().path().display().to_string(),
-                    )
-                    .unwrap(),
-                    name: entry
-                        .as_ref()
-                        .unwrap()
-                        .file_name()
-                        .to_os_string()
-                        .into_string()
-                        .unwrap(),
-                };
+                let path = entry.as_ref().unwrap().path().display().to_string();
+                let name = entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap();
+                let info = FileInfo::new(path, name);
                 info
             })
             .collect::<Vec<FileInfo>>();
@@ -1224,15 +1249,99 @@ pub mod get {
             .join("\n");
         Ok(context_account_lines)
     }
+    pub fn get_string_between_two_str_from_path(
+        file_path: String,
+        str_start: &str,
+        str_end: &str,
+    ) -> Result<String, String> {
+        let content_string = fs::read_to_string(file_path.clone())
+            .expect(format!("Error reading: {}", file_path).as_str());
+        let content_lines = content_string.lines();
+        let start_index = content_lines
+            .clone()
+            .into_iter()
+            .position(|f| f.contains(str_start))
+            .unwrap();
+        let end_index = content_lines
+            .clone()
+            .into_iter()
+            .position(|f| f.contains(str_end))
+            .unwrap();
+        let context_account_lines = content_lines.clone().collect::<Vec<_>>()
+            [start_index..end_index]
+            .to_vec()
+            .join("\n");
+        Ok(context_account_lines)
+    }
     pub fn get_string_between_two_index_from_string(
         content: String,
         start_index: usize,
         end_index: usize,
     ) -> Result<String, String> {
-        let context_account_lines = content.lines().collect::<Vec<_>>()[start_index..end_index]
+        let content_result = content.lines().collect::<Vec<_>>()[start_index..=end_index]
             .to_vec()
             .join("\n");
-        Ok(context_account_lines)
+        Ok(content_result)
+    }
+    pub fn get_string_between_two_index_from_path(
+        file_path: String,
+        start_index: usize,
+        end_index: usize,
+    ) -> Result<String, String> {
+        let content_string = fs::read_to_string(file_path.clone())
+            .expect(format!("Error reading: {}", file_path).as_str());
+        let content_lines = content_string.lines();
+        let content_result = content_lines.clone().collect::<Vec<_>>()[start_index..end_index]
+            .to_vec()
+            .join("\n");
+        Ok(content_result)
+    }
+
+    /// Returns (instruction handler string, the instruction path,  the starting index and the end index)
+    pub fn get_instruction_handler_of_entrypoint(
+        entrypoint_name: String,
+    ) -> Result<(String, String, usize, usize), String> {
+        let mut handler_string: String = "".to_string();
+        let instruction_file_path =
+            utils::path::get_instruction_file_path_from_started_entrypoint_co_file(
+                entrypoint_name.clone(),
+            )?;
+        let instruction_file_string =
+            fs::read_to_string(format!("../{}", instruction_file_path)).unwrap();
+        let context_name = get_context_name(entrypoint_name.clone())?;
+        let mut start_index = 0;
+        let mut end_index = 0;
+        for (line_index, line) in instruction_file_string.lines().enumerate() {
+            if line.contains("pub") && line.contains("fn") {
+                let closing_index = instruction_file_string
+                    .clone()
+                    .lines()
+                    .into_iter()
+                    .enumerate()
+                    .position(|(l_index, l)| l == "}" && l_index > line_index)
+                    .unwrap();
+                let handler_string_candidate = get_string_between_two_index_from_string(
+                    instruction_file_string.clone(),
+                    line_index,
+                    closing_index,
+                )?;
+                if handler_string_candidate
+                    .lines()
+                    .into_iter()
+                    .any(|l| l.contains("Context") && l.contains(&context_name))
+                {
+                    handler_string = handler_string_candidate;
+                    start_index = line_index;
+                    end_index = closing_index;
+                }
+            }
+        }
+        Ok((
+            handler_string,
+            instruction_file_path,
+            start_index,
+            end_index,
+        ))
     }
 }
 
@@ -1299,13 +1408,13 @@ pub mod count {
             .len()
     }
     pub fn co_counter() -> Result<(usize, usize, usize), String> {
-        let to_review_path = BatConfig::get_auditor_code_overhaul_to_review_path(None)?;
+        let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
         let to_review_count = count_filtering_gitkeep(to_review_folder);
-        let started_path = BatConfig::get_auditor_code_overhaul_started_path(None)?;
+        let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_folder = fs::read_dir(started_path).unwrap();
         let started_count = count_filtering_gitkeep(started_folder);
-        let finished_path = BatConfig::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
         let finished_folder = fs::read_dir(finished_path).unwrap();
         let finished_count = count_filtering_gitkeep(finished_folder);
         Ok((to_review_count, started_count, finished_count))
@@ -1350,15 +1459,4 @@ pub fn normalize_url(url_to_normalize: &str) -> Result<String, String> {
         .normalize(None)
         .expect(format!("Error normalizing url {}", url_to_normalize).as_str());
     Ok(url)
-}
-
-pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, String> {
-    let error_message = format!("Error canonicalizing path: {}", path_to_canonicalize);
-    let canonicalized_path = Path::new(&(path_to_canonicalize))
-        .canonicalize()
-        .expect(&error_message)
-        .into_os_string()
-        .into_string()
-        .expect(&error_message);
-    Ok(canonicalized_path)
 }
