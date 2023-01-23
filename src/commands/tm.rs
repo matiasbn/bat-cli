@@ -27,7 +27,7 @@ pub fn update_accounts() -> Result<(), String> {
             not_account_structs.push(formatted_to_rust_comment);
         }
     }
-    let tm_file_path = BatConfig::get_auditor_threat_modeling_path()?;
+    let tm_file_path = utils::path::get_auditor_threat_modeling_path()?;
     let account_string = if account_structs.is_empty() {
         "-".to_string()
     } else {
