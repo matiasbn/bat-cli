@@ -1,10 +1,20 @@
+use crate::commands;
 use crate::commands::metadata::miro_helpers::{
     get_miro_accounts_subsection_content_string, get_miro_section_content_string,
 };
 use crate::commands::metadata::structs::structs_helpers;
 use crate::commands::miro::{MiroConfig, MiroStickyNoteColors};
+use crate::config::BatConfig;
+use crate::constants::{
+    MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH,
+    MIRO_HEIGHT_ACCOUNTS_FRAME, MIRO_INITIAL_X_ACCOUNTS_FRAME, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE,
+    MIRO_INITIAL_Y_ACCOUNTS_FRAME, MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE,
+    MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
+    MIRO_WIDTH_ACCOUNTS_FRAME, MIRO_WIDTH_ACCOUNTS_STICKY_NOTE,
+};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
+use crate::utils::helpers::normalize_url;
 use crate::{
     commands::metadata::structs::structs_helpers::get_structs_metadata_from_program,
     utils::{self, helpers::get::get_string_between_two_str_from_path},
@@ -222,7 +232,7 @@ pub fn update_structs() -> Result<(), String> {
     Ok(())
 }
 
-pub fn update_miro() -> Result<(), String> {
+pub async fn update_miro() -> Result<(), String> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
     let prompt_text = "Please select the Miro metadata section to update";
     let sections = MIRO_SUBSECTIONS_HEADERS
@@ -264,9 +274,56 @@ pub fn update_miro() -> Result<(), String> {
             };
             miro_metadata_vec.push(miro_metadata);
         }
+        let mut accounts_frame_url = "".to_string();
+        if !miro_accounts_subsection_initialized {
+            // // create frame and parse om accounts frame url
+            // let frame_id = commands::miro::api::frame::create_frame(
+            //     "Accounts",
+            //     MIRO_INITIAL_X_ACCOUNTS_FRAME,
+            //     MIRO_INITIAL_Y_ACCOUNTS_FRAME,
+            //     MIRO_WIDTH_ACCOUNTS_FRAME,
+            //     MIRO_HEIGHT_ACCOUNTS_FRAME,
+            // )
+            // .await?
+            // .id;
+            // accounts_frame_url = MiroConfig::new().get_frame_url(&frame_id);
+            let prompt_text = format!(
+                "Please provide the {} frame url for accounts:",
+                "Miro".yellow()
+            );
+
+            accounts_frame_url = utils::cli_inputs::input(&prompt_text).unwrap();
+            let frame_id = accounts_frame_url
+                .split("?moveToWidget=")
+                .last()
+                .unwrap()
+                .split("&cot")
+                .next()
+                .unwrap();
+
+            for (account_metadata_index, account_metadata) in
+                miro_metadata_vec.clone().into_iter().enumerate()
+            {
+                let x_modifier = account_metadata_index as i32 % MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS;
+                let y_modifier =
+                    account_metadata_index as i32 / MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS + 1;
+                let x_position = MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE
+                    + MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE * x_modifier;
+                let y_position = MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE
+                    + MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE * y_modifier;
+                let sticky_note_id = commands::miro::api::sticky_note::create_sticky_note(
+                    account_metadata.account_name,
+                    account_metadata.sticky_note_color,
+                    frame_id.to_string(),
+                    x_position as i32,
+                    y_position,
+                )
+                .await;
+                miro_metadata_vec[account_metadata_index].miro_item_id = sticky_note_id;
+            }
+        }
 
         let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
-
         let miro_accounts_string = miro_helpers::get_format_miro_accounts_to_result_string(
             miro_metadata_vec.clone(),
             MIRO_SUBSECTIONS_HEADERS[selection],
@@ -274,24 +331,31 @@ pub fn update_miro() -> Result<(), String> {
 
         // parse into metadata.md
         let metadata_content_string = fs::read_to_string(metadata_path.clone()).unwrap();
-
         let miro_section_content = get_miro_section_content_string()?;
 
         let miro_accounts_subsection_content = get_miro_accounts_subsection_content_string()?;
+        let mut new_content = metadata_content_string.replace(
+            miro_section_content.as_str(),
+            miro_section_content
+                .replace(
+                    miro_accounts_subsection_content.as_str(),
+                    &miro_accounts_string,
+                )
+                .as_str(),
+        );
 
-        fs::write(
-            metadata_path,
-            metadata_content_string.replace(
-                miro_section_content.as_str(),
-                miro_section_content
-                    .replace(
-                        miro_accounts_subsection_content.as_str(),
-                        &miro_accounts_string,
-                    )
-                    .as_str(),
-            ),
-        )
-        .unwrap();
+        if !miro_accounts_subsection_initialized {
+            let replace_text_frame_url = format!(
+                "{}\n\n{}",
+                MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER, accounts_frame_url
+            );
+            new_content = new_content.replace(
+                MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER,
+                &replace_text_frame_url,
+            );
+        }
+
+        fs::write(metadata_path, new_content).unwrap();
         // create commit
 
         // utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
@@ -346,7 +410,6 @@ mod miro_helpers {
                     && !l.contains(MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER)
             })
             .collect::<Vec<_>>();
-        println!("updated {:#?}", miro_accounts_subsection_filtered);
         Ok(!miro_accounts_subsection_filtered.is_empty())
     }
     pub fn get_format_miro_accounts_to_result_string(

@@ -64,11 +64,11 @@ pub enum MiroItemType {
 }
 
 pub enum MiroStickyNoteColors {
-    Gray,
-    LightYellow,
-    Yellow,
-    Orange,
-    LightGreen,
+    // Gray,
+    // LightYellow,
+    // Yellow,
+    // Orange,
+    // LightGreen,
     Green,
     DarkGreen,
     Cyan,
@@ -85,11 +85,11 @@ pub enum MiroStickyNoteColors {
 impl MiroStickyNoteColors {
     pub fn to_string(&self) -> &str {
         match self {
-            MiroStickyNoteColors::Gray => "gray",
-            MiroStickyNoteColors::LightYellow => "light_yellow",
-            MiroStickyNoteColors::Yellow => "yellow",
-            MiroStickyNoteColors::Orange => "orange",
-            MiroStickyNoteColors::LightGreen => "light_green",
+            // MiroStickyNoteColors::Gray => "gray",
+            // MiroStickyNoteColors::LightYellow => "light_yellow",
+            // MiroStickyNoteColors::Yellow => "yellow",
+            // MiroStickyNoteColors::Orange => "orange",
+            // MiroStickyNoteColors::LightGreen => "light_green",
             MiroStickyNoteColors::Green => "green",
             MiroStickyNoteColors::DarkGreen => "dark_green",
             MiroStickyNoteColors::Cyan => "cyan",
@@ -106,11 +106,11 @@ impl MiroStickyNoteColors {
 
     pub fn get_colors_vec() -> Vec<String> {
         vec![
-            "gray".to_string(),
-            "light_yellow".to_string(),
-            "yellow".to_string(),
-            "orange".to_string(),
-            "light_green".to_string(),
+            // "gray".to_string(),
+            // "light_yellow".to_string(),
+            // "yellow".to_string(),
+            // "orange".to_string(),
+            // "light_green".to_string(),
             "green".to_string(),
             "dark_green".to_string(),
             "cyan".to_string(),
@@ -155,7 +155,9 @@ pub mod api {
         }
 
         // returns the frame url
-        pub async fn create_frame(entrypoint_name: &str) -> Result<MiroFrame, String> {
+        pub async fn create_frame_for_entrypoint(
+            entrypoint_name: &str,
+        ) -> Result<MiroFrame, String> {
             let MiroConfig {
                 access_token,
                 board_id,
@@ -180,6 +182,58 @@ pub mod api {
                          "geometry": {
                             "width": MIRO_FRAME_WIDTH,
                             "height": MIRO_FRAME_HEIGHT
+                       }
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .send()
+                .await;
+            match board_response {
+                Ok(response) => {
+                    let frame_id = super::helpers::get_id_from_response(response).await;
+                    let frame_url = MiroConfig::new().get_frame_url(&frame_id);
+                    Ok(MiroFrame {
+                        id: frame_id,
+                        url: frame_url,
+                    })
+                }
+                Err(err_message) => Err(err_message.to_string()),
+            }
+        }
+        // returns the frame url
+        pub async fn create_frame(
+            frame_title: &str,
+            x_position: i32,
+            y_position: i32,
+            width: i32,
+            height: i32,
+        ) -> Result<MiroFrame, String> {
+            let MiroConfig {
+                access_token,
+                board_id,
+                ..
+            } = MiroConfig::new();
+            let client = reqwest::Client::new();
+
+            let board_response = client
+                .post(format!("https://api.miro.com/v2/boards/{board_id}/frames"))
+                .body(
+                    json!({
+                         "data": {
+                              "format": "custom",
+                              "title": frame_title,
+                              "type": "freeform"
+                         },
+                         "position": {
+                              "origin": "center",
+                              "x": x_position,
+                              "y": y_position
+                         },
+                         "geometry": {
+                            "width": width,
+                            "height": height
                        }
                     })
                     .to_string(),
@@ -484,6 +538,61 @@ pub mod api {
         use crate::structs::SignerType;
 
         use super::*;
+        pub async fn create_sticky_note(
+            sticky_note_content: String,
+            sticky_note_color: String,
+            frame_id: String,
+            x_position: i32,
+            y_position: i32,
+        ) -> String {
+            let MiroConfig {
+                access_token,
+                board_id,
+                ..
+            } = MiroConfig::new();
+            // let x_position = x + x_move;
+            let client = reqwest::Client::new();
+            let response = client
+                .post(format!(
+                    "https://api.miro.com/v2/boards/{board_id}/sticky_notes",
+                ))
+                .body(
+                    json!({
+                        "data": {
+                            "content": sticky_note_content,
+                            "shape": "rectangle"
+                        },
+                        "style": {
+                            "fillColor": sticky_note_color
+                        },
+                        "position": {
+                            "origin": "center",
+                            "x": x_position,
+                            "y": y_position
+                        },
+                        "geometry": {
+                            "width": MIRO_WIDTH_ACCOUNTS_STICKY_NOTE
+                        },
+                        "parent": {
+                            "id": frame_id
+                        }
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            // println!("sticky not response {response}");
+            let response: Value = serde_json::from_str(&response.as_str()).unwrap();
+            let id = response["id"].to_string().replace("\"", "");
+            id
+        }
+
         pub async fn create_signer_sticky_note(
             signer_note_text: String,
             signer_counter: usize,
@@ -543,6 +652,7 @@ pub mod api {
             let id = response["id"].to_string().replace("\"", "");
             id
         }
+
         pub async fn create_user_figure_for_signer(
             signer_counter: usize,
             miro_frame_id: String,
@@ -835,7 +945,7 @@ pub mod commands {
             }
 
             println!("Creating frame in Miro for {selected_folder}");
-            let miro_frame = super::api::frame::create_frame(&selected_folder)
+            let miro_frame = super::api::frame::create_frame_for_entrypoint(&selected_folder)
                 .await
                 .unwrap();
             fs::write(
