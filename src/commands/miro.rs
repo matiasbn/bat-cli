@@ -3,8 +3,8 @@ use crate::utils::git::*;
 use normalize_url::normalizer;
 use reqwest;
 use serde_json::*;
+use std::fs;
 use std::result::Result;
-use std::{fs};
 
 use crate::utils;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -61,6 +61,69 @@ pub enum MiroItemType {
     Shape,
     StickyNote,
     Text,
+}
+
+pub enum MiroStickyNoteColors {
+    Gray,
+    LightYellow,
+    Yellow,
+    Orange,
+    LightGreen,
+    Green,
+    DarkGreen,
+    Cyan,
+    LightPink,
+    Pink,
+    Violet,
+    Red,
+    LightBlue,
+    Blue,
+    DarkBlue,
+    Black,
+}
+
+impl MiroStickyNoteColors {
+    pub fn to_string(&self) -> &str {
+        match self {
+            MiroStickyNoteColors::Gray => "gray",
+            MiroStickyNoteColors::LightYellow => "light_yellow",
+            MiroStickyNoteColors::Yellow => "yellow",
+            MiroStickyNoteColors::Orange => "orange",
+            MiroStickyNoteColors::LightGreen => "light_green",
+            MiroStickyNoteColors::Green => "green",
+            MiroStickyNoteColors::DarkGreen => "dark_green",
+            MiroStickyNoteColors::Cyan => "cyan",
+            MiroStickyNoteColors::LightPink => "light_pink",
+            MiroStickyNoteColors::Pink => "pink",
+            MiroStickyNoteColors::Violet => "violet",
+            MiroStickyNoteColors::Red => "red",
+            MiroStickyNoteColors::LightBlue => "light_blue",
+            MiroStickyNoteColors::Blue => "blue",
+            MiroStickyNoteColors::DarkBlue => "dark_blue",
+            MiroStickyNoteColors::Black => "black",
+        }
+    }
+
+    pub fn get_colors_vec() -> Vec<String> {
+        vec![
+            "gray".to_string(),
+            "light_yellow".to_string(),
+            "yellow".to_string(),
+            "orange".to_string(),
+            "light_green".to_string(),
+            "green".to_string(),
+            "dark_green".to_string(),
+            "cyan".to_string(),
+            "light_pink".to_string(),
+            "pink".to_string(),
+            "violet".to_string(),
+            "red".to_string(),
+            "light_blue".to_string(),
+            "blue".to_string(),
+            "dark_blue".to_string(),
+            "black".to_string(),
+        ]
+    }
 }
 
 impl MiroItemType {
@@ -649,7 +712,6 @@ pub mod commands {
         },
     };
 
-    
     pub async fn deploy_miro() -> Result<(), String> {
         assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
         // check empty images

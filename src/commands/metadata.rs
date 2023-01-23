@@ -1,3 +1,9 @@
+use crate::commands::metadata::miro_helpers::{
+    get_miro_accounts_subsection_content_string, get_miro_section_content_string,
+    miro_section_is_initialized,
+};
+use crate::commands::metadata::structs::structs_helpers;
+use crate::commands::miro::{MiroConfig, MiroStickyNoteColors};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 use crate::{
@@ -9,6 +15,9 @@ use colored::Colorize;
 use std::fs;
 use std::vec;
 
+pub const METADATA_END_OF_FILE: &str = "<!-- Miro should be ever the last section -->";
+pub const MIRO_SECTION_HEADER: &str = "## Miro";
+pub const MIRO_SUBSECTIONS_HEADERS: &[&str] = &["### Entrypoints", "### Accounts"];
 pub const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
 pub const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
 pub const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
@@ -22,6 +31,13 @@ pub const STRUCT_SUBSECTIONS_HEADERS: &[&str] = &[
     "### Inputs",
     "### Others",
 ];
+
+#[derive(Debug, Clone)]
+pub struct MiroAccountMetadata {
+    color: String,
+    account_name: String,
+    miro_item_id: String,
+}
 
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
@@ -52,7 +68,6 @@ impl StructMetadata {
     fn new_from_metadata_name(struct_name: &str) -> Self {
         let structs_section_metadata_string =
             structs::structs_helpers::get_validated_struct_metadata_from_name(struct_name).unwrap();
-        println!(" struct metdata string {}", structs_section_metadata_string);
         let path = metadata_helpers::parse_metadata_info_section(
             &structs_section_metadata_string,
             METADATA_CONTENT_PATH_SECTION,
@@ -204,6 +219,97 @@ pub fn update_structs() -> Result<(), String> {
     Ok(())
 }
 
+pub fn update_miro() -> Result<(), String> {
+    assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
+    let prompt_text = "Please select the Miro metadata section to update";
+    let sections = MIRO_SUBSECTIONS_HEADERS
+        .into_iter()
+        .enumerate()
+        .map(|section| {
+            if section.0 == 0 {
+                section.1.replace("### ", "").green()
+            } else {
+                section.1.replace("### ", "").yellow()
+            }
+        })
+        .collect::<Vec<_>>();
+    let selection = utils::cli_inputs::select(prompt_text, sections, None)?;
+
+    if selection == 1 {
+        let miro_section_initialized = miro_section_is_initialized()?;
+        if miro_section_initialized {
+            metadata_helpers::prompt_user_update_section("Miro")?;
+        };
+        // get miro accounts subsection
+        let miro_accounts_subsection_content = get_miro_accounts_subsection_content_string()?;
+        // get Structs accounts names
+        let accounts_structs_names = structs_helpers::get_structs_names_from_metadata_file(Some(
+            StructMetadataType::Account,
+        ))?;
+        // get colors
+        let mut miro_stickynote_colors = MiroStickyNoteColors::get_colors_vec();
+        let mut miro_metadata_vec: Vec<MiroAccountMetadata> = vec![];
+        for struct_name in accounts_structs_names {
+            let prompt_text = format!("Please select the color for {}:", struct_name.yellow());
+            let selection =
+                utils::cli_inputs::select(&prompt_text, miro_stickynote_colors.clone(), None)?;
+            let selected_color = &miro_stickynote_colors[selection];
+            miro_stickynote_colors.remove(selection);
+        }
+        return Ok(());
+    }
+    unimplemented!()
+}
+
+mod miro_helpers {
+
+    #[allow(unused_imports)]
+    use super::*;
+
+    pub fn get_miro_section_content_string() -> Result<String, String> {
+        let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+        let metadata_content_string = fs::read_to_string(metadata_path).unwrap();
+        let start_index = metadata_content_string
+            .lines()
+            .position(|line| line.trim() == MIRO_SECTION_HEADER)
+            .unwrap();
+        let end_index = metadata_content_string
+            .lines()
+            .position(|line| line.trim() == METADATA_END_OF_FILE)
+            .unwrap();
+        let miro_section_content = metadata_content_string.lines().collect::<Vec<_>>().to_vec()
+            [start_index..end_index]
+            .join("\n");
+        Ok(miro_section_content)
+    }
+    pub fn get_miro_accounts_subsection_content_string() -> Result<String, String> {
+        let miro_section_content = get_miro_section_content_string()?;
+        let start_index = miro_section_content
+            .lines()
+            .position(|line| line.trim() == MIRO_SUBSECTIONS_HEADERS[1])
+            .unwrap();
+
+        let miro_accounts_subsection_content =
+            miro_section_content.lines().collect::<Vec<_>>().to_vec()[start_index..].join("\n");
+        Ok(miro_accounts_subsection_content)
+    }
+
+    pub fn miro_section_is_initialized() -> Result<bool, String> {
+        let miro_section_content_string = get_miro_section_content_string()?;
+        let metadata_updated_structs = miro_section_content_string
+            .lines()
+            .into_iter()
+            .filter(|l| {
+                !l.is_empty()
+                    && !MIRO_SUBSECTIONS_HEADERS
+                        .iter()
+                        .any(|section| l.contains(section))
+            })
+            .collect::<Vec<_>>();
+        Ok(!metadata_updated_structs.is_empty())
+    }
+}
+
 pub mod structs {
     use super::*;
 
@@ -215,6 +321,61 @@ pub mod structs {
 
     pub mod structs_helpers {
         use super::*;
+
+        pub fn get_structs_metadata_from_metadata_file(
+            struct_type: Option<StructMetadataType>,
+        ) -> Result<Vec<StructMetadata>, String> {
+            let structs_section_content = get_structs_section_content_string()?;
+            let struct_names = structs_section_content
+                .lines()
+                .filter(|struct_metatda| struct_metatda.contains("####"))
+                .map(|struct_name| struct_name.replace("#### ", "").trim().to_string())
+                .collect::<Vec<_>>();
+            let mut structs_metadata_vec: Vec<StructMetadata> = vec![];
+            for struct_name in struct_names {
+                let struct_metadata = StructMetadata::new_from_metadata_name(&struct_name);
+                structs_metadata_vec.push(struct_metadata);
+            }
+            if let Some(metadata_type) = struct_type {
+                let filtered_structs = structs_metadata_vec
+                    .into_iter()
+                    .filter(|struct_metadata| struct_metadata.struct_type == metadata_type)
+                    .collect::<Vec<_>>();
+                return Ok(filtered_structs);
+            }
+            Ok(structs_metadata_vec)
+        }
+
+        pub fn get_structs_names_from_metadata_file(
+            struct_type: Option<StructMetadataType>,
+        ) -> Result<Vec<String>, String> {
+            let structs_section_content = get_structs_section_content_string()?;
+            let struct_names = structs_section_content
+                .lines()
+                .filter(|struct_metatda| struct_metatda.contains("####"))
+                .map(|struct_name| struct_name.replace("#### ", "").trim().to_string())
+                .collect::<Vec<_>>();
+            let mut structs_metadata_vec: Vec<StructMetadata> = vec![];
+            for struct_name in struct_names {
+                let struct_metadata = StructMetadata::new_from_metadata_name(&struct_name);
+                structs_metadata_vec.push(struct_metadata);
+            }
+            if let Some(metadata_type) = struct_type {
+                structs_metadata_vec = structs_metadata_vec
+                    .into_iter()
+                    .filter(|struct_metadata| struct_metadata.struct_type == metadata_type)
+                    .collect::<Vec<_>>();
+            }
+            Ok(structs_metadata_vec
+                .into_iter()
+                .map(|struct_metadata| struct_metadata.name)
+                .collect::<Vec<_>>())
+        }
+
+        //  fn get_structs_subcsection_from_metadata_file(struct_type:StructMetadataType) -> Result<Vec<StructMetadata>,String>{
+        //     let structs_section_content = get_structs_section_content_string()?;
+        //     if let
+        // }
 
         pub fn get_structs_section_content_string() -> Result<String, String> {
             let metadata_path =
@@ -230,28 +391,37 @@ pub mod structs {
         pub fn get_validated_struct_metadata_from_name(
             struct_name: &str,
         ) -> Result<String, String> {
-            let metadata_structs_section_content_string = get_structs_section_content_string()?;
+            let structs_section_content_string = get_structs_section_content_string()?;
             let struct_metadata_header = get_struct_metadata_header_from_struct_name(struct_name);
-            if !metadata_structs_section_content_string.contains(&struct_metadata_header) {
+            if !structs_section_content_string.contains(&struct_metadata_header) {
                 panic!(
                     "Struct {} not found in Structs section of metadata.md",
                     struct_name
                 )
             };
-            let start_index = metadata_structs_section_content_string
+            let structs_section_content_last_index = structs_section_content_string
+                .lines()
+                .collect::<Vec<_>>()
+                .len()
+                - 1;
+            let start_index = structs_section_content_string
                 .lines()
                 .into_iter()
                 .position(|line| line.trim() == (&struct_metadata_header))
                 .unwrap();
-            let end_index = metadata_structs_section_content_string
+            let end_index = structs_section_content_string
                 .lines()
                 .into_iter()
                 .enumerate()
-                .position(|line| line.1.contains("###") && line.0 > start_index)
-                .unwrap();
+                .position(|line| {
+                    (line.1.contains("####") && line.0 > start_index)
+                        || line.0 == structs_section_content_last_index
+                })
+                .unwrap()
+                + 1;
             let metadata_struct_content =
                 utils::helpers::get::get_string_between_two_index_from_string(
-                    metadata_structs_section_content_string,
+                    structs_section_content_string,
                     start_index,
                     end_index,
                 )?;
@@ -413,6 +583,7 @@ pub mod structs {
                 .split("<")
                 .next()
                 .unwrap()
+                .replace(":", "")
                 .to_string()
                 .clone()
         }
@@ -459,6 +630,8 @@ pub mod structs {
 }
 
 pub mod metadata_helpers {
+    #[allow(unused_imports)]
+    use super::*;
 
     pub fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {
         let path = metadata_info_content
@@ -469,5 +642,22 @@ pub mod metadata_helpers {
             .trim()
             .to_string();
         path
+    }
+
+    pub fn prompt_user_update_section(section_name: &str) -> Result<(), String> {
+        let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
+            format!(
+                "{}, are you sure you want to continue?",
+                format!("{} in metadata.md are arealready initialized", section_name).bright_red()
+            )
+            .as_str(),
+        )?;
+        if !user_decided_to_continue {
+            panic!(
+                "User decided not to continue with the update process for {} metada",
+                section_name
+            )
+        }
+        Ok(())
     }
 }
