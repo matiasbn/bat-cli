@@ -4,17 +4,14 @@ use crate::commands::metadata::miro_helpers::{
 };
 use crate::commands::metadata::structs::structs_helpers;
 use crate::commands::miro::{MiroConfig, MiroStickyNoteColors};
-use crate::config::BatConfig;
+
 use crate::constants::{
-    MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH,
-    MIRO_HEIGHT_ACCOUNTS_FRAME, MIRO_INITIAL_X_ACCOUNTS_FRAME, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE,
-    MIRO_INITIAL_Y_ACCOUNTS_FRAME, MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE,
+    MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE, MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE,
     MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
-    MIRO_WIDTH_ACCOUNTS_FRAME, MIRO_WIDTH_ACCOUNTS_STICKY_NOTE,
 };
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
-use crate::utils::helpers::normalize_url;
+
 use crate::{
     commands::metadata::structs::structs_helpers::get_structs_metadata_from_program,
     utils::{self, helpers::get::get_string_between_two_str_from_path},
