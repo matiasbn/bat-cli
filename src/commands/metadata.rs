@@ -18,6 +18,7 @@ use std::vec;
 pub const METADATA_END_OF_FILE: &str = "<!-- Miro should be ever the last section -->";
 pub const MIRO_SECTION_HEADER: &str = "## Miro";
 pub const MIRO_SUBSECTIONS_HEADERS: &[&str] = &["### Entrypoints", "### Accounts"];
+pub const METADATA_CONTENT_ACCOUNT_NAME_SECTION: &str = "- account_name:";
 pub const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
 pub const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
 pub const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
@@ -253,8 +254,14 @@ pub fn update_miro() -> Result<(), String> {
             let prompt_text = format!("Please select the color for {}:", struct_name.yellow());
             let selection =
                 utils::cli_inputs::select(&prompt_text, miro_stickynote_colors.clone(), None)?;
-            let selected_color = &miro_stickynote_colors[selection];
+            let selected_color = miro_stickynote_colors[selection].clone();
             miro_stickynote_colors.remove(selection);
+            let miro_metadata = MiroAccountMetadata {
+                color: selected_color.clone(),
+                account_name: struct_name,
+                miro_item_id: "".to_string(),
+            };
+            miro_metadata_vec.push(miro_metadata);
         }
         return Ok(());
     }
@@ -417,8 +424,7 @@ pub mod structs {
                     (line.1.contains("####") && line.0 > start_index)
                         || line.0 == structs_section_content_last_index
                 })
-                .unwrap()
-                + 1;
+                .unwrap();
             let metadata_struct_content =
                 utils::helpers::get::get_string_between_two_index_from_string(
                     structs_section_content_string,

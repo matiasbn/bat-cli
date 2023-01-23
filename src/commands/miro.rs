@@ -1115,7 +1115,7 @@ pub mod commands {
                 let entrypoint_lines = get_string_between_two_index_from_string(
                     lib_file_string,
                     start_entrypoint_index,
-                    end_entrypoint_index + 1,
+                    end_entrypoint_index,
                 )?;
                 let snapshot_image_path = selected_co_started_path.replace(
                     format!("{}.md", selected_folder_name).as_str(),

@@ -19,7 +19,6 @@ use crate::constants::{
 
 use std::borrow::{Borrow, BorrowMut};
 
-
 use crate::utils;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
@@ -31,9 +30,7 @@ pub mod parse {
     use std::fmt::Display;
 
     use super::{
-        get::{
-            get_string_between_two_index_from_string, prompt_check_validation,
-        },
+        get::{get_string_between_two_index_from_string, prompt_check_validation},
         *,
     };
 
@@ -213,7 +210,7 @@ pub mod parse {
                         let validation_string = get_string_between_two_index_from_string(
                             instruction_file_string.to_string(),
                             line_index,
-                            closing_index + 1,
+                            closing_index,
                         )
                         .unwrap();
                         let is_validation = prompt_check_validation(validation_string.clone());
@@ -234,7 +231,7 @@ pub mod parse {
                 let account_lines = get_string_between_two_index_from_string(
                     instruction_file_string.clone(),
                     line_index,
-                    closing_account_index + 1,
+                    closing_account_index,
                 )
                 .unwrap();
                 // accounts without validations inside are length = 2
@@ -932,7 +929,7 @@ pub mod get {
             let validation_string = get_string_between_two_index_from_string(
                 instruction_file.to_string(),
                 line_index,
-                closing_index + 1,
+                closing_index,
             )
             .unwrap();
             let prompt_text = format!(
@@ -1281,7 +1278,7 @@ pub mod get {
         start_index: usize,
         end_index: usize,
     ) -> Result<String, String> {
-        let content_result = content.lines().collect::<Vec<_>>()[start_index..end_index]
+        let content_result = content.lines().collect::<Vec<_>>()[start_index..=end_index]
             .to_vec()
             .join("\n");
         Ok(content_result)
@@ -1326,7 +1323,7 @@ pub mod get {
                 let handler_string_candidate = get_string_between_two_index_from_string(
                     instruction_file_string.clone(),
                     line_index,
-                    closing_index + 1,
+                    closing_index,
                 )?;
                 if handler_string_candidate
                     .lines()
