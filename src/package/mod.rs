@@ -11,7 +11,18 @@ pub fn full() -> Result<(), String> {
     assert!(check_files_not_commited()?);
     println!("Executing full package publish");
     format()?;
-    publish()?;
+    let new_version = publish()?;
+    tag(new_version)?;
+    Ok(())
+}
+
+pub fn tag(version: String) -> Result<(), String> {
+    assert!(check_files_not_commited()?);
+    println!("Creating tag for version {}", version);
+    Command::new("git")
+        .args(["tag", version.as_str()])
+        .output()
+        .unwrap();
     Ok(())
 }
 
@@ -34,16 +45,16 @@ pub fn format() -> Result<(), String> {
     Ok(())
 }
 
-pub fn publish() -> Result<(), String> {
+pub fn publish() -> Result<String, String> {
     assert!(check_files_not_commited()?);
-    bump(true)?;
+    let version = bump(true)?;
     println!("checkout main branch before pushing");
     println!("Executing cargo publish");
     Command::new("cargo").arg("publish").output().unwrap();
-    Ok(())
+    Ok(version)
 }
 
-pub fn bump(push: bool) -> Result<(), String> {
+pub fn bump(push: bool) -> Result<String, String> {
     assert!(check_files_not_commited()?);
     let prompt_text = "select the version bump:".to_string();
     let cargo_toml = fs::read_to_string("Cargo.toml").unwrap();
@@ -119,7 +130,7 @@ pub fn bump(push: bool) -> Result<(), String> {
             git_push();
         }
     }
-    Ok(())
+    Ok(new_version)
 }
 
 enum PublishCommit {
