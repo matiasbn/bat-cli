@@ -16,54 +16,11 @@ pub const STRUCT_SUBSECTIONS_HEADERS: &[&str] = &[
     "### Others",
 ];
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum StructType {
-    ContextAccounts,
-    Account,
-    Input,
-    Other,
-}
-
-impl StructType {
-    fn get_struct_index(&self) -> usize {
-        match self {
-            StructType::ContextAccounts => 0,
-            StructType::Account => 1,
-            StructType::Input => 2,
-            StructType::Other => 3,
-        }
-    }
-
-    fn to_string(&self) -> &str {
-        let index = self.get_struct_index();
-        STRUCT_TYPES_STRING[index]
-    }
-
-    fn from_index(index: usize) -> StructType {
-        match index {
-            0 => StructType::ContextAccounts,
-            1 => StructType::Account,
-            2 => StructType::Input,
-            3 => StructType::Other,
-            _ => todo!(),
-        }
-    }
-    fn get_struct_types<'a>() -> Vec<&'a str> {
-        let mut result_vec = vec![""; STRUCT_TYPES_STRING.len()];
-        result_vec.copy_from_slice(STRUCT_TYPES_STRING);
-        result_vec
-    }
-
-    fn get_subsection_header(&self) -> &str {
-        let index = self.get_struct_index();
-        STRUCT_SUBSECTIONS_HEADERS[index]
-    }
-}
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
     pub path: String,
     pub name: String,
-    pub struct_type: StructType,
+    pub struct_type: StructMetadataType,
     pub start_line_index: usize,
     pub end_line_index: usize,
 }
@@ -72,7 +29,7 @@ impl StructMetadata {
     fn new(
         path: String,
         name: String,
-        struct_type: StructType,
+        struct_type: StructMetadataType,
         start_line_index: usize,
         end_line_index: usize,
     ) -> Self {
@@ -93,6 +50,50 @@ impl StructMetadata {
         .unwrap()
         .clone();
         Ok(content)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum StructMetadataType {
+    ContextAccounts,
+    Account,
+    Input,
+    Other,
+}
+
+impl StructMetadataType {
+    fn get_struct_metadata_index(&self) -> usize {
+        match self {
+            StructMetadataType::ContextAccounts => 0,
+            StructMetadataType::Account => 1,
+            StructMetadataType::Input => 2,
+            StructMetadataType::Other => 3,
+        }
+    }
+
+    fn to_string(&self) -> &str {
+        let index = self.get_struct_metadata_index();
+        STRUCT_TYPES_STRING[index]
+    }
+
+    fn from_index(index: usize) -> StructMetadataType {
+        match index {
+            0 => StructMetadataType::ContextAccounts,
+            1 => StructMetadataType::Account,
+            2 => StructMetadataType::Input,
+            3 => StructMetadataType::Other,
+            _ => todo!(),
+        }
+    }
+    fn get_struct_types<'a>() -> Vec<&'a str> {
+        let mut result_vec = vec![""; STRUCT_TYPES_STRING.len()];
+        result_vec.copy_from_slice(STRUCT_TYPES_STRING);
+        result_vec
+    }
+
+    fn get_struct_metadata_subsection_header(&self) -> &str {
+        let index = self.get_struct_metadata_index();
+        STRUCT_SUBSECTIONS_HEADERS[index]
     }
 }
 
@@ -133,19 +134,19 @@ pub mod structs {
         let metadata_content_string = fs::read_to_string(metadata_path.clone()).unwrap();
         let context_accounts_result_string = self::helpers::get_format_structs_to_result_string(
             context_accounts_metadata_vec.clone(),
-            StructType::ContextAccounts.get_subsection_header(),
+            StructMetadataType::ContextAccounts.get_struct_metadata_subsection_header(),
         );
         let accounts_result_string = self::helpers::get_format_structs_to_result_string(
             accounts_metadata_vec.clone(),
-            StructType::Account.get_subsection_header(),
+            StructMetadataType::Account.get_struct_metadata_subsection_header(),
         );
         let input_result_string = self::helpers::get_format_structs_to_result_string(
             input_metadata_vec.clone(),
-            StructType::Input.get_subsection_header(),
+            StructMetadataType::Input.get_struct_metadata_subsection_header(),
         );
         let other_result_string = self::helpers::get_format_structs_to_result_string(
             other_metadata_vec.clone(),
-            StructType::Other.get_subsection_header(),
+            StructMetadataType::Other.get_struct_metadata_subsection_header(),
         );
 
         // parse into metadata.md
@@ -210,22 +211,22 @@ pub mod structs {
             }
             let context_accounts_metadata_vec = structs_metadata
                 .iter()
-                .filter(|metadata| metadata.struct_type == StructType::ContextAccounts)
+                .filter(|metadata| metadata.struct_type == StructMetadataType::ContextAccounts)
                 .map(|f| f.clone())
                 .collect::<Vec<_>>();
             let accounts_metadata_vec = structs_metadata
                 .iter()
-                .filter(|metadata| metadata.struct_type == StructType::Account)
+                .filter(|metadata| metadata.struct_type == StructMetadataType::Account)
                 .map(|f| f.clone())
                 .collect::<Vec<_>>();
             let input_metadata_vec = structs_metadata
                 .iter()
-                .filter(|metadata| metadata.struct_type == StructType::Input)
+                .filter(|metadata| metadata.struct_type == StructMetadataType::Input)
                 .map(|f| f.clone())
                 .collect::<Vec<_>>();
             let other_metadata_vec = structs_metadata
                 .iter()
-                .filter(|metadata| metadata.struct_type == StructType::Other)
+                .filter(|metadata| metadata.struct_type == StructMetadataType::Other)
                 .map(|f| f.clone())
                 .collect::<Vec<_>>();
             Ok((
@@ -246,7 +247,7 @@ pub mod structs {
             );
             let file_info_content = struct_file_info.read_content().unwrap();
             let file_info_content_lines = file_info_content.lines();
-            let struct_types_colored = StructType::get_struct_types()
+            let struct_types_colored = StructMetadataType::get_struct_types()
                 .iter()
                 .enumerate()
                 .map(|f| match f.0 {
@@ -298,7 +299,7 @@ pub mod structs {
                                 struct_types_colored.clone(),
                                 None,
                             )?;
-                            let selection_type_enum = StructType::from_index(selection);
+                            let selection_type_enum = StructMetadataType::from_index(selection);
                             let struct_first_line =
                                 struct_metadata_content.split("\n").next().unwrap();
                             let struct_name = get_struct_name(struct_first_line);
@@ -336,7 +337,6 @@ pub mod structs {
         ) -> String {
             let mut sorted_vec = structs_vec.clone();
             sorted_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
-            println!("sorted {:#?}", sorted_vec);
             let mut initial_vec = vec![format!("{}\n", subsection_header.to_string())];
             let mut result_vec = sorted_vec
                 .iter()
