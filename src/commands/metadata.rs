@@ -1,6 +1,5 @@
 use crate::commands::metadata::miro_helpers::{
     get_miro_accounts_subsection_content_string, get_miro_section_content_string,
-    miro_section_is_initialized,
 };
 use crate::commands::metadata::structs::structs_helpers;
 use crate::commands::miro::{MiroConfig, MiroStickyNoteColors};
@@ -15,8 +14,10 @@ use colored::Colorize;
 use std::fs;
 use std::vec;
 
-pub const METADATA_END_OF_FILE: &str = "<!-- Miro should be ever the last section -->";
+pub const METADATA_END_OF_FILE: &str =
+    "<!-- Miro should be ever the last section, and this comment should never be deleted -->";
 pub const MIRO_SECTION_HEADER: &str = "## Miro";
+pub const MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER: &str = "#### Accounts frame url";
 pub const MIRO_SUBSECTIONS_HEADERS: &[&str] = &["### Entrypoints", "### Accounts"];
 pub const METADATA_CONTENT_STICKY_NOTE_COLOR_SECTION: &str = "- sticky_note_color:";
 pub const METADATA_CONTENT_MIRO_ITEM_ID_SECTION: &str = "- miro_item_id:";
@@ -238,9 +239,10 @@ pub fn update_miro() -> Result<(), String> {
     let selection = utils::cli_inputs::select(prompt_text, sections, None)?;
 
     if selection == 1 {
-        let miro_section_initialized = miro_section_is_initialized()?;
-        if miro_section_initialized {
-            metadata_helpers::prompt_user_update_section("Miro")?;
+        let miro_accounts_subsection_initialized =
+            miro_helpers::miro_accounts_subsection_is_initialized()?;
+        if miro_accounts_subsection_initialized {
+            metadata_helpers::prompt_user_update_section("Miro accounts")?;
         };
         // get Structs accounts names
         let accounts_structs_names = structs_helpers::get_structs_names_from_metadata_file(Some(
@@ -292,10 +294,11 @@ pub fn update_miro() -> Result<(), String> {
         .unwrap();
         // create commit
 
-        utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
+        // utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
         return Ok(());
+    } else {
+        unimplemented!("Entrypoints section not implemented yet")
     }
-    unimplemented!()
 }
 
 mod miro_helpers {
@@ -312,7 +315,7 @@ mod miro_helpers {
             .unwrap();
         let end_index = metadata_content_string
             .lines()
-            .position(|line| line.trim() == METADATA_END_OF_FILE)
+            .position(|line| line.trim() == MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER)
             .unwrap();
         let miro_section_content = metadata_content_string.lines().collect::<Vec<_>>().to_vec()
             [start_index..end_index]
@@ -331,19 +334,20 @@ mod miro_helpers {
         Ok(miro_accounts_subsection_content)
     }
 
-    pub fn miro_section_is_initialized() -> Result<bool, String> {
-        let miro_section_content_string = get_miro_section_content_string()?;
-        let metadata_updated_structs = miro_section_content_string
+    pub fn miro_accounts_subsection_is_initialized() -> Result<bool, String> {
+        let miro_accounts_subsection_content_string =
+            get_miro_accounts_subsection_content_string()?;
+        let miro_accounts_subsection_filtered = miro_accounts_subsection_content_string
             .lines()
             .into_iter()
             .filter(|l| {
                 !l.is_empty()
-                    && !MIRO_SUBSECTIONS_HEADERS
-                        .iter()
-                        .any(|section| l.contains(section))
+                    && !l.contains(MIRO_SUBSECTIONS_HEADERS[1])
+                    && !l.contains(MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER)
             })
             .collect::<Vec<_>>();
-        Ok(!metadata_updated_structs.is_empty())
+        println!("updated {:#?}", miro_accounts_subsection_filtered);
+        Ok(!miro_accounts_subsection_filtered.is_empty())
     }
     pub fn get_format_miro_accounts_to_result_string(
         miro_accounts_vec: Vec<MiroAccountMetadata>,
@@ -351,10 +355,11 @@ mod miro_helpers {
     ) -> String {
         let mut sorted_vec = miro_accounts_vec.clone();
         sorted_vec.sort_by(|miro_a, miro_b| miro_a.account_name.cmp(&miro_b.account_name));
-        let mut initial_vec = vec![format!("{}\n", subsection_header.to_string())];
+        let mut initial_vec = vec![format!("{}\n\n", subsection_header.to_string())];
         let mut result_vec = sorted_vec
             .iter()
-            .map(|miro_result| {
+            .enumerate()
+            .map(|(miro_result_index, miro_result)| {
                 format!(
                     "{}{}{}",
                     format!("#### {}\n\n", miro_result.account_name),
@@ -363,15 +368,23 @@ mod miro_helpers {
                         METADATA_CONTENT_STICKY_NOTE_COLOR_SECTION,
                         miro_result.sticky_note_color.to_string()
                     ),
-                    format!(
-                        "{} {}\n",
-                        METADATA_CONTENT_MIRO_ITEM_ID_SECTION, miro_result.miro_item_id
-                    ),
+                    if miro_result_index == sorted_vec.len() - 1 {
+                        // last
+                        format!(
+                            "{} {}",
+                            METADATA_CONTENT_MIRO_ITEM_ID_SECTION, miro_result.miro_item_id
+                        )
+                    } else {
+                        format!(
+                            "{} {}\n\n",
+                            METADATA_CONTENT_MIRO_ITEM_ID_SECTION, miro_result.miro_item_id
+                        )
+                    }
                 )
             })
             .collect::<Vec<_>>();
         initial_vec.append(&mut result_vec);
-        initial_vec.join("\n")
+        initial_vec.join("")
     }
 }
 
@@ -712,14 +725,14 @@ pub mod metadata_helpers {
         let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
             format!(
                 "{}, are you sure you want to continue?",
-                format!("{} in metadata.md are arealready initialized", section_name).bright_red()
+                format!("{} in metadata.md is already initialized", section_name).bright_red()
             )
             .as_str(),
         )?;
         if !user_decided_to_continue {
             panic!(
                 "User decided not to continue with the update process for {} metada",
-                section_name
+                section_name.red()
             )
         }
         Ok(())
