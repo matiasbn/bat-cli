@@ -46,6 +46,7 @@ pub enum GitCommit {
     Notes,
     Results,
     TMAccounts,
+    UpdateMetadata,
 }
 
 pub fn create_git_commit(
@@ -220,6 +221,13 @@ pub fn create_git_commit(
             let tm_path = utils::path::get_auditor_threat_modeling_path()?;
             let commit_string = format!("notes: threat_modeling.md updated");
             (commit_string, vec![tm_path])
+        }
+        GitCommit::UpdateMetadata => {
+            println!("Creating a commit for metadata.md");
+            let metadata_path =
+                utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+            let commit_string = format!("notes: metadata.md updated");
+            (commit_string, vec![metadata_path])
         }
     };
 

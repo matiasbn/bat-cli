@@ -1,3 +1,4 @@
+use crate::utils::git::GitCommit;
 use crate::{
     commands::metadata::structs::helpers::get_structs_metadata_from_program,
     utils::{self, helpers::get::get_string_between_two_str_from_path},
@@ -41,7 +42,18 @@ impl StructMetadata {
             end_line_index,
         }
     }
-    fn get_content(&self) -> Result<String, String> {
+
+    // fn new_from_metadata_name(name: String) -> Self {
+    //     StructMetadata {
+    //         path,
+    //         name,
+    //         struct_type,
+    //         start_line_index,
+    //         end_line_index,
+    //     }
+    // }
+
+    fn get_struct_content_string(&self) -> Result<String, String> {
         let content = utils::helpers::get::get_string_between_two_index_from_path(
             self.path.clone(),
             self.start_line_index,
@@ -168,6 +180,8 @@ pub mod structs {
         )
         .unwrap();
         // create commit
+
+        utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
         Ok(())
     }
 
@@ -307,8 +321,8 @@ pub mod structs {
                                 struct_file_info.path.clone(),
                                 struct_name.to_string(),
                                 selection_type_enum,
-                                start_line_index,
-                                end_line_index,
+                                start_line_index + 1,
+                                end_line_index + 1,
                             );
                             struct_metadata_vec.push(struct_metadata);
                         }
@@ -354,5 +368,9 @@ pub mod structs {
             initial_vec.append(&mut result_vec);
             initial_vec.join("\n")
         }
+
+        // pub fn get_structs_metadata_content()-> {
+
+        // }
     }
 }
