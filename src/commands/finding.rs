@@ -103,30 +103,22 @@ pub fn finish_finding() -> Result<(), String> {
         .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
         .filter(|file| file != ".gitkeep")
         .collect::<Vec<String>>();
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&review_files)
-        .with_prompt("Select finding file to finish:")
-        .default(0)
-        .interact_on_opt(&Term::stderr())
-        .unwrap();
+    let prompt_text = "Select finding file to finish:";
+    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
-    // user select file
-    match selection {
-        // move selected file to rejected
-        Some(index) => {
-            let finding_name = review_files[index].clone();
-            validate_config_create_finding_file(finding_name.clone())?;
-            let finding_file_path = utils::path::get_file_path(
-                FilePathType::FindingToReview {
-                    file_name: finding_name,
-                },
-                true,
-            );
-            validate_finished_finding_file(finding_file_path, finding_name.clone());
-            create_git_commit(GitCommit::FinishFinding, Some(vec![finding_name]))?;
-        }
-        None => panic!("User did not select anything"),
-    }
+    let finding_name = &review_files[selection].clone();
+    validate_config_create_finding_file(finding_name.clone())?;
+    let finding_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name.clone(),
+        },
+        true,
+    );
+    validate_finished_finding_file(finding_file_path, finding_name.clone());
+    create_git_commit(
+        GitCommit::FinishFinding,
+        Some(vec![finding_name.to_string()]),
+    )?;
     Ok(())
 }
 pub fn update_finding() -> Result<(), String> {
@@ -209,10 +201,9 @@ pub fn prepare_all() -> Result<(), String> {
                         file_name: finding_file_name,
                     },
                     false,
-                )
-                .as_str();
+                );
                 Command::new("mv")
-                    .args([file.path().as_os_str().to_str().unwrap(), to_path])
+                    .args([file.path().as_os_str().to_str().unwrap(), to_path.as_str()])
                     .output()
                     .unwrap();
             }

@@ -95,19 +95,15 @@ pub fn create_git_commit(
             println!("code-overhaul file started with commit: {commit_string}");
             let file_to_delete_path =
                 // utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
-                utils::path::get_file_path(FilePathType::CodeOverhaulToReview { file_name: commit_file.clone() }, true);
-            let file_to_add_path = utils::path::get_file_path(
-                FilePathType::CodeOverhaulStarted {
-                    file_name: commit_file.clone(),
-                },
-                false,
-            );
+                utils::path::get_file_path(FilePathType::CodeOverhaulToReview { file_name: commit_file.clone() }, false);
+            let started_co_folder_path =
+                utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
             (
                 commit_string,
                 vec![
                     file_to_delete_path,
                     // started_path/commit_file_name <- folder
-                    format!("{file_to_add_path}{commit_file_name}"),
+                    format!("{started_co_folder_path}/{commit_file_name}"),
                 ],
             )
         }
@@ -185,7 +181,7 @@ pub fn create_git_commit(
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
             println!("finding file finished with commit: \"{commit_string}\"");
             let file_to_add_path = utils::path::get_file_path(
-                FilePathType::FindingToReview {
+                FilePathType::FindingAccepted {
                     file_name: commit_file.clone(),
                 },
                 true,

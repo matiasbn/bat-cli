@@ -35,7 +35,6 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
             format!("{}/finding_candidates.md", auditor_notes_folder_path)
         }
         FilePathType::OpenQuestions => format!("{}/open_questions.md", auditor_notes_folder_path),
-        FilePathType::ProgramLib => bat_config.required.program_lib_path,
         FilePathType::Metadata => {
             format!("{}/metadata.md", auditor_notes_folder_path)
         }
@@ -58,59 +57,37 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
             format!("./README.md")
         }
         FilePathType::CodeOverhaulToReview { file_name } => {
-            format!(
-                "{}/to-review/{}.md",
-                file_name.replace(".md", ""),
-                code_overhaul_path
-            )
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{code_overhaul_path}/to-review/{entrypoint_name}.md")
         }
         FilePathType::CodeOverhaulStarted { file_name } => {
+            let entrypoint_name = file_name.replace(".md", "");
             if MiroConfig::new().miro_enabled() {
-                format!(
-                    "{}/started/{file_name}/{}.md",
-                    file_name.replace(".md", ""),
-                    code_overhaul_path
-                )
+                format!("{code_overhaul_path}/started/{entrypoint_name}/{entrypoint_name}.md")
             } else {
-                format!(
-                    "{}/started/{}.md",
-                    file_name.replace(".md", ""),
-                    code_overhaul_path
-                )
+                format!("{code_overhaul_path}/started/{entrypoint_name}.md")
             }
         }
         FilePathType::CodeOverhaulFinished { file_name } => {
-            format!(
-                "{}/finished/{}.md",
-                file_name.replace(".md", ""),
-                code_overhaul_path
-            )
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{code_overhaul_path}/finished/{entrypoint_name}.md")
         }
         FilePathType::FindingToReview { file_name } => {
-            format!(
-                "{}/to-review/{}.md",
-                file_name.replace(".md", ""),
-                findings_path
-            )
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{findings_path}/to-review/{entrypoint_name}.md",)
         }
         FilePathType::FindingAccepted { file_name } => {
-            format!(
-                "{}/accepted/{}.md",
-                file_name.replace(".md", ""),
-                findings_path
-            )
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{findings_path}/accepted/{entrypoint_name}.md",)
         }
         FilePathType::FindingRejected { file_name } => {
-            format!(
-                "{}/rejected/{}.md",
-                file_name.replace(".md", ""),
-                findings_path
-            )
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{findings_path}/rejected/{entrypoint_name}.md",)
         }
     };
 
     if canonicalize {
-        canonicalize_path(path);
+        return canonicalize_path(path);
     }
 
     path

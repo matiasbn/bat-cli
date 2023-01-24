@@ -81,20 +81,11 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     if review_files.is_empty() {
         panic!("no to-review files in code-overhaul folder");
     }
-
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select the code-overhaul file to start:")
-        .items(&review_files)
-        .default(0)
-        .interact_on_opt(&Term::stderr())
-        .unwrap();
+    let prompt_text = "Select the code-overhaul file to start:";
+    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
     // user select file
-    let to_start_file_name = match selection {
-        // move selected file to rejected
-        Some(index) => review_files[index].clone(),
-        None => panic!("User did not select anything"),
-    };
+    let to_start_file_name = &review_files[selection].clone();
 
     let to_review_file_path = utils::path::get_file_path(
         FilePathType::CodeOverhaulToReview {
@@ -151,9 +142,15 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         // if miro enabled, then create a subfolder
         // let started_folder_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_folder_path =
-            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
-        let started_co_folder_path = started_folder_path + entrypoint_name.as_str();
-        let started_co_file_path = format!("{started_co_folder_path}/{to_start_file_name}");
+            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false);
+        let started_co_folder_path =
+            format!("{}/{}", started_folder_path, entrypoint_name.as_str());
+        let started_co_file_path = utils::path::get_file_path(
+            FilePathType::CodeOverhaulStarted {
+                file_name: entrypoint_name.clone(),
+            },
+            false,
+        );
         // create the co subfolder
         Command::new("mkdir")
             .args([&started_co_folder_path])
@@ -173,7 +170,10 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
             .unwrap();
         println!("Empty screenshots created, remember to complete them");
 
-        create_git_commit(GitCommit::StartCOMiro, Some(vec![to_start_file_name]))?;
+        create_git_commit(
+            GitCommit::StartCOMiro,
+            Some(vec![to_start_file_name.to_string()]),
+        )?;
 
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_co_file_path.as_str())?;
@@ -193,7 +193,10 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
             .unwrap();
         println!("{to_start_file_name} file moved to started");
 
-        create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]))?;
+        create_git_commit(
+            GitCommit::StartCO,
+            Some(vec![to_start_file_name.to_string()]),
+        )?;
 
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_path.as_str())?;
