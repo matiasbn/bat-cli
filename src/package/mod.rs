@@ -19,17 +19,19 @@ pub fn release() -> io::Result<()> {
 pub fn format() -> io::Result<()> {
     // assert!(check_files_not_commited().unwrap());
     println!("Executing cargo clippy --fix");
-    let mut output = Command::new("cargo").args(["clippy", "--fix"]).spawn()?;
-    output.wait()?;
+    execute_package_fn("cargo", &["clippy", "--fix"])?;
     println!("Executing cargo fix");
-    Command::new("cargo").args(["fix"]).output().unwrap();
+    execute_package_fn("cargo", &["fix"])?;
     println!("Executing cargo fmt --all");
-    Command::new("cargo")
-        .args(["fmt", "--all"])
-        .output()
-        .unwrap();
+    execute_package_fn("cargo", &["fmt", "--all"])?;
     println!("Commiting format changes");
     create_commit(PackageCommit::Format, None);
+    Ok(())
+}
+
+fn execute_package_fn(command: &str, args: &[&str]) -> io::Result<()> {
+    let mut output = Command::new(command).args(args).spawn()?;
+    output.wait()?;
     Ok(())
 }
 
