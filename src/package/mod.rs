@@ -2,7 +2,10 @@ use std::{fs, io, process::Command};
 
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 
-use crate::{command_line::execute_command, utils::git::check_files_not_commited};
+use crate::{
+    command_line::execute_command,
+    utils::{self, git::check_files_not_commited},
+};
 
 pub fn release() -> io::Result<()> {
     assert!(check_files_not_commited().unwrap());
@@ -38,27 +41,21 @@ fn execute_package_fn(command: &str, args: &[&str]) -> io::Result<()> {
 fn release_start(version: &str) -> io::Result<()> {
     assert!(check_files_not_commited().unwrap());
     println!("Starting release for version {}", version);
-    Command::new("git")
-        .args(["flow", "release", "start", version])
-        .output()
-        .unwrap();
+    execute_package_fn("git", &["flow", "release", "start", version])?;
     Ok(())
 }
 
 fn release_finish(version: &str) -> io::Result<()> {
     assert!(check_files_not_commited().unwrap());
     println!("Finishing release for version {}", version);
-    Command::new("git")
-        .args(["flow", "release", "finish"])
-        .output()
-        .unwrap();
+    execute_package_fn("git", &["flow", "release", "finish"])?;
     Ok(())
 }
 
 fn tag(version: &str) -> io::Result<()> {
     assert!(check_files_not_commited().unwrap());
     println!("Creating tag for version {}", version);
-    Command::new("git").args(["tag", version]).output().unwrap();
+    execute_package_fn("git", &["tag", version])?;
     Ok(())
 }
 
@@ -81,13 +78,7 @@ fn bump() -> io::Result<String> {
         format!("minor: {}.{}.0", major, minor + 1),
         format!("patch: {}.{}.{}", major, minor, patch + 1),
     ];
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt_text)
-        .items(&options)
-        .default(0)
-        .interact_on_opt(&Term::stderr())
-        .unwrap()
-        .unwrap();
+    let selection = utils::cli_inputs::select(&prompt_text, options, None)?;
     let mut version_vec = vec![major, minor, patch];
     match selection {
         0 => {
@@ -124,15 +115,8 @@ fn bump() -> io::Result<String> {
 }
 
 fn push_origin_all() -> io::Result<()> {
-    // git push origin --all && git push origin --tags
-    Command::new("git")
-        .args(["push", "origin", "--all"])
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["push", "origin", "--tags"])
-        .output()
-        .unwrap();
+    execute_package_fn("git", &["push", "origin", "--all"])?;
+    execute_package_fn("git", &["push", "origin", "--tags"])?;
     Ok(())
 }
 
@@ -141,47 +125,28 @@ enum PackageCommit {
     Format,
 }
 
-fn create_commit(commit_type: PackageCommit, commit_options: Option<Vec<&str>>) {
+fn create_commit(commit_type: PackageCommit, commit_options: Option<Vec<&str>>) -> io::Result<()> {
     match commit_type {
         PackageCommit::CommitCargo => {
             let version = commit_options.unwrap()[0];
             // git add Cargo.toml
-            execute_command(
-                "git".to_string(),
-                vec!["add", "Cargo.toml"],
-                "error adding Cargo.toml to commit files".to_string(),
-            )
-            .unwrap();
+            execute_package_fn("git", &["add", "Cargo.toml"])?;
 
-            execute_command(
-                "git".to_string(),
-                vec![
+            execute_package_fn(
+                "git",
+                &[
                     "commit",
                     "-m",
                     format!("package: version bump {version}").as_str(),
                 ],
-                "error creating commit for Cargo.toml".to_string(),
-            )
-            .unwrap();
+            )?;
+            Ok(())
         }
         PackageCommit::Format => {
             // commit all files
-            execute_command(
-                "git".to_string(),
-                vec!["add", "--all"],
-                "error adding Cargo.toml to commit files".to_string(),
-            )
-            .unwrap();
-            execute_command(
-                "git".to_string(),
-                vec![
-                    "commit",
-                    "-m",
-                    "package: format commit".to_string().as_str(),
-                ],
-                "error creating commit for clippy".to_string(),
-            )
-            .unwrap();
+            execute_package_fn("git", &["add", "--all"])?;
+            execute_package_fn("git", &["commit", "-m", "package: format commit"])?;
+            Ok(())
         }
     }
 }
