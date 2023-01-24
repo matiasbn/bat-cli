@@ -112,16 +112,19 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
 pub enum FolderPathType {
     ProgramPath,
     Templates,
+    NotesTemplate,
     FindingsToReview,
     FindingsAccepted,
     FindingsRejected,
     CodeOverhaulToReview,
     CodeOverhaulStarted,
     CodeOverhaulFinished,
+    AuditorNotes,
+    Notes,
 }
 
 pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> String {
-    let bat_config = BatConfig::get_validated_config()?;
+    let bat_config = BatConfig::get_validated_config().unwrap();
 
     let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
     let findings_path = format!("{}/findings", auditor_notes_folder_path);
@@ -129,9 +132,14 @@ pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> Strin
 
     let path = match folder_type {
         //File
+        FolderPathType::Notes => "./notes".to_string(),
+        FolderPathType::AuditorNotes => auditor_notes_folder_path,
         FolderPathType::ProgramPath => bat_config.required.program_lib_path.replace("/lib.rs", ""),
         FolderPathType::Templates => {
             format!("./templates")
+        }
+        FolderPathType::NotesTemplate => {
+            format!("./templates/notes-folder-template")
         }
         FolderPathType::FindingsToReview => {
             format!("{}/to-review", findings_path)
