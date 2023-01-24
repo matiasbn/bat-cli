@@ -2,7 +2,7 @@ use std::{process::Command, str};
 
 use crate::{
     command_line::execute_command,
-    config::{BatConfig, RequiredConfig},
+    config::BatConfig,
     constants::{self, AUDIT_RESULT_FILE_NAME, BASE_REPOSTORY_URL},
     utils::{self, path::FilePathType},
 };
@@ -11,7 +11,7 @@ use super::path::FolderPathType;
 
 // Git
 pub fn get_branch_name() -> Result<String, String> {
-    let BatConfig { required, .. } = BatConfig::get_validated_config()?;
+    let BatConfig { required: _, .. } = BatConfig::get_validated_config()?;
     let git_symbolic = Command::new("git")
         .args(["symbolic-ref", "-q", "head"])
         .output();

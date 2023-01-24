@@ -3,13 +3,12 @@ use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 
-use crate::command_line::{canonicalize_path, vs_code_open_file_in_current_window};
+use crate::command_line::vs_code_open_file_in_current_window;
 
 use crate::commands::miro::{self, MiroConfig};
 use crate::config::BatConfig;
 use crate::constants::{
-    AUDIT_RESULT_FILE_NAME, CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER,
-    CODE_OVERHAUL_NOTES_PLACEHOLDER, CO_FIGURES,
+    CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER, CO_FIGURES,
 };
 
 use crate::utils;

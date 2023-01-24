@@ -267,7 +267,7 @@ fn create_auditor_notes_folder() -> Result<(), String> {
         bat_config.auditor.auditor_name.red()
     );
 
-    let mut output = Command::new("cp")
+    let output = Command::new("cp")
         .args([
             "-r",
             utils::path::get_folder_path(FolderPathType::NotesTemplate, false).as_str(),
