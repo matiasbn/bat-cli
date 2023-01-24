@@ -2,13 +2,7 @@ use std::{fs, io, process::Command};
 
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 
-use crate::{
-    command_line::execute_command,
-    utils::{
-        self,
-        git::{check_files_not_commited, git_push},
-    },
-};
+use crate::{command_line::execute_command, utils::git::check_files_not_commited};
 
 pub fn release() -> io::Result<()> {
     assert!(check_files_not_commited().unwrap());
