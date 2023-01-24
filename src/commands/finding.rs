@@ -3,7 +3,7 @@ use dialoguer::{console, theme::ColorfulTheme, Input, Select};
 use std::{
     fs::{self, File},
     io::{self, BufRead},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
     string::String,
 };
