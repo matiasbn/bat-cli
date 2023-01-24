@@ -6,6 +6,8 @@ pub enum FilePathType {
     Metadata,
     ThreatModeling,
     AuditResults,
+    FindingCandidates,
+    OpenQuestions,
     ProgramLib,
     Readme,
     TemplateFinding,
@@ -29,11 +31,16 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
     let path = match file_type {
         //File
         FilePathType::ProgramLib => bat_config.required.program_lib_path,
+        FilePathType::FindingCandidates => {
+            format!("{}/finding_candidates.md", auditor_notes_folder_path)
+        }
+        FilePathType::OpenQuestions => format!("{}/open_questions.md", auditor_notes_folder_path),
+        FilePathType::ProgramLib => bat_config.required.program_lib_path,
         FilePathType::Metadata => {
             format!("{}/metadata.md", auditor_notes_folder_path)
         }
         FilePathType::ThreatModeling => {
-            format!("./threat_modeling.md")
+            format!("{}/threat_modeling.md", auditor_notes_folder_path)
         }
         FilePathType::AuditResults => {
             format!("./audit_result.md")
