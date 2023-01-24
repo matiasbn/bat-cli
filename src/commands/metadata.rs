@@ -13,6 +13,7 @@ use crate::constants::{
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 
+use crate::utils::path::FilePathType;
 use crate::{
     commands::metadata::structs::structs_helpers::get_structs_metadata_from_program,
     utils::{self, helpers::get::get_string_between_two_str_from_path},
@@ -160,7 +161,7 @@ impl StructMetadataType {
 }
 
 pub fn update_structs() -> Result<(), String> {
-    let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+    let metadata_path = utils::path::get_file_path(FilePathType::Metadata, false);
     let metadata_structs_content_string =
         structs::structs_helpers::get_structs_section_content_string()?;
     // check if empty
@@ -321,7 +322,7 @@ pub async fn update_miro() -> Result<(), String> {
             }
         }
 
-        let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+        let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
         let miro_accounts_string = miro_helpers::get_format_miro_accounts_to_result_string(
             miro_metadata_vec.clone(),
             MIRO_SUBSECTIONS_HEADERS[selection],
@@ -369,7 +370,7 @@ mod miro_helpers {
     use super::*;
 
     pub fn get_miro_section_content_string() -> Result<String, String> {
-        let metadata_path = utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+        let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
         let metadata_content_string = fs::read_to_string(metadata_path).unwrap();
         let start_index = metadata_content_string
             .lines()
@@ -459,6 +460,8 @@ pub mod structs {
     // }
 
     pub mod structs_helpers {
+        use crate::utils::path::FolderPathType;
+
         use super::*;
 
         pub fn get_structs_metadata_from_metadata_file(
@@ -517,8 +520,7 @@ pub mod structs {
         // }
 
         pub fn get_structs_section_content_string() -> Result<String, String> {
-            let metadata_path =
-                utils::path::get_audit_folder_path(Some("metadata.md".to_string()))?;
+            let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
             let metadata_structs_content_string = get_string_between_two_str_from_path(
                 metadata_path.clone(),
                 STRUCTS_SECTION_HEADER,
@@ -595,7 +597,7 @@ pub mod structs {
             ),
             String,
         > {
-            let program_path = utils::path::get_program_path()?;
+            let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, true);
             let program_folder_files_info =
                 utils::helpers::get::get_only_files_from_folder(program_path)?;
             let mut structs_metadata: Vec<StructMetadata> = vec![];

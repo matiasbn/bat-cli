@@ -1000,7 +1000,9 @@ pub mod get {
 
     // returns a list of folder and files names
     pub fn get_started_entrypoints() -> Result<Vec<String>, String> {
-        let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
+        // let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
+        let started_path =
+            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulStarted, true);
         let started_files = fs::read_dir(started_path)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
@@ -1071,7 +1073,9 @@ pub mod get {
     }
 
     pub fn get_finished_co_files() -> Result<Vec<(String, String)>, String> {
-        let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
+        // let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_path =
+            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulFinished, true);
         let mut finished_folder = fs::read_dir(&finished_path)
             .unwrap()
             .map(|file| file.unwrap())
@@ -1408,13 +1412,17 @@ pub mod count {
             .len()
     }
     pub fn co_counter() -> Result<(usize, usize, usize), String> {
-        let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
+        // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
+        let to_review_path =
+            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulToReview, true);
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
         let to_review_count = count_filtering_gitkeep(to_review_folder);
-        let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
+        let started_path =
+            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulStarted, true);
         let started_folder = fs::read_dir(started_path).unwrap();
         let started_count = count_filtering_gitkeep(started_folder);
-        let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
+        let finished_path =
+            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulFinished, true);
         let finished_folder = fs::read_dir(finished_path).unwrap();
         let finished_count = count_filtering_gitkeep(finished_folder);
         Ok((to_review_count, started_count, finished_count))

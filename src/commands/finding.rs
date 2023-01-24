@@ -3,7 +3,7 @@ use dialoguer::{console, theme::ColorfulTheme, Input, Select};
 use std::{
     fs::{self, File},
     io::{self, BufRead},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
     string::String,
 };
@@ -13,13 +13,14 @@ use crate::{
     utils::{
         self,
         git::{create_git_commit, GitCommit},
+        path::{FilePathType, FolderPathType},
     },
 };
 
 pub fn reject() -> Result<(), String> {
     prepare_all()?;
     println!("Select the finding file to reject:");
-    let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
+    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -38,9 +39,9 @@ pub fn reject() -> Result<(), String> {
         Some(index) => {
             let rejected_file_name = review_files[index].clone();
             let rejected_path =
-                utils::path::get_auditor_findings_rejected_path(Some(rejected_file_name.clone()))?;
+                utils::path::get_folder_path(FolderPathType::FindingsRejected, true);
             let to_review_path =
-                utils::path::get_auditor_findings_to_review_path(Some(rejected_file_name.clone()))?;
+                utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
             Command::new("mv")
                 .args([to_review_path, rejected_path])
                 .output()
@@ -54,8 +55,10 @@ pub fn reject() -> Result<(), String> {
 
 pub fn accept_all() -> Result<(), String> {
     prepare_all()?;
-    let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
-    let accepted_path = utils::path::get_auditor_findings_accepted_path(None)?;
+    // let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
+    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+    // let accepted_path = utils::path::get_auditor_findings_accepted_path(None)?;
+    let accepted_path = utils::path::get_folder_path(FolderPathType::FindingsAccepted, true);
     for file_result in fs::read_dir(&to_review_path).unwrap() {
         let file_name = file_result.unwrap().file_name();
         if file_name != ".gitkeep" {
@@ -81,43 +84,45 @@ pub fn create_finding() -> Result<(), String> {
     validate_config_create_finding_file(finding_name.clone())?;
     copy_template_to_findings_to_review(finding_name.clone())?;
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]))?;
-    let finding_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
+    // let finding_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
+    let finding_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name,
+        },
+        false,
+    );
     vs_code_open_file_in_current_window(finding_file_path.as_str())?;
     Ok(())
 }
 
 pub fn finish_finding() -> Result<(), String> {
-    let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
+    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
         .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
         .filter(|file| file != ".gitkeep")
         .collect::<Vec<String>>();
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&review_files)
-        .with_prompt("Select finding file to finish:")
-        .default(0)
-        .interact_on_opt(&Term::stderr())
-        .unwrap();
+    let prompt_text = "Select finding file to finish:";
+    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
-    // user select file
-    match selection {
-        // move selected file to rejected
-        Some(index) => {
-            let finding_name = review_files[index].clone();
-            validate_config_create_finding_file(finding_name.clone())?;
-            let finding_file_path =
-                utils::path::get_auditor_findings_to_review_path(Some(finding_name.clone()))?;
-            validate_finished_finding_file(finding_file_path, finding_name.clone());
-            create_git_commit(GitCommit::FinishFinding, Some(vec![finding_name]))?;
-        }
-        None => panic!("User did not select anything"),
-    }
+    let finding_name = &review_files[selection].clone();
+    validate_config_create_finding_file(finding_name.clone())?;
+    let finding_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name.clone(),
+        },
+        true,
+    );
+    validate_finished_finding_file(finding_file_path, finding_name.clone());
+    create_git_commit(
+        GitCommit::FinishFinding,
+        Some(vec![finding_name.to_string()]),
+    )?;
     Ok(())
 }
 pub fn update_finding() -> Result<(), String> {
-    let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
+    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -145,7 +150,7 @@ pub fn update_finding() -> Result<(), String> {
 }
 
 pub fn prepare_all() -> Result<(), String> {
-    let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
+    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
         let file_name = file.file_name();
@@ -185,13 +190,20 @@ pub fn prepare_all() -> Result<(), String> {
                         file.path()
                     ),
                 };
+                let finding_file_name = format!(
+                    "{}-{}",
+                    severity.to_string(),
+                    finding_name.replace(".md", "").as_str()
+                );
+                // let to_path = utils::path::get_auditor_findings_to_review_path(Some())?;
+                let to_path = utils::path::get_file_path(
+                    FilePathType::FindingToReview {
+                        file_name: finding_file_name,
+                    },
+                    false,
+                );
                 Command::new("mv")
-                    .args([
-                        file.path(),
-                        PathBuf::from(utils::path::get_auditor_findings_to_review_path(Some(
-                            severity.to_string() + "-" + finding_name.replace(".md", "").as_str(),
-                        ))?),
-                    ])
+                    .args([file.path().as_os_str().to_str().unwrap(), to_path.as_str()])
                     .output()
                     .unwrap();
             }
@@ -203,13 +215,12 @@ pub fn prepare_all() -> Result<(), String> {
 }
 
 fn validate_config_create_finding_file(finding_name: String) -> Result<(), String> {
-    let findings_to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
-    // check auditor/findings/to_review folder exists
-    if !Path::new(&findings_to_review_path).is_dir() {
-        panic!("Folder not found: {findings_to_review_path:#?}");
-    }
-    // check if file exists in to_review
-    let finding_file_path = findings_to_review_path + &finding_name + ".md";
+    let finding_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name,
+        },
+        false,
+    );
     if Path::new(&finding_file_path).is_file() {
         panic!("Finding file already exists: {finding_file_path:#?}");
     }
@@ -226,11 +237,18 @@ fn copy_template_to_findings_to_review(finding_name: String) -> Result<(), Strin
         .unwrap();
 
     let template_path = if selection.unwrap() == 0 {
-        utils::path::get_informational_template_path()?
+        // utils::path::get_informational_template_path()?
+        utils::path::get_file_path(FilePathType::TemplateInformational, true)
     } else {
-        utils::path::get_finding_template_path()?
+        utils::path::get_file_path(FilePathType::TemplateFinding, true)
     };
-    let new_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
+    // let new_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
+    let new_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name,
+        },
+        false,
+    );
     let output = Command::new("cp")
         .args([template_path, new_file_path.clone()])
         .output()
