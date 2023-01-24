@@ -28,7 +28,7 @@ pub fn format() -> io::Result<()> {
     println!("Executing cargo fmt --all");
     execute_package_fn("cargo", &["fmt", "--all"])?;
     println!("Commiting format changes");
-    create_commit(PackageCommit::Format, None);
+    create_commit(PackageCommit::Format, None)?;
     Ok(())
 }
 
