@@ -78,7 +78,7 @@ fn bump() -> io::Result<String> {
         format!("minor: {}.{}.0", major, minor + 1),
         format!("patch: {}.{}.{}", major, minor, patch + 1),
     ];
-    let selection = utils::cli_inputs::select(&prompt_text, options, None)?;
+    let selection = utils::cli_inputs::select(&prompt_text, options, None).unwrap();
     let mut version_vec = vec![major, minor, patch];
     match selection {
         0 => {
