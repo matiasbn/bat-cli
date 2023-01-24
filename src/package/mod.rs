@@ -10,8 +10,8 @@ use crate::{
     },
 };
 
-pub fn release() -> Result<(), String> {
-    assert!(check_files_not_commited()?);
+pub fn release() -> io::Result<()> {
+    assert!(check_files_not_commited().unwrap());
     println!("Starting the release process");
     let version = bump()?;
     release_start(&version)?;
@@ -22,38 +22,11 @@ pub fn release() -> Result<(), String> {
     Ok(())
 }
 
-pub fn release_start(version: &str) -> Result<(), String> {
-    assert!(check_files_not_commited()?);
-    println!("Starting release for version {}", version);
-    Command::new("git")
-        .args(["flow", "release", "start", version])
-        .output()
-        .unwrap();
-    Ok(())
-}
-
-pub fn release_finish(version: &str) -> Result<(), String> {
-    assert!(check_files_not_commited()?);
-    println!("Finishing release for version {}", version);
-    Command::new("git")
-        .args(["flow", "release", "finish"])
-        .output()
-        .unwrap();
-    Ok(())
-}
-
-pub fn tag(version: &str) -> Result<(), String> {
-    assert!(check_files_not_commited()?);
-    println!("Creating tag for version {}", version);
-    Command::new("git").args(["tag", version]).output().unwrap();
-    Ok(())
-}
-
 pub fn format() -> io::Result<()> {
-    // assert!(check_files_not_commited()?);
+    // assert!(check_files_not_commited().unwrap());
     println!("Executing cargo clippy --fix");
-    let output = Command::new("cargo").args(["clippy", "--fix"]).spawn()?;
-    output.wait();
+    let mut output = Command::new("cargo").args(["clippy", "--fix"]).spawn()?;
+    output.wait()?;
     println!("Executing cargo fix");
     Command::new("cargo").args(["fix"]).output().unwrap();
     println!("Executing cargo fmt --all");
@@ -66,8 +39,34 @@ pub fn format() -> io::Result<()> {
     Ok(())
 }
 
-pub fn bump() -> Result<String, String> {
-    assert!(check_files_not_commited()?);
+fn release_start(version: &str) -> io::Result<()> {
+    assert!(check_files_not_commited().unwrap());
+    println!("Starting release for version {}", version);
+    Command::new("git")
+        .args(["flow", "release", "start", version])
+        .output()
+        .unwrap();
+    Ok(())
+}
+
+fn release_finish(version: &str) -> io::Result<()> {
+    assert!(check_files_not_commited().unwrap());
+    println!("Finishing release for version {}", version);
+    Command::new("git")
+        .args(["flow", "release", "finish"])
+        .output()
+        .unwrap();
+    Ok(())
+}
+
+fn tag(version: &str) -> io::Result<()> {
+    assert!(check_files_not_commited().unwrap());
+    println!("Creating tag for version {}", version);
+    Command::new("git").args(["tag", version]).output().unwrap();
+    Ok(())
+}
+
+fn bump() -> io::Result<String> {
     let prompt_text = "select the version bump:".to_string();
     let cargo_toml = fs::read_to_string("Cargo.toml").unwrap();
     let version_line_index = cargo_toml
@@ -128,7 +127,7 @@ pub fn bump() -> Result<String, String> {
     Ok(new_version)
 }
 
-fn push_origin_all() -> Result<(), String> {
+fn push_origin_all() -> io::Result<()> {
     // git push origin --all && git push origin --tags
     Command::new("git")
         .args(["push", "origin", "--all"])
