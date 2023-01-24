@@ -219,6 +219,7 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
         program_lib_path,
         project_repository_url,
         miro_board_url,
+        miro_board_id,
         ..
     } = required_config;
 
@@ -261,6 +262,10 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
         .replace(
             &String::from("miro_board_url = \""),
             &("miro_board_url = \"".to_string() + &miro_board_url),
+        )
+        .replace(
+            &String::from("miro_board_id = \""),
+            &("miro_board_id = \"".to_string() + &miro_board_id),
         )
         .replace(
             &String::from("auditor_names = [\""),
