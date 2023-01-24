@@ -1,50 +1,60 @@
-use std::{fs, process::Command};
+use std::{fs, io, process::Command};
 
-use dialoguer::{console::Term, theme::ColorfulTheme, Select};
+use crate::utils::{self, git::check_files_not_commited};
 
-use crate::{
-    command_line::execute_command,
-    utils::git::{check_files_not_commited, git_push},
-};
-
-pub fn full() -> Result<(), String> {
-    assert!(check_files_not_commited()?);
-    println!("Executing full package publish");
+pub fn release() -> io::Result<()> {
+    assert!(check_files_not_commited().unwrap());
+    println!("Starting the release process");
+    let version = bump()?;
+    release_start(&version)?;
     format()?;
-    publish()?;
+    tag(&version)?;
+    release_finish(&version)?;
+    push_origin_all()?;
     Ok(())
 }
 
-pub fn format() -> Result<(), String> {
-    // assert!(check_files_not_commited()?);
+pub fn format() -> io::Result<()> {
+    // assert!(check_files_not_commited().unwrap());
     println!("Executing cargo clippy --fix");
-    Command::new("cargo")
-        .args(["clippy", "--fix", "--allow-dirty"])
-        .output()
-        .unwrap();
+    execute_package_fn("cargo", &["clippy", "--fix"])?;
     println!("Executing cargo fix");
-    Command::new("cargo").args(["fix"]).output().unwrap();
-    println!("Executing cargo format");
-    Command::new("cargo")
-        .args(["format", "--all"])
-        .output()
-        .unwrap();
-    println!("Commiting clippy changes");
-    create_commit(PublishCommit::Format, None);
+    execute_package_fn("cargo", &["fix"])?;
+    println!("Executing cargo fmt --all");
+    execute_package_fn("cargo", &["fmt", "--all"])?;
+    println!("Commiting format changes");
+    create_commit(PackageCommit::Format, None)?;
     Ok(())
 }
 
-pub fn publish() -> Result<(), String> {
-    assert!(check_files_not_commited()?);
-    bump(true)?;
-    println!("checkout main branch before pushing");
-    println!("Executing cargo publish");
-    Command::new("cargo").arg("publish").output().unwrap();
+fn execute_package_fn(command: &str, args: &[&str]) -> io::Result<()> {
+    let mut output = Command::new(command).args(args).spawn()?;
+    output.wait()?;
     Ok(())
 }
 
-pub fn bump(push: bool) -> Result<(), String> {
-    assert!(check_files_not_commited()?);
+fn release_start(version: &str) -> io::Result<()> {
+    assert!(check_files_not_commited().unwrap());
+    println!("Starting release for version {}", version);
+    execute_package_fn("git", &["flow", "release", "start", version])?;
+    Ok(())
+}
+
+fn release_finish(version: &str) -> io::Result<()> {
+    assert!(check_files_not_commited().unwrap());
+    println!("Finishing release for version {}", version);
+    execute_package_fn("git", &["flow", "release", "finish"])?;
+    Ok(())
+}
+
+fn tag(version: &str) -> io::Result<()> {
+    assert!(check_files_not_commited().unwrap());
+    println!("Creating tag for version {}", version);
+    execute_package_fn("git", &["tag", version])?;
+    Ok(())
+}
+
+fn bump() -> io::Result<String> {
     let prompt_text = "select the version bump:".to_string();
     let cargo_toml = fs::read_to_string("Cargo.toml").unwrap();
     let version_line_index = cargo_toml
@@ -63,13 +73,7 @@ pub fn bump(push: bool) -> Result<(), String> {
         format!("minor: {}.{}.0", major, minor + 1),
         format!("patch: {}.{}.{}", major, minor, patch + 1),
     ];
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt_text)
-        .items(&options)
-        .default(0)
-        .interact_on_opt(&Term::stderr())
-        .unwrap()
-        .unwrap();
+    let selection = utils::cli_inputs::select(&prompt_text, options, None).unwrap();
     let mut version_vec = vec![major, minor, patch];
     match selection {
         0 => {
@@ -100,74 +104,44 @@ pub fn bump(push: bool) -> Result<(), String> {
 
     // create commit with new version
     println!("Creating commit for version bump {new_version}");
-    create_commit(PublishCommit::CommitCargo, Some(vec![new_version.as_str()]));
+    create_commit(PackageCommit::CommitCargo, Some(vec![new_version.as_str()]));
 
-    if push {
-        println!("Pushing changes");
-        git_push();
-    } else {
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Do you want to push?")
-            .item("yes")
-            .item("no")
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-        if selection == 0 {
-            println!("Pushing changes");
-            git_push();
-        }
-    }
+    Ok(new_version)
+}
+
+fn push_origin_all() -> io::Result<()> {
+    execute_package_fn("git", &["push", "origin", "--all"])?;
+    execute_package_fn("git", &["push", "origin", "--tags"])?;
     Ok(())
 }
 
-enum PublishCommit {
+enum PackageCommit {
     CommitCargo,
     Format,
 }
 
-fn create_commit(commit_type: PublishCommit, commit_options: Option<Vec<&str>>) {
+fn create_commit(commit_type: PackageCommit, commit_options: Option<Vec<&str>>) -> io::Result<()> {
     match commit_type {
-        PublishCommit::CommitCargo => {
+        PackageCommit::CommitCargo => {
             let version = commit_options.unwrap()[0];
             // git add Cargo.toml
-            execute_command(
-                "git".to_string(),
-                vec!["add", "Cargo.toml"],
-                "error adding Cargo.toml to commit files".to_string(),
-            )
-            .unwrap();
+            execute_package_fn("git", &["add", "Cargo.toml"])?;
 
-            execute_command(
-                "git".to_string(),
-                vec![
+            execute_package_fn(
+                "git",
+                &[
                     "commit",
                     "-m",
                     format!("package: version bump {version}").as_str(),
                 ],
-                "error creating commit for Cargo.toml".to_string(),
-            )
-            .unwrap();
+            )?;
+            Ok(())
         }
-        PublishCommit::Format => {
+        PackageCommit::Format => {
             // commit all files
-            execute_command(
-                "git".to_string(),
-                vec!["add", "--all"],
-                "error adding Cargo.toml to commit files".to_string(),
-            )
-            .unwrap();
-            execute_command(
-                "git".to_string(),
-                vec![
-                    "commit",
-                    "-m",
-                    "package: format commit".to_string().as_str(),
-                ],
-                "error creating commit for clippy".to_string(),
-            )
-            .unwrap();
+            execute_package_fn("git", &["add", "--all"])?;
+            execute_package_fn("git", &["commit", "-m", "package: format commit"])?;
+            Ok(())
         }
     }
 }

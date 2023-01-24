@@ -2,11 +2,9 @@ use std::{fs, path::Path, str};
 
 use serde::Deserialize;
 
-use crate::commands::{
-    create::{create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH},
+use crate::commands::create::{
+    create_auditor_toml, AUDITOR_TOML_INITIAL_PATH, BAT_TOML_INITIAL_PATH,
 };
-
-
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct BatConfig {

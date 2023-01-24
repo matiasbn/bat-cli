@@ -114,14 +114,10 @@ enum CodeOverhaulActions {
 
 #[derive(Subcommand, Debug)]
 enum PackageActions {
-    /// Bump the version
-    Bump,
-    /// Bump version and publish to crates.io
-    Publish,
     /// run cargo clippy and commit the changes
     Format,
-    /// run cargo clippy, bump the version (commit again) and publish to crates.io
-    Full,
+    /// Creates a git flow release, bumps the version, formats the code and publish
+    Release,
 }
 #[tokio::main]
 async fn main() {
@@ -175,13 +171,9 @@ async fn main() {
         Commands::Results => commands::code_overhaul::update_audit_results().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Bump) => package::bump(false).unwrap(),
-        #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Format) => package::format().unwrap(),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Publish) => package::publish().unwrap(),
-        #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Full) => package::full().unwrap(),
+        Commands::Package(PackageActions::Release) => package::release().unwrap(),
         _ => unimplemented!("Command only implemented for dev operations"),
     }
 }
