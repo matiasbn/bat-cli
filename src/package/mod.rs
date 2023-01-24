@@ -18,7 +18,7 @@ pub fn format() -> io::Result<()> {
     println!("Executing cargo clippy --fix");
     execute_package_fn("cargo", &["clippy", "--fix"])?;
     println!("Executing cargo fix");
-    execute_package_fn("cargo", &["fix", "-all"])?;
+    execute_package_fn("cargo", &["fix", "--all"])?;
     println!("Executing cargo fmt --all");
     execute_package_fn("cargo", &["fmt", "--all"])?;
     println!("Commiting format changes");
