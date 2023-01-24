@@ -15,7 +15,6 @@ pub fn release() -> io::Result<()> {
 }
 
 pub fn format() -> io::Result<()> {
-    // assert!(check_files_not_commited().unwrap());
     println!("Executing cargo clippy --fix");
     execute_package_fn("cargo", &["clippy", "--fix"])?;
     println!("Executing cargo fix");
@@ -104,7 +103,7 @@ fn bump() -> io::Result<String> {
 
     // create commit with new version
     println!("Creating commit for version bump {new_version}");
-    create_commit(PackageCommit::CommitCargo, Some(vec![new_version.as_str()]));
+    create_commit(PackageCommit::CommitCargo, Some(vec![new_version.as_str()]))?;
 
     Ok(new_version)
 }
