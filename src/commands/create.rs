@@ -169,7 +169,6 @@ fn get_required_config() -> Result<RequiredConfig, String> {
         starting_date,
         commit_hash_url,
         project_repository_url,
-        audit_folder_path: "".to_string(),
         program_lib_path: normalized_to_audit_program_lib_path,
     })
 }
@@ -220,6 +219,7 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
         program_lib_path,
         project_repository_url,
         miro_board_url,
+        miro_board_id,
         ..
     } = required_config;
 
@@ -262,6 +262,10 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
         .replace(
             &String::from("miro_board_url = \""),
             &("miro_board_url = \"".to_string() + &miro_board_url),
+        )
+        .replace(
+            &String::from("miro_board_id = \""),
+            &("miro_board_id = \"".to_string() + &miro_board_id),
         )
         .replace(
             &String::from("auditor_names = [\""),

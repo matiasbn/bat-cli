@@ -780,6 +780,8 @@ pub mod api {
         }
     }
     pub mod helpers {
+        use crate::utils::path::FilePathType;
+
         use super::*;
         pub async fn get_id_from_response(response: reqwest::Response) -> String {
             let respons_string = response.text().await.unwrap();
@@ -787,9 +789,15 @@ pub mod api {
             response["id"].to_string().replace("\"", "")
         }
         pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> Result<String, String> {
-            let started_file_path = utils::path::get_auditor_code_overhaul_started_file_path(
-                Some(entrypoint_name.to_string()),
-            )?;
+            // let started_file_path = utils::path::get_auditor_code_overhaul_started_file_path(
+            //     Some(entrypoint_name.to_string()),
+            // )?;
+            let started_file_path = utils::path::get_file_path(
+                FilePathType::CodeOverhaulStarted {
+                    file_name: entrypoint_name.to_string(),
+                },
+                true,
+            );
             let miro_url = fs::read_to_string(started_file_path)
                 .unwrap()
                 .lines()
@@ -819,6 +827,7 @@ pub mod commands {
             helpers::get::{
                 get_string_between_two_index_from_string, get_string_between_two_str_from_string,
             },
+            path::FilePathType,
         },
     };
 
@@ -1098,10 +1107,16 @@ pub mod commands {
         let prompt_text = "select the folder:".to_string();
         let selection = utils::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
         let selected_folder = &started_folders[selection];
-        let selected_co_started_file_path =
-            utils::path::get_auditor_code_overhaul_started_file_path(Some(
-                selected_folder.clone(),
-            ))?;
+        // let selected_co_started_file_path =
+        //     utils::path::get_auditor_code_overhaul_started_file_path(Some(
+        //         selected_folder.clone(),
+        //     ))?;
+        let selected_co_started_file_path = utils::path::get_file_path(
+            FilePathType::CodeOverhaulStarted {
+                file_name: selected_folder.clone(),
+            },
+            true,
+        );
         Ok((
             selected_folder.clone(),
             selected_co_started_file_path.clone(),

@@ -2,7 +2,7 @@ use colored::Colorize;
 
 use crate::{
     config::BatConfig,
-    utils::{self, helpers},
+    utils::{self, helpers, path::FilePathType},
 };
 
 use utils::git::{create_git_commit, GitCommit};
@@ -27,7 +27,8 @@ pub fn update_accounts() -> Result<(), String> {
             not_account_structs.push(formatted_to_rust_comment);
         }
     }
-    let tm_file_path = utils::path::get_auditor_threat_modeling_path()?;
+    // let tm_file_path = utils::path::get_auditor_threat_modeling_path()?;
+    let tm_file_path = utils::path::get_file_path(FilePathType::ThreatModeling, true);
     let account_string = if account_structs.is_empty() {
         "-".to_string()
     } else {

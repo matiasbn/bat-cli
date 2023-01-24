@@ -18,6 +18,7 @@ use crate::utils::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
     get_table_of_contents_for_results,
 };
+use crate::utils::path::{FilePathType, FolderPathType};
 
 use std::fs;
 
@@ -26,15 +27,19 @@ use std::process::Command;
 use std::string::String;
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
-    let code_overhaul_auditor_file_path =
-        utils::path::get_auditor_code_overhaul_to_review_path(Some(entrypoint_name.clone()))?;
+    let code_overhaul_auditor_file_path = utils::path::get_file_path(
+        FilePathType::CodeOverhaulToReview {
+            file_name: entrypoint_name.clone(),
+        },
+        false,
+    );
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
         panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
     let output = Command::new("cp")
         .args([
             "-r",
-            utils::path::get_code_overhaul_template_path()?.as_str(),
+            &utils::path::get_file_path(FilePathType::TemplateCodeOverhaul, false),
             code_overhaul_auditor_file_path.as_str(),
         ])
         .output()
@@ -63,7 +68,8 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         panic!("program_instructions_path is not a correct folder")
     }
 
-    let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
+    let to_review_path = utils::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false);
+
     // get to-review files
     let mut review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -75,23 +81,18 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     if review_files.is_empty() {
         panic!("no to-review files in code-overhaul folder");
     }
-
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select the code-overhaul file to start:")
-        .items(&review_files)
-        .default(0)
-        .interact_on_opt(&Term::stderr())
-        .unwrap();
+    let prompt_text = "Select the code-overhaul file to start:";
+    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
     // user select file
-    let to_start_file_name = match selection {
-        // move selected file to rejected
-        Some(index) => review_files[index].clone(),
-        None => panic!("User did not select anything"),
-    };
+    let to_start_file_name = &review_files[selection].clone();
 
-    let to_review_file_path =
-        utils::path::get_auditor_code_overhaul_to_review_path(Some(to_start_file_name.clone()))?;
+    let to_review_file_path = utils::path::get_file_path(
+        FilePathType::CodeOverhaulToReview {
+            file_name: to_start_file_name.clone(),
+        },
+        false,
+    );
 
     let (entrypoint_name, instruction_file_path) =
         utils::helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
@@ -139,9 +140,17 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     let miro_enabled = MiroConfig::new().miro_enabled();
     if miro_enabled {
         // if miro enabled, then create a subfolder
-        let started_folder_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
-        let started_co_folder_path = started_folder_path + entrypoint_name.clone().as_str();
-        let started_co_file_path = format!("{started_co_folder_path}/{to_start_file_name}");
+        // let started_folder_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
+        let started_folder_path =
+            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false);
+        let started_co_folder_path =
+            format!("{}/{}", started_folder_path, entrypoint_name.as_str());
+        let started_co_file_path = utils::path::get_file_path(
+            FilePathType::CodeOverhaulStarted {
+                file_name: entrypoint_name.clone(),
+            },
+            false,
+        );
         // create the co subfolder
         Command::new("mkdir")
             .args([&started_co_folder_path])
@@ -163,22 +172,31 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
 
         create_git_commit(
             GitCommit::StartCOMiro,
-            Some(vec![to_start_file_name.clone()]),
+            Some(vec![to_start_file_name.to_string()]),
         )?;
 
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_co_file_path.as_str())?;
     } else {
-        let started_path = utils::path::get_auditor_code_overhaul_started_file_path(Some(
-            to_start_file_name.clone(),
-        ))?;
+        // let started_path = utils::path::get_auditor_code_overhaul_started_file_path(Some(
+        //     to_start_file_name.clone(),
+        // ))?;
+        let started_path = utils::path::get_file_path(
+            FilePathType::CodeOverhaulStarted {
+                file_name: to_start_file_name.clone(),
+            },
+            false,
+        );
         Command::new("mv")
             .args([to_review_file_path, started_path.clone()])
             .output()
             .unwrap();
         println!("{to_start_file_name} file moved to started");
 
-        create_git_commit(GitCommit::StartCO, Some(vec![to_start_file_name]))?;
+        create_git_commit(
+            GitCommit::StartCO,
+            Some(vec![to_start_file_name.to_string()]),
+        )?;
 
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_path.as_str())?;
@@ -190,80 +208,61 @@ pub async fn finish_code_overhaul_file() -> Result<(), String> {
     check_correct_branch()?;
     // get to-review files
     let started_endpoints = utils::helpers::get::get_started_entrypoints()?;
+    let prompt_text = "Select the code-overhaul to finish:";
+    let selection = utils::cli_inputs::select(prompt_text, started_endpoints.clone(), None)?;
 
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&started_endpoints)
-        .default(0)
-        .with_prompt("Select the code-overhaul to finish:")
-        .interact_on_opt(&Term::stderr())
+    let finished_endpoint = &started_endpoints[selection].clone();
+    let finished_co_folder_path =
+        utils::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
+    let started_co_file_path = utils::path::get_file_path(
+        FilePathType::CodeOverhaulStarted {
+            file_name: finished_endpoint.clone(),
+        },
+        true,
+    );
+    utils::helpers::check::code_overhaul_file_completed(
+        started_co_file_path.clone(),
+        finished_endpoint.clone(),
+    );
+
+    Command::new("mv")
+        .args([started_co_file_path, finished_co_folder_path])
+        .output()
         .unwrap();
 
-    // user select file
-    match selection {
-        // move selected file to finished
-        Some(index) => {
-            if MiroConfig::new().miro_enabled() {
-                let finished_endpoint = started_endpoints[index].clone();
-                let finished_folder_path =
-                    utils::path::get_auditor_code_overhaul_finished_path(None)?;
-                let started_folder_path =
-                    utils::path::get_auditor_code_overhaul_started_file_path(None)?;
-                let started_co_folder_path =
-                    canonicalize_path(format!("{started_folder_path}/{finished_endpoint}"));
-                let started_co_file_path = canonicalize_path(format!(
-                    "{started_folder_path}/{finished_endpoint}/{finished_endpoint}.md"
-                ));
-                utils::helpers::check::code_overhaul_file_completed(
-                    started_co_file_path.clone(),
-                    finished_endpoint.clone(),
-                );
-                // move Miro frame to final positon
-                let (_, _, finished_co) = utils::helpers::count::co_counter()?;
-                miro::api::frame::update_frame_position(
-                    finished_endpoint.clone(),
-                    finished_co as i32,
-                )
-                .await?;
-                // move into finished
-                Command::new("mv")
-                    .args([started_co_file_path, finished_folder_path])
-                    .output()
-                    .unwrap();
-                // remove co subfolder
-                Command::new("rm")
-                    .args(["-rf", &started_co_folder_path])
-                    .output()
-                    .unwrap();
-                println!("{finished_endpoint} moved to finished");
-                create_git_commit(GitCommit::FinishCOMiro, Some(vec![finished_endpoint]))?;
-            } else {
-                let finished_file_name = started_endpoints[index].clone();
-                let finished_path = utils::path::get_auditor_code_overhaul_finished_path(Some(
-                    finished_file_name.clone(),
-                ))?;
-                let started_path = utils::path::get_auditor_code_overhaul_started_file_path(Some(
-                    finished_file_name.clone(),
-                ))?;
-                utils::helpers::check::code_overhaul_file_completed(
-                    started_path.clone(),
-                    finished_file_name.clone(),
-                );
-                Command::new("mv")
-                    .args([started_path, finished_path])
-                    .output()
-                    .unwrap();
-                println!("{finished_file_name} file moved to finished");
-                create_git_commit(GitCommit::FinishCO, Some(vec![finished_file_name]))?;
-            }
-        }
-        None => panic!("User did not select anything"),
+    if MiroConfig::new().miro_enabled() {
+        let (_, _, finished_co) = utils::helpers::count::co_counter()?;
+        miro::api::frame::update_frame_position(finished_endpoint.clone(), finished_co as i32)
+            .await?;
+        let started_co_folder_path =
+            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
+        let started_co_subfolder_path = format!("{}/{}", started_co_folder_path, finished_endpoint);
+
+        // remove co subfolder
+        Command::new("rm")
+            .args(["-rf", &started_co_subfolder_path])
+            .output()
+            .unwrap();
+
+        create_git_commit(
+            GitCommit::FinishCOMiro,
+            Some(vec![finished_endpoint.to_string()]),
+        )?;
+    } else {
+        create_git_commit(
+            GitCommit::FinishCO,
+            Some(vec![finished_endpoint.to_string()]),
+        )?;
     }
+
+    println!("{} moved to finished", finished_endpoint.green());
     Ok(())
 }
 
 pub fn update_code_overhaul_file() -> Result<(), String> {
     println!("Select the code-overhaul file to finish:");
-    let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
+    // let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
+    let finished_path = utils::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
     // get to-review files
     let finished_files = fs::read_dir(finished_path)
         .unwrap()
@@ -272,7 +271,7 @@ pub fn update_code_overhaul_file() -> Result<(), String> {
         .collect::<Vec<String>>();
 
     if finished_files.is_empty() {
-        panic!("no finished files in code-overhaul folder");
+        panic!("{}", "no finished files in code-overhaul folder".red());
     }
 
     let selection = Select::with_theme(&ColorfulTheme::default())
@@ -313,35 +312,29 @@ pub async fn open_co() -> Result<(), String> {
     } = BatConfig::get_validated_config()?;
     // list to start
     if auditor.vs_code_integration {
-        let started_path = utils::path::get_auditor_code_overhaul_path()? + "started";
-        let co_files = utils::helpers::get::get_only_files_from_folder(started_path)?;
+        let started_co_folder_path =
+            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
+        let co_files = utils::helpers::get::get_only_files_from_folder(started_co_folder_path)?;
         let co_files = co_files
             .iter()
             .filter(|f| f.name != ".gitkeep")
             .collect::<Vec<_>>();
         if !co_files.is_empty() {
             let started_entrypoints = utils::helpers::get::get_started_entrypoints()?;
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .items(&started_entrypoints)
-                .default(0)
-                .with_prompt("Select the code-overhaul file to open:")
-                .interact_on_opt(&Term::stderr())
-                .unwrap();
-            // user select file
-            let (started_file_name, started_file_path) = match selection {
-                // move selected file to finished
-                Some(index) => (
-                    started_entrypoints[index].clone(),
-                    utils::path::get_auditor_code_overhaul_started_file_path(Some(
-                        started_entrypoints[index].clone(),
-                    ))?,
-                ),
-                None => panic!("User did not select anything"),
-            };
-            // select to start
-            // get instruction
-            let (_, instruction_file_path) =
-                utils::helpers::get::get_instruction_file_with_prompts(&started_file_name)?;
+            let prompt_text = "Select the code-overhaul file to open:";
+            let selection =
+                utils::cli_inputs::select(prompt_text, started_entrypoints.clone(), None)?;
+            let started_file_name = &started_entrypoints[selection].clone();
+            let started_file_path = utils::path::get_file_path(
+                FilePathType::CodeOverhaulStarted {
+                    file_name: started_file_name.clone(),
+                },
+                true,
+            );
+            let instruction_file_path =
+                utils::path::get_instruction_file_path_from_started_entrypoint_co_file(
+                    started_file_name.to_string(),
+                )?;
 
             vs_code_open_file_in_current_window(&started_file_path)?;
             vs_code_open_file_in_current_window(&instruction_file_path)?;
@@ -354,8 +347,7 @@ pub async fn open_co() -> Result<(), String> {
 }
 
 pub fn update_audit_results() -> Result<(), String> {
-    let audit_file_path =
-        utils::path::get_audit_folder_path(Some(AUDIT_RESULT_FILE_NAME.to_string()))?;
+    let audit_file_path = utils::path::get_file_path(FilePathType::AuditResults, true);
     let finished_co_files = get_finished_co_files()?;
     let finished_co_audit_information = get_finished_co_files_info_for_results(finished_co_files)?;
     let mut final_result: Vec<String> = vec!["\n# Code overhaul\n".to_string()];
