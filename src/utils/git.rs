@@ -134,7 +134,7 @@ pub fn create_git_commit(
             let folder_to_delete_path = format!("{started_path}/{commit_file_name}");
             let finished_folder_path =
                 utils::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
-            let file_to_add_path = format!("{finished_folder_path}{commit_file}.md");
+            let file_to_add_path = format!("{finished_folder_path}/{commit_file}.md");
             (commit_string, vec![folder_to_delete_path, file_to_add_path])
         }
         GitCommit::DeployMiro => {

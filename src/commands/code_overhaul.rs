@@ -224,12 +224,11 @@ pub async fn finish_code_overhaul_file() -> Result<(), String> {
         started_co_file_path.clone(),
         finished_endpoint.clone(),
     );
-    // move into finished
+
     Command::new("mv")
         .args([started_co_file_path, finished_co_folder_path])
         .output()
         .unwrap();
-    // remove co subfolder
 
     if MiroConfig::new().miro_enabled() {
         let (_, _, finished_co) = utils::helpers::count::co_counter()?;
@@ -238,15 +237,24 @@ pub async fn finish_code_overhaul_file() -> Result<(), String> {
         let started_co_folder_path =
             utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
         let started_co_subfolder_path = format!("{}/{}", started_co_folder_path, finished_endpoint);
+
+        // remove co subfolder
         Command::new("rm")
             .args(["-rf", &started_co_subfolder_path])
             .output()
             .unwrap();
+
+        create_git_commit(
+            GitCommit::FinishCOMiro,
+            Some(vec![finished_endpoint.to_string()]),
+        )?;
+    } else {
+        create_git_commit(
+            GitCommit::FinishCO,
+            Some(vec![finished_endpoint.to_string()]),
+        )?;
     }
-    create_git_commit(
-        GitCommit::FinishCOMiro,
-        Some(vec![finished_endpoint.to_string()]),
-    )?;
+
     println!("{} moved to finished", finished_endpoint.green());
     Ok(())
 }
