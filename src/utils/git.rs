@@ -292,8 +292,9 @@ pub fn clone_base_repository() {
         .unwrap();
 }
 
-pub fn git_push() {
+pub fn git_push() -> Result<(), String> {
     Command::new("git").arg("push").output().unwrap();
+    Ok(())
 }
 
 // returns false if there are files to commit

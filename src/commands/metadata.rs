@@ -6,8 +6,9 @@ use crate::commands::metadata::structs::structs_helpers;
 use crate::commands::miro::{MiroConfig, MiroStickyNoteColors};
 
 use crate::constants::{
-    MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE, MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE,
-    MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
+    MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE,
+    MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE,
+    MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
 };
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
@@ -355,7 +356,7 @@ pub async fn update_miro() -> Result<(), String> {
         fs::write(metadata_path, new_content).unwrap();
         // create commit
 
-        // utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
+        utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
         return Ok(());
     } else {
         unimplemented!("Entrypoints section not implemented yet")
