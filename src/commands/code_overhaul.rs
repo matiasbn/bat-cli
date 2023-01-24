@@ -18,6 +18,7 @@ use crate::utils::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
     get_table_of_contents_for_results,
 };
+use crate::utils::path::{FileType, FolderType};
 
 use std::fs;
 
@@ -26,15 +27,19 @@ use std::process::Command;
 use std::string::String;
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
-    let code_overhaul_auditor_file_path =
-        utils::path::get_auditor_code_overhaul_to_review_path(Some(entrypoint_name.clone()))?;
+    let code_overhaul_auditor_file_path = utils::path::get_file_path(
+        FileType::CodeOverhaulToReview {
+            file_name: entrypoint_name.clone(),
+        },
+        false,
+    )?;
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
         panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
     let output = Command::new("cp")
         .args([
             "-r",
-            utils::path::get_code_overhaul_template_path()?.as_str(),
+            &utils::path::get_file_path(FileType::TemplateCodeOverhaul, false)?,
             code_overhaul_auditor_file_path.as_str(),
         ])
         .output()
@@ -63,7 +68,8 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         panic!("program_instructions_path is not a correct folder")
     }
 
-    let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
+    let to_review_path = utils::path::get_folder_path(FolderType::CodeOverhaulToReview, false)?;
+
     // get to-review files
     let mut review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -90,8 +96,12 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         None => panic!("User did not select anything"),
     };
 
-    let to_review_file_path =
-        utils::path::get_auditor_code_overhaul_to_review_path(Some(to_start_file_name.clone()))?;
+    let to_review_file_path = utils::path::get_file_path(
+        FileType::CodeOverhaulToReview {
+            file_name: to_start_file_name.clone(),
+        },
+        false,
+    )?;
 
     let (entrypoint_name, instruction_file_path) =
         utils::helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
@@ -140,7 +150,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     if miro_enabled {
         // if miro enabled, then create a subfolder
         let started_folder_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
-        let started_co_folder_path = started_folder_path + entrypoint_name.clone().as_str();
+        let started_co_folder_path = started_folder_path + entrypoint_name.as_str();
         let started_co_file_path = format!("{started_co_folder_path}/{to_start_file_name}");
         // create the co subfolder
         Command::new("mkdir")
@@ -161,10 +171,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
             .unwrap();
         println!("Empty screenshots created, remember to complete them");
 
-        create_git_commit(
-            GitCommit::StartCOMiro,
-            Some(vec![to_start_file_name.clone()]),
-        )?;
+        create_git_commit(GitCommit::StartCOMiro, Some(vec![to_start_file_name]))?;
 
         // open co file in VSCode
         vs_code_open_file_in_current_window(started_co_file_path.as_str())?;

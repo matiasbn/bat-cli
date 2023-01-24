@@ -22,7 +22,6 @@ pub struct RequiredConfig {
     pub miro_board_url: String,
     pub miro_board_id: String,
     pub auditor_names: Vec<String>,
-    pub audit_folder_path: String,
     pub program_lib_path: String,
     pub project_repository_url: String,
 }
@@ -101,9 +100,6 @@ impl BatConfig {
         }
         if required.program_lib_path.is_empty() {
             panic!("required parameter program_lib_path is empty at Bat.toml");
-        }
-        if required.audit_folder_path.is_empty() {
-            panic!("required parameter audit_folder_path is empty at Bat.toml");
         }
         if required.auditor_names.is_empty() {
             panic!("required parameter auditor_names is empty at Bat.toml");

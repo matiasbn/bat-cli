@@ -2,7 +2,137 @@ use std::{fs, path::Path};
 
 use crate::{commands::miro::MiroConfig, config::BatConfig};
 
-pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, String> {
+pub enum FileType {
+    Metadata,
+    ThreatModeling,
+    AuditResults,
+    ProgramLib,
+    Readme,
+    TemplateFinding,
+    TemplateInformational,
+    TemplateCodeOverhaul,
+    CodeOverhaulToReview { file_name: String },
+    CodeOverhaulStarted { file_name: String },
+    CodeOverhaulFinished { file_name: String },
+    FindingToReview { file_name: String },
+    FindingAccepted { file_name: String },
+    FindingRejected { file_name: String },
+}
+
+pub fn get_file_path(file_type: FileType, canonicalize: bool) -> String {
+    let bat_config = BatConfig::get_validated_config().unwrap();
+
+    let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
+    let findings_path = format!("{}/findings", auditor_notes_folder_path);
+    let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
+
+    let path = match file_type {
+        //File
+        FileType::ProgramLib => bat_config.required.program_lib_path,
+        FileType::Metadata => {
+            format!("{}/metadata.md", auditor_notes_folder_path)
+        }
+        FileType::ThreatModeling => {
+            format!("./threat_modeling.md")
+        }
+        FileType::AuditResults => {
+            format!("./audit_result.md")
+        }
+        FileType::TemplateFinding => {
+            format!("./templates/finding.md")
+        }
+        FileType::TemplateInformational => {
+            format!("./templates/informational.md")
+        }
+        FileType::TemplateCodeOverhaul => {
+            format!("./templates/code-overhaul.md")
+        }
+        FileType::Readme => {
+            format!("./README.md")
+        }
+        FileType::CodeOverhaulToReview { file_name } => {
+            format!("{}/to-review/{file_name}.md", code_overhaul_path)
+        }
+        FileType::CodeOverhaulStarted { file_name } => {
+            if MiroConfig::new().miro_enabled() {
+                format!("{}/started/{file_name}/{file_name}.md", code_overhaul_path)
+            } else {
+                format!("{}/started/{file_name}.md", code_overhaul_path)
+            }
+        }
+        FileType::CodeOverhaulFinished { file_name } => {
+            format!("{}/finished/{file_name}.md", code_overhaul_path)
+        }
+        FileType::FindingToReview { file_name } => {
+            format!("{}/to-review/{file_name}.md", findings_path)
+        }
+        FileType::FindingAccepted { file_name } => {
+            format!("{}/accepted/{file_name}.md", findings_path)
+        }
+        FileType::FindingRejected { file_name } => {
+            format!("{}/rejected/{file_name}.md", findings_path)
+        }
+    };
+
+    if canonicalize {
+        canonicalize_path(path);
+    }
+
+    path
+}
+
+pub enum FolderType {
+    ProgramPath,
+    Templates,
+    FindingsToReview,
+    FindingsAccepted,
+    FindingsRejected,
+    CodeOverhaulToReview,
+    CodeOverhaulStarted,
+    CodeOverhaulFinished,
+}
+
+pub fn get_folder_path(folder_type: FolderType, canonicalize: bool) -> String {
+    let bat_config = BatConfig::get_validated_config()?;
+
+    let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
+    let findings_path = format!("{}/findings", auditor_notes_folder_path);
+    let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
+
+    let path = match folder_type {
+        //File
+        FolderType::ProgramPath => bat_config.required.program_lib_path.replace("/lib.rs", ""),
+        FolderType::Templates => {
+            format!("./templates")
+        }
+        FolderType::FindingsToReview => {
+            format!("{}/to-review", findings_path)
+        }
+        FolderType::FindingsAccepted => {
+            format!("{}/accepted", findings_path)
+        }
+        FolderType::FindingsRejected => {
+            format!("{}/rejected", findings_path)
+        }
+        FolderType::CodeOverhaulToReview => {
+            format!("{}/to-review", code_overhaul_path)
+        }
+        FolderType::CodeOverhaulStarted => {
+            format!("{}/started", code_overhaul_path)
+        }
+        FolderType::CodeOverhaulFinished => {
+            format!("{}/finished", code_overhaul_path)
+        }
+    };
+
+    if canonicalize {
+        return canonicalize_path(path);
+    }
+
+    path
+}
+
+fn canonicalize_path(path_to_canonicalize: String) -> String {
     let error_message = format!("Error canonicalizing path: {}", path_to_canonicalize);
     let canonicalized_path = Path::new(&(path_to_canonicalize))
         .canonicalize()
@@ -10,13 +140,18 @@ pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, String>
         .into_os_string()
         .into_string()
         .expect(&error_message);
-    Ok(canonicalized_path)
+    canonicalized_path
 }
 
 pub fn get_instruction_file_path_from_started_entrypoint_co_file(
     entrypoint_name: String,
 ) -> Result<String, String> {
-    let co_file_path = get_auditor_code_overhaul_started_file_path(Some(entrypoint_name.clone()))?;
+    let co_file_path = get_file_path(
+        FileType::CodeOverhaulStarted {
+            file_name: entrypoint_name.clone(),
+        },
+        false,
+    );
     let program_path = BatConfig::get_validated_config()?
         .required
         .program_lib_path
@@ -33,161 +168,4 @@ pub fn get_instruction_file_path_from_started_entrypoint_co_file(
         ))
         .to_string();
     Ok(instruction_file_path)
-}
-pub fn get_audit_folder_path(file_name: Option<String>) -> Result<String, String> {
-    if let Some(file_name_option) = file_name {
-        Ok(canonicalize_path(
-            BatConfig::get_validated_config()
-                .unwrap()
-                .required
-                .audit_folder_path
-                + "/"
-                + file_name_option.as_str(),
-        )
-        .unwrap())
-    } else {
-        Ok(canonicalize_path(
-            BatConfig::get_validated_config()?
-                .required
-                .audit_folder_path,
-        )
-        .unwrap())
-    }
-}
-
-pub fn get_audit_results_file_path() -> Result<String, String> {
-    Ok(canonicalize_path(
-        BatConfig::get_validated_config()
-            .unwrap()
-            .required
-            .audit_folder_path
-            + "/audit_result.md",
-    )
-    .unwrap())
-}
-
-pub fn get_program_path() -> Result<String, String> {
-    Ok(BatConfig::get_validated_config()?
-        .required
-        .program_lib_path
-        .replace("/lib.rs", ""))
-}
-
-pub fn get_readme_file_path() -> Result<String, String> {
-    canonicalize_path(get_audit_folder_path(None)? + "/README.md")
-}
-
-pub fn get_program_lib_path() -> Result<String, String> {
-    canonicalize_path(BatConfig::get_validated_config()?.required.program_lib_path)
-}
-
-pub fn get_notes_path() -> Result<String, String> {
-    Ok(get_audit_folder_path(None)? + "/notes/")
-}
-
-pub fn get_auditor_notes_path() -> Result<String, String> {
-    Ok(get_notes_path()? + &BatConfig::get_auditor_name()? + "-notes/")
-}
-
-// Findings paths
-pub fn get_auditor_findings_path() -> Result<String, String> {
-    Ok(get_auditor_notes_path()? + "findings/")
-}
-
-pub fn get_auditor_findings_to_review_path(file_name: Option<String>) -> Result<String, String> {
-    match file_name {
-        Some(name) => {
-            Ok(get_auditor_findings_path()? + "to-review/" + &name.replace(".md", "") + ".md")
-        }
-        None => Ok(get_auditor_findings_path()? + "to-review/"),
-    }
-}
-
-pub fn get_auditor_findings_accepted_path(file_name: Option<String>) -> Result<String, String> {
-    match file_name {
-        Some(name) => {
-            Ok(get_auditor_findings_path()? + "accepted/" + &name.replace(".md", "") + ".md")
-        }
-        None => Ok(get_auditor_findings_path()? + "accepted/"),
-    }
-}
-
-pub fn get_auditor_findings_rejected_path(file_name: Option<String>) -> Result<String, String> {
-    match file_name {
-        Some(name) => {
-            Ok(get_auditor_findings_path()? + "rejected/" + &name.replace(".md", "") + ".md")
-        }
-        None => Ok(get_auditor_findings_path()? + "rejected/"),
-    }
-}
-
-// Code overhaul paths
-pub fn get_auditor_code_overhaul_path() -> Result<String, String> {
-    Ok(get_auditor_notes_path()? + "code-overhaul/")
-}
-
-pub fn get_auditor_code_overhaul_to_review_path(
-    file_name: Option<String>,
-) -> Result<String, String> {
-    match file_name {
-        Some(name) => {
-            Ok(get_auditor_code_overhaul_path()? + "to-review/" + &name.replace(".md", "") + ".md")
-        }
-        None => Ok(get_auditor_code_overhaul_path()? + "to-review/"),
-    }
-}
-
-pub fn get_auditor_code_overhaul_finished_path(
-    file_name: Option<String>,
-) -> Result<String, String> {
-    match file_name {
-        Some(name) => {
-            Ok(get_auditor_code_overhaul_path()? + "finished/" + &name.replace(".md", "") + ".md")
-        }
-        None => Ok(get_auditor_code_overhaul_path()? + "finished/"),
-    }
-}
-
-pub fn get_auditor_code_overhaul_started_file_path(
-    file_name: Option<String>,
-) -> Result<String, String> {
-    match file_name {
-        Some(name) => {
-            if MiroConfig::new().miro_enabled() {
-                let entrypoint_name = &name.replace(".md", "");
-                Ok(canonicalize_path(format!(
-                    "{}/started/{entrypoint_name}/{entrypoint_name}.md",
-                    get_auditor_code_overhaul_path()?
-                ))?)
-            } else {
-                Ok(get_auditor_code_overhaul_path()?
-                    + "started/"
-                    + &name.replace(".md", "")
-                    + ".md")
-            }
-        }
-        None => Ok(get_auditor_code_overhaul_path()? + "started/"),
-    }
-}
-
-// Templates path
-pub fn get_templates_path() -> Result<String, String> {
-    Ok(get_audit_folder_path(None)? + "/templates")
-}
-
-pub fn get_finding_template_path() -> Result<String, String> {
-    Ok(get_templates_path()? + "/finding.md")
-}
-
-pub fn get_informational_template_path() -> Result<String, String> {
-    Ok(get_templates_path()? + "/informational.md")
-}
-
-pub fn get_code_overhaul_template_path() -> Result<String, String> {
-    Ok(get_templates_path()? + "/code-overhaul.md")
-}
-
-// Threat modeling file
-pub fn get_auditor_threat_modeling_path() -> Result<String, String> {
-    Ok(get_auditor_notes_path()? + "threat_modeling.md")
 }
