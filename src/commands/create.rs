@@ -169,7 +169,6 @@ fn get_required_config() -> Result<RequiredConfig, String> {
         starting_date,
         commit_hash_url,
         project_repository_url,
-        audit_folder_path: "".to_string(),
         program_lib_path: normalized_to_audit_program_lib_path,
     })
 }

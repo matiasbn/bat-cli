@@ -51,26 +51,54 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
             format!("./README.md")
         }
         FilePathType::CodeOverhaulToReview { file_name } => {
-            format!("{}/to-review/{file_name}.md", code_overhaul_path)
+            format!(
+                "{}/to-review/{}.md",
+                file_name.replace(".md", ""),
+                code_overhaul_path
+            )
         }
         FilePathType::CodeOverhaulStarted { file_name } => {
             if MiroConfig::new().miro_enabled() {
-                format!("{}/started/{file_name}/{file_name}.md", code_overhaul_path)
+                format!(
+                    "{}/started/{file_name}/{}.md",
+                    file_name.replace(".md", ""),
+                    code_overhaul_path
+                )
             } else {
-                format!("{}/started/{file_name}.md", code_overhaul_path)
+                format!(
+                    "{}/started/{}.md",
+                    file_name.replace(".md", ""),
+                    code_overhaul_path
+                )
             }
         }
         FilePathType::CodeOverhaulFinished { file_name } => {
-            format!("{}/finished/{file_name}.md", code_overhaul_path)
+            format!(
+                "{}/finished/{}.md",
+                file_name.replace(".md", ""),
+                code_overhaul_path
+            )
         }
         FilePathType::FindingToReview { file_name } => {
-            format!("{}/to-review/{file_name}.md", findings_path)
+            format!(
+                "{}/to-review/{}.md",
+                file_name.replace(".md", ""),
+                findings_path
+            )
         }
         FilePathType::FindingAccepted { file_name } => {
-            format!("{}/accepted/{file_name}.md", findings_path)
+            format!(
+                "{}/accepted/{}.md",
+                file_name.replace(".md", ""),
+                findings_path
+            )
         }
         FilePathType::FindingRejected { file_name } => {
-            format!("{}/rejected/{file_name}.md", findings_path)
+            format!(
+                "{}/rejected/{}.md",
+                file_name.replace(".md", ""),
+                findings_path
+            )
         }
     };
 
