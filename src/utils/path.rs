@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use crate::{commands::miro::MiroConfig, config::BatConfig};
 
-pub enum FileType {
+pub enum FilePathType {
     Metadata,
     ThreatModeling,
     AuditResults,
@@ -19,7 +19,7 @@ pub enum FileType {
     FindingRejected { file_name: String },
 }
 
-pub fn get_file_path(file_type: FileType, canonicalize: bool) -> String {
+pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
     let bat_config = BatConfig::get_validated_config().unwrap();
 
     let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
@@ -28,48 +28,48 @@ pub fn get_file_path(file_type: FileType, canonicalize: bool) -> String {
 
     let path = match file_type {
         //File
-        FileType::ProgramLib => bat_config.required.program_lib_path,
-        FileType::Metadata => {
+        FilePathType::ProgramLib => bat_config.required.program_lib_path,
+        FilePathType::Metadata => {
             format!("{}/metadata.md", auditor_notes_folder_path)
         }
-        FileType::ThreatModeling => {
+        FilePathType::ThreatModeling => {
             format!("./threat_modeling.md")
         }
-        FileType::AuditResults => {
+        FilePathType::AuditResults => {
             format!("./audit_result.md")
         }
-        FileType::TemplateFinding => {
+        FilePathType::TemplateFinding => {
             format!("./templates/finding.md")
         }
-        FileType::TemplateInformational => {
+        FilePathType::TemplateInformational => {
             format!("./templates/informational.md")
         }
-        FileType::TemplateCodeOverhaul => {
+        FilePathType::TemplateCodeOverhaul => {
             format!("./templates/code-overhaul.md")
         }
-        FileType::Readme => {
+        FilePathType::Readme => {
             format!("./README.md")
         }
-        FileType::CodeOverhaulToReview { file_name } => {
+        FilePathType::CodeOverhaulToReview { file_name } => {
             format!("{}/to-review/{file_name}.md", code_overhaul_path)
         }
-        FileType::CodeOverhaulStarted { file_name } => {
+        FilePathType::CodeOverhaulStarted { file_name } => {
             if MiroConfig::new().miro_enabled() {
                 format!("{}/started/{file_name}/{file_name}.md", code_overhaul_path)
             } else {
                 format!("{}/started/{file_name}.md", code_overhaul_path)
             }
         }
-        FileType::CodeOverhaulFinished { file_name } => {
+        FilePathType::CodeOverhaulFinished { file_name } => {
             format!("{}/finished/{file_name}.md", code_overhaul_path)
         }
-        FileType::FindingToReview { file_name } => {
+        FilePathType::FindingToReview { file_name } => {
             format!("{}/to-review/{file_name}.md", findings_path)
         }
-        FileType::FindingAccepted { file_name } => {
+        FilePathType::FindingAccepted { file_name } => {
             format!("{}/accepted/{file_name}.md", findings_path)
         }
-        FileType::FindingRejected { file_name } => {
+        FilePathType::FindingRejected { file_name } => {
             format!("{}/rejected/{file_name}.md", findings_path)
         }
     };
@@ -81,7 +81,7 @@ pub fn get_file_path(file_type: FileType, canonicalize: bool) -> String {
     path
 }
 
-pub enum FolderType {
+pub enum FolderPathType {
     ProgramPath,
     Templates,
     FindingsToReview,
@@ -92,7 +92,7 @@ pub enum FolderType {
     CodeOverhaulFinished,
 }
 
-pub fn get_folder_path(folder_type: FolderType, canonicalize: bool) -> String {
+pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> String {
     let bat_config = BatConfig::get_validated_config()?;
 
     let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
@@ -101,26 +101,26 @@ pub fn get_folder_path(folder_type: FolderType, canonicalize: bool) -> String {
 
     let path = match folder_type {
         //File
-        FolderType::ProgramPath => bat_config.required.program_lib_path.replace("/lib.rs", ""),
-        FolderType::Templates => {
+        FolderPathType::ProgramPath => bat_config.required.program_lib_path.replace("/lib.rs", ""),
+        FolderPathType::Templates => {
             format!("./templates")
         }
-        FolderType::FindingsToReview => {
+        FolderPathType::FindingsToReview => {
             format!("{}/to-review", findings_path)
         }
-        FolderType::FindingsAccepted => {
+        FolderPathType::FindingsAccepted => {
             format!("{}/accepted", findings_path)
         }
-        FolderType::FindingsRejected => {
+        FolderPathType::FindingsRejected => {
             format!("{}/rejected", findings_path)
         }
-        FolderType::CodeOverhaulToReview => {
+        FolderPathType::CodeOverhaulToReview => {
             format!("{}/to-review", code_overhaul_path)
         }
-        FolderType::CodeOverhaulStarted => {
+        FolderPathType::CodeOverhaulStarted => {
             format!("{}/started", code_overhaul_path)
         }
-        FolderType::CodeOverhaulFinished => {
+        FolderPathType::CodeOverhaulFinished => {
             format!("{}/finished", code_overhaul_path)
         }
     };
@@ -147,7 +147,7 @@ pub fn get_instruction_file_path_from_started_entrypoint_co_file(
     entrypoint_name: String,
 ) -> Result<String, String> {
     let co_file_path = get_file_path(
-        FileType::CodeOverhaulStarted {
+        FilePathType::CodeOverhaulStarted {
             file_name: entrypoint_name.clone(),
         },
         false,

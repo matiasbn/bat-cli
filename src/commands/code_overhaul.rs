@@ -18,7 +18,7 @@ use crate::utils::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
     get_table_of_contents_for_results,
 };
-use crate::utils::path::{FileType, FolderType};
+use crate::utils::path::{FilePathType, FolderPathType};
 
 use std::fs;
 
@@ -28,7 +28,7 @@ use std::string::String;
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     let code_overhaul_auditor_file_path = utils::path::get_file_path(
-        FileType::CodeOverhaulToReview {
+        FilePathType::CodeOverhaulToReview {
             file_name: entrypoint_name.clone(),
         },
         false,
@@ -39,7 +39,7 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     let output = Command::new("cp")
         .args([
             "-r",
-            &utils::path::get_file_path(FileType::TemplateCodeOverhaul, false)?,
+            &utils::path::get_file_path(FilePathType::TemplateCodeOverhaul, false)?,
             code_overhaul_auditor_file_path.as_str(),
         ])
         .output()
@@ -68,7 +68,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         panic!("program_instructions_path is not a correct folder")
     }
 
-    let to_review_path = utils::path::get_folder_path(FolderType::CodeOverhaulToReview, false)?;
+    let to_review_path = utils::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false)?;
 
     // get to-review files
     let mut review_files = fs::read_dir(to_review_path)
@@ -97,7 +97,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     };
 
     let to_review_file_path = utils::path::get_file_path(
-        FileType::CodeOverhaulToReview {
+        FilePathType::CodeOverhaulToReview {
             file_name: to_start_file_name.clone(),
         },
         false,
