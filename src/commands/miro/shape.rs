@@ -44,14 +44,14 @@ impl MiroShapeStyle {
             color,
         }
     }
-    pub fn new_from_hex_fill_color(fill_color: &str) -> Self {
+    pub fn new_from_hex_border_color(border_color: &str) -> Self {
         MiroShapeStyle {
-            fill_color: fill_color.to_string(),
+            fill_color: "#ffffff".to_string(),
             fill_opacity: "1.0".to_string(),
             font_family: "open_sans".to_string(),
             font_size: "36".to_string(),
-            border_color: "#1a1a1a".to_string(),
-            border_width: "2.0".to_string(),
+            border_color: border_color.to_string(),
+            border_width: "4.0".to_string(),
             border_opacity: "1.0".to_string(),
             border_style: "normal".to_string(),
             text_align: "center".to_string(),
