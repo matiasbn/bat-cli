@@ -104,6 +104,7 @@ pub enum FolderPathType {
     CodeOverhaulStarted,
     CodeOverhaulFinished,
     AuditorNotes,
+    AuditorFigures,
     Notes,
 }
 
@@ -118,6 +119,7 @@ pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> Strin
         //File
         FolderPathType::Notes => "./notes".to_string(),
         FolderPathType::AuditorNotes => auditor_notes_folder_path,
+        FolderPathType::AuditorFigures => format!("{auditor_notes_folder_path}/figures"),
         FolderPathType::ProgramPath => bat_config.required.program_lib_path.replace("/lib.rs", ""),
         FolderPathType::Templates => {
             format!("./templates")

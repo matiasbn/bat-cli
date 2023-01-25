@@ -1,3 +1,4 @@
+use colored::Colorize;
 use console::Term;
 use dialoguer::{console, theme::ColorfulTheme, Input, Select};
 use std::{
@@ -71,7 +72,10 @@ pub fn accept_all() -> Result<(), String> {
                 .unwrap();
         }
     }
-    println!("All files has been moved to the accepted folder");
+    println!(
+        "All findings has been moved to the {} folder",
+        "accepted".green()
+    );
     Ok(())
 }
 
@@ -80,7 +84,7 @@ pub fn create_finding() -> Result<(), String> {
         .with_prompt("Finding name:")
         .interact_text()
         .unwrap();
-    finding_name = finding_name.replace('-', "_");
+    finding_name = finding_name.replace('-', "_").replace(' ', "_");
     validate_config_create_finding_file(finding_name.clone())?;
     copy_template_to_findings_to_review(finding_name.clone())?;
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]))?;
@@ -107,17 +111,28 @@ pub fn finish_finding() -> Result<(), String> {
     let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
     let finding_name = &review_files[selection].clone();
-    validate_config_create_finding_file(finding_name.clone())?;
     let finding_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name.clone(),
+        },
+        false,
+    );
+    validate_finished_finding_file(finding_file_path, finding_name.clone());
+    let to_review_finding_file_path = utils::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name.clone(),
         },
         true,
     );
-    validate_finished_finding_file(finding_file_path, finding_name.clone());
+    let auditor_figures_folder_path =
+        utils::path::get_folder_path(FolderPathType::AuditorFigures, true);
     create_git_commit(
-        GitCommit::FinishFinding,
-        Some(vec![finding_name.to_string()]),
+        GitCommit::FinishFinding {
+            finding_name: finding_name.to_string(),
+            to_review_finding_file_path,
+            auditor_figures_folder_path,
+        },
+        None,
     )?;
     Ok(())
 }
@@ -129,23 +144,27 @@ pub fn update_finding() -> Result<(), String> {
         .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
         .filter(|file| file != ".gitkeep")
         .collect::<Vec<String>>();
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&review_files)
-        .with_prompt("Select finding file to update:")
-        .default(0)
-        .interact_on_opt(&Term::stderr())
-        .unwrap();
 
-    // user select file
-    match selection {
-        // move selected file to rejected
-        Some(index) => {
-            let finding_name = review_files[index].clone();
-            validate_config_create_finding_file(finding_name.clone())?;
-            create_git_commit(GitCommit::UpdateFinding, Some(vec![finding_name]))?;
-        }
-        None => panic!("User did not select anything"),
-    }
+    let prompt_text = "Select finding file to update:";
+    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
+
+    let finding_name = &review_files[selection].clone();
+    let to_review_finding_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name.clone(),
+        },
+        true,
+    );
+    let auditor_figures_folder_path =
+        utils::path::get_folder_path(FolderPathType::AuditorFigures, true);
+    create_git_commit(
+        GitCommit::UpdateFinding {
+            finding_name: finding_name.to_string(),
+            to_review_finding_file_path,
+            auditor_figures_folder_path,
+        },
+        None,
+    )?;
     Ok(())
 }
 

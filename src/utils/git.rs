@@ -1,5 +1,7 @@
 use std::{process::Command, str};
 
+use colored::Colorize;
+
 use crate::{
     command_line::execute_command,
     config::BatConfig,
@@ -37,8 +39,16 @@ pub enum GitCommit {
     UpdateMiro,
     UpdateCO,
     StartFinding,
-    FinishFinding,
-    UpdateFinding,
+    FinishFinding {
+        finding_name: String,
+        to_review_finding_file_path: String,
+        auditor_figures_folder_path: String,
+    },
+    UpdateFinding {
+        finding_name: String,
+        to_review_finding_file_path: String,
+        auditor_figures_folder_path: String,
+    },
     PrepareAllFinding,
     UpdateRepo,
     Notes,
@@ -169,37 +179,42 @@ pub fn create_git_commit(
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
-            println!("finding file created with commit: \"{commit_string}\"");
+            println!("finding file created with commit: {commit_string}");
             let file_to_add_path =
                 // utils::path::get_file_path(FilePathType::FindingToReview { file_name: commit_file.clone() },true);
                 utils::path::get_file_path(FilePathType::FindingToReview { file_name: commit_file.clone() },true);
             (commit_string, vec![file_to_add_path])
         }
-        GitCommit::FinishFinding => {
-            let commit_file = &commit_files.unwrap()[0];
-            let commit_string =
-                "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
-            println!("finding file finished with commit: \"{commit_string}\"");
-            let file_to_add_path = utils::path::get_file_path(
-                FilePathType::FindingAccepted {
-                    file_name: commit_file.clone(),
-                },
-                true,
+        GitCommit::FinishFinding {
+            finding_name,
+            to_review_finding_file_path,
+            auditor_figures_folder_path,
+        } => {
+            let commit_string = format!("finding: {finding_name} finished");
+            println!(
+                "finding file finished with commit: \"{}\"",
+                commit_string.green()
             );
-            (commit_string, vec![file_to_add_path])
+            (
+                commit_string,
+                vec![to_review_finding_file_path, auditor_figures_folder_path],
+            )
         }
-        GitCommit::UpdateFinding => {
-            let commit_file = &commit_files.unwrap()[0];
-            let commit_string =
-                "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
-            println!("finding file updated with commit: \"{commit_string}\"");
-            let file_to_add_path = utils::path::get_file_path(
-                FilePathType::FindingToReview {
-                    file_name: commit_file.clone(),
-                },
-                true,
+        GitCommit::UpdateFinding {
+            finding_name,
+            to_review_finding_file_path,
+            auditor_figures_folder_path,
+        } => {
+            let commit_string = format!("finding: {finding_name} updated");
+            println!(
+                "finding file udpated with commit: \"{}\"",
+                commit_string.green()
             );
-            (commit_string, vec![file_to_add_path])
+
+            (
+                commit_string,
+                vec![to_review_finding_file_path, auditor_figures_folder_path],
+            )
         }
         GitCommit::PrepareAllFinding => {
             let commit_string = "finding: to-review findings severity updated".to_string();
