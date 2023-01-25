@@ -1,5 +1,5 @@
 use crate::config::*;
-use crate::utils::{git::*, helpers};
+use crate::utils::git::*;
 use normalize_url::normalizer;
 use reqwest;
 use serde_json::*;
@@ -875,7 +875,6 @@ pub mod api {
 
 pub mod commands {
     use super::{
-        api::frame::MiroFrame,
         shape::{MiroShape, MiroShapeStyle},
         *,
     };
