@@ -11,7 +11,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{self};
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
-
+pub mod shape;
 use crate::constants::*;
 
 pub struct MiroConfig {
@@ -63,7 +63,23 @@ pub enum MiroItemType {
     Text,
 }
 
-pub enum MiroStickyNoteColors {
+impl MiroItemType {
+    fn str_item_type(&self) -> Result<String, String> {
+        match self {
+            MiroItemType::AppCard => Ok("app_card".to_string()),
+            MiroItemType::Card => Ok("card".to_string()),
+            MiroItemType::Document => Ok("document".to_string()),
+            MiroItemType::Embed => Ok("embed".to_string()),
+            MiroItemType::Frame => Ok("frame".to_string()),
+            MiroItemType::Image => Ok("image".to_string()),
+            MiroItemType::Shape => Ok("shape".to_string()),
+            MiroItemType::StickyNote => Ok("sticky_note".to_string()),
+            MiroItemType::Text => Ok("text".to_string()),
+        }
+    }
+}
+
+pub enum MiroColors {
     // Gray,
     // LightYellow,
     // Yellow,
@@ -82,7 +98,7 @@ pub enum MiroStickyNoteColors {
     Black,
 }
 
-impl MiroStickyNoteColors {
+impl MiroColors {
     pub fn to_string(&self) -> &str {
         match self {
             // MiroStickyNoteColors::Gray => "gray",
@@ -90,17 +106,17 @@ impl MiroStickyNoteColors {
             // MiroStickyNoteColors::Yellow => "yellow",
             // MiroStickyNoteColors::Orange => "orange",
             // MiroStickyNoteColors::LightGreen => "light_green",
-            MiroStickyNoteColors::Green => "green",
-            MiroStickyNoteColors::DarkGreen => "dark_green",
-            MiroStickyNoteColors::Cyan => "cyan",
-            MiroStickyNoteColors::LightPink => "light_pink",
-            MiroStickyNoteColors::Pink => "pink",
-            MiroStickyNoteColors::Violet => "violet",
-            MiroStickyNoteColors::Red => "red",
-            MiroStickyNoteColors::LightBlue => "light_blue",
-            MiroStickyNoteColors::Blue => "blue",
-            MiroStickyNoteColors::DarkBlue => "dark_blue",
-            MiroStickyNoteColors::Black => "black",
+            MiroColors::Green => "green",
+            MiroColors::DarkGreen => "dark_green",
+            MiroColors::Cyan => "cyan",
+            MiroColors::LightPink => "light_pink",
+            MiroColors::Pink => "pink",
+            MiroColors::Violet => "violet",
+            MiroColors::Red => "red",
+            MiroColors::LightBlue => "light_blue",
+            MiroColors::Blue => "blue",
+            MiroColors::DarkBlue => "dark_blue",
+            MiroColors::Black => "black",
         }
     }
 
@@ -123,22 +139,6 @@ impl MiroStickyNoteColors {
             "dark_blue".to_string(),
             "black".to_string(),
         ]
-    }
-}
-
-impl MiroItemType {
-    fn str_item_type(&self) -> Result<String, String> {
-        match self {
-            MiroItemType::AppCard => Ok("app_card".to_string()),
-            MiroItemType::Card => Ok("card".to_string()),
-            MiroItemType::Document => Ok("document".to_string()),
-            MiroItemType::Embed => Ok("embed".to_string()),
-            MiroItemType::Frame => Ok("frame".to_string()),
-            MiroItemType::Image => Ok("image".to_string()),
-            MiroItemType::Shape => Ok("shape".to_string()),
-            MiroItemType::StickyNote => Ok("sticky_note".to_string()),
-            MiroItemType::Text => Ok("text".to_string()),
-        }
     }
 }
 
@@ -450,6 +450,64 @@ pub mod api {
             id
         }
     }
+
+    pub mod shape {
+        use super::{helpers::get_id_from_response, *};
+
+        // uploads the image in file_path to the board
+        pub async fn create_shape(
+            x_position: i32,
+            y_position: i32,
+            miro_frame_id: String,
+            width: i32,
+            height: i32,
+            content: String,
+        ) -> Result<String, String> {
+            let MiroConfig {
+                access_token,
+                board_id,
+                ..
+            } = MiroConfig::new();
+            let client = reqwest::Client::new();
+            let response = client
+                .post(format!("https://api.miro.com/v2/boards/{board_id}/shapes",))
+                .body(
+                    json!({
+                        "data": {
+                            "content": content,
+                            "shape": "rectangle"
+                       },
+                       "style": {
+                            "fontFamily": "arial",
+                            "fontSize": "40",
+                            "textAlign": "center",
+                            "textAlignVertical": "middle"
+                       },
+                       "position": {
+                            "origin": "center",
+                            "x": x_position,
+                            "y": y_position
+                       },
+                       "geometry": {
+                        "height": height,
+                        "width": width
+                       },
+                       "parent": {
+                            "id": miro_frame_id
+                       }
+                    })
+                    .to_string(),
+                )
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .send()
+                .await
+                .unwrap();
+            let id = get_id_from_response(response).await;
+            Ok(id)
+        }
+    }
+
     pub mod item {
         use super::*;
 
@@ -784,8 +842,8 @@ pub mod api {
 
         use super::*;
         pub async fn get_id_from_response(response: reqwest::Response) -> String {
-            let respons_string = response.text().await.unwrap();
-            let response: Value = serde_json::from_str(&&respons_string.as_str()).unwrap();
+            let response_string = response.text().await.unwrap();
+            let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
             response["id"].to_string().replace("\"", "")
         }
         pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> Result<String, String> {
@@ -816,11 +874,16 @@ pub mod api {
 }
 
 pub mod commands {
-    use super::*;
+    use super::{
+        shape::{MiroShape, MiroShapeStyle},
+        *,
+    };
     use colored::Colorize;
 
     use crate::{
-        commands::miro::api::connector::ConnectorOptions,
+        commands::{
+            entrypoints::entrypoints::get_entrypoints_names, miro::api::connector::ConnectorOptions,
+        },
         structs::{SignerInfo, SignerType},
         utils::{
             self,
@@ -1158,7 +1221,47 @@ pub mod commands {
         Ok(())
     }
 
-    mod helpers {
+    pub async fn deploy_entrypoints() -> Result<(), String> {
+        // get entrypoints name
+        let entrypoints_names = get_entrypoints_names()?;
+        // get entrypoint miro frame url
+        let prompt_text = format!("Please enter the {}", "entrypoints frame url".green());
+        let entrypoints_frame_url = utils::cli_inputs::input(&prompt_text)?;
+        let miro_frame_id = helpers::get_item_id_from_miro_url(&entrypoints_frame_url);
+
+        for (entrypoint_name_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
+            // example
+            let columns = 5;
+            let initial_x_position = 372;
+            let initial_y_position = 243;
+            let entrypoint_width = 374;
+            let entrypoint_height = 164;
+            let x_offset = 40;
+            let y_offset = 40;
+            let x_position = initial_x_position
+                + (x_offset + initial_x_position) * (entrypoint_name_index as i32 % columns);
+            let y_position = initial_y_position
+                + (y_offset + initial_y_position) * (entrypoint_name_index as i32 / columns);
+            let miro_shape = MiroShape::new(
+                x_position,
+                y_position,
+                entrypoint_width,
+                entrypoint_height,
+                entrypoint_name.to_string(),
+            );
+            let miro_shape_style = MiroShapeStyle::new_from_hex_fill_color("#cee741");
+            miro_shape
+                .create_shape_in_frame(miro_shape_style, &miro_frame_id)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub mod helpers {
+        use std::collections::HashMap;
+
+        use reqwest::Url;
+
         use super::*;
         pub async fn get_accounts_frame_id() -> Result<String, String> {
             let response = super::api::item::get_items_on_board(Some(MiroItemType::Frame)).await?;
@@ -1365,5 +1468,22 @@ pub mod commands {
                 Err(_) => false,
             }
         }
+
+        pub fn get_item_id_from_miro_url(miro_url: &str) -> String {
+            // example https://miro.com/app/board/uXjVP7aqTzc=/?moveToWidget=3458764541840480526&cot=14
+            let frame_id = Url::parse(miro_url).unwrap();
+            let hash_query: HashMap<_, _> = frame_id.query_pairs().into_owned().collect();
+            hash_query.get("moveToWidget").unwrap().to_owned()
+        }
     }
+}
+
+#[test]
+
+fn test_get_miro_item_id_from_url() {
+    let miro_url =
+        "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544363318703&cot=14";
+    let item_id = commands::helpers::get_item_id_from_miro_url(miro_url);
+    println!("item id: {}", item_id);
+    assert_eq!(item_id, "3458764541840480526".to_string())
 }
