@@ -3,7 +3,7 @@ use crate::commands::metadata::miro_helpers::{
     get_miro_accounts_subsection_content_string, get_miro_section_content_string,
 };
 use crate::commands::metadata::structs::structs_helpers;
-use crate::commands::miro::{MiroConfig, MiroStickyNoteColors};
+use crate::commands::miro::{MiroColors, MiroConfig};
 
 use crate::constants::{
     MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE,
@@ -258,7 +258,7 @@ pub async fn update_miro() -> Result<(), String> {
             StructMetadataType::Account,
         ))?;
         // get colors
-        let mut miro_stickynote_colors = MiroStickyNoteColors::get_colors_vec();
+        let mut miro_stickynote_colors = MiroColors::get_colors_vec();
         let mut miro_metadata_vec: Vec<MiroAccountMetadata> = vec![];
         for struct_name in accounts_structs_names {
             let prompt_text = format!("Please select the color for {}:", struct_name.yellow());

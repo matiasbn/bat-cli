@@ -73,6 +73,8 @@ enum MiroActions {
     Images,
     /// Creates or updates the Accounts frame
     Accounts,
+    /// Creates or updates the Entrypoints frame
+    Entrypoints,
 }
 #[derive(Subcommand, Debug)]
 enum TMActions {
@@ -153,6 +155,9 @@ async fn main() {
         Commands::Miro(MiroActions::Accounts) => {
             commands::miro::commands::deploy_accounts().await.unwrap()
         }
+        Commands::Miro(MiroActions::Entrypoints) => commands::miro::commands::deploy_entrypoints()
+            .await
+            .unwrap(),
         Commands::Metadata(MetadataActions::Structs) => {
             commands::metadata::update_structs().unwrap()
         }
