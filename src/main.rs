@@ -168,7 +168,9 @@ async fn main() {
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding().unwrap(),
-        Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all().unwrap(),
+        Commands::Finding(FindingActions::PrepareAll) => {
+            commands::finding::prepare_all(true).unwrap()
+        }
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),

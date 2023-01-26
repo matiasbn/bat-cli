@@ -50,6 +50,7 @@ pub enum GitCommit {
         auditor_figures_folder_path: String,
     },
     PrepareAllFinding,
+    AcceptAllFinding,
     UpdateRepo,
     Notes,
     Results,
@@ -192,7 +193,7 @@ pub fn create_git_commit(
         } => {
             let commit_string = format!("finding: {finding_name} finished");
             println!(
-                "finding file finished with commit: \"{}\"",
+                "finding file finished with commit: {}",
                 commit_string.green()
             );
             (
@@ -207,7 +208,7 @@ pub fn create_git_commit(
         } => {
             let commit_string = format!("finding: {finding_name} updated");
             println!(
-                "finding file udpated with commit: \"{}\"",
+                "finding file udpated with commit: {}",
                 commit_string.green()
             );
 
@@ -222,6 +223,18 @@ pub fn create_git_commit(
             let file_to_add_path =
                 utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
             (commit_string, vec![file_to_add_path])
+        }
+        GitCommit::AcceptAllFinding => {
+            let commit_string = "finding: findings moved to the accepted folder".to_string();
+            println!(
+                "All findings moved to the accepted folder with commit: {}",
+                commit_string.green()
+            );
+            let accepted_path =
+                utils::path::get_folder_path(FolderPathType::FindingsAccepted, true);
+            let to_review_path =
+                utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+            (commit_string, vec![accepted_path, to_review_path])
         }
         GitCommit::UpdateRepo => {
             let commit_string = "repo: templates and package.json update".to_string();

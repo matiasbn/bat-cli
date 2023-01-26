@@ -14,12 +14,13 @@ use crate::{
     utils::{
         self,
         git::{create_git_commit, GitCommit},
+        helpers::get::get_only_files_from_folder,
         path::{FilePathType, FolderPathType},
     },
 };
 
 pub fn reject() -> Result<(), String> {
-    prepare_all()?;
+    prepare_all(true)?;
     println!("Select the finding file to reject:");
     let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // get to-review files
@@ -55,23 +56,20 @@ pub fn reject() -> Result<(), String> {
 }
 
 pub fn accept_all() -> Result<(), String> {
-    prepare_all()?;
+    prepare_all(false)?;
     // let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
     let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // let accepted_path = utils::path::get_auditor_findings_accepted_path(None)?;
     let accepted_path = utils::path::get_folder_path(FolderPathType::FindingsAccepted, true);
-    for file_result in fs::read_dir(&to_review_path).unwrap() {
-        let file_name = file_result.unwrap().file_name();
-        if file_name != ".gitkeep" {
-            Command::new("mv")
-                .args([
-                    to_review_path.clone() + file_name.to_str().unwrap(),
-                    accepted_path.clone(),
-                ])
-                .output()
-                .unwrap();
-        }
+    let findings_to_review_files_info = get_only_files_from_folder(to_review_path)?;
+    for to_review_file in findings_to_review_files_info {
+        let mut output = Command::new("mv")
+            .args([to_review_file.path, accepted_path.clone()])
+            .spawn()
+            .unwrap();
+        output.wait().unwrap();
     }
+    create_git_commit(GitCommit::AcceptAllFinding, None)?;
     println!(
         "All findings has been moved to the {} folder",
         "accepted".green()
@@ -168,7 +166,7 @@ pub fn update_finding() -> Result<(), String> {
     Ok(())
 }
 
-pub fn prepare_all() -> Result<(), String> {
+pub fn prepare_all(create_commit: bool) -> Result<(), String> {
     let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
@@ -228,7 +226,9 @@ pub fn prepare_all() -> Result<(), String> {
             }
         }
     }
-    create_git_commit(GitCommit::PrepareAllFinding, None)?;
+    if create_commit {
+        create_git_commit(GitCommit::PrepareAllFinding, None)?;
+    }
     println!("All to-review findings severity tags updated");
     Ok(())
 }
