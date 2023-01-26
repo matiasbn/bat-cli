@@ -3,7 +3,7 @@ use std::{process::Command, str};
 use colored::Colorize;
 
 use crate::{
-    command_line::execute_command,
+    command_line::deprecated_execute_command,
     config::BatConfig,
     constants::{self, AUDIT_RESULT_FILE_NAME, BASE_REPOSTORY_URL},
     utils::{self, path::FilePathType},
@@ -274,7 +274,7 @@ pub fn create_git_commit(
             // let audit_result_path = utils::path::get_audit_folder_path(Some(
             //     constants::AUDIT_RESULT_FILE_NAME.to_string(),
             // ))?;
-            let audit_result_path = utils::path::get_file_path(FilePathType::AuditResults, true);
+            let audit_result_path = utils::path::get_file_path(FilePathType::AuditResult, true);
             let commit_string = format!("notes: {} updated", AUDIT_RESULT_FILE_NAME);
             (commit_string, vec![audit_result_path])
         }
@@ -360,7 +360,7 @@ pub fn git_push() -> Result<(), String> {
 
 // returns false if there are files to commit
 pub fn check_files_not_commited() -> Result<bool, String> {
-    let output = execute_command(
+    let output = deprecated_execute_command(
         "git".to_string(),
         vec!["status", "--porcelain"],
         "error running git status".to_string(),

@@ -2,7 +2,7 @@
 
 use std::{path::Path, process::Command, str::from_utf8};
 
-use crate::config::BatConfig;
+use crate::{config::BatConfig, utils::bash::execute_command_to_stdio};
 
 pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), String> {
     let vs_code_integration = BatConfig::get_validated_config()?
@@ -13,15 +13,12 @@ pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), Str
             "Opening {} in VS Code",
             path_to_file.split("/").last().unwrap()
         );
-        let command_name = "code".to_string();
-        let command_args = vec!["-a", path_to_file];
-        let error_message = "git commit creation failed with error".to_string();
-        execute_command(command_name, command_args, error_message)?;
+        execute_command_to_stdio("code", &["-a", path_to_file]).unwrap();
     }
     Ok(())
 }
 
-pub fn execute_command(
+pub fn deprecated_execute_command(
     command_name: String,
     command_args: Vec<&str>,
     error_message: String,

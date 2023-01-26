@@ -364,7 +364,7 @@ pub async fn open_co() -> Result<(), String> {
 }
 
 pub fn update_audit_results() -> Result<(), String> {
-    let audit_file_path = utils::path::get_file_path(FilePathType::AuditResults, true);
+    let audit_file_path = utils::path::get_file_path(FilePathType::AuditResult, true);
     let finished_co_files = get_finished_co_files()?;
     let finished_co_audit_information = get_finished_co_files_info_for_results(finished_co_files)?;
     let mut final_result: Vec<String> = vec!["\n# Code overhaul\n".to_string()];

@@ -166,7 +166,7 @@ pub fn update_finding() -> Result<(), String> {
     Ok(())
 }
 
-pub fn prepare_all(create_commit: bool) -> Result<(), String> {
+fn prepare_all(create_commit: bool) -> Result<(), String> {
     let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
