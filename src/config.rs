@@ -114,9 +114,4 @@ impl BatConfig {
         }
         Ok(())
     }
-
-    pub fn get_auditor_name() -> Result<String, String> {
-        let auditor_name = Self::get_validated_config()?.auditor.auditor_name;
-        Ok(auditor_name)
-    }
 }

@@ -2,6 +2,7 @@ use std::fs::{self};
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::from_utf8;
 use std::string::String;
 
 use colored::Colorize;
@@ -19,6 +20,7 @@ use crate::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
 use crate::utils;
+use crate::utils::bash::execute_command_to_stdio;
 use crate::utils::git::GitCommit;
 use crate::utils::path::{FilePathType, FolderPathType};
 
@@ -35,8 +37,13 @@ pub fn initialize_bat_project() -> Result<(), String> {
     // if auditor.auditor is empty, prompt name
     println!("creating project for the next config: ");
     println!("{:#?}", bat_config);
-
-    if !Path::new(".git").is_dir() {
+    let output = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+        .unwrap()
+        .stdout;
+    let git_initialized: bool = from_utf8(&output).unwrap() == "true";
+    if !git_initialized {
         println!("Initializing project repository");
         initialize_project_repository()?;
         println!("Project repository successfully initialized");
@@ -287,7 +294,6 @@ fn create_auditor_notes_folder() -> Result<(), String> {
 
 fn initialize_code_overhaul_files() -> Result<(), String> {
     let entrypoints_names = get_entrypoints_names()?;
-    println!("entry {:#?}", entrypoints_names);
 
     for entrypoint_name in entrypoints_names {
         create_overhaul_file(entrypoint_name.clone())?;
