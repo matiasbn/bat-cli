@@ -9,7 +9,7 @@ use crate::{
     utils::{self, path::FilePathType},
 };
 
-use super::path::FolderPathType;
+use super::{bash::execute_command_to_stdio, path::FolderPathType};
 
 // Git
 pub fn get_branch_name() -> Result<String, String> {
@@ -293,27 +293,9 @@ pub fn create_git_commit(
     };
 
     for commit_file in commit_files_path {
-        let output = Command::new("git")
-            .args(["add", commit_file.as_str()])
-            .output()
-            .unwrap();
-        if !output.stderr.is_empty() {
-            panic!(
-                "git commit creation failed with error: {:?}",
-                std::str::from_utf8(output.stderr.as_slice()).unwrap()
-            )
-        };
+        execute_command_to_stdio("git", &["add", commit_file.as_str()]).unwrap();
     }
-    let output = Command::new("git")
-        .args(["commit", "-m", commit_message.as_str()])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "git commit creation failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command_to_stdio("git", &["commit", "-m", commit_message.as_str()]).unwrap();
     Ok(())
 }
 
