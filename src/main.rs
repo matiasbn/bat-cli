@@ -62,6 +62,8 @@ enum ResultActions {
     CodeOverhaul,
     /// Updates the Findings section of the audit_result.md file
     Findings,
+    /// Creates the commit for the results files
+    Commit,
 }
 #[derive(Subcommand, Debug)]
 enum MetadataActions {
@@ -179,6 +181,7 @@ async fn main() {
         Commands::Update => commands::update::update_repository().unwrap(),
         Commands::Notes => utils::git::create_git_commit(GitCommit::Notes, None).unwrap(),
         Commands::Result(ResultActions::Findings) => commands::result::findings_result().unwrap(),
+        Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Format) => package::format().unwrap(),

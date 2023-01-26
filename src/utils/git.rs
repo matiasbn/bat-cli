@@ -53,7 +53,7 @@ pub enum GitCommit {
     AcceptAllFinding,
     UpdateRepo,
     Notes,
-    Results,
+    AuditResult,
     TMAccounts,
     UpdateMetadata,
 }
@@ -266,17 +266,17 @@ pub fn create_git_commit(
                 ],
             )
         }
-        GitCommit::Results => {
-            println!(
-                "Creating a commit for {}",
-                constants::AUDIT_RESULT_FILE_NAME
-            );
-            // let audit_result_path = utils::path::get_audit_folder_path(Some(
-            //     constants::AUDIT_RESULT_FILE_NAME.to_string(),
-            // ))?;
-            let audit_result_path = utils::path::get_file_path(FilePathType::AuditResult, true);
-            let commit_string = format!("notes: {} updated", AUDIT_RESULT_FILE_NAME);
-            (commit_string, vec![audit_result_path])
+        GitCommit::AuditResult => {
+            println!("Creating a commit for {}", "audit_result".green());
+            let audit_result_folder_path =
+                utils::path::get_folder_path(FolderPathType::AuditResult, true);
+            let audit_result_file_path =
+                utils::path::get_file_path(FilePathType::AuditResult, true);
+            let commit_string = format!("notes: audit_result updated");
+            (
+                commit_string,
+                vec![audit_result_file_path, audit_result_folder_path],
+            )
         }
         GitCommit::TMAccounts => {
             println!("Creating a commit for threat_modeling.md");

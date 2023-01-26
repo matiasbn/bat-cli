@@ -7,8 +7,9 @@ use crate::{
     utils::{
         self,
         bash::execute_command_to_stdio,
+        git::{create_git_commit, GitCommit},
         helpers::get::get_only_files_from_folder,
-        path::{get_file_path, get_folder_path, FolderPathType},
+        path::{get_file_path, get_folder_path, FilePathType, FolderPathType},
     },
 };
 
@@ -55,8 +56,8 @@ impl Finding {
     }
 
     pub fn new_from_str(finding_content: &str, index: usize) -> Self {
-        let (code, title, severity_str, status) = Self::parse_finding_data(&finding_content);
         let content = Self::format_finding_content_header_with_finding_code(finding_content, index);
+        let (code, title, severity_str, status) = Self::parse_finding_data(&content);
         let severity = FindingSeverity::from_str(&severity_str);
         Finding {
             code,
@@ -221,12 +222,25 @@ pub fn findings_result() -> Result<(), String> {
     fs::write(&findings_result_file_path, audit_folder_content).unwrap();
     // remove temp folder
     execute_command_to_stdio("rm", &["-rf", &audit_result_temp_path]).unwrap();
+    let audit_result_file_path = get_file_path(FilePathType::AuditResult, true);
     vs_code_open_file_in_current_window(&findings_result_file_path)?;
+    vs_code_open_file_in_current_window(&audit_result_file_path)?;
+
+    let prompt_text = "Do you want to create the commit already?";
+    let user_decided_to_create_commit = utils::cli_inputs::select_yes_or_no(prompt_text)?;
+    if user_decided_to_create_commit {
+        create_git_commit(GitCommit::AuditResult, None)?;
+    }
+    Ok(())
+}
+
+pub fn results_commit() -> Result<(), String> {
+    create_git_commit(GitCommit::AuditResult, None)?;
     Ok(())
 }
 
 mod helpers {
-    use crate::utils::{helpers::get::get_string_between_two_str_from_path, path::FilePathType};
+    use crate::utils::helpers::get::get_string_between_two_str_from_path;
 
     use super::*;
 
@@ -238,7 +252,6 @@ mod helpers {
             RESULT_FINDINGS_SECTION_HEADER,
             RESULT_CODE_OVERHAUL_SECTION_HEADER,
         )?;
-        println!("{}", findings_result_content);
         let updated_content = audit_result_content.replace(&findings_result_content, root_content);
         fs::write(audit_result_file_path, updated_content).unwrap();
         Ok(())

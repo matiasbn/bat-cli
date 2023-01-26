@@ -397,6 +397,6 @@ pub fn update_audit_results() -> Result<(), String> {
             .as_str(),
     )
     .unwrap();
-    create_git_commit(GitCommit::Results, None)?;
+    create_git_commit(GitCommit::AuditResult, None)?;
     Ok(())
 }
