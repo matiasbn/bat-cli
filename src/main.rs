@@ -61,7 +61,11 @@ enum ResultActions {
     /// Updates the Code Overhaul section of the audit_result.md file
     CodeOverhaul,
     /// Updates the Findings section of the audit_result.md file
-    Findings,
+    Findings {
+        /// updates the result, formatting with html structure
+        #[arg(long)]
+        html: bool,
+    },
     /// Creates the commit for the results files
     Commit,
 }
@@ -180,7 +184,9 @@ async fn main() {
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
         Commands::Notes => utils::git::create_git_commit(GitCommit::Notes, None).unwrap(),
-        Commands::Result(ResultActions::Findings) => commands::result::findings_result().unwrap(),
+        Commands::Result(ResultActions::Findings { html }) => {
+            commands::result::findings_result(html).unwrap()
+        }
         Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
