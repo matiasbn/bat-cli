@@ -3,13 +3,13 @@ use std::{process::Command, str};
 use colored::Colorize;
 
 use crate::{
-    command_line::execute_command,
+    command_line::deprecated_execute_command,
     config::BatConfig,
     constants::{self, AUDIT_RESULT_FILE_NAME, BASE_REPOSTORY_URL},
     utils::{self, path::FilePathType},
 };
 
-use super::path::FolderPathType;
+use super::{bash::execute_command_to_stdio, path::FolderPathType};
 
 // Git
 pub fn get_branch_name() -> Result<String, String> {
@@ -53,7 +53,7 @@ pub enum GitCommit {
     AcceptAllFinding,
     UpdateRepo,
     Notes,
-    Results,
+    AuditResult,
     TMAccounts,
     UpdateMetadata,
 }
@@ -266,17 +266,17 @@ pub fn create_git_commit(
                 ],
             )
         }
-        GitCommit::Results => {
-            println!(
-                "Creating a commit for {}",
-                constants::AUDIT_RESULT_FILE_NAME
-            );
-            // let audit_result_path = utils::path::get_audit_folder_path(Some(
-            //     constants::AUDIT_RESULT_FILE_NAME.to_string(),
-            // ))?;
-            let audit_result_path = utils::path::get_file_path(FilePathType::AuditResults, true);
-            let commit_string = format!("notes: {} updated", AUDIT_RESULT_FILE_NAME);
-            (commit_string, vec![audit_result_path])
+        GitCommit::AuditResult => {
+            println!("Creating a commit for {}", "audit_result".green());
+            let audit_result_folder_path =
+                utils::path::get_folder_path(FolderPathType::AuditResult, true);
+            let audit_result_file_path =
+                utils::path::get_file_path(FilePathType::AuditResult, true);
+            let commit_string = format!("notes: audit_result updated");
+            (
+                commit_string,
+                vec![audit_result_file_path, audit_result_folder_path],
+            )
         }
         GitCommit::TMAccounts => {
             println!("Creating a commit for threat_modeling.md");
@@ -293,27 +293,9 @@ pub fn create_git_commit(
     };
 
     for commit_file in commit_files_path {
-        let output = Command::new("git")
-            .args(["add", commit_file.as_str()])
-            .output()
-            .unwrap();
-        if !output.stderr.is_empty() {
-            panic!(
-                "git commit creation failed with error: {:?}",
-                std::str::from_utf8(output.stderr.as_slice()).unwrap()
-            )
-        };
+        execute_command_to_stdio("git", &["add", commit_file.as_str()]).unwrap();
     }
-    let output = Command::new("git")
-        .args(["commit", "-m", commit_message.as_str()])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "git commit creation failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command_to_stdio("git", &["commit", "-m", commit_message.as_str()]).unwrap();
     Ok(())
 }
 
@@ -360,7 +342,7 @@ pub fn git_push() -> Result<(), String> {
 
 // returns false if there are files to commit
 pub fn check_files_not_commited() -> Result<bool, String> {
-    let output = execute_command(
+    let output = deprecated_execute_command(
         "git".to_string(),
         vec!["status", "--porcelain"],
         "error running git status".to_string(),
