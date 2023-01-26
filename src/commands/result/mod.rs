@@ -14,8 +14,10 @@ use crate::{
 };
 
 pub const FINDING_CODE_PREFIX: &str = "KS";
-pub const RESULT_FINDINGS_SECTION_HEADER: &str = "## Findings result";
-pub const RESULT_CODE_OVERHAUL_SECTION_HEADER: &str = "## Code overhaul result";
+pub const RESULT_FINDINGS_SECTION_HEADER: &str = "# Findings result";
+pub const RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER: &str = "## Table of findings";
+pub const RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER: &str = "## List of Findings";
+pub const RESULT_CODE_OVERHAUL_SECTION_HEADER: &str = "# Code overhaul result";
 
 #[derive(PartialEq, Debug, Clone)]
 enum FindingSeverity {
@@ -190,9 +192,11 @@ pub fn findings_result() -> Result<(), String> {
     execute_command_to_stdio("touch", &[&findings_result_file_path]).unwrap();
     // create new findings_result.md file
     let findings_temp_files = get_only_files_from_folder(audit_result_temp_path.clone())?;
-    let mut table_of_findings: String = format!("{RESULT_FINDINGS_SECTION_HEADER}\n\n### Table of findings\n|#|Severity|Description|Status|\n| :---: | :------: | :----------: | :------------: |");
-    let mut subfolder_findings_content: String = "\n### List of Findings\n\n".to_string();
-    let mut root_findings_content: String = "\n### List of Findings\n\n".to_string();
+    let mut table_of_findings: String = format!("{RESULT_FINDINGS_SECTION_HEADER}\n\n{RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER}\n|#|Severity|Description|Status|\n| :---: | :------: | :----------: | :------------: |");
+    let mut subfolder_findings_content: String =
+        format!("\n{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER}\n\n");
+    let mut root_findings_content: String =
+        format!("\n{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER}\n\n");
     for (finding_file_index, finding_file) in findings_temp_files.into_iter().enumerate() {
         // for every finding file, replace the figures path
         let finding = Finding::new_from_path(&finding_file.path, finding_file_index);
