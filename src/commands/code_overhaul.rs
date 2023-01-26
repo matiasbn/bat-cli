@@ -311,32 +311,50 @@ pub async fn open_co() -> Result<(), String> {
     } = BatConfig::get_validated_config()?;
     // list to start
     if auditor.vs_code_integration {
-        let started_co_folder_path =
-            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
-        let co_files = utils::helpers::get::get_only_files_from_folder(started_co_folder_path)?;
+        let options = vec!["started".green(), "finished".yellow()];
+        let prompt_text = format!(
+            "Do you want to open a {} or a {} file?",
+            options[0], options[1]
+        );
+        let selection = utils::cli_inputs::select(&prompt_text, options.clone(), None)?;
+        let open_started = selection == 0;
+        let folder_path = if open_started {
+            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true)
+        } else {
+            utils::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true)
+        };
+        let co_files = utils::helpers::get::get_only_files_from_folder(folder_path)?;
         let co_files = co_files
             .iter()
             .filter(|f| f.name != ".gitkeep")
+            .map(|f| f.name.clone())
             .collect::<Vec<_>>();
         if !co_files.is_empty() {
-            let started_entrypoints = utils::helpers::get::get_started_entrypoints()?;
             let prompt_text = "Select the code-overhaul file to open:";
-            let selection =
-                utils::cli_inputs::select(prompt_text, started_entrypoints.clone(), None)?;
-            let started_file_name = &started_entrypoints[selection].clone();
-            let started_file_path = utils::path::get_file_path(
-                FilePathType::CodeOverhaulStarted {
-                    file_name: started_file_name.clone(),
-                },
-                true,
-            );
+            let selection = utils::cli_inputs::select(prompt_text, co_files.clone(), None)?;
+            let file_name = &co_files[selection].clone();
+            let co_file_path = if open_started {
+                utils::path::get_file_path(
+                    FilePathType::CodeOverhaulStarted {
+                        file_name: file_name.clone(),
+                    },
+                    true,
+                )
+            } else {
+                utils::path::get_file_path(
+                    FilePathType::CodeOverhaulFinished {
+                        file_name: file_name.clone(),
+                    },
+                    true,
+                )
+            };
             let instruction_file_path =
-                utils::path::get_instruction_file_path_from_started_entrypoint_co_file(
-                    started_file_name.to_string(),
-                )?;
+                utils::path::get_instruction_file_path_from_co_file_path(co_file_path.clone())?;
 
-            vs_code_open_file_in_current_window(&started_file_path)?;
+            vs_code_open_file_in_current_window(&co_file_path)?;
             vs_code_open_file_in_current_window(&instruction_file_path)?;
+        } else {
+            println!("Empty {} folder", options[selection].clone());
         }
         vs_code_open_file_in_current_window(&required.program_lib_path)?;
     } else {

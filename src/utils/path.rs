@@ -165,7 +165,7 @@ fn canonicalize_path(path_to_canonicalize: String) -> String {
     canonicalized_path
 }
 
-pub fn get_instruction_file_path_from_started_entrypoint_co_file(
+pub fn get_instruction_file_path_from_started_co_file(
     entrypoint_name: String,
 ) -> Result<String, String> {
     let co_file_path = get_file_path(
@@ -187,6 +187,24 @@ pub fn get_instruction_file_path_from_started_entrypoint_co_file(
         .expect(&format!(
             "co file of {} does not contain the instruction path yet",
             entrypoint_name,
+        ))
+        .to_string();
+    Ok(instruction_file_path)
+}
+pub fn get_instruction_file_path_from_co_file_path(co_file_path: String) -> Result<String, String> {
+    let program_path = BatConfig::get_validated_config()?
+        .required
+        .program_lib_path
+        .replace("/lib.rs", "")
+        .replace("../", "");
+    let file_string = fs::read_to_string(co_file_path.clone()).unwrap();
+    let instruction_file_path = file_string
+        .lines()
+        .into_iter()
+        .find(|f| f.contains(&program_path))
+        .expect(&format!(
+            "co file of {} does not contain the instruction path yet",
+            co_file_path,
         ))
         .to_string();
     Ok(instruction_file_path)
