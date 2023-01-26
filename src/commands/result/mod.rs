@@ -137,7 +137,7 @@ impl Finding {
     }
 
     pub fn parse_finding_content_for_root_path(&self) -> String {
-        let audit_result_figures_path = get_folder_path(FolderPathType::AuditResultFigures, true);
+        let audit_result_figures_path = get_folder_path(FolderPathType::AuditResultFigures, false);
         self.content
             .replace("../../figures", &audit_result_figures_path)
     }
