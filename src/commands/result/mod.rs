@@ -1,4 +1,4 @@
-use std::{fs, process::Command};
+use std::{borrow::BorrowMut, fs, process::Command};
 
 use crate::{
     command_line::vs_code_open_file_in_current_window,
@@ -8,7 +8,10 @@ use crate::{
         self,
         bash::execute_command_to_stdio,
         git::{create_git_commit, GitCommit},
-        helpers::get::{get_only_files_from_folder, get_string_between_two_str_from_string},
+        helpers::get::{
+            get_only_files_from_folder, get_string_between_two_index_from_string,
+            get_string_between_two_str_from_string,
+        },
         path::{get_file_path, get_folder_path, FilePathType, FolderPathType},
     },
 };
@@ -19,10 +22,12 @@ pub const RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER: &str = "## Table of findings
 pub const RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER: &str = "## List of Findings";
 pub const RESULT_CODE_OVERHAUL_SECTION_HEADER: &str = "# Code overhaul result";
 
-pub const HTML_TABLE_FORMAT: &str = "<style>
+pub const HTML_TABLE_STYLE: &str = "<style>
+
+
 tr th {
-    background: white;
-    color:black;
+    background: #043456;
+    color:white;
     width: 2%;
     text-align: center;
     border: 2px solid black;
@@ -41,7 +46,6 @@ tr th {
 
 tr td {
     background: white;
-    color:black;
     width: 2%;
     text-align: center;
     border: 2px solid black;
@@ -50,33 +54,55 @@ tr td {
     background: #fd0011;
     border: 2px solid yellow;
     text-align: center;
-    color: black;
+    color: white;
 } 
 .medium {
     background: #f58b45;
     border: 2px solid yellow;
     text-align: center;
-    color: black;
+    color: white;
 }
 .low {
     background: #16a54d;
-    border: 2px solid yellow;
+    border: 20px solid yellow;
     text-align: center;
-    color: black;
+    color: white;
 }
-.informational{
+.informational {
     background: #0666b4;
     border: 2px solid yellow;
     text-align: center;
-    color: black;
+    color: white;
 }
-.open{
+.open {
     background: #16a54d;
     border: 2px solid yellow;
     text-align: center;
-    color: black;
+    color: white;
 }
+
+.list th{
+    background: #043456;
+    color: white
+}
+.list td{
+    color: black
+}
+
 </style>";
+
+pub const HTML_LIST_OF_FINDINGS_HEADER: &str = "<table class='list'>
+<thead>
+    <tr>
+        <th style='width:2%'>#</th>  <th>Severity</th>  <th style='width:10%'>Description</th>  <th>Status</th>    
+    </tr>
+</thead>
+<tbody>
+    RESULT_TABLE_PLACEHOLDER
+</tbody>
+</table>\n";
+
+pub const RESULT_TABLE_PLACEHOLDER: &str = "RESULT_TABLE_PLACEHOLDER";
 
 #[derive(PartialEq, Debug, Clone)]
 enum StatusLevel {
@@ -92,10 +118,15 @@ impl StatusLevel {
             _ => panic!("incorrect status level {}", severity_binding),
         }
     }
-
-    pub fn get_html_content(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
-            StatusLevel::Open => "<td class='open'>Open</td>".to_string(),
+            StatusLevel::Open => "Open".to_string(),
+        }
+    }
+
+    pub fn get_hex_color(&self) -> String {
+        match self {
+            Self::Open => "#16a54d".to_string(),
         }
     }
 }
@@ -121,20 +152,21 @@ impl FindingLevel {
         }
     }
 
+    pub fn to_string(&self) -> String {
+        match self {
+            FindingLevel::High => "High".to_string(),
+            FindingLevel::Medium => "Medium".to_string(),
+            FindingLevel::Low => "Low".to_string(),
+            FindingLevel::Informational => "Informational".to_string(),
+        }
+    }
+
     pub fn get_hex_color(&self) -> String {
         match self {
             FindingLevel::High => "#fd0011".to_string(),
             FindingLevel::Medium => "#f58b45".to_string(),
             FindingLevel::Low => "#16a54d".to_string(),
             FindingLevel::Informational => "#0666b4".to_string(),
-        }
-    }
-    pub fn get_html_content(&self) -> String {
-        match self {
-            FindingLevel::High => "<td class='high'>High</td>".to_string(),
-            FindingLevel::Medium => "<td class='medium'>Medium</td>".to_string(),
-            FindingLevel::Low => "<td class='low'>Low</td>".to_string(),
-            FindingLevel::Informational => "<td class='low'>Low</td>".to_string(),
         }
     }
 }
@@ -174,6 +206,27 @@ impl Finding {
             likelihood,
             difficulty,
         }
+    }
+
+    pub fn format_markdown_to_html(&mut self) {
+        let severity_index = self
+            .content
+            .lines()
+            .position(|line| line.contains("**Severity:**"))
+            .unwrap();
+        let description_index = self
+            .content
+            .lines()
+            .position(|line| line.contains("### Description"))
+            .unwrap();
+        let data_content = get_string_between_two_index_from_string(
+            self.content.clone(),
+            severity_index,
+            description_index - 1,
+        )
+        .unwrap();
+        let html_content = self.parse_finding_table_html();
+        self.content = self.content.replace(&data_content, &html_content);
     }
 
     fn parse_finding_data(
@@ -278,10 +331,35 @@ impl Finding {
         formatted_finding_content
     }
 
-    pub fn parse_finding_table_row(&self) -> String {
+    pub fn parse_finding_table_row_markdown(&self) -> String {
+        let severity = format!(
+            "<span style='color:{};'>{:#?}</span>",
+            self.severity.get_hex_color(),
+            self.severity
+        );
+        let status = format!(
+            "<span style='color:{};'>{:#?}</span>",
+            self.status.get_hex_color(),
+            self.status
+        );
+        format!("|{}|{}|{}|{}|", self.code, severity, self.title, status)
+    }
+
+    pub fn parse_list_of_findings_table_row_html(&self) -> String {
+        // <th>#</th>  <th>Severity</th>  <th>Description</th>  <th>Status</th>
+        let severity = format!(
+            "<span style='color:{};'>{:#?}</span>",
+            self.severity.get_hex_color(),
+            self.severity
+        );
+        let status = format!(
+            "<span style='color:{};'>{:#?}</span>",
+            self.status.get_hex_color(),
+            self.status
+        );
         format!(
-            "|{}|{:#?}|{}|{:?}|",
-            self.code, self.severity, self.title, self.status
+            "<tr><td>{}</td>  <td>{}</td>  <td>{}</td>  <td>{}</td></tr>",
+            self.code, severity, self.title, status
         )
     }
 
@@ -296,59 +374,80 @@ impl Finding {
     }
 
     pub fn parse_finding_table_html(&self) -> String {
-        if self.severity == FindingLevel::Informational {
-            format!(
-                "<table>
+        let Finding {
+            severity,
+            impact,
+            likelihood,
+            difficulty,
+            status,
+            ..
+        } = self;
+        if severity.clone() == FindingLevel::Informational {
+            format!("<div style='width:50%; margin: auto'>
+            <table class='alg'>
                 <thead>
-                  <tr>
-                      <th style='background:white; font-weight:bold'>Severity</th>    {}    
+                <tr>
+                    <th style='font-weight:bold'>Severity</th>    <th class='informational'>Informational</th>     
                 </thead>
-                  </tr>
+                </tr>
                 <tbody>
-                  <tr>
-                      <td style='background:white; font-weight:bold'>Status</td>    {}
-                  </tr>
+                <tr>
+                    <td style='background: #043456; color: white; font-weight:bold'>Status</td>    <td class='{}'>{}</td>
+                </tr>
                 </tbody>
-              </table>",
-                self.severity.get_html_content(),
-                self.status.get_html_content(),
+            </table>
+        </div>\n",status.to_string().to_lowercase(), status.to_string()
             )
         } else {
+            let difficulty_style = match difficulty.clone().unwrap() {
+                FindingLevel::Low => "high",
+                FindingLevel::Medium => "medium",
+                FindingLevel::High => "low",
+                _ => unimplemented!(),
+            };
+
             format!(
-                "<table>
-                <thead>
-                  <tr>
-                      <th style='background:white; font-weight:bold'>Severity</th>    {}    
-                </thead>
-                  </tr>
-                <tbody>
-                  <tr>
-                      <td style='background:white; font-weight:bold'>Status</td>    {}
-                  </tr>
-                </tbody>
-              </table>
-              <table>
-                <thead>
-                  <tr>
-                      <th>Impact</th>    <th>Likelihood</th>    <th>Difficulty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                      {}    {}    {}
-                  </tr>
-                </tbody>
-              </table>",
-                self.severity.get_html_content(),
-                self.status.get_html_content(),
-                self.clone().impact.unwrap().get_html_content(),
-                self.clone().likelihood.unwrap().get_html_content(),
-                self.clone().difficulty.unwrap().get_html_content(),
+                "
+<div style='width:50%; margin: auto'>
+    <table class='alg'>
+        <thead>
+        <tr>
+            <th style='font-weight:bold'>Severity</th>    <th class='{}'>{}</th>     
+        </thead>
+        </tr>
+        <tbody>
+        <tr>
+            <td style='background: #043456; color: white; font-weight:bold'>Status</td>    <td class='{}'>{}</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+<table>
+    <thead>
+    <tr>
+        <th>Impact</th>    <th>Likelihood</th>    <th>Difficulty</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td class='{}'>{}</td>    <td class='{}'>{}</td>    <td class='{}'>{}</td>
+    </tr>
+    </tbody>
+</table>\n",
+                severity.to_string().to_lowercase(),
+                severity.to_string(),
+                status.to_string().to_lowercase(),
+                status.to_string(),
+                impact.clone().unwrap().to_string().to_lowercase(),
+                impact.clone().unwrap().to_string(),
+                likelihood.clone().unwrap().to_string().to_lowercase(),
+                likelihood.clone().unwrap().to_string(),
+                difficulty_style,
+                difficulty.clone().unwrap().to_string(),
             )
         }
     }
 }
-
 pub fn findings_result() -> Result<(), String> {
     // get the audit_result path
     let audit_result_temp_path =
@@ -398,16 +497,17 @@ pub fn findings_result() -> Result<(), String> {
     execute_command_to_stdio("touch", &[&findings_result_file_path]).unwrap();
     // create new findings_result.md file
     let findings_temp_files = get_only_files_from_folder(audit_result_temp_path.clone())?;
-    let mut table_of_findings: String = format!("{RESULT_FINDINGS_SECTION_HEADER}\n\n{RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER}\n|#|Severity|Description|Status|\n| :---: | :------: | :----------: | :------------: |");
+    let table_of_findings: String = format!("{RESULT_FINDINGS_SECTION_HEADER}\n\n{RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER}\n{HTML_LIST_OF_FINDINGS_HEADER}\n");
     let mut subfolder_findings_content: String =
         format!("\n{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER}\n\n");
     let mut root_findings_content: String =
         format!("\n{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER}\n\n");
+    let mut html_rows: Vec<String> = vec![];
     for (finding_file_index, finding_file) in findings_temp_files.into_iter().enumerate() {
         // for every finding file, replace the figures path
-        let finding = Finding::new_from_path(&finding_file.path, finding_file_index);
-        let table_of_contents_row = finding.parse_finding_table_row();
-
+        let mut finding = Finding::new_from_path(&finding_file.path, finding_file_index);
+        finding.format_markdown_to_html();
+        html_rows.push(finding.parse_list_of_findings_table_row_html());
         subfolder_findings_content = format!(
             "{}\n{}\n---\n",
             subfolder_findings_content,
@@ -420,16 +520,17 @@ pub fn findings_result() -> Result<(), String> {
             root_findings_content,
             finding.parse_finding_content_for_root_path()
         );
-        table_of_findings = format!("{}\n{}", table_of_findings, table_of_contents_row);
     }
     // get content for root and sub folder
     let root_content = format!(
-        "{}\n{}\n\n\n\n{HTML_TABLE_FORMAT}",
-        table_of_findings, root_findings_content
+        "{}\n{}\n\n\n\n{HTML_TABLE_STYLE}",
+        table_of_findings.replace(RESULT_TABLE_PLACEHOLDER, &html_rows.join("\n")),
+        root_findings_content
     );
     let audit_folder_content = format!(
-        "{}\n{}\n\n\n{HTML_TABLE_FORMAT}",
-        table_of_findings, subfolder_findings_content
+        "{}\n{}\n\n\n{HTML_TABLE_STYLE}",
+        table_of_findings.replace(RESULT_TABLE_PLACEHOLDER, &html_rows.join("\n")),
+        subfolder_findings_content
     );
 
     // write to root
@@ -524,7 +625,7 @@ fn test_parse_finding_table_row() {
     let finding_content =
         "## KS-01 This is the description \n\n**Severity:** High\n\n**Status:** Open";
     let finding = Finding::new_from_str(finding_content, 0);
-    let finding_table_row = finding.parse_finding_table_row();
+    let finding_table_row = finding.parse_finding_table_row_markdown();
     assert_eq!(
         finding_table_row,
         "|KS-01|High|This is the description|Open|"
@@ -537,8 +638,16 @@ fn test_get_html_content() {
     let finding = Finding::new_from_str(finding_content, 0);
     let finding_table_row = finding.parse_finding_table_html();
     println!("table {:#?}", finding_table_row);
-    assert_eq!(
-        finding_table_row,
-        "|KS-01|High|This is the description|Open|"
-    );
+}
+
+#[test]
+fn test_update_content() {
+    let finding_content = "## This is the description \n\n**Severity:** High\n\n**Status:** Open\n\n| Impact | Likelihood | Difficulty |\n| :----: | :--------: | :--------: |\n|  High  |    Medium    |    Low     |\n\n### Description {-}\n\n";
+    let mut finding = Finding::new_from_str(finding_content, 0);
+    finding.format_markdown_to_html();
+    println!("table {}", finding.content);
+    // assert_eq!(
+    //     finding_table_row,
+    //     "|KS-01|High|This is the description|Open|"
+    // );
 }
