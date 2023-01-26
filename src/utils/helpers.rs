@@ -1307,9 +1307,7 @@ pub mod get {
     ) -> Result<(String, String, usize, usize), String> {
         let mut handler_string: String = "".to_string();
         let instruction_file_path =
-            utils::path::get_instruction_file_path_from_started_entrypoint_co_file(
-                entrypoint_name.clone(),
-            )?;
+            utils::path::get_instruction_file_path_from_started_co_file(entrypoint_name.clone())?;
         let instruction_file_string =
             fs::read_to_string(format!("../{}", instruction_file_path)).unwrap();
         let context_name = get_context_name(entrypoint_name.clone())?;

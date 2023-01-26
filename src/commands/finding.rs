@@ -1,3 +1,4 @@
+use colored::Colorize;
 use console::Term;
 use dialoguer::{console, theme::ColorfulTheme, Input, Select};
 use std::{
@@ -13,12 +14,13 @@ use crate::{
     utils::{
         self,
         git::{create_git_commit, GitCommit},
+        helpers::get::get_only_files_from_folder,
         path::{FilePathType, FolderPathType},
     },
 };
 
 pub fn reject() -> Result<(), String> {
-    prepare_all()?;
+    prepare_all(true)?;
     println!("Select the finding file to reject:");
     let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // get to-review files
@@ -54,24 +56,24 @@ pub fn reject() -> Result<(), String> {
 }
 
 pub fn accept_all() -> Result<(), String> {
-    prepare_all()?;
+    prepare_all(false)?;
     // let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
     let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // let accepted_path = utils::path::get_auditor_findings_accepted_path(None)?;
     let accepted_path = utils::path::get_folder_path(FolderPathType::FindingsAccepted, true);
-    for file_result in fs::read_dir(&to_review_path).unwrap() {
-        let file_name = file_result.unwrap().file_name();
-        if file_name != ".gitkeep" {
-            Command::new("mv")
-                .args([
-                    to_review_path.clone() + file_name.to_str().unwrap(),
-                    accepted_path.clone(),
-                ])
-                .output()
-                .unwrap();
-        }
+    let findings_to_review_files_info = get_only_files_from_folder(to_review_path)?;
+    for to_review_file in findings_to_review_files_info {
+        let mut output = Command::new("mv")
+            .args([to_review_file.path, accepted_path.clone()])
+            .spawn()
+            .unwrap();
+        output.wait().unwrap();
     }
-    println!("All files has been moved to the accepted folder");
+    create_git_commit(GitCommit::AcceptAllFinding, None)?;
+    println!(
+        "All findings has been moved to the {} folder",
+        "accepted".green()
+    );
     Ok(())
 }
 
@@ -80,7 +82,7 @@ pub fn create_finding() -> Result<(), String> {
         .with_prompt("Finding name:")
         .interact_text()
         .unwrap();
-    finding_name = finding_name.replace('-', "_");
+    finding_name = finding_name.replace('-', "_").replace(' ', "_");
     validate_config_create_finding_file(finding_name.clone())?;
     copy_template_to_findings_to_review(finding_name.clone())?;
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]))?;
@@ -107,17 +109,28 @@ pub fn finish_finding() -> Result<(), String> {
     let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
     let finding_name = &review_files[selection].clone();
-    validate_config_create_finding_file(finding_name.clone())?;
     let finding_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name.clone(),
+        },
+        false,
+    );
+    validate_finished_finding_file(finding_file_path, finding_name.clone());
+    let to_review_finding_file_path = utils::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name.clone(),
         },
         true,
     );
-    validate_finished_finding_file(finding_file_path, finding_name.clone());
+    let auditor_figures_folder_path =
+        utils::path::get_folder_path(FolderPathType::AuditorFigures, true);
     create_git_commit(
-        GitCommit::FinishFinding,
-        Some(vec![finding_name.to_string()]),
+        GitCommit::FinishFinding {
+            finding_name: finding_name.to_string(),
+            to_review_finding_file_path,
+            auditor_figures_folder_path,
+        },
+        None,
     )?;
     Ok(())
 }
@@ -129,27 +142,31 @@ pub fn update_finding() -> Result<(), String> {
         .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
         .filter(|file| file != ".gitkeep")
         .collect::<Vec<String>>();
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&review_files)
-        .with_prompt("Select finding file to update:")
-        .default(0)
-        .interact_on_opt(&Term::stderr())
-        .unwrap();
 
-    // user select file
-    match selection {
-        // move selected file to rejected
-        Some(index) => {
-            let finding_name = review_files[index].clone();
-            validate_config_create_finding_file(finding_name.clone())?;
-            create_git_commit(GitCommit::UpdateFinding, Some(vec![finding_name]))?;
-        }
-        None => panic!("User did not select anything"),
-    }
+    let prompt_text = "Select finding file to update:";
+    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
+
+    let finding_name = &review_files[selection].clone();
+    let to_review_finding_file_path = utils::path::get_file_path(
+        FilePathType::FindingToReview {
+            file_name: finding_name.clone(),
+        },
+        true,
+    );
+    let auditor_figures_folder_path =
+        utils::path::get_folder_path(FolderPathType::AuditorFigures, true);
+    create_git_commit(
+        GitCommit::UpdateFinding {
+            finding_name: finding_name.to_string(),
+            to_review_finding_file_path,
+            auditor_figures_folder_path,
+        },
+        None,
+    )?;
     Ok(())
 }
 
-pub fn prepare_all() -> Result<(), String> {
+fn prepare_all(create_commit: bool) -> Result<(), String> {
     let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
@@ -209,7 +226,9 @@ pub fn prepare_all() -> Result<(), String> {
             }
         }
     }
-    create_git_commit(GitCommit::PrepareAllFinding, None)?;
+    if create_commit {
+        create_git_commit(GitCommit::PrepareAllFinding, None)?;
+    }
     println!("All to-review findings severity tags updated");
     Ok(())
 }

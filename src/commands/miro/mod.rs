@@ -1249,7 +1249,7 @@ pub mod commands {
                 entrypoint_height,
                 entrypoint_name.to_string(),
             );
-            let miro_shape_style = MiroShapeStyle::new_from_hex_fill_color("#cee741");
+            let miro_shape_style = MiroShapeStyle::new_from_hex_border_color("#2d9bf0");
             miro_shape
                 .create_shape_in_frame(miro_shape_style, &miro_frame_id)
                 .await?;

@@ -45,8 +45,9 @@ enum Commands {
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
-    /// Updates the results file in the root of the audit to show co files
-    Results,
+    /// Updates the audit_result.md file in the root of the audit
+    #[command(subcommand)]
+    Result(ResultActions),
     /// Updates the metadata.md file
     #[command(subcommand)]
     Metadata(MetadataActions),
@@ -55,6 +56,15 @@ enum Commands {
     Package(PackageActions),
 }
 
+#[derive(Subcommand, Debug)]
+enum ResultActions {
+    /// Updates the Code Overhaul section of the audit_result.md file
+    CodeOverhaul,
+    /// Updates the Findings section of the audit_result.md file
+    Findings,
+    /// Creates the commit for the results files
+    Commit,
+}
 #[derive(Subcommand, Debug)]
 enum MetadataActions {
     /// Updates the Structs section of the metadata.md file
@@ -90,8 +100,6 @@ enum FindingActions {
     Finish,
     /// Update a finding file by creating a commit
     Update,
-    /// Prepare the findings for review
-    PrepareAll,
     /// Moves all the to-review findings to accepted
     AcceptAll,
     /// Moves a finding from to-review to rejected
@@ -168,12 +176,12 @@ async fn main() {
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding().unwrap(),
-        Commands::Finding(FindingActions::PrepareAll) => commands::finding::prepare_all().unwrap(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
         Commands::Notes => utils::git::create_git_commit(GitCommit::Notes, None).unwrap(),
-        Commands::Results => commands::code_overhaul::update_audit_results().unwrap(),
+        Commands::Result(ResultActions::Findings) => commands::result::findings_result().unwrap(),
+        Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Format) => package::format().unwrap(),

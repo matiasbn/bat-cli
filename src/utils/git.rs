@@ -1,13 +1,15 @@
 use std::{process::Command, str};
 
+use colored::Colorize;
+
 use crate::{
-    command_line::execute_command,
+    command_line::deprecated_execute_command,
     config::BatConfig,
-    constants::{self, AUDIT_RESULT_FILE_NAME, BASE_REPOSTORY_URL},
+    constants::BASE_REPOSTORY_URL,
     utils::{self, path::FilePathType},
 };
 
-use super::path::FolderPathType;
+use super::{bash::execute_command_to_stdio, path::FolderPathType};
 
 // Git
 pub fn get_branch_name() -> Result<String, String> {
@@ -37,12 +39,21 @@ pub enum GitCommit {
     UpdateMiro,
     UpdateCO,
     StartFinding,
-    FinishFinding,
-    UpdateFinding,
+    FinishFinding {
+        finding_name: String,
+        to_review_finding_file_path: String,
+        auditor_figures_folder_path: String,
+    },
+    UpdateFinding {
+        finding_name: String,
+        to_review_finding_file_path: String,
+        auditor_figures_folder_path: String,
+    },
     PrepareAllFinding,
+    AcceptAllFinding,
     UpdateRepo,
     Notes,
-    Results,
+    AuditResult,
     TMAccounts,
     UpdateMetadata,
 }
@@ -169,37 +180,42 @@ pub fn create_git_commit(
             let commit_file = &commit_files.unwrap()[0];
             let commit_string =
                 "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
-            println!("finding file created with commit: \"{commit_string}\"");
+            println!("finding file created with commit: {commit_string}");
             let file_to_add_path =
                 // utils::path::get_file_path(FilePathType::FindingToReview { file_name: commit_file.clone() },true);
                 utils::path::get_file_path(FilePathType::FindingToReview { file_name: commit_file.clone() },true);
             (commit_string, vec![file_to_add_path])
         }
-        GitCommit::FinishFinding => {
-            let commit_file = &commit_files.unwrap()[0];
-            let commit_string =
-                "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
-            println!("finding file finished with commit: \"{commit_string}\"");
-            let file_to_add_path = utils::path::get_file_path(
-                FilePathType::FindingAccepted {
-                    file_name: commit_file.clone(),
-                },
-                true,
+        GitCommit::FinishFinding {
+            finding_name,
+            to_review_finding_file_path,
+            auditor_figures_folder_path,
+        } => {
+            let commit_string = format!("finding: {finding_name} finished");
+            println!(
+                "finding file finished with commit: {}",
+                commit_string.green()
             );
-            (commit_string, vec![file_to_add_path])
+            (
+                commit_string,
+                vec![to_review_finding_file_path, auditor_figures_folder_path],
+            )
         }
-        GitCommit::UpdateFinding => {
-            let commit_file = &commit_files.unwrap()[0];
-            let commit_string =
-                "finding: ".to_string() + &commit_file.clone().replace(".md", "") + " updated";
-            println!("finding file updated with commit: \"{commit_string}\"");
-            let file_to_add_path = utils::path::get_file_path(
-                FilePathType::FindingToReview {
-                    file_name: commit_file.clone(),
-                },
-                true,
+        GitCommit::UpdateFinding {
+            finding_name,
+            to_review_finding_file_path,
+            auditor_figures_folder_path,
+        } => {
+            let commit_string = format!("finding: {finding_name} updated");
+            println!(
+                "finding file udpated with commit: {}",
+                commit_string.green()
             );
-            (commit_string, vec![file_to_add_path])
+
+            (
+                commit_string,
+                vec![to_review_finding_file_path, auditor_figures_folder_path],
+            )
         }
         GitCommit::PrepareAllFinding => {
             let commit_string = "finding: to-review findings severity updated".to_string();
@@ -207,6 +223,18 @@ pub fn create_git_commit(
             let file_to_add_path =
                 utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
             (commit_string, vec![file_to_add_path])
+        }
+        GitCommit::AcceptAllFinding => {
+            let commit_string = "finding: findings moved to the accepted folder".to_string();
+            println!(
+                "All findings moved to the accepted folder with commit: {}",
+                commit_string.green()
+            );
+            let accepted_path =
+                utils::path::get_folder_path(FolderPathType::FindingsAccepted, true);
+            let to_review_path =
+                utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+            (commit_string, vec![accepted_path, to_review_path])
         }
         GitCommit::UpdateRepo => {
             let commit_string = "repo: templates and package.json update".to_string();
@@ -238,17 +266,17 @@ pub fn create_git_commit(
                 ],
             )
         }
-        GitCommit::Results => {
-            println!(
-                "Creating a commit for {}",
-                constants::AUDIT_RESULT_FILE_NAME
-            );
-            // let audit_result_path = utils::path::get_audit_folder_path(Some(
-            //     constants::AUDIT_RESULT_FILE_NAME.to_string(),
-            // ))?;
-            let audit_result_path = utils::path::get_file_path(FilePathType::AuditResults, true);
-            let commit_string = format!("notes: {} updated", AUDIT_RESULT_FILE_NAME);
-            (commit_string, vec![audit_result_path])
+        GitCommit::AuditResult => {
+            println!("Creating a commit for {}", "audit_result".green());
+            let audit_result_folder_path =
+                utils::path::get_folder_path(FolderPathType::AuditResult, true);
+            let audit_result_file_path =
+                utils::path::get_file_path(FilePathType::AuditResult, true);
+            let commit_string = format!("notes: audit_result updated");
+            (
+                commit_string,
+                vec![audit_result_file_path, audit_result_folder_path],
+            )
         }
         GitCommit::TMAccounts => {
             println!("Creating a commit for threat_modeling.md");
@@ -265,27 +293,9 @@ pub fn create_git_commit(
     };
 
     for commit_file in commit_files_path {
-        let output = Command::new("git")
-            .args(["add", commit_file.as_str()])
-            .output()
-            .unwrap();
-        if !output.stderr.is_empty() {
-            panic!(
-                "git commit creation failed with error: {:?}",
-                std::str::from_utf8(output.stderr.as_slice()).unwrap()
-            )
-        };
+        execute_command_to_stdio("git", &["add", commit_file.as_str()]).unwrap();
     }
-    let output = Command::new("git")
-        .args(["commit", "-m", commit_message.as_str()])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "git commit creation failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command_to_stdio("git", &["commit", "-m", commit_message.as_str()]).unwrap();
     Ok(())
 }
 
@@ -332,7 +342,7 @@ pub fn git_push() -> Result<(), String> {
 
 // returns false if there are files to commit
 pub fn check_files_not_commited() -> Result<bool, String> {
-    let output = execute_command(
+    let output = deprecated_execute_command(
         "git".to_string(),
         vec!["status", "--porcelain"],
         "error running git status".to_string(),

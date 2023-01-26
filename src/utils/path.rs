@@ -5,7 +5,9 @@ use crate::{commands::miro::MiroConfig, config::BatConfig};
 pub enum FilePathType {
     Metadata,
     ThreatModeling,
-    AuditResults,
+    AuditResult,
+    FindingsResult,
+    CodeOverhaulResult,
     FindingCandidates,
     OpenQuestions,
     ProgramLib,
@@ -41,8 +43,14 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
         FilePathType::ThreatModeling => {
             format!("{}/threat_modeling.md", auditor_notes_folder_path)
         }
-        FilePathType::AuditResults => {
+        FilePathType::AuditResult => {
             format!("./audit_result.md")
+        }
+        FilePathType::FindingsResult => {
+            format!("./audit_result/findings_result.md")
+        }
+        FilePathType::CodeOverhaulResult => {
+            format!("./audit_result/co_result.md")
         }
         FilePathType::TemplateFinding => {
             format!("./templates/finding.md")
@@ -104,7 +112,11 @@ pub enum FolderPathType {
     CodeOverhaulStarted,
     CodeOverhaulFinished,
     AuditorNotes,
+    AuditorFigures,
     Notes,
+    AuditResult,
+    AuditResultFigures,
+    AuditResultTemp,
 }
 
 pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> String {
@@ -117,7 +129,11 @@ pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> Strin
     let path = match folder_type {
         //File
         FolderPathType::Notes => "./notes".to_string(),
+        FolderPathType::AuditResult => "./audit_result".to_string(),
+        FolderPathType::AuditResultFigures => "./audit_result/figures".to_string(),
+        FolderPathType::AuditResultTemp => "./audit_result/temp".to_string(),
         FolderPathType::AuditorNotes => auditor_notes_folder_path,
+        FolderPathType::AuditorFigures => format!("{auditor_notes_folder_path}/figures"),
         FolderPathType::ProgramPath => bat_config.required.program_lib_path.replace("/lib.rs", ""),
         FolderPathType::Templates => {
             format!("./templates")
@@ -163,7 +179,7 @@ fn canonicalize_path(path_to_canonicalize: String) -> String {
     canonicalized_path
 }
 
-pub fn get_instruction_file_path_from_started_entrypoint_co_file(
+pub fn get_instruction_file_path_from_started_co_file(
     entrypoint_name: String,
 ) -> Result<String, String> {
     let co_file_path = get_file_path(
@@ -185,6 +201,24 @@ pub fn get_instruction_file_path_from_started_entrypoint_co_file(
         .expect(&format!(
             "co file of {} does not contain the instruction path yet",
             entrypoint_name,
+        ))
+        .to_string();
+    Ok(instruction_file_path)
+}
+pub fn get_instruction_file_path_from_co_file_path(co_file_path: String) -> Result<String, String> {
+    let program_path = BatConfig::get_validated_config()?
+        .required
+        .program_lib_path
+        .replace("/lib.rs", "")
+        .replace("../", "");
+    let file_string = fs::read_to_string(co_file_path.clone()).unwrap();
+    let instruction_file_path = file_string
+        .lines()
+        .into_iter()
+        .find(|f| f.contains(&program_path))
+        .expect(&format!(
+            "co file of {} does not contain the instruction path yet",
+            co_file_path,
         ))
         .to_string();
     Ok(instruction_file_path)
