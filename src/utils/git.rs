@@ -5,7 +5,7 @@ use colored::Colorize;
 use crate::{
     command_line::deprecated_execute_command,
     config::BatConfig,
-    constants::{self, AUDIT_RESULT_FILE_NAME, BASE_REPOSTORY_URL},
+    constants::BASE_REPOSTORY_URL,
     utils::{self, path::FilePathType},
 };
 

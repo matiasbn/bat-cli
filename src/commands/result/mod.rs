@@ -1,9 +1,8 @@
-use std::{borrow::BorrowMut, fs, process::Command};
+use std::fs;
 
 use crate::{
     command_line::vs_code_open_file_in_current_window,
     config::BatConfig,
-    package::format,
     utils::{
         self,
         bash::execute_command_to_stdio,
