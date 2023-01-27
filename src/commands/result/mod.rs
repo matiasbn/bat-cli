@@ -19,6 +19,7 @@ pub const FINDING_CODE_PREFIX: &str = "KS";
 pub const RESULT_FINDINGS_SECTION_HEADER: &str = "# Findings result";
 pub const RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER: &str = "## Table of findings";
 pub const RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER: &str = "## List of Findings";
+pub const RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER_ROBOT: &str = "# Findings";
 pub const RESULT_CODE_OVERHAUL_SECTION_HEADER: &str = "# Code overhaul result";
 
 pub const HTML_TABLE_STYLE: &str = "<style>
@@ -496,6 +497,7 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
     };
     let mut subfolder_findings_content: String =
         format!("\n{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER}\n\n");
+    let mut robot_content: String = format!("{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER_ROBOT}\n");
     let mut root_findings_content: String =
         format!("\n{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER}\n\n");
     let mut html_rows: Vec<String> = vec![];
@@ -510,6 +512,13 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
         subfolder_findings_content = format!(
             "{}\n{}\n---\n",
             subfolder_findings_content,
+            finding
+                .clone()
+                .parse_finding_content_for_audit_folder_path()
+        );
+        robot_content = format!(
+            "{}\n{}\n---\n",
+            robot_content,
             finding
                 .clone()
                 .parse_finding_content_for_audit_folder_path()
@@ -529,14 +538,25 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
             table_of_findings.replace(RESULT_TABLE_PLACEHOLDER, &html_rows.join("\n"))
     }
     // get content for root and sub folder
-    let root_content = format!(
-        "{}\n{}\n\n\n\n{HTML_TABLE_STYLE}",
-        table_of_findings, root_findings_content
-    );
-    let audit_folder_content = format!(
-        "{}\n{}\n\n\n{HTML_TABLE_STYLE}",
-        table_of_findings, subfolder_findings_content
-    );
+    let root_content = if generate_html {
+        format!(
+            "{}\n{}\n\n\n\n{HTML_TABLE_STYLE}",
+            table_of_findings, root_findings_content
+        )
+    } else {
+        format!("{}\n{}", table_of_findings, root_findings_content)
+    };
+    let audit_folder_content = if generate_html {
+        format!(
+            "{}\n{}\n\n\n\n{HTML_TABLE_STYLE}",
+            table_of_findings, subfolder_findings_content
+        )
+    } else {
+        format!("{}\n{}", table_of_findings, subfolder_findings_content)
+    };
+
+    let robot_findings_path = get_file_path(FilePathType::FindingsRobotResult, false);
+    fs::write(&robot_findings_path, robot_content).unwrap();
 
     // write to root
     helpers::update_audit_result_root_content(&root_content)?;
