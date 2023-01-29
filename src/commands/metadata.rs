@@ -10,6 +10,7 @@ use crate::constants::{
     MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE,
     MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
 };
+use crate::markdown::{MardkownFile, MarkdownSection, MarkdownSectionLevel};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 
@@ -153,20 +154,18 @@ impl StructMetadataType {
         result_vec.copy_from_slice(STRUCT_TYPES_STRING);
         result_vec
     }
-
-    fn get_struct_metadata_subsection_header(&self) -> &str {
-        let index = self.get_struct_metadata_index();
-        STRUCT_SUBSECTIONS_HEADERS[index]
-    }
 }
 
 pub fn update_structs() -> Result<(), String> {
     let metadata_path = utils::path::get_file_path(FilePathType::Metadata, false);
-    let metadata_structs_content_string =
-        structs::structs_helpers::get_structs_section_content_string()?;
+    let mut metadata_markdown = MardkownFile::new(&metadata_path);
+    println!("meta markdown {:#?}", metadata_markdown);
+    let mut structs_section = metadata_markdown
+        .clone()
+        .get_section_by_title("Structs")
+        .clone();
     // check if empty
-    let is_initialized =
-        structs::structs_helpers::check_structs_initialized(&metadata_structs_content_string)?;
+    let is_initialized = !structs_section.subsections.is_empty();
     // prompt the user if he wants to replace
     if is_initialized {
         let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
@@ -188,45 +187,87 @@ pub fn update_structs() -> Result<(), String> {
         other_metadata_vec,
     ) = get_structs_metadata_from_program()?;
 
-    let metadata_content_string = fs::read_to_string(metadata_path.clone()).unwrap();
-    let context_accounts_result_string =
-        structs::structs_helpers::get_format_structs_to_result_string(
-            context_accounts_metadata_vec.clone(),
-            StructMetadataType::ContextAccounts.get_struct_metadata_subsection_header(),
-        );
-    let accounts_result_string = structs::structs_helpers::get_format_structs_to_result_string(
-        accounts_metadata_vec.clone(),
-        StructMetadataType::Account.get_struct_metadata_subsection_header(),
-    );
-    let input_result_string = structs::structs_helpers::get_format_structs_to_result_string(
-        input_metadata_vec.clone(),
-        StructMetadataType::Input.get_struct_metadata_subsection_header(),
-    );
-    let other_result_string = structs::structs_helpers::get_format_structs_to_result_string(
-        other_metadata_vec.clone(),
-        StructMetadataType::Other.get_struct_metadata_subsection_header(),
-    );
-
-    // parse into metadata.md
-
-    fs::write(
-        metadata_path,
-        metadata_content_string.replace(
-            metadata_structs_content_string.as_str(),
-            format!(
-                "{}\n\n{}\n{}\n{}\n{}",
-                STRUCTS_SECTION_HEADER,
-                &context_accounts_result_string,
-                &accounts_result_string,
-                &input_result_string,
-                &other_result_string,
+    let context_account_subsections: Vec<MarkdownSection> = context_accounts_metadata_vec
+        .into_iter()
+        .map(|metadata| {
+            MarkdownSection::new_from_content(
+                &structs::structs_helpers::get_structs_section_content(
+                    &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                    metadata,
+                ),
             )
-            .as_str(),
-        ),
-    )
-    .unwrap();
-    // create commit
+        })
+        .collect();
 
+    let account_subsections: Vec<MarkdownSection> = accounts_metadata_vec
+        .into_iter()
+        .map(|metadata| {
+            MarkdownSection::new_from_content(
+                &structs::structs_helpers::get_structs_section_content(
+                    &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                    metadata,
+                ),
+            )
+        })
+        .collect();
+
+    let input_subsections: Vec<MarkdownSection> = input_metadata_vec
+        .into_iter()
+        .map(|metadata| {
+            MarkdownSection::new_from_content(
+                &structs::structs_helpers::get_structs_section_content(
+                    &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                    metadata,
+                ),
+            )
+        })
+        .collect();
+
+    let other_subsections: Vec<MarkdownSection> = other_metadata_vec
+        .into_iter()
+        .map(|metadata| {
+            MarkdownSection::new_from_content(
+                &structs::structs_helpers::get_structs_section_content(
+                    &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                    metadata,
+                ),
+            )
+        })
+        .collect();
+
+    let new_context_accounts_subsection = MarkdownSection::new_from_subsections(
+        "Context Accounts",
+        MarkdownSectionLevel::H2,
+        context_account_subsections,
+    );
+    let new_account_subsection = MarkdownSection::new_from_subsections(
+        "Account",
+        MarkdownSectionLevel::H2,
+        account_subsections,
+    );
+    let new_input_subsection =
+        MarkdownSection::new_from_subsections("Input", MarkdownSectionLevel::H2, input_subsections);
+    let new_other_subsection =
+        MarkdownSection::new_from_subsections("Other", MarkdownSectionLevel::H2, other_subsections);
+    structs_section
+        .update_subsection_by_title("Context Accounts", new_context_accounts_subsection)
+        .unwrap();
+    structs_section
+        .update_subsection_by_title("Account", new_account_subsection)
+        .unwrap();
+    structs_section
+        .update_subsection_by_title("Input", new_input_subsection)
+        .unwrap();
+    structs_section
+        .update_subsection_by_title("Other", new_other_subsection)
+        .unwrap();
+    metadata_markdown
+        .replace_section(
+            metadata_markdown.clone().get_section_by_title("Structs"),
+            structs_section,
+        )
+        .unwrap();
+    metadata_markdown.clone().save()?;
     utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
     Ok(())
 }
@@ -453,40 +494,10 @@ mod miro_helpers {
 pub mod structs {
     use super::*;
 
-    // pub fn get_fleetstats_metadata() -> Result<(), String> {
-    //     let struct_metadata = StructMetadata::new_from_metadata_name("FleetStats");
-    //     println!("struct metadata {:#?}", struct_metadata);
-    //     Ok(())
-    // }
-
     pub mod structs_helpers {
         use crate::utils::path::FolderPathType;
 
         use super::*;
-
-        pub fn get_structs_metadata_from_metadata_file(
-            struct_type: Option<StructMetadataType>,
-        ) -> Result<Vec<StructMetadata>, String> {
-            let structs_section_content = get_structs_section_content_string()?;
-            let struct_names = structs_section_content
-                .lines()
-                .filter(|struct_metatda| struct_metatda.contains("####"))
-                .map(|struct_name| struct_name.replace("#### ", "").trim().to_string())
-                .collect::<Vec<_>>();
-            let mut structs_metadata_vec: Vec<StructMetadata> = vec![];
-            for struct_name in struct_names {
-                let struct_metadata = StructMetadata::new_from_metadata_name(&struct_name);
-                structs_metadata_vec.push(struct_metadata);
-            }
-            if let Some(metadata_type) = struct_type {
-                let filtered_structs = structs_metadata_vec
-                    .into_iter()
-                    .filter(|struct_metadata| struct_metadata.struct_type == metadata_type)
-                    .collect::<Vec<_>>();
-                return Ok(filtered_structs);
-            }
-            Ok(structs_metadata_vec)
-        }
 
         pub fn get_structs_names_from_metadata_file(
             struct_type: Option<StructMetadataType>,
@@ -605,26 +616,32 @@ pub mod structs {
                 let mut struct_metadata_result = get_struct_metadata_from_file_info(file_info)?;
                 structs_metadata.append(&mut struct_metadata_result);
             }
-            let context_accounts_metadata_vec = structs_metadata
+            let mut context_accounts_metadata_vec = structs_metadata
                 .iter()
                 .filter(|metadata| metadata.struct_type == StructMetadataType::ContextAccounts)
                 .map(|f| f.clone())
                 .collect::<Vec<_>>();
-            let accounts_metadata_vec = structs_metadata
+            let mut accounts_metadata_vec = structs_metadata
                 .iter()
                 .filter(|metadata| metadata.struct_type == StructMetadataType::Account)
                 .map(|f| f.clone())
                 .collect::<Vec<_>>();
-            let input_metadata_vec = structs_metadata
+            let mut input_metadata_vec = structs_metadata
                 .iter()
                 .filter(|metadata| metadata.struct_type == StructMetadataType::Input)
                 .map(|f| f.clone())
                 .collect::<Vec<_>>();
-            let other_metadata_vec = structs_metadata
+            let mut other_metadata_vec = structs_metadata
                 .iter()
                 .filter(|metadata| metadata.struct_type == StructMetadataType::Other)
                 .map(|f| f.clone())
                 .collect::<Vec<_>>();
+            context_accounts_metadata_vec
+                .sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
+            accounts_metadata_vec
+                .sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
+            input_metadata_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
+            other_metadata_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
             Ok((
                 context_accounts_metadata_vec,
                 accounts_metadata_vec,
@@ -728,39 +745,35 @@ pub mod structs {
                 .clone()
         }
 
-        pub fn get_format_structs_to_result_string(
-            structs_vec: Vec<StructMetadata>,
-            subsection_header: &str,
+        pub fn get_structs_section_content(
+            header: &str,
+            struct_metadata: StructMetadata,
         ) -> String {
-            let mut sorted_vec = structs_vec.clone();
-            sorted_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
-            let mut initial_vec = vec![format!("{}\n", subsection_header.to_string())];
-            let mut result_vec = sorted_vec
-                .iter()
-                .map(|struct_result| {
-                    format!(
-                        "{}{}{}{}{}",
-                        format!("#### {}\n\n", struct_result.name),
-                        format!(
-                            "{} {}\n",
-                            METADATA_CONTENT_TYPE_SECTION,
-                            struct_result.struct_type.to_string()
-                        ),
-                        format!("{} {}\n", METADATA_CONTENT_PATH_SECTION, struct_result.path),
-                        format!(
-                            "{} {}\n",
-                            METADATA_CONTENT_START_LINE_INDEX_SECTION,
-                            struct_result.start_line_index
-                        ),
-                        format!(
-                            "{} {}\n",
-                            METADATA_CONTENT_END_LINE_INDEX_SECTION, struct_result.end_line_index
-                        ),
-                    )
-                })
-                .collect::<Vec<_>>();
-            initial_vec.append(&mut result_vec);
-            initial_vec.join("\n")
+            // let mut sorted_vec = structs_vec.clone();
+            // sorted_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
+            // let mut result_vec = sorted_vec
+            //     .iter()
+            //     .map(|struct_result| {
+            format!(
+                "{header}\n\n{}{}{}{}",
+                format!(
+                    "{} {}\n",
+                    METADATA_CONTENT_TYPE_SECTION,
+                    struct_metadata.struct_type.to_string()
+                ),
+                format!(
+                    "{} {}\n",
+                    METADATA_CONTENT_PATH_SECTION, struct_metadata.path
+                ),
+                format!(
+                    "{} {}\n",
+                    METADATA_CONTENT_START_LINE_INDEX_SECTION, struct_metadata.start_line_index
+                ),
+                format!(
+                    "{} {}\n",
+                    METADATA_CONTENT_END_LINE_INDEX_SECTION, struct_metadata.end_line_index
+                ),
+            )
         }
 
         // pub fn get_structs_metadata_content()-> {
