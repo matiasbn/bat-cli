@@ -1,3 +1,4 @@
+pub mod functions;
 pub mod miro;
 pub mod structs;
 

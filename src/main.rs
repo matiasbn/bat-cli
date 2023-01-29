@@ -76,8 +76,8 @@ enum MetadataActions {
     Structs,
     /// Updates the Miro section of the metadata.md file
     Miro,
-    // /// Updates the Functions section of the metadata.md file
-    // Functions,
+    /// Updates the Functions section of the metadata.md file
+    Functions,
 }
 
 #[derive(Subcommand, Debug)]
@@ -176,6 +176,9 @@ async fn main() {
         }
         Commands::Metadata(MetadataActions::Miro) => {
             commands::metadata::miro::update_miro().await.unwrap()
+        }
+        Commands::Metadata(MetadataActions::Functions) => {
+            commands::metadata::functions::update_functions().unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),

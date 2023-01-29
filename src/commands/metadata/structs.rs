@@ -10,11 +10,11 @@ use std::vec;
 
 use super::metadata_helpers;
 
-pub const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
-pub const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
-pub const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
-pub const METADATA_CONTENT_END_LINE_INDEX_SECTION: &str = "- end_line_index:";
-pub const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
+const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
+const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
+const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
+const METADATA_CONTENT_END_LINE_INDEX_SECTION: &str = "- end_line_index:";
+const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
 
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
