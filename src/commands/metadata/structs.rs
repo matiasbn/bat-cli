@@ -10,11 +10,11 @@ use std::vec;
 
 use super::metadata_helpers;
 
-pub const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
-pub const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
-pub const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
-pub const METADATA_CONTENT_END_LINE_INDEX_SECTION: &str = "- end_line_index:";
-pub const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
+const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
+const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
+const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
+const METADATA_CONTENT_END_LINE_INDEX_SECTION: &str = "- end_line_index:";
+const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
 
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
@@ -222,7 +222,7 @@ pub fn get_structs_metadata_from_program() -> Result<
     ),
     String,
 > {
-    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, true);
+    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, false);
     let program_folder_files_info = utils::helpers::get::get_only_files_from_folder(program_path)?;
     let mut structs_metadata: Vec<StructMetadata> = vec![];
     for file_info in program_folder_files_info {
