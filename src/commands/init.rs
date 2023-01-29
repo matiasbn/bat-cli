@@ -20,7 +20,7 @@ use crate::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
 };
 use crate::utils;
-use crate::utils::bash::execute_command_to_stdio;
+
 use crate::utils::git::GitCommit;
 use crate::utils::path::{FilePathType, FolderPathType};
 
