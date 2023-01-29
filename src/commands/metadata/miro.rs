@@ -1,6 +1,6 @@
 use crate::commands;
 use crate::commands::metadata::metadata_helpers;
-use crate::commands::metadata::structs::structs_helpers;
+
 use crate::commands::miro::{MiroColors, MiroConfig};
 
 use crate::constants::{
@@ -8,13 +8,13 @@ use crate::constants::{
     MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE,
     MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
 };
-use crate::markdown::{MardkownFile, MarkdownSection, MarkdownSectionLevel};
-use crate::structs::FileInfo;
+use crate::markdown::{MardkownFile};
+
 use crate::utils::git::GitCommit;
 
-use crate::utils::path::{FilePathType, FolderPathType};
+use crate::utils::path::{FilePathType};
 use crate::{
-    commands::metadata::structs::structs_helpers::get_structs_metadata_from_program, utils,
+    utils,
 };
 use colored::Colorize;
 

@@ -1,11 +1,7 @@
-use crate::commands;
-use crate::commands::miro::{MiroColors, MiroConfig};
 
-use crate::constants::{
-    MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE,
-    MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE,
-    MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
-};
+
+
+
 use crate::markdown::{MardkownFile, MarkdownSection, MarkdownSectionLevel};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
@@ -16,7 +12,7 @@ use crate::{
 };
 use colored::Colorize;
 
-use std::fs;
+
 use std::vec;
 
 use super::metadata_helpers;

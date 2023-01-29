@@ -68,7 +68,7 @@ impl MardkownFile {
 
     pub fn get_subsections(&self) -> Vec<MarkdownSection> {
         let mut subsections: Vec<MarkdownSection> = vec![];
-        let thing = self
+        let _thing = self
             .sections
             .iter()
             .map(|section| subsections.append(&mut section.get_children_subsections().unwrap()));
@@ -169,7 +169,7 @@ impl MarkdownSection {
 
     pub fn get_children_subsections(&self) -> Result<Vec<MarkdownSection>, io::Error> {
         let mut children_subsections_vec: Vec<MarkdownSection> = vec![];
-        let mut children_subsections = self.subsections.clone().into_iter().map(|subsection| {
+        let _children_subsections = self.subsections.clone().into_iter().map(|subsection| {
             children_subsections_vec
                 .append(&mut subsection.clone().get_children_subsections().unwrap())
         });
@@ -422,7 +422,7 @@ fn test_get_subsections() {
     let path = "./test_md.md";
     fs::write(path, &md_file_content).unwrap();
 
-    let mut markdown = MardkownFile::new("./test_md.md");
+    let markdown = MardkownFile::new("./test_md.md");
 
     fs::remove_file(path).unwrap();
     let subsections = markdown.get_subsections();
