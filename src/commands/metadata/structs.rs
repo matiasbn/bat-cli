@@ -1,17 +1,10 @@
-
-
-
-
 use crate::markdown::{MardkownFile, MarkdownSection, MarkdownSectionLevel};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 
+use crate::utils;
 use crate::utils::path::{FilePathType, FolderPathType};
-use crate::{
-    commands::metadata::structs::structs_helpers::get_structs_metadata_from_program, utils,
-};
 use colored::Colorize;
-
 
 use std::vec;
 
@@ -161,7 +154,7 @@ pub fn update_structs() -> Result<(), String> {
     let context_account_subsections: Vec<MarkdownSection> = context_accounts_metadata_vec
         .into_iter()
         .map(|metadata| {
-            MarkdownSection::new_from_content(&structs_helpers::get_structs_section_content(
+            MarkdownSection::new_from_content(&get_structs_section_content(
                 &MarkdownSectionLevel::H3.get_header(&metadata.name),
                 metadata,
             ))
@@ -171,7 +164,7 @@ pub fn update_structs() -> Result<(), String> {
     let account_subsections: Vec<MarkdownSection> = accounts_metadata_vec
         .into_iter()
         .map(|metadata| {
-            MarkdownSection::new_from_content(&structs_helpers::get_structs_section_content(
+            MarkdownSection::new_from_content(&get_structs_section_content(
                 &MarkdownSectionLevel::H3.get_header(&metadata.name),
                 metadata,
             ))
@@ -181,7 +174,7 @@ pub fn update_structs() -> Result<(), String> {
     let input_subsections: Vec<MarkdownSection> = input_metadata_vec
         .into_iter()
         .map(|metadata| {
-            MarkdownSection::new_from_content(&structs_helpers::get_structs_section_content(
+            MarkdownSection::new_from_content(&get_structs_section_content(
                 &MarkdownSectionLevel::H3.get_header(&metadata.name),
                 metadata,
             ))
@@ -191,7 +184,7 @@ pub fn update_structs() -> Result<(), String> {
     let other_subsections: Vec<MarkdownSection> = other_metadata_vec
         .into_iter()
         .map(|metadata| {
-            MarkdownSection::new_from_content(&structs_helpers::get_structs_section_content(
+            MarkdownSection::new_from_content(&get_structs_section_content(
                 &MarkdownSectionLevel::H3.get_header(&metadata.name),
                 metadata,
             ))
@@ -220,183 +213,162 @@ pub fn update_structs() -> Result<(), String> {
     Ok(())
 }
 
-pub mod structs_helpers {
-
-    use super::*;
-
-    pub fn get_structs_metadata_from_program() -> Result<
-        (
-            Vec<StructMetadata>,
-            Vec<StructMetadata>,
-            Vec<StructMetadata>,
-            Vec<StructMetadata>,
-        ),
-        String,
-    > {
-        let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, true);
-        let program_folder_files_info =
-            utils::helpers::get::get_only_files_from_folder(program_path)?;
-        let mut structs_metadata: Vec<StructMetadata> = vec![];
-        for file_info in program_folder_files_info {
-            let mut struct_metadata_result = get_struct_metadata_from_file_info(file_info)?;
-            structs_metadata.append(&mut struct_metadata_result);
-        }
-        let mut context_accounts_metadata_vec = structs_metadata
-            .iter()
-            .filter(|metadata| metadata.struct_type == StructMetadataType::ContextAccounts)
-            .map(|f| f.clone())
-            .collect::<Vec<_>>();
-        let mut accounts_metadata_vec = structs_metadata
-            .iter()
-            .filter(|metadata| metadata.struct_type == StructMetadataType::Account)
-            .map(|f| f.clone())
-            .collect::<Vec<_>>();
-        let mut input_metadata_vec = structs_metadata
-            .iter()
-            .filter(|metadata| metadata.struct_type == StructMetadataType::Input)
-            .map(|f| f.clone())
-            .collect::<Vec<_>>();
-        let mut other_metadata_vec = structs_metadata
-            .iter()
-            .filter(|metadata| metadata.struct_type == StructMetadataType::Other)
-            .map(|f| f.clone())
-            .collect::<Vec<_>>();
-        context_accounts_metadata_vec
-            .sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
-        accounts_metadata_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
-        input_metadata_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
-        other_metadata_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
-        Ok((
-            context_accounts_metadata_vec,
-            accounts_metadata_vec,
-            input_metadata_vec,
-            other_metadata_vec,
-        ))
+pub fn get_structs_metadata_from_program() -> Result<
+    (
+        Vec<StructMetadata>,
+        Vec<StructMetadata>,
+        Vec<StructMetadata>,
+        Vec<StructMetadata>,
+    ),
+    String,
+> {
+    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, true);
+    let program_folder_files_info = utils::helpers::get::get_only_files_from_folder(program_path)?;
+    let mut structs_metadata: Vec<StructMetadata> = vec![];
+    for file_info in program_folder_files_info {
+        let mut struct_metadata_result = get_struct_metadata_from_file_info(file_info)?;
+        structs_metadata.append(&mut struct_metadata_result);
     }
+    let mut context_accounts_metadata_vec = structs_metadata
+        .iter()
+        .filter(|metadata| metadata.struct_type == StructMetadataType::ContextAccounts)
+        .map(|f| f.clone())
+        .collect::<Vec<_>>();
+    let mut accounts_metadata_vec = structs_metadata
+        .iter()
+        .filter(|metadata| metadata.struct_type == StructMetadataType::Account)
+        .map(|f| f.clone())
+        .collect::<Vec<_>>();
+    let mut input_metadata_vec = structs_metadata
+        .iter()
+        .filter(|metadata| metadata.struct_type == StructMetadataType::Input)
+        .map(|f| f.clone())
+        .collect::<Vec<_>>();
+    let mut other_metadata_vec = structs_metadata
+        .iter()
+        .filter(|metadata| metadata.struct_type == StructMetadataType::Other)
+        .map(|f| f.clone())
+        .collect::<Vec<_>>();
+    context_accounts_metadata_vec
+        .sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
+    accounts_metadata_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
+    input_metadata_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
+    other_metadata_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
+    Ok((
+        context_accounts_metadata_vec,
+        accounts_metadata_vec,
+        input_metadata_vec,
+        other_metadata_vec,
+    ))
+}
 
-    pub fn get_struct_metadata_from_file_info(
-        struct_file_info: FileInfo,
-    ) -> Result<Vec<StructMetadata>, String> {
-        let mut struct_metadata_vec: Vec<StructMetadata> = vec![];
-        println!(
-            "starting the review of the {} file",
-            struct_file_info.path.clone().blue()
-        );
-        let file_info_content = struct_file_info.read_content().unwrap();
-        let file_info_content_lines = file_info_content.lines();
-        let struct_types_colored = StructMetadataType::get_struct_types()
-            .iter()
-            .enumerate()
-            .map(|f| match f.0 {
-                0 => f.1.red(),
-                1 => f.1.yellow(),
-                2 => f.1.green(),
-                3 => f.1.blue(),
-                _ => todo!(),
-            })
-            .collect::<Vec<_>>();
-        for (content_line_index, content_line) in file_info_content_lines.enumerate() {
-            if content_line.contains("pub")
-                && content_line.contains("struct")
-                && content_line.contains("{")
-            {
-                let start_line_index = content_line_index;
-                let end_line_index =
-                    file_info_content
-                        .lines()
-                        .enumerate()
-                        .find(|(line_index, line)| {
-                            line.trim() == "}" && line_index > &start_line_index
-                        });
-                if let Some((closing_brace_index, _)) = end_line_index {
-                    let end_line_index = closing_brace_index;
-                    let struct_metadata_content = file_info_content.lines().collect::<Vec<_>>()
-                        [start_line_index..=end_line_index]
-                        .to_vec()
-                        .join("\n");
-                    println!(
-                        "possible struct found at {}",
-                        format!(
-                            "{}:{}",
-                            struct_file_info.path.clone(),
-                            content_line_index + 1
-                        )
-                        .magenta()
+fn get_struct_metadata_from_file_info(
+    struct_file_info: FileInfo,
+) -> Result<Vec<StructMetadata>, String> {
+    let mut struct_metadata_vec: Vec<StructMetadata> = vec![];
+    println!(
+        "starting the review of the {} file",
+        struct_file_info.path.clone().blue()
+    );
+    let file_info_content = struct_file_info.read_content().unwrap();
+    let file_info_content_lines = file_info_content.lines();
+    let struct_types_colored = StructMetadataType::get_struct_types()
+        .iter()
+        .enumerate()
+        .map(|f| match f.0 {
+            0 => f.1.red(),
+            1 => f.1.yellow(),
+            2 => f.1.green(),
+            3 => f.1.blue(),
+            _ => todo!(),
+        })
+        .collect::<Vec<_>>();
+    for (content_line_index, content_line) in file_info_content_lines.enumerate() {
+        if content_line.contains("pub")
+            && content_line.contains("struct")
+            && content_line.contains("{")
+        {
+            let start_line_index = content_line_index;
+            let end_line_index = file_info_content
+                .lines()
+                .enumerate()
+                .find(|(line_index, line)| line.trim() == "}" && line_index > &start_line_index);
+            if let Some((closing_brace_index, _)) = end_line_index {
+                let end_line_index = closing_brace_index;
+                let struct_metadata_content = file_info_content.lines().collect::<Vec<_>>()
+                    [start_line_index..=end_line_index]
+                    .to_vec()
+                    .join("\n");
+                println!(
+                    "possible struct found at {}",
+                    format!(
+                        "{}:{}",
+                        struct_file_info.path.clone(),
+                        content_line_index + 1
+                    )
+                    .magenta()
+                );
+                let prompt_text = format!(
+                    "Are these lines a {}?:\n{}",
+                    "Struct".red(),
+                    struct_metadata_content.green()
+                );
+                let is_struct = utils::cli_inputs::select_yes_or_no(&prompt_text)?;
+                if is_struct {
+                    let prompt_text = "Select the type of struct:";
+                    let selection =
+                        utils::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
+                    let selection_type_enum = StructMetadataType::from_index(selection);
+                    let struct_first_line = struct_metadata_content.split("\n").next().unwrap();
+                    let struct_name = get_struct_name(struct_first_line);
+                    let struct_metadata = StructMetadata::new(
+                        struct_file_info.path.clone(),
+                        struct_name.to_string(),
+                        selection_type_enum,
+                        start_line_index + 1,
+                        end_line_index + 1,
                     );
-                    let prompt_text = format!(
-                        "Are these lines a {}?:\n{}",
-                        "Struct".red(),
-                        struct_metadata_content.green()
-                    );
-                    let is_struct = utils::cli_inputs::select_yes_or_no(&prompt_text)?;
-                    if is_struct {
-                        let prompt_text = "Select the type of struct:";
-                        let selection = utils::cli_inputs::select(
-                            prompt_text,
-                            struct_types_colored.clone(),
-                            None,
-                        )?;
-                        let selection_type_enum = StructMetadataType::from_index(selection);
-                        let struct_first_line = struct_metadata_content.split("\n").next().unwrap();
-                        let struct_name = get_struct_name(struct_first_line);
-                        let struct_metadata = StructMetadata::new(
-                            struct_file_info.path.clone(),
-                            struct_name.to_string(),
-                            selection_type_enum,
-                            start_line_index + 1,
-                            end_line_index + 1,
-                        );
-                        struct_metadata_vec.push(struct_metadata);
-                    }
-                };
-            }
+                    struct_metadata_vec.push(struct_metadata);
+                }
+            };
         }
-        println!(
-            "finishing the review of the {} file",
-            struct_file_info.path.clone().blue()
-        );
-        Ok(struct_metadata_vec)
     }
+    println!(
+        "finishing the review of the {} file",
+        struct_file_info.path.clone().blue()
+    );
+    Ok(struct_metadata_vec)
+}
 
-    fn get_struct_name(struct_line: &str) -> String {
-        struct_line.split_whitespace().collect::<Vec<_>>()[2]
-            .split("<")
-            .next()
-            .unwrap()
-            .replace(":", "")
-            .to_string()
-            .clone()
-    }
+fn get_struct_name(struct_line: &str) -> String {
+    struct_line.split_whitespace().collect::<Vec<_>>()[2]
+        .split("<")
+        .next()
+        .unwrap()
+        .replace(":", "")
+        .to_string()
+        .clone()
+}
 
-    pub fn get_structs_section_content(header: &str, struct_metadata: StructMetadata) -> String {
-        // let mut sorted_vec = structs_vec.clone();
-        // sorted_vec.sort_by(|structs_a, structs_b| structs_a.name.cmp(&structs_b.name));
-        // let mut result_vec = sorted_vec
-        //     .iter()
-        //     .map(|struct_result| {
+fn get_structs_section_content(header: &str, struct_metadata: StructMetadata) -> String {
+    format!(
+        "{header}\n\n{}{}{}{}",
         format!(
-            "{header}\n\n{}{}{}{}",
-            format!(
-                "{} {}\n",
-                METADATA_CONTENT_TYPE_SECTION,
-                struct_metadata.struct_type.to_string()
-            ),
-            format!(
-                "{} {}\n",
-                METADATA_CONTENT_PATH_SECTION, struct_metadata.path
-            ),
-            format!(
-                "{} {}\n",
-                METADATA_CONTENT_START_LINE_INDEX_SECTION, struct_metadata.start_line_index
-            ),
-            format!(
-                "{} {}\n",
-                METADATA_CONTENT_END_LINE_INDEX_SECTION, struct_metadata.end_line_index
-            ),
-        )
-    }
-
-    // pub fn get_structs_metadata_content()-> {
-
-    // }
+            "{} {}\n",
+            METADATA_CONTENT_TYPE_SECTION,
+            struct_metadata.struct_type.to_string()
+        ),
+        format!(
+            "{} {}\n",
+            METADATA_CONTENT_PATH_SECTION, struct_metadata.path
+        ),
+        format!(
+            "{} {}\n",
+            METADATA_CONTENT_START_LINE_INDEX_SECTION, struct_metadata.start_line_index
+        ),
+        format!(
+            "{} {}\n",
+            METADATA_CONTENT_END_LINE_INDEX_SECTION, struct_metadata.end_line_index
+        ),
+    )
 }
