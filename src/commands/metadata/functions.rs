@@ -18,8 +18,9 @@ const FUNCTIONS_SECTION_TITLE: &str = "Functions";
 const HANDLERS_SUBSECTION_TITLE: &str = "Handlers";
 const ENTRYPOINTS_SUBSECTION_TITLE: &str = "Entrypoints";
 const HELPERS_SUBSECTION_TITLE: &str = "Helpers";
+const VALIDATORS_SUBSECTION_TITLE: &str = "Validators";
 const OTHERS_SUBSECTION_TITLE: &str = "Other";
-const function_TYPES_STRING: &[&str] = &["handler", "entry_point", "helper", "other"];
+const FUNCTION_TYPES_STRING: &[&str] = &["handler", "entry_point", "helper", "validator", "other"];
 
 #[derive(Debug, Clone)]
 pub struct FunctionMetadata {
@@ -61,7 +62,7 @@ impl FunctionMetadata {
             &function_section.content,
             FUNCTION_TYPE_SECTION,
         );
-        let function_type_index = function_TYPES_STRING
+        let function_type_index = FUNCTION_TYPES_STRING
             .to_vec()
             .into_iter()
             .position(|function_type| function_type == function_type_string)
@@ -94,6 +95,7 @@ pub enum FunctionMetadataType {
     Handler,
     EntryPoint,
     Helper,
+    Validator,
     Other,
 }
 
@@ -103,13 +105,14 @@ impl FunctionMetadataType {
             FunctionMetadataType::Handler => 0,
             FunctionMetadataType::EntryPoint => 1,
             FunctionMetadataType::Helper => 2,
-            FunctionMetadataType::Other => 3,
+            FunctionMetadataType::Validator => 3,
+            FunctionMetadataType::Other => 4,
         }
     }
 
     fn to_string(&self) -> &str {
         let index = self.get_function_metadata_index();
-        function_TYPES_STRING[index]
+        FUNCTION_TYPES_STRING[index]
     }
 
     fn from_index(index: usize) -> FunctionMetadataType {
@@ -117,13 +120,14 @@ impl FunctionMetadataType {
             0 => FunctionMetadataType::Handler,
             1 => FunctionMetadataType::EntryPoint,
             2 => FunctionMetadataType::Helper,
-            3 => FunctionMetadataType::Other,
+            3 => FunctionMetadataType::Validator,
+            4 => FunctionMetadataType::Other,
             _ => todo!(),
         }
     }
     fn get_function_types<'a>() -> Vec<&'a str> {
-        let mut result_vec = vec![""; function_TYPES_STRING.len()];
-        result_vec.copy_from_slice(function_TYPES_STRING);
+        let mut result_vec = vec![""; FUNCTION_TYPES_STRING.len()];
+        result_vec.copy_from_slice(FUNCTION_TYPES_STRING);
         result_vec
     }
 }
@@ -136,7 +140,6 @@ pub fn update_functions() -> Result<(), String> {
         .get_section_by_title(FUNCTIONS_SECTION_TITLE)
         .clone();
     // check if empty
-    println!("functions {:#?}", functions_section);
     let is_initialized = !functions_section
         .subsections
         .iter()
@@ -155,8 +158,13 @@ pub fn update_functions() -> Result<(), String> {
         }
     }
     // get functions in all files
-    let (handlers_metadata_vec, entry_poins_metadata_vec, helpers_metadata_vec, other_metadata_vec) =
-        get_functions_metadata_from_program()?;
+    let (
+        handlers_metadata_vec,
+        entry_poins_metadata_vec,
+        helpers_metadata_vec,
+        validators_metadata_vec,
+        other_metadata_vec,
+    ) = get_functions_metadata_from_program()?;
 
     let handlers_subsections: Vec<MarkdownSection> = handlers_metadata_vec
         .into_iter()
@@ -179,6 +187,15 @@ pub fn update_functions() -> Result<(), String> {
         .collect();
 
     let helpers_subsections: Vec<MarkdownSection> = helpers_metadata_vec
+        .into_iter()
+        .map(|metadata| {
+            MarkdownSection::new_from_content(&get_functions_section_content(
+                &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                metadata,
+            ))
+        })
+        .collect();
+    let validators_subsections: Vec<MarkdownSection> = validators_metadata_vec
         .into_iter()
         .map(|metadata| {
             MarkdownSection::new_from_content(&get_functions_section_content(
@@ -210,6 +227,9 @@ pub fn update_functions() -> Result<(), String> {
         .update_subsection_subsections_by_title(HELPERS_SUBSECTION_TITLE, helpers_subsections)
         .unwrap();
     functions_section
+        .update_subsection_subsections_by_title(VALIDATORS_SUBSECTION_TITLE, validators_subsections)
+        .unwrap();
+    functions_section
         .update_subsection_subsections_by_title(OTHERS_SUBSECTION_TITLE, other_subsections)
         .unwrap();
     metadata_markdown
@@ -231,10 +251,11 @@ pub fn get_functions_metadata_from_program() -> Result<
         Vec<FunctionMetadata>,
         Vec<FunctionMetadata>,
         Vec<FunctionMetadata>,
+        Vec<FunctionMetadata>,
     ),
     String,
 > {
-    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, true);
+    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, false);
     let program_folder_files_info = utils::helpers::get::get_only_files_from_folder(program_path)?;
     let mut functions_metadata: Vec<FunctionMetadata> = vec![];
     for file_info in program_folder_files_info {
@@ -256,7 +277,12 @@ pub fn get_functions_metadata_from_program() -> Result<
         .filter(|metadata| metadata.function_type == FunctionMetadataType::Helper)
         .map(|f| f.clone())
         .collect::<Vec<_>>();
-    let mut validation_metadata_vec = functions_metadata
+    let mut validators_metadata_vec = functions_metadata
+        .iter()
+        .filter(|metadata| metadata.function_type == FunctionMetadataType::Validator)
+        .map(|f| f.clone())
+        .collect::<Vec<_>>();
+    let mut others_metadata_vec = functions_metadata
         .iter()
         .filter(|metadata| metadata.function_type == FunctionMetadataType::Other)
         .map(|f| f.clone())
@@ -267,13 +293,15 @@ pub fn get_functions_metadata_from_program() -> Result<
         .sort_by(|functions_a, functions_b| functions_a.name.cmp(&functions_b.name));
     helpers_metadata_vec
         .sort_by(|functions_a, functions_b| functions_a.name.cmp(&functions_b.name));
-    validation_metadata_vec
+    validators_metadata_vec
         .sort_by(|functions_a, functions_b| functions_a.name.cmp(&functions_b.name));
+    others_metadata_vec.sort_by(|functions_a, functions_b| functions_a.name.cmp(&functions_b.name));
     Ok((
         handlers_metadata_vec,
         entry_points_metadata_vec,
         helpers_metadata_vec,
-        validation_metadata_vec,
+        validators_metadata_vec,
+        others_metadata_vec,
     ))
 }
 
@@ -294,7 +322,8 @@ fn get_function_metadata_from_file_info(
             0 => f.1.red(),
             1 => f.1.yellow(),
             2 => f.1.green(),
-            3 => f.1.blue(),
+            3 => f.1.purple(),
+            4 => f.1.blue(),
             _ => todo!(),
         })
         .collect::<Vec<_>>();
@@ -366,11 +395,13 @@ fn get_function_metadata_from_file_info(
 }
 
 fn get_function_name(function_line: &str) -> String {
-    function_line.split_whitespace().collect::<Vec<_>>()[2]
+    function_line.trim().split("fn ").collect::<Vec<_>>()[1]
+        .split("(")
+        .next()
+        .unwrap()
         .split("<")
         .next()
         .unwrap()
-        .replace(":", "")
         .to_string()
         .clone()
 }

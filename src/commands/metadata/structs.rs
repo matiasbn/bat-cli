@@ -222,7 +222,7 @@ pub fn get_structs_metadata_from_program() -> Result<
     ),
     String,
 > {
-    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, true);
+    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, false);
     let program_folder_files_info = utils::helpers::get::get_only_files_from_folder(program_path)?;
     let mut structs_metadata: Vec<StructMetadata> = vec![];
     for file_info in program_folder_files_info {
