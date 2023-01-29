@@ -9,6 +9,7 @@ mod command_line;
 mod commands;
 mod config;
 mod constants;
+mod markdown;
 mod package;
 mod structs;
 mod utils;
