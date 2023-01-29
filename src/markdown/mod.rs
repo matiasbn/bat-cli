@@ -58,11 +58,21 @@ impl MardkownFile {
         Ok(())
     }
 
-    pub fn get_section_by_title(self, title: &str) -> MarkdownSection {
+    pub fn get_section_by_title(&self, title: &str) -> MarkdownSection {
         self.sections
+            .clone()
             .into_iter()
             .find(|section| section.title == title)
             .unwrap()
+    }
+
+    pub fn get_subsections(&self) -> Vec<MarkdownSection> {
+        let mut subsections: Vec<MarkdownSection> = vec![];
+        let thing = self
+            .sections
+            .iter()
+            .map(|section| subsections.append(&mut section.get_children_subsections().unwrap()));
+        subsections
     }
 }
 
@@ -138,18 +148,33 @@ impl MarkdownSection {
         MarkdownSection::new(title.to_string(), level, &section_content)
     }
 
+    pub fn update_subsection_subsections_by_title(
+        &mut self,
+        title: &str,
+        subsections: Vec<MarkdownSection>,
+    ) -> Result<(), String> {
+        let new_subsection = MarkdownSection::new_from_subsections(
+            title,
+            self.level.get_subsection_level(),
+            subsections.clone(),
+        );
+        self.update_subsection_by_title(title, new_subsection)
+            .unwrap();
+        Ok(())
+    }
+
     fn get_header(&self) -> String {
         self.level.get_header(&self.title)
     }
 
-    // pub fn replace_all_subsections(
-    //     &mut self,
-    //     new_subsections: Vec<MarkdownSection>,
-    // ) -> Result<(), io::Error> {
-    //     self.subsections = new_subsections;
-    //     self.update_content().unwrap();
-    //     Ok(())
-    // }
+    pub fn get_children_subsections(&self) -> Result<Vec<MarkdownSection>, io::Error> {
+        let mut children_subsections_vec: Vec<MarkdownSection> = vec![];
+        let mut children_subsections = self.subsections.clone().into_iter().map(|subsection| {
+            children_subsections_vec
+                .append(&mut subsection.clone().get_children_subsections().unwrap())
+        });
+        Ok(children_subsections_vec.clone())
+    }
 
     pub fn update_subsection_by_title(
         &mut self,
@@ -252,7 +277,6 @@ impl MarkdownSectionLevel {
 
 pub trait MarkdownParser {
     fn get_section_content(title: &str, level: MarkdownSectionLevel, content: &str) -> String {
-        println!("title {}", title);
         let header = level.get_header(title);
         let prefix = level.get_prefix();
         let last_line_index = content.lines().count() - 1;
@@ -393,7 +417,7 @@ fn test_replace_section() {
 }
 
 #[test]
-fn test_replace_subsection() {
+fn test_get_subsections() {
     let md_file_content = format!("{TEST_FIRST_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}");
     let path = "./test_md.md";
     fs::write(path, &md_file_content).unwrap();
@@ -401,20 +425,6 @@ fn test_replace_subsection() {
     let mut markdown = MardkownFile::new("./test_md.md");
 
     fs::remove_file(path).unwrap();
-    let new_section = MarkdownSection::new_from_content(TEST_THIRD_SECTION_CONTENT);
-    let sections = markdown.sections.clone();
-
-    markdown
-        .replace_section(sections[0].clone(), new_section)
-        .unwrap();
-    let first_section = markdown.sections[0].clone();
-    let second_section = markdown.sections[1].clone();
-    assert_eq!(first_section.title, "Third section");
-    assert_eq!(second_section.title, "Second section");
-
-    assert_eq!(first_section.content, TEST_THIRD_SECTION_CONTENT);
-    assert_eq!(second_section.content, TEST_SECOND_SECTION_CONTENT);
-
-    let expected_content = format!("{TEST_THIRD_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}");
-    assert_eq!(markdown.content, expected_content);
+    let subsections = markdown.get_subsections();
+    println!("sub {:#?}", subsections);
 }

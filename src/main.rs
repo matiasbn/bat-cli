@@ -172,10 +172,10 @@ async fn main() {
             .await
             .unwrap(),
         Commands::Metadata(MetadataActions::Structs) => {
-            commands::metadata::update_structs().unwrap()
+            commands::metadata::structs::update_structs().unwrap()
         }
         Commands::Metadata(MetadataActions::Miro) => {
-            commands::metadata::update_miro().await.unwrap()
+            commands::metadata::miro::update_miro().await.unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
