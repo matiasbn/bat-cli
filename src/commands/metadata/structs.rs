@@ -1,4 +1,4 @@
-use crate::markdown::{MardkownFile, MarkdownSection, MarkdownSectionLevel};
+use crate::markdown::{MarkdownFile, MarkdownSection, MarkdownSectionLevel};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 
@@ -14,7 +14,7 @@ const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
 const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
 const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
 const METADATA_CONTENT_END_LINE_INDEX_SECTION: &str = "- end_line_index:";
-const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
+pub const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
 
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
@@ -44,7 +44,7 @@ impl StructMetadata {
 
     fn new_from_metadata_name(struct_name: &str) -> Self {
         let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
-        let metadata_markdown = MardkownFile::new(&metadata_path);
+        let metadata_markdown = MarkdownFile::new(&metadata_path);
         let struct_section = metadata_markdown.clone().get_section_by_title("Structs");
         let path = metadata_helpers::parse_metadata_info_section(
             &struct_section.content,
@@ -123,7 +123,7 @@ impl StructMetadataType {
 
 pub fn update_structs() -> Result<(), String> {
     let metadata_path = utils::path::get_file_path(FilePathType::Metadata, false);
-    let mut metadata_markdown = MardkownFile::new(&metadata_path);
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut structs_section = metadata_markdown
         .clone()
         .get_section_by_title("Structs")

@@ -1,4 +1,4 @@
-use crate::markdown::{MardkownFile, MarkdownSection, MarkdownSectionLevel};
+use crate::markdown::{MarkdownFile, MarkdownSection, MarkdownSectionLevel};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 
@@ -20,7 +20,8 @@ const ENTRYPOINTS_SUBSECTION_TITLE: &str = "Entrypoints";
 const HELPERS_SUBSECTION_TITLE: &str = "Helpers";
 const VALIDATORS_SUBSECTION_TITLE: &str = "Validators";
 const OTHERS_SUBSECTION_TITLE: &str = "Other";
-const FUNCTION_TYPES_STRING: &[&str] = &["handler", "entry_point", "helper", "validator", "other"];
+pub const FUNCTION_TYPES_STRING: &[&str] =
+    &["handler", "entry_point", "helper", "validator", "other"];
 
 #[derive(Debug, Clone)]
 pub struct FunctionMetadata {
@@ -50,7 +51,7 @@ impl FunctionMetadata {
 
     fn new_from_metadata_name(function_name: &str) -> Self {
         let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
-        let metadata_markdown = MardkownFile::new(&metadata_path);
+        let metadata_markdown = MarkdownFile::new(&metadata_path);
         let function_section = metadata_markdown
             .clone()
             .get_section_by_title(FUNCTIONS_SECTION_TITLE);
@@ -134,7 +135,7 @@ impl FunctionMetadataType {
 
 pub fn update_functions() -> Result<(), String> {
     let metadata_path = utils::path::get_file_path(FilePathType::Metadata, false);
-    let mut metadata_markdown = MardkownFile::new(&metadata_path);
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut functions_section = metadata_markdown
         .clone()
         .get_section_by_title(FUNCTIONS_SECTION_TITLE)

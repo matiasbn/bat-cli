@@ -8,7 +8,7 @@ use crate::constants::{
     MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE,
     MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
 };
-use crate::markdown::MardkownFile;
+use crate::markdown::MarkdownFile;
 
 use crate::utils::git::GitCommit;
 
@@ -34,7 +34,7 @@ pub struct MiroAccountMetadata {
 pub async fn update_miro() -> Result<(), String> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
     let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
-    let metadata_markdown = MardkownFile::new(&metadata_path);
+    let metadata_markdown = MarkdownFile::new(&metadata_path);
     let miro_section = metadata_markdown.clone().get_section_by_title("Miro");
     let prompt_text = "Please select the Miro metadata section to update";
     let sections = MIRO_SUBSECTIONS_HEADERS

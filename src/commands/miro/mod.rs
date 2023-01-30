@@ -1,16 +1,17 @@
 use crate::config::*;
+use crate::markdown;
+use crate::utils;
 use crate::utils::git::*;
 use normalize_url::normalizer;
 use reqwest;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use reqwest::multipart::{self};
 use serde_json::*;
 use std::fs;
 use std::result::Result;
-
-use crate::utils;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use reqwest::multipart::{self};
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
+pub mod image;
 pub mod shape;
 use crate::constants::*;
 
@@ -254,33 +255,33 @@ pub mod api {
                 Err(err_message) => Err(err_message.to_string()),
             }
         }
-        // pub async fn get_frame_positon(frame_id: String) -> (u64, u64) {
-        //     let MiroConfig {
-        //         access_token,
-        //         board_id,
-        //         ..
-        //     } = MiroConfig::new();
-        //     let client = reqwest::Client::new();
-        //     let board_response = client
-        //         .get(format!(
-        //             "https://api.miro.com/v2/boards/{board_id}/frames/{frame_id}"
-        //         ))
-        //         .header(CONTENT_TYPE, "application/json")
-        //         .header(AUTHORIZATION, format!("Bearer {access_token}"))
-        //         .send()
-        //         .await
-        //         .unwrap()
-        //         .text()
-        //         .await
-        //         .unwrap();
-        //     let response: Value = serde_json::from_str(board_response.as_str()).unwrap();
-        //     let x_position = response["position"]["x"].clone();
-        //     let y_position = response["position"]["y"].clone();
-        //     (
-        //         x_position.as_f64().unwrap() as u64,
-        //         y_position.as_f64().unwrap() as u64,
-        //     )
-        // }
+        pub async fn get_frame_positon(frame_id: String) -> (u64, u64) {
+            let MiroConfig {
+                access_token,
+                board_id,
+                ..
+            } = MiroConfig::new();
+            let client = reqwest::Client::new();
+            let board_response = client
+                .get(format!(
+                    "https://api.miro.com/v2/boards/{board_id}/frames/{frame_id}"
+                ))
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {access_token}"))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            let response: Value = serde_json::from_str(board_response.as_str()).unwrap();
+            let x_position = response["position"]["x"].clone();
+            let y_position = response["position"]["y"].clone();
+            (
+                x_position.as_f64().unwrap() as u64,
+                y_position.as_f64().unwrap() as u64,
+            )
+        }
         pub async fn update_frame_position(
             entrypoint_name: String,
             co_finished_files: i32,
@@ -884,6 +885,7 @@ pub mod commands {
         commands::{
             entrypoints::entrypoints::get_entrypoints_names, miro::api::connector::ConnectorOptions,
         },
+        markdown::MarkdownFile,
         structs::{SignerInfo, SignerType},
         utils::{
             self,
@@ -1254,6 +1256,56 @@ pub mod commands {
                 .create_shape_in_frame(miro_shape_style, &miro_frame_id)
                 .await?;
         }
+        Ok(())
+    }
+
+    pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
+        let prompt_text = format!("Please enter the {}", "destination frame url".green());
+        let frame_url = utils::cli_inputs::input(&prompt_text)?;
+        let miro_frame_id = helpers::get_item_id_from_miro_url(&frame_url);
+        let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
+        let metadata_markdown = MarkdownFile::new(&metadata_path);
+        // Choose metadata section selection
+        let metadata_sections_names: Vec<String> = metadata_markdown
+            .clone()
+            .sections
+            .into_iter()
+            .map(|section| section.title)
+            .collect();
+        let prompt_text = format!("Please enter the {}", "content type".green());
+        let selection =
+            utils::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None).unwrap();
+        let section_selected = &metadata_sections_names[selection];
+        let section = metadata_markdown
+            .clone()
+            .get_section_by_title(section_selected);
+        // Choose metadata subsection selection
+        let prompt_text = format!("Please enter the {}", "content sub type".green());
+        let metadata_subsections_names: Vec<String> = section
+            .subsections
+            .clone()
+            .into_iter()
+            .map(|section| section.title)
+            .collect();
+        let selection =
+            utils::cli_inputs::select(&prompt_text, metadata_subsections_names.clone(), None)
+                .unwrap();
+        let subsection_selected = section.subsections[selection].clone();
+        // Choose metadata final selection
+        let prompt_text = format!("Please enter the {}", "content to deploy".green());
+        let metadata_subsubsections_names: Vec<String> = subsection_selected
+            .subsections
+            .clone()
+            .into_iter()
+            .map(|section| section.title)
+            .collect();
+        let selection =
+            utils::cli_inputs::select(&prompt_text, metadata_subsubsections_names.clone(), None)
+                .unwrap();
+        let subsubsection_selected = subsection_selected.subsections[selection].clone();
+        // let subsubsection =
+        //     subsubsection_selected.get_subsection_by_title(&subsubsection_selected.title);
+        println!("subsubsection  {:#?}", subsubsection_selected);
         Ok(())
     }
 

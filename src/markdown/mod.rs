@@ -1,19 +1,19 @@
 use std::{fs, io};
 
 #[derive(Debug, Clone)]
-pub struct MardkownFile {
+pub struct MarkdownFile {
     pub path: String,
     pub content: String,
     pub sections: Vec<MarkdownSection>,
 }
 
-impl MarkdownParser for MardkownFile {}
+impl MarkdownParser for MarkdownFile {}
 
-impl MardkownFile {
+impl MarkdownFile {
     pub fn new(path: &str) -> Self {
         let md_file_content = fs::read_to_string(path).unwrap();
         let sections = Self::get_sections(md_file_content.clone(), MarkdownSectionLevel::H1);
-        MardkownFile {
+        MarkdownFile {
             path: path.to_string(),
             content: md_file_content,
             sections,
@@ -375,7 +375,7 @@ fn test_new_markdown_file() {
     let path = "./test_md.md";
     fs::write(path, &md_file_content).unwrap();
 
-    let markdown = MardkownFile::new("./test_md.md");
+    let markdown = MarkdownFile::new("./test_md.md");
 
     fs::remove_file(path).unwrap();
 
@@ -395,7 +395,7 @@ fn test_replace_section() {
     let path = "./test_md.md";
     fs::write(path, &md_file_content).unwrap();
 
-    let mut markdown = MardkownFile::new("./test_md.md");
+    let mut markdown = MarkdownFile::new("./test_md.md");
 
     fs::remove_file(path).unwrap();
     let new_section = MarkdownSection::new_from_content(TEST_THIRD_SECTION_CONTENT);
@@ -422,7 +422,7 @@ fn test_get_subsections() {
     let path = "./test_md.md";
     fs::write(path, &md_file_content).unwrap();
 
-    let markdown = MardkownFile::new("./test_md.md");
+    let markdown = MarkdownFile::new("./test_md.md");
 
     fs::remove_file(path).unwrap();
     let subsections = markdown.get_subsections();

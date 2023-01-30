@@ -90,6 +90,8 @@ enum MiroActions {
     Accounts,
     /// Creates or updates the Entrypoints frame
     Entrypoints,
+    /// Creates an screenshot in a determined frame
+    Screenshot,
 }
 #[derive(Subcommand, Debug)]
 enum TMActions {
@@ -171,6 +173,11 @@ async fn main() {
         Commands::Miro(MiroActions::Entrypoints) => commands::miro::commands::deploy_entrypoints()
             .await
             .unwrap(),
+        Commands::Miro(MiroActions::Screenshot) => {
+            commands::miro::commands::deploy_screenshot_to_frame()
+                .await
+                .unwrap()
+        }
         Commands::Metadata(MetadataActions::Structs) => {
             commands::metadata::structs::update_structs().unwrap()
         }
