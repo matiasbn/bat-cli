@@ -7,6 +7,7 @@ pub enum FilePathType {
     ThreatModeling,
     AuditResult,
     FindingsResult,
+    FindingsRobotResult,
     CodeOverhaulResult,
     FindingCandidates,
     OpenQuestions,
@@ -48,6 +49,9 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
         }
         FilePathType::FindingsResult => {
             format!("./audit_result/findings_result.md")
+        }
+        FilePathType::FindingsRobotResult => {
+            format!("./audit_result/02_findings_result.md")
         }
         FilePathType::CodeOverhaulResult => {
             format!("./audit_result/co_result.md")

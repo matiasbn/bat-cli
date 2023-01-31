@@ -1,6 +1,6 @@
 [package]
 name = "bat-cli"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 description = "Blockchain Auditor Toolkit (BAT)"
 license = "MIT"
@@ -27,6 +27,7 @@ serde_json = "1.0.91"
 colored = "2.0.0"
 normalize_url = "0.2.0"
 thiserror = "1.0.38"
+strum_macros = "0.24.3"
 
 [profile.dev]
 overflow-checks = true

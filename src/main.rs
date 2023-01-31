@@ -9,7 +9,9 @@ mod command_line;
 mod commands;
 mod config;
 mod constants;
+mod markdown;
 mod package;
+mod silicon;
 mod structs;
 mod utils;
 use std::{error, result};
@@ -61,7 +63,11 @@ enum ResultActions {
     /// Updates the Code Overhaul section of the audit_result.md file
     CodeOverhaul,
     /// Updates the Findings section of the audit_result.md file
-    Findings,
+    Findings {
+        /// updates the result, formatting with html structure
+        #[arg(long)]
+        html: bool,
+    },
     /// Creates the commit for the results files
     Commit,
 }
@@ -71,8 +77,8 @@ enum MetadataActions {
     Structs,
     /// Updates the Miro section of the metadata.md file
     Miro,
-    // /// Updates the Functions section of the metadata.md file
-    // Functions,
+    /// Updates the Functions section of the metadata.md file
+    Functions,
 }
 
 #[derive(Subcommand, Debug)]
@@ -85,6 +91,8 @@ enum MiroActions {
     Accounts,
     /// Creates or updates the Entrypoints frame
     Entrypoints,
+    /// Creates an screenshot in a determined frame
+    Screenshot,
 }
 #[derive(Subcommand, Debug)]
 enum TMActions {
@@ -154,23 +162,23 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
         }
-        Commands::Miro(MiroActions::Deploy) => {
-            commands::miro::commands::deploy_miro().await.unwrap()
+        Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_miro().await.unwrap(),
+        Commands::Miro(MiroActions::Images) => commands::miro::create_co_snapshots().unwrap(),
+        Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),
+        Commands::Miro(MiroActions::Entrypoints) => {
+            commands::miro::deploy_entrypoints().await.unwrap()
         }
-        Commands::Miro(MiroActions::Images) => {
-            commands::miro::commands::create_co_snapshots().unwrap()
+        Commands::Miro(MiroActions::Screenshot) => {
+            commands::miro::deploy_screenshot_to_frame().await.unwrap()
         }
-        Commands::Miro(MiroActions::Accounts) => {
-            commands::miro::commands::deploy_accounts().await.unwrap()
-        }
-        Commands::Miro(MiroActions::Entrypoints) => commands::miro::commands::deploy_entrypoints()
-            .await
-            .unwrap(),
         Commands::Metadata(MetadataActions::Structs) => {
-            commands::metadata::update_structs().unwrap()
+            commands::metadata::structs::update_structs().unwrap()
         }
         Commands::Metadata(MetadataActions::Miro) => {
-            commands::metadata::update_miro().await.unwrap()
+            commands::metadata::miro::update_miro().await.unwrap()
+        }
+        Commands::Metadata(MetadataActions::Functions) => {
+            commands::metadata::functions::update_functions().unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
@@ -180,7 +188,9 @@ async fn main() {
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
         Commands::Notes => utils::git::create_git_commit(GitCommit::Notes, None).unwrap(),
-        Commands::Result(ResultActions::Findings) => commands::result::findings_result().unwrap(),
+        Commands::Result(ResultActions::Findings { html }) => {
+            commands::result::findings_result(html).unwrap()
+        }
         Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]

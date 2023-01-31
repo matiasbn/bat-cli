@@ -19,6 +19,7 @@ pub const FINDING_CODE_PREFIX: &str = "KS";
 pub const RESULT_FINDINGS_SECTION_HEADER: &str = "# Findings result";
 pub const RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER: &str = "## Table of findings";
 pub const RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER: &str = "## List of Findings";
+pub const RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER_ROBOT: &str = "# Findings";
 pub const RESULT_CODE_OVERHAUL_SECTION_HEADER: &str = "# Code overhaul result";
 
 pub const HTML_TABLE_STYLE: &str = "<style>
@@ -330,18 +331,11 @@ impl Finding {
         formatted_finding_content
     }
 
-    pub fn parse_finding_table_row_markdown(&self) -> String {
-        let severity = format!(
-            "<span style='color:{};'>{:#?}</span>",
-            self.severity.get_hex_color(),
-            self.severity
-        );
-        let status = format!(
-            "<span style='color:{};'>{:#?}</span>",
-            self.status.get_hex_color(),
-            self.status
-        );
-        format!("|{}|{}|{}|{}|", self.code, severity, self.title, status)
+    pub fn parse_table_of_findings_table_row(&self) -> String {
+        format!(
+            "|{}|{:#?}|{}|{:#?}|",
+            self.code, self.severity, self.title, self.status
+        )
     }
 
     pub fn parse_list_of_findings_table_row_html(&self) -> String {
@@ -447,7 +441,7 @@ impl Finding {
         }
     }
 }
-pub fn findings_result() -> Result<(), String> {
+pub fn findings_result(generate_html: bool) -> Result<(), String> {
     // get the audit_result path
     let audit_result_temp_path =
         utils::path::get_folder_path(FolderPathType::AuditResultTemp, false);
@@ -496,20 +490,35 @@ pub fn findings_result() -> Result<(), String> {
     execute_command_to_stdio("touch", &[&findings_result_file_path]).unwrap();
     // create new findings_result.md file
     let findings_temp_files = get_only_files_from_folder(audit_result_temp_path.clone())?;
-    let table_of_findings: String = format!("{RESULT_FINDINGS_SECTION_HEADER}\n\n{RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER}\n{HTML_LIST_OF_FINDINGS_HEADER}\n");
+    let mut table_of_findings: String = if generate_html {
+        format!("{RESULT_FINDINGS_SECTION_HEADER}\n\n{RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER}\n{HTML_LIST_OF_FINDINGS_HEADER}\n")
+    } else {
+        format!("{RESULT_FINDINGS_SECTION_HEADER}\n\n{RESULT_FINDINGS_TABLE_OF_FINDINGS_HEADER}\n|#|Severity|Description|Status|\n| :---: | :------: | :----------: | :------------: |")
+    };
     let mut subfolder_findings_content: String =
         format!("\n{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER}\n\n");
+    let mut robot_content: String = format!("{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER_ROBOT}\n");
     let mut root_findings_content: String =
         format!("\n{RESULT_FINDINGS_LIST_OF_FINDINGS_HEADER}\n\n");
     let mut html_rows: Vec<String> = vec![];
     for (finding_file_index, finding_file) in findings_temp_files.into_iter().enumerate() {
         // for every finding file, replace the figures path
         let mut finding = Finding::new_from_path(&finding_file.path, finding_file_index);
-        finding.format_markdown_to_html();
+        if generate_html {
+            finding.format_markdown_to_html();
+        }
         html_rows.push(finding.parse_list_of_findings_table_row_html());
+
         subfolder_findings_content = format!(
             "{}\n{}\n---\n",
             subfolder_findings_content,
+            finding
+                .clone()
+                .parse_finding_content_for_audit_folder_path()
+        );
+        robot_content = format!(
+            "{}\n{}\n---\n",
+            robot_content,
             finding
                 .clone()
                 .parse_finding_content_for_audit_folder_path()
@@ -519,18 +528,35 @@ pub fn findings_result() -> Result<(), String> {
             root_findings_content,
             finding.parse_finding_content_for_root_path()
         );
+        if !generate_html {
+            let table_of_contents_row = finding.parse_table_of_findings_table_row();
+            table_of_findings = format!("{}\n{}", table_of_findings, table_of_contents_row);
+        }
+    }
+    if generate_html {
+        table_of_findings =
+            table_of_findings.replace(RESULT_TABLE_PLACEHOLDER, &html_rows.join("\n"))
     }
     // get content for root and sub folder
-    let root_content = format!(
-        "{}\n{}\n\n\n\n{HTML_TABLE_STYLE}",
-        table_of_findings.replace(RESULT_TABLE_PLACEHOLDER, &html_rows.join("\n")),
-        root_findings_content
-    );
-    let audit_folder_content = format!(
-        "{}\n{}\n\n\n{HTML_TABLE_STYLE}",
-        table_of_findings.replace(RESULT_TABLE_PLACEHOLDER, &html_rows.join("\n")),
-        subfolder_findings_content
-    );
+    let root_content = if generate_html {
+        format!(
+            "{}\n{}\n\n\n\n{HTML_TABLE_STYLE}",
+            table_of_findings, root_findings_content
+        )
+    } else {
+        format!("{}\n{}", table_of_findings, root_findings_content)
+    };
+    let audit_folder_content = if generate_html {
+        format!(
+            "{}\n{}\n\n\n\n{HTML_TABLE_STYLE}",
+            table_of_findings, subfolder_findings_content
+        )
+    } else {
+        format!("{}\n{}", table_of_findings, subfolder_findings_content)
+    };
+
+    let robot_findings_path = get_file_path(FilePathType::FindingsRobotResult, false);
+    fs::write(&robot_findings_path, robot_content).unwrap();
 
     // write to root
     helpers::update_audit_result_root_content(&root_content)?;
@@ -624,7 +650,7 @@ fn test_parse_finding_table_row() {
     let finding_content =
         "## KS-01 This is the description \n\n**Severity:** High\n\n**Status:** Open";
     let finding = Finding::new_from_str(finding_content, 0);
-    let finding_table_row = finding.parse_finding_table_row_markdown();
+    let finding_table_row = finding.parse_table_of_findings_table_row();
     assert_eq!(
         finding_table_row,
         "|KS-01|High|This is the description|Open|"
