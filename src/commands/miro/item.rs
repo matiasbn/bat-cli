@@ -2,7 +2,6 @@ use super::MiroItemType;
 use crate::commands::miro::MiroConfig;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
-use serde_json::Value;
 
 pub struct MiroItem {
     pub item_id: String,
@@ -69,7 +68,7 @@ pub mod api {
         // let started_file_path
         // let x_position = x + x_move;
         let client = reqwest::Client::new();
-        let response = client
+        let _response = client
             .patch(format!(
                 "https://api.miro.com/v2/boards/{board_id}/items/{item_id}",
             ))

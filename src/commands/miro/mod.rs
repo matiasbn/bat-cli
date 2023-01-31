@@ -1,5 +1,3 @@
-use crate::commands::metadata::FunctionsSubSection;
-use crate::commands::metadata::MetadataSection;
 use crate::config::*;
 use crate::utils;
 use crate::utils::git::*;

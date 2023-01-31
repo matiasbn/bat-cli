@@ -8,7 +8,7 @@ use colored::Colorize;
 
 use std::vec;
 
-use super::{metadata_helpers, MetadataContent};
+use super::MetadataContent;
 
 const FUNCTIONS_SECTION_TITLE: &str = "Functions";
 const HANDLERS_SUBSECTION_TITLE: &str = "Handlers";

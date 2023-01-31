@@ -1,7 +1,6 @@
 use std::fs;
 
 use crate::{
-    command_line::vs_code_open_file_in_current_window,
     markdown::MarkdownFile,
     silicon,
     utils::{

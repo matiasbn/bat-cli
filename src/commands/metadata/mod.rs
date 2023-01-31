@@ -3,16 +3,7 @@ pub mod miro;
 pub mod source_code;
 pub mod structs;
 
-use std::fmt::Display;
-
-use crate::{
-    markdown::MarkdownFile,
-    silicon,
-    utils::{
-        self,
-        path::{FilePathType, FolderPathType},
-    },
-};
+use crate::utils::{self};
 
 use colored::Colorize;
 #[derive(strum_macros::Display)]
