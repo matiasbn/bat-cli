@@ -1,4 +1,4 @@
-use crate::markdown::{MardkownFile, MarkdownSection, MarkdownSectionLevel};
+use crate::markdown::{MarkdownFile, MarkdownSection, MarkdownSectionLevel};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 
@@ -8,13 +8,9 @@ use colored::Colorize;
 
 use std::vec;
 
-use super::metadata_helpers;
+use super::MetadataContent;
 
-const METADATA_CONTENT_TYPE_SECTION: &str = "- type:";
-const METADATA_CONTENT_PATH_SECTION: &str = "- path:";
-const METADATA_CONTENT_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
-const METADATA_CONTENT_END_LINE_INDEX_SECTION: &str = "- end_line_index:";
-const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
+pub const STRUCT_TYPES_STRING: &[&str] = &["context_accounts", "account", "input", "other"];
 
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
@@ -40,45 +36,6 @@ impl StructMetadata {
             start_line_index,
             end_line_index,
         }
-    }
-
-    fn new_from_metadata_name(struct_name: &str) -> Self {
-        let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
-        let metadata_markdown = MardkownFile::new(&metadata_path);
-        let struct_section = metadata_markdown.clone().get_section_by_title("Structs");
-        let path = metadata_helpers::parse_metadata_info_section(
-            &struct_section.content,
-            METADATA_CONTENT_PATH_SECTION,
-        );
-        let struct_type_string = metadata_helpers::parse_metadata_info_section(
-            &struct_section.content,
-            METADATA_CONTENT_TYPE_SECTION,
-        );
-        let struct_type_index = STRUCT_TYPES_STRING
-            .to_vec()
-            .into_iter()
-            .position(|struct_type| struct_type == struct_type_string)
-            .unwrap();
-        let struct_type = StructMetadataType::from_index(struct_type_index);
-        let start_line_index: usize = metadata_helpers::parse_metadata_info_section(
-            &struct_section.content,
-            METADATA_CONTENT_START_LINE_INDEX_SECTION,
-        )
-        .parse()
-        .unwrap();
-        let end_line_index: usize = metadata_helpers::parse_metadata_info_section(
-            &struct_section.content,
-            METADATA_CONTENT_END_LINE_INDEX_SECTION,
-        )
-        .parse()
-        .unwrap();
-        StructMetadata::new(
-            path,
-            struct_name.to_string(),
-            struct_type,
-            start_line_index,
-            end_line_index,
-        )
     }
 }
 
@@ -123,7 +80,7 @@ impl StructMetadataType {
 
 pub fn update_structs() -> Result<(), String> {
     let metadata_path = utils::path::get_file_path(FilePathType::Metadata, false);
-    let mut metadata_markdown = MardkownFile::new(&metadata_path);
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut structs_section = metadata_markdown
         .clone()
         .get_section_by_title("Structs")
@@ -352,23 +309,21 @@ fn get_struct_name(struct_line: &str) -> String {
 
 fn get_structs_section_content(header: &str, struct_metadata: StructMetadata) -> String {
     format!(
-        "{header}\n\n{}{}{}{}",
+        "{header}\n\n{}{}{}",
         format!(
             "{} {}\n",
-            METADATA_CONTENT_TYPE_SECTION,
-            struct_metadata.struct_type.to_string()
+            MetadataContent::Path.get_prefix(),
+            struct_metadata.path
         ),
         format!(
             "{} {}\n",
-            METADATA_CONTENT_PATH_SECTION, struct_metadata.path
+            MetadataContent::StartLineIndex.get_prefix(),
+            struct_metadata.start_line_index
         ),
         format!(
             "{} {}\n",
-            METADATA_CONTENT_START_LINE_INDEX_SECTION, struct_metadata.start_line_index
-        ),
-        format!(
-            "{} {}\n",
-            METADATA_CONTENT_END_LINE_INDEX_SECTION, struct_metadata.end_line_index
+            MetadataContent::EndLineIndex.get_prefix(),
+            struct_metadata.end_line_index
         ),
     )
 }

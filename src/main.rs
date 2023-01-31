@@ -11,6 +11,7 @@ mod config;
 mod constants;
 mod markdown;
 mod package;
+mod silicon;
 mod structs;
 mod utils;
 use std::{error, result};
@@ -90,6 +91,8 @@ enum MiroActions {
     Accounts,
     /// Creates or updates the Entrypoints frame
     Entrypoints,
+    /// Creates an screenshot in a determined frame
+    Screenshot,
 }
 #[derive(Subcommand, Debug)]
 enum TMActions {
@@ -159,18 +162,15 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Open) => {
             commands::code_overhaul::open_co().await.unwrap()
         }
-        Commands::Miro(MiroActions::Deploy) => {
-            commands::miro::commands::deploy_miro().await.unwrap()
+        Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_miro().await.unwrap(),
+        Commands::Miro(MiroActions::Images) => commands::miro::create_co_snapshots().unwrap(),
+        Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),
+        Commands::Miro(MiroActions::Entrypoints) => {
+            commands::miro::deploy_entrypoints().await.unwrap()
         }
-        Commands::Miro(MiroActions::Images) => {
-            commands::miro::commands::create_co_snapshots().unwrap()
+        Commands::Miro(MiroActions::Screenshot) => {
+            commands::miro::deploy_screenshot_to_frame().await.unwrap()
         }
-        Commands::Miro(MiroActions::Accounts) => {
-            commands::miro::commands::deploy_accounts().await.unwrap()
-        }
-        Commands::Miro(MiroActions::Entrypoints) => commands::miro::commands::deploy_entrypoints()
-            .await
-            .unwrap(),
         Commands::Metadata(MetadataActions::Structs) => {
             commands::metadata::structs::update_structs().unwrap()
         }

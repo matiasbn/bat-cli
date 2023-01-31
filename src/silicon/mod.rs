@@ -1,24 +1,26 @@
 use std::fs;
 
 pub fn create_figure(
-    source_path: &str,
+    content: &str,
     dest_folder_path: &str,
     file_name: &str,
-    starting_line: usize,
-    ending_line: usize,
-) {
-    let content = fs::read_to_string(source_path)
-        .unwrap()
-        .lines()
-        .collect::<Vec<_>>()[starting_line..=ending_line]
-        .to_vec()
-        .join("\n");
+    offset: usize,
+    font_size: Option<usize>,
+    show_line_number: bool,
+) -> String {
     // write the temporary markdown file
     let (dest_md_path, dest_png_path) = get_dest_md_and_png_path(file_name, dest_folder_path);
-    fs::write(&dest_md_path, content.as_str()).unwrap();
+    fs::write(&dest_md_path, content).unwrap();
     // take the snapshot
-    take_silicon_snapshot(&dest_md_path, &dest_png_path, starting_line);
+    take_silicon_snapshot(
+        &dest_md_path,
+        &dest_png_path,
+        offset,
+        font_size,
+        show_line_number,
+    );
     fs::remove_file(dest_md_path).unwrap();
+    dest_png_path
 }
 
 fn get_dest_md_and_png_path(file_name: &str, dest_folder_path: &str) -> (String, String) {
@@ -28,16 +30,29 @@ fn get_dest_md_and_png_path(file_name: &str, dest_folder_path: &str) -> (String,
     )
 }
 
-fn take_silicon_snapshot(source_md_path: &str, dest_png_path: &str, offset: usize) {
-    let offset = format!("{offset}");
-    let args = vec![
+fn take_silicon_snapshot(
+    source_md_path: &str,
+    dest_png_path: &str,
+    offset: usize,
+    font_size: Option<usize>,
+    show_line_number: bool,
+) {
+    let offset = format!("{}", offset);
+    let font = if let Some(size) = font_size {
+        format!("Hack={size}")
+    } else {
+        format!("Hack=16")
+    };
+
+    let mut args = vec![
         "--no-window-controls",
+        // show_line_number.as_str(),
         "--language",
         "Rust",
         "--line-offset",
         offset.as_str(),
         "--theme",
-        "Visual Studio Dark+",
+        "Monokai Extended",
         "--pad-horiz",
         "40",
         "--pad-vert",
@@ -45,15 +60,19 @@ fn take_silicon_snapshot(source_md_path: &str, dest_png_path: &str, offset: usiz
         "--background",
         "#d3d4d5",
         "--font",
-        "Hack=13",
+        font.as_str(),
         "--output",
         dest_png_path,
         source_md_path,
     ];
-    std::process::Command::new("silicon")
+    if !show_line_number {
+        args.insert(1, "--no-line-number")
+    }
+    let mut child = std::process::Command::new("silicon")
         .args(args)
-        .output()
+        .spawn()
         .unwrap();
+    child.wait().unwrap();
 }
 
 pub fn delete_png_file(path: String) {

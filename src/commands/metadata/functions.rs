@@ -1,4 +1,4 @@
-use crate::markdown::{MardkownFile, MarkdownSection, MarkdownSectionLevel};
+use crate::markdown::{MarkdownFile, MarkdownSection, MarkdownSectionLevel};
 use crate::structs::FileInfo;
 use crate::utils::git::GitCommit;
 
@@ -8,27 +8,24 @@ use colored::Colorize;
 
 use std::vec;
 
-use super::metadata_helpers;
+use super::{metadata_helpers, MetadataContent};
 
-const FUNCTION_TYPE_SECTION: &str = "- type:";
-const FUNCTION_PATH_SECTION: &str = "- path:";
-const FUNCTION_START_LINE_INDEX_SECTION: &str = "- start_line_index:";
-const FUNCTION_END_LINE_INDEX_SECTION: &str = "- end_line_index:";
 const FUNCTIONS_SECTION_TITLE: &str = "Functions";
 const HANDLERS_SUBSECTION_TITLE: &str = "Handlers";
 const ENTRYPOINTS_SUBSECTION_TITLE: &str = "Entrypoints";
 const HELPERS_SUBSECTION_TITLE: &str = "Helpers";
 const VALIDATORS_SUBSECTION_TITLE: &str = "Validators";
 const OTHERS_SUBSECTION_TITLE: &str = "Other";
-const FUNCTION_TYPES_STRING: &[&str] = &["handler", "entry_point", "helper", "validator", "other"];
+pub const FUNCTION_TYPES_STRING: &[&str] =
+    &["handler", "entry_point", "helper", "validator", "other"];
 
 #[derive(Debug, Clone)]
 pub struct FunctionMetadata {
     pub path: String,
     pub name: String,
-    pub function_type: FunctionMetadataType,
     pub start_line_index: usize,
     pub end_line_index: usize,
+    pub function_type: FunctionMetadataType,
 }
 
 impl FunctionMetadata {
@@ -46,47 +43,6 @@ impl FunctionMetadata {
             start_line_index,
             end_line_index,
         }
-    }
-
-    fn new_from_metadata_name(function_name: &str) -> Self {
-        let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
-        let metadata_markdown = MardkownFile::new(&metadata_path);
-        let function_section = metadata_markdown
-            .clone()
-            .get_section_by_title(FUNCTIONS_SECTION_TITLE);
-        let path = metadata_helpers::parse_metadata_info_section(
-            &function_section.content,
-            FUNCTION_PATH_SECTION,
-        );
-        let function_type_string = metadata_helpers::parse_metadata_info_section(
-            &function_section.content,
-            FUNCTION_TYPE_SECTION,
-        );
-        let function_type_index = FUNCTION_TYPES_STRING
-            .to_vec()
-            .into_iter()
-            .position(|function_type| function_type == function_type_string)
-            .unwrap();
-        let function_type = FunctionMetadataType::from_index(function_type_index);
-        let start_line_index: usize = metadata_helpers::parse_metadata_info_section(
-            &function_section.content,
-            FUNCTION_START_LINE_INDEX_SECTION,
-        )
-        .parse()
-        .unwrap();
-        let end_line_index: usize = metadata_helpers::parse_metadata_info_section(
-            &function_section.content,
-            FUNCTION_END_LINE_INDEX_SECTION,
-        )
-        .parse()
-        .unwrap();
-        FunctionMetadata::new(
-            path,
-            function_name.to_string(),
-            function_type,
-            start_line_index,
-            end_line_index,
-        )
     }
 }
 
@@ -134,7 +90,7 @@ impl FunctionMetadataType {
 
 pub fn update_functions() -> Result<(), String> {
     let metadata_path = utils::path::get_file_path(FilePathType::Metadata, false);
-    let mut metadata_markdown = MardkownFile::new(&metadata_path);
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut functions_section = metadata_markdown
         .clone()
         .get_section_by_title(FUNCTIONS_SECTION_TITLE)
@@ -408,20 +364,21 @@ fn get_function_name(function_line: &str) -> String {
 
 fn get_functions_section_content(header: &str, function_metadata: FunctionMetadata) -> String {
     format!(
-        "{header}\n\n{}{}{}{}",
+        "{header}\n\n{}{}{}",
         format!(
             "{} {}\n",
-            FUNCTION_TYPE_SECTION,
-            function_metadata.function_type.to_string()
-        ),
-        format!("{} {}\n", FUNCTION_PATH_SECTION, function_metadata.path),
-        format!(
-            "{} {}\n",
-            FUNCTION_START_LINE_INDEX_SECTION, function_metadata.start_line_index
+            MetadataContent::Path.get_prefix(),
+            function_metadata.path
         ),
         format!(
             "{} {}\n",
-            FUNCTION_END_LINE_INDEX_SECTION, function_metadata.end_line_index
+            MetadataContent::StartLineIndex.get_prefix(),
+            function_metadata.start_line_index
+        ),
+        format!(
+            "{} {}\n",
+            MetadataContent::EndLineIndex.get_prefix(),
+            function_metadata.end_line_index
         ),
     )
 }
