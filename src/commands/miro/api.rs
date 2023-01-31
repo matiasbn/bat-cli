@@ -3,13 +3,15 @@ pub mod frame {
     use super::*;
 
     #[derive(Debug)]
-    pub struct MiroFrame {
+    pub struct MiroFrameIdAndUrl {
         pub id: String,
         pub url: String,
     }
 
     // returns the frame url
-    pub async fn create_frame_for_entrypoint(entrypoint_name: &str) -> Result<MiroFrame, String> {
+    pub async fn create_frame_for_entrypoint(
+        entrypoint_name: &str,
+    ) -> Result<MiroFrameIdAndUrl, String> {
         let MiroConfig {
             access_token,
             board_id,
@@ -46,7 +48,7 @@ pub mod frame {
             Ok(response) => {
                 let frame_id = super::helpers::get_id_from_response(response).await;
                 let frame_url = MiroConfig::new().get_frame_url(&frame_id);
-                Ok(MiroFrame {
+                Ok(MiroFrameIdAndUrl {
                     id: frame_id,
                     url: frame_url,
                 })
@@ -61,7 +63,7 @@ pub mod frame {
         y_position: i32,
         width: i32,
         height: i32,
-    ) -> Result<MiroFrame, String> {
+    ) -> Result<MiroFrameIdAndUrl, String> {
         let MiroConfig {
             access_token,
             board_id,
@@ -98,7 +100,7 @@ pub mod frame {
             Ok(response) => {
                 let frame_id = super::helpers::get_id_from_response(response).await;
                 let frame_url = MiroConfig::new().get_frame_url(&frame_id);
-                Ok(MiroFrame {
+                Ok(MiroFrameIdAndUrl {
                     id: frame_id,
                     url: frame_url,
                 })
@@ -359,7 +361,7 @@ pub mod item {
         } = MiroConfig::new();
         let client = reqwest::Client::new();
         let url = if let Some(item_type) = miro_item_type {
-            let item_type_string = item_type.str_item_type().unwrap();
+            let item_type_string = item_type.str_item_type();
             format!(
                 "https://api.miro.com/v2/boards/{board_id}/items?limit=50&type={}",
                 item_type_string

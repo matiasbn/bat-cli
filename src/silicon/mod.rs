@@ -43,20 +43,16 @@ fn take_silicon_snapshot(
     } else {
         format!("Hack=16")
     };
-    let show_line_number = if !show_line_number {
-        format!("--no-line-number")
-    } else {
-        format!("")
-    };
-    let args = vec![
+
+    let mut args = vec![
         "--no-window-controls",
-        show_line_number.as_str(),
+        // show_line_number.as_str(),
         "--language",
         "Rust",
         "--line-offset",
         offset.as_str(),
         "--theme",
-        "Visual Studio Dark+",
+        "Monokai Extended",
         "--pad-horiz",
         "40",
         "--pad-vert",
@@ -69,10 +65,14 @@ fn take_silicon_snapshot(
         dest_png_path,
         source_md_path,
     ];
-    std::process::Command::new("silicon")
+    if !show_line_number {
+        args.insert(1, "--no-line-number")
+    }
+    let mut child = std::process::Command::new("silicon")
         .args(args)
-        .output()
+        .spawn()
         .unwrap();
+    child.wait().unwrap();
 }
 
 pub fn delete_png_file(path: String) {

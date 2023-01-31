@@ -15,6 +15,7 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 pub mod api;
 pub mod frame;
 pub mod image;
+pub mod item;
 pub mod shape;
 use crate::constants::*;
 
@@ -53,7 +54,6 @@ impl MiroConfig {
         url
     }
 }
-
 #[derive(Debug)]
 pub enum MiroItemType {
     AppCard,
@@ -68,21 +68,20 @@ pub enum MiroItemType {
 }
 
 impl MiroItemType {
-    fn str_item_type(&self) -> Result<String, String> {
+    pub fn str_item_type(&self) -> String {
         match self {
-            MiroItemType::AppCard => Ok("app_card".to_string()),
-            MiroItemType::Card => Ok("card".to_string()),
-            MiroItemType::Document => Ok("document".to_string()),
-            MiroItemType::Embed => Ok("embed".to_string()),
-            MiroItemType::Frame => Ok("frame".to_string()),
-            MiroItemType::Image => Ok("image".to_string()),
-            MiroItemType::Shape => Ok("shape".to_string()),
-            MiroItemType::StickyNote => Ok("sticky_note".to_string()),
-            MiroItemType::Text => Ok("text".to_string()),
+            MiroItemType::AppCard => "app_card".to_string(),
+            MiroItemType::Card => "card".to_string(),
+            MiroItemType::Document => "document".to_string(),
+            MiroItemType::Embed => "embed".to_string(),
+            MiroItemType::Frame => "frame".to_string(),
+            MiroItemType::Image => "image".to_string(),
+            MiroItemType::Shape => "shape".to_string(),
+            MiroItemType::StickyNote => "sticky_note".to_string(),
+            MiroItemType::Text => "text".to_string(),
         }
     }
 }
-
 pub enum MiroColors {
     // Gray,
     // LightYellow,
@@ -162,6 +161,9 @@ use crate::{
         path::FilePathType,
     },
 };
+
+use self::frame::MiroFrame;
+use self::item::MiroItem;
 
 use super::metadata::source_code::SourceCodeMetadata;
 use super::metadata::source_code::SourceCodeScreenshotOptions;
@@ -521,70 +523,158 @@ pub async fn deploy_entrypoints() -> Result<(), String> {
 }
 
 pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
-    let prompt_text = format!("Please enter the {}", "destination frame url".green());
-    let frame_url = utils::cli_inputs::input(&prompt_text)?;
-    let frame_url =
-        "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544674879470&cot=14";
-    let miro_frame_id = helpers::get_item_id_from_miro_url(&frame_url);
+    println!(
+        "\n\nGetting the {} from the {} ...\n\n",
+        "frames".yellow(),
+        "Miro board".yellow()
+    );
+    let miro_frames = MiroFrame::get_frames_from_miro().await;
+    let miro_frame_titles: Vec<&str> = miro_frames
+        .iter()
+        .map(|frame| frame.frame_title.as_str())
+        .map(|frame| frame.clone())
+        .collect();
+    let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
+    let selection = utils::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
+    let selected_miro_frame = &miro_frames[selection];
+    let miro_frame_id = &selected_miro_frame.frame_id;
     let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
     let metadata_markdown = MarkdownFile::new(&metadata_path);
-    // Choose metadata section selection
-    let metadata_sections_names: Vec<String> = metadata_markdown
-        .clone()
-        .sections
-        .into_iter()
-        .map(|section| section.title)
-        .collect();
-    let prompt_text = format!("Please enter the {}", "content type".green());
-    let selection =
-        utils::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None).unwrap();
-    let section_selected = &metadata_sections_names[selection];
-    let section = metadata_markdown
-        .clone()
-        .get_section_by_title(section_selected);
-    // Choose metadata subsection selection
-    let prompt_text = format!("Please enter the {}", "content sub type".green());
-    let metadata_subsections_names: Vec<String> = section
-        .subsections
-        .clone()
-        .into_iter()
-        .map(|section| section.title)
-        .collect();
-    let selection =
-        utils::cli_inputs::select(&prompt_text, metadata_subsections_names.clone(), None).unwrap();
-    let subsection_selected = section.subsections[selection].clone();
-    // Choose metadata final selection
-    let prompt_text = format!("Please enter the {}", "content to deploy".green());
-    let metadata_subsubsections_names: Vec<String> = subsection_selected
-        .subsections
-        .clone()
-        .into_iter()
-        .map(|section| section.title)
-        .collect();
-    let selection =
-        utils::cli_inputs::select(&prompt_text, metadata_subsubsections_names.clone(), None)
+    let mut continue_selection = true;
+    while continue_selection {
+        // Choose metadata section selection
+        let metadata_sections_names: Vec<String> = metadata_markdown
+            .clone()
+            .sections
+            .into_iter()
+            .map(|section| section.title)
+            .collect();
+        let prompt_text = format!("Please enter the {}", "content type".green());
+        let selection =
+            utils::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None).unwrap();
+        let section_selected = &metadata_sections_names[selection];
+        let section = metadata_markdown
+            .clone()
+            .get_section_by_title(section_selected);
+        // Choose metadata subsection selection
+        let prompt_text = format!("Please enter the {}", "content sub type".green());
+        let metadata_subsections_names: Vec<String> = section
+            .subsections
+            .clone()
+            .into_iter()
+            .map(|section| section.title)
+            .collect();
+        let selection =
+            utils::cli_inputs::select(&prompt_text, metadata_subsections_names.clone(), None)
+                .unwrap();
+        let subsection_selected = section.subsections[selection].clone();
+        // Choose metadata final selection
+        let prompt_text = format!("Please enter the {}", "content to deploy".green());
+        let metadata_subsubsections_names: Vec<String> = subsection_selected
+            .subsections
+            .clone()
+            .into_iter()
+            .map(|section| section.title)
+            .collect();
+        let selection =
+            utils::cli_inputs::select(&prompt_text, metadata_subsubsections_names.clone(), None)
+                .unwrap();
+        let subsubsection_selected = subsection_selected.subsections[selection].clone();
+        let source_code_metadata = SourceCodeMetadata::new_from_metadata_data(
+            &subsubsection_selected.title,
+            &section.title,
+            &subsection_selected.title,
+        );
+        let include_path = utils::cli_inputs::select_yes_or_no(&format!(
+            "Do you want to {}",
+            "include the path?".yellow()
+        ))
+        .unwrap();
+        let filter_comments = utils::cli_inputs::select_yes_or_no(&format!(
+            "Do you want to {}",
+            "filter the comments?".yellow()
+        ))
+        .unwrap();
+        let show_line_number = utils::cli_inputs::select_yes_or_no(&format!(
+            "Do you want to {}",
+            "include the line numbers?".yellow()
+        ))
+        .unwrap();
+        let offset_to_start_line = if show_line_number {
+            utils::cli_inputs::select_yes_or_no(&format!(
+                "Do you want to {}",
+                "offset to he starting line?".yellow()
+            ))
+            .unwrap()
+        } else {
+            false
+        };
+        let include_filters = utils::cli_inputs::select_yes_or_no(&format!(
+            "Do you want to {}",
+            "add customized filters?".red()
+        ))
+        .unwrap();
+        // utils::cli_inputs::select_yes_or_no("Do you want to include filters?").unwrap();
+        let filters = if include_filters {
+            let filters_to_include = utils::cli_inputs::input(
+                "Please enter the filters, comma separated: #[account,CHECK ",
+            )
             .unwrap();
-    let subsubsection_selected = subsection_selected.subsections[selection].clone();
-    let source_code_metadata = SourceCodeMetadata::new_from_metadata_data(
-        &subsubsection_selected.title,
-        &section.title,
-        &subsection_selected.title,
-    );
-    let screnshot_options = SourceCodeScreenshotOptions {
-        include_path: true,
-        offset_to_start_line: false,
-        filter_comments: true,
-        filters: Some(vec!["#[account"]),
-        font_size: Some(20),
-        show_line_number: false,
-    };
-    let png_path = source_code_metadata.create_screenshot(screnshot_options);
-    api::custom_image::create_image_from_device_and_update_position(
-        png_path,
-        &source_code_metadata.name,
-    )
-    .await
-    .unwrap();
+            if !filters_to_include.is_empty() {
+                let filters: Vec<String> = filters_to_include
+                    .split(",")
+                    .map(|filter| filter.trim().to_string())
+                    .collect();
+                Some(filters)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let screnshot_options = SourceCodeScreenshotOptions {
+            include_path,
+            offset_to_start_line,
+            filter_comments,
+            show_line_number,
+            filters,
+            font_size: Some(20),
+        };
+        let png_path = source_code_metadata.create_screenshot(screnshot_options);
+        println!(
+            "\nCreating {}{} in {} frame",
+            subsubsection_selected.title.green(),
+            ".png".green(),
+            selected_miro_frame.frame_title.green()
+        );
+        let item_id = image::api::create_image_from_device(&png_path)
+            .await
+            .unwrap();
+        // let (x_position, y_position) = frame::api::get_frame_positon(&miro_frame_id).await;
+        let miro_item = MiroItem::new(
+            item_id,
+            miro_frame_id.to_string(),
+            300,
+            selected_miro_frame.height - 300,
+            MiroItemType::Image,
+        );
+
+        println!(
+            "Updating the position of {}{}\n",
+            subsubsection_selected.title.green(),
+            ".png".green()
+        );
+        miro_item.update_item_parent_and_position().await;
+
+        // promp if continue
+
+        let prompt_text = format!(
+            "Do you want to {} in the {} frame?",
+            "continue creating screenshots".yellow(),
+            selected_miro_frame.frame_title.yellow()
+        );
+        continue_selection = utils::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+    }
     Ok(())
 }
 
@@ -751,7 +841,7 @@ pub mod helpers {
             "--line-offset",
             &offset,
             "--theme",
-            "Visual Studio Dark+",
+            "Monokai Extended",
             "--pad-horiz",
             "40",
             "--pad-vert",

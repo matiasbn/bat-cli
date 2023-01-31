@@ -12,12 +12,12 @@ use crate::{
 
 use super::MetadataContent;
 
-pub struct SourceCodeScreenshotOptions<'a> {
+pub struct SourceCodeScreenshotOptions {
     pub include_path: bool,
     pub offset_to_start_line: bool,
     pub filter_comments: bool,
     pub font_size: Option<usize>,
-    pub filters: Option<Vec<&'a str>>,
+    pub filters: Option<Vec<String>>,
     pub show_line_number: bool,
 }
 
@@ -87,7 +87,7 @@ impl SourceCodeMetadata {
             })
             .filter(|line| {
                 if let Some(filters) = options.filters.clone() {
-                    !filters.into_iter().any(|filter| line.contains(filter))
+                    !filters.into_iter().any(|filter| line.contains(&filter))
                 } else {
                     true
                 }
@@ -97,20 +97,20 @@ impl SourceCodeMetadata {
         let mut content = content_vec.join("\n");
         if options.include_path {
             let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, false);
-            content = format!(
-                "// {}\n\n{}",
-                self.path
-                    .replace(&program_path, "")
-                    .strip_prefix("/")
-                    .unwrap(),
-                content
-            );
+            let path_to_include = if self.path.contains(&program_path) {
+                let path = self.path.replace(&program_path, "");
+                path.strip_prefix("/").unwrap().to_string()
+            } else {
+                self.path.to_string()
+            };
+            content = format!("// {}\n\n{}", path_to_include, content);
             offset = if options.offset_to_start_line {
                 offset + 2
             } else {
                 0
             };
         }
+
         let png_screenshot_path = silicon::create_figure(
             &content,
             &dest_path,
@@ -119,7 +119,6 @@ impl SourceCodeMetadata {
             options.font_size,
             options.show_line_number,
         );
-        // vs_code_open_file_in_current_window(&png_screenshot_path).unwrap();
         png_screenshot_path
     }
 
