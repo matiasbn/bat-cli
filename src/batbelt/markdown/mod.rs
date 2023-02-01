@@ -126,12 +126,11 @@ impl MarkdownSection {
     }
 
     pub fn new_from_content(section_content: &str) -> MarkdownSection {
-        let header = section_content.trim().lines().next().unwrap();
+        let header = section_content.lines().next().unwrap();
         let section_prefix = header.split(" ").next().unwrap();
         let title = header
             .strip_prefix(&format!("{} ", section_prefix))
             .unwrap()
-            .trim()
             .to_string();
         let level = MarkdownSectionLevel::from_prefix(section_prefix);
         MarkdownSection::new(title, level, section_content)
@@ -286,11 +285,11 @@ impl MarkdownSectionLevel {
     }
 
     pub fn get_header(&self, title: &str) -> String {
-        format!("{} {}", self.get_prefix(), title)
+        format!("{} {}\n", self.get_prefix(), title)
     }
 
     pub fn get_subsection_header(&self, title: &str) -> String {
-        format!("{} {}", self.get_subsection_prefix(), title)
+        format!("{} {}\n", self.get_subsection_prefix(), title)
     }
 }
 
@@ -305,7 +304,7 @@ pub trait MarkdownParser {
             .clone()
             .position(|line| line == header)
             .unwrap();
-        let mut end_index = content_lines
+        let end_index = content_lines
             .clone()
             .enumerate()
             .position(|line| {
@@ -326,10 +325,9 @@ pub trait MarkdownParser {
         let level_prefix = level.get_prefix();
         let headers: Vec<String> = content
             .lines()
-            .filter(|line| line.trim().split(" ").next().unwrap() == level_prefix)
+            .filter(|line| line.split(" ").next().unwrap() == level_prefix)
             .map(|header| header.to_string())
             .collect();
-        println!("headers {:#?}", headers);
         headers
     }
 
@@ -343,12 +341,9 @@ pub trait MarkdownParser {
             .map(|header| {
                 let title = header
                     .clone()
-                    .trim()
                     .strip_prefix(&format!("{} ", level.get_prefix()))
                     .unwrap()
-                    .trim()
                     .to_string();
-                println!("title {}", title);
                 let content =
                     MarkdownSection::get_section_content(&header, level.clone(), &content);
                 MarkdownSection::new(title, level.clone(), &content)
