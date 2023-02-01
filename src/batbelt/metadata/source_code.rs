@@ -1,12 +1,10 @@
 use std::fs;
 
-use crate::{
-    markdown::MarkdownFile,
-    silicon,
-    utils::{
-        self,
-        path::{FilePathType, FolderPathType},
-    },
+use crate::batbelt::markdown::MarkdownFile;
+use crate::batbelt::silicon;
+use crate::batbelt::{
+    self,
+    path::{FilePathType, FolderPathType},
 };
 
 use super::MetadataContent;
@@ -39,7 +37,7 @@ impl SourceCodeMetadata {
     }
 
     pub fn new_from_metadata_data(name: &str, section: &str, subsection: &str) -> Self {
-        let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
+        let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
         let metadata_markdown = MarkdownFile::new(&metadata_path);
         let section = metadata_markdown.get_section_by_title(section);
         let subsection = section.get_subsection_by_title(subsection);
@@ -64,7 +62,7 @@ impl SourceCodeMetadata {
     }
 
     pub fn create_screenshot(&self, options: SourceCodeScreenshotOptions) -> String {
-        let dest_path = utils::path::get_folder_path(FolderPathType::AuditorFigures, true);
+        let dest_path = batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true);
         let mut offset = if options.offset_to_start_line {
             self.start_line_index
         } else {
@@ -95,7 +93,7 @@ impl SourceCodeMetadata {
             .to_vec();
         let mut content = content_vec.join("\n");
         if options.include_path {
-            let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, false);
+            let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
             let path_to_include = if self.path.contains(&program_path) {
                 let path = self.path.replace(&program_path, "");
                 path.strip_prefix("/").unwrap().to_string()

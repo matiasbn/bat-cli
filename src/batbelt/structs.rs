@@ -1,3 +1,4 @@
+use crate::batbelt::miro::MiroColor;
 use std::fs;
 
 #[derive(Debug)]
@@ -24,6 +25,17 @@ pub enum SignerType {
     NotValidated,
     NotSigner,
 }
+
+impl SignerType {
+    pub fn get_sticky_note_color(&self) -> MiroColor {
+        match self {
+            SignerType::Validated => MiroColor::Red,
+            SignerType::NotValidated => MiroColor::DarkBlue,
+            SignerType::NotSigner => MiroColor::Gray,
+        }
+    }
+}
+
 pub struct SignerInfo {
     pub signer_text: String,
     pub sticky_note_id: String,

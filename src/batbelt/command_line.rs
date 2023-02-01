@@ -2,7 +2,7 @@
 
 use std::{path::Path, process::Command, str::from_utf8};
 
-use crate::{config::BatConfig, utils::bash::execute_command_to_stdio};
+use crate::{batbelt::bash::execute_command_to_stdio, config::BatConfig};
 
 pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), String> {
     let vs_code_integration = BatConfig::get_validated_config()?

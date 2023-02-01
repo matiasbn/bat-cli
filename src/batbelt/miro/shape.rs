@@ -1,3 +1,5 @@
+use crate::batbelt;
+use crate::batbelt::miro::{helpers::get_id_from_response, MiroConfig};
 use reqwest;
 use serde_json::*;
 use std::result::Result;
@@ -85,17 +87,14 @@ impl MiroShape {
         miro_shape_style: MiroShapeStyle,
         frame_id: &str,
     ) -> Result<(), String> {
-        commands::miro::shape::api::create_shape(self.clone(), miro_shape_style, frame_id).await?;
+        api::create_shape(self.clone(), miro_shape_style, frame_id).await?;
         Ok(())
     }
 }
 
-use crate::commands::{
-    self,
-    miro::{api::helpers::get_id_from_response, MiroConfig},
-};
+use crate::commands::{self};
 
-pub mod api {
+mod api {
     use super::*;
     use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
@@ -149,9 +148,8 @@ pub mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .unwrap();
-        let id = get_id_from_response(response).await;
+            .await;
+        let id = get_id_from_response(response).await?;
         Ok(id)
     }
 }

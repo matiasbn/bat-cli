@@ -1,11 +1,11 @@
 use colored::Colorize;
 
 use crate::{
+    batbelt::{self, helpers, path::FilePathType},
     config::BatConfig,
-    utils::{self, helpers, path::FilePathType},
 };
 
-use utils::git::{create_git_commit, GitCommit};
+use batbelt::git::{create_git_commit, GitCommit};
 
 pub fn update_accounts() -> Result<(), String> {
     let program_state_folder_path = BatConfig::get_validated_config()?
@@ -28,7 +28,7 @@ pub fn update_accounts() -> Result<(), String> {
         }
     }
     // let tm_file_path = utils::path::get_auditor_threat_modeling_path()?;
-    let tm_file_path = utils::path::get_file_path(FilePathType::ThreatModeling, true);
+    let tm_file_path = batbelt::path::get_file_path(FilePathType::ThreatModeling, true);
     let account_string = if account_structs.is_empty() {
         "-".to_string()
     } else {
@@ -61,6 +61,6 @@ fn prompt_if_account(state_struct: String) -> Result<bool, String> {
         format!("Solana account").red(),
         format!("{state_struct}").green()
     );
-    let decision = utils::cli_inputs::select_yes_or_no(&prompt_text)?;
+    let decision = batbelt::cli_inputs::select_yes_or_no(&prompt_text)?;
     Ok(decision)
 }

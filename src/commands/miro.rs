@@ -1,6 +1,7 @@
+use crate::batbelt;
+use crate::batbelt::constants::*;
+use crate::batbelt::git::*;
 use crate::config::*;
-use crate::utils;
-use crate::utils::git::*;
 use normalize_url::normalizer;
 use reqwest;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -10,161 +11,30 @@ use std::fs;
 use std::result::Result;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
-pub mod api;
-pub mod frame;
-pub mod image;
-pub mod item;
-pub mod shape;
-use crate::constants::*;
-
-pub struct MiroConfig {
-    access_token: String,
-    board_id: String,
-    board_url: String,
-}
-
-impl MiroConfig {
-    pub fn new() -> Self {
-        let BatConfig {
-            required, auditor, ..
-        } = BatConfig::get_validated_config().unwrap();
-        let access_token = auditor.miro_oauth_access_token;
-        let board_id = required.miro_board_id;
-        let board_url = required.miro_board_url;
-        MiroConfig {
-            access_token,
-            board_id,
-            board_url,
-        }
-    }
-
-    pub fn miro_enabled(&self) -> bool {
-        !self.access_token.is_empty()
-    }
-
-    pub fn get_frame_url(&self, frame_id: &str) -> String {
-        let url = normalizer::UrlNormalizer::new(
-            format!("{}/?moveToWidget={frame_id}", self.board_url).as_str(),
-        )
-        .unwrap()
-        .normalize(None)
-        .unwrap();
-        url
-    }
-}
-#[derive(Debug)]
-pub enum MiroItemType {
-    AppCard,
-    Card,
-    Document,
-    Embed,
-    Frame,
-    Image,
-    Shape,
-    StickyNote,
-    Text,
-}
-
-impl MiroItemType {
-    pub fn str_item_type(&self) -> String {
-        match self {
-            MiroItemType::AppCard => "app_card".to_string(),
-            MiroItemType::Card => "card".to_string(),
-            MiroItemType::Document => "document".to_string(),
-            MiroItemType::Embed => "embed".to_string(),
-            MiroItemType::Frame => "frame".to_string(),
-            MiroItemType::Image => "image".to_string(),
-            MiroItemType::Shape => "shape".to_string(),
-            MiroItemType::StickyNote => "sticky_note".to_string(),
-            MiroItemType::Text => "text".to_string(),
-        }
-    }
-}
-pub enum MiroColors {
-    // Gray,
-    // LightYellow,
-    // Yellow,
-    // Orange,
-    // LightGreen,
-    Green,
-    DarkGreen,
-    Cyan,
-    LightPink,
-    Pink,
-    Violet,
-    Red,
-    LightBlue,
-    Blue,
-    DarkBlue,
-    Black,
-}
-
-impl MiroColors {
-    pub fn to_string(&self) -> &str {
-        match self {
-            // MiroStickyNoteColors::Gray => "gray",
-            // MiroStickyNoteColors::LightYellow => "light_yellow",
-            // MiroStickyNoteColors::Yellow => "yellow",
-            // MiroStickyNoteColors::Orange => "orange",
-            // MiroStickyNoteColors::LightGreen => "light_green",
-            MiroColors::Green => "green",
-            MiroColors::DarkGreen => "dark_green",
-            MiroColors::Cyan => "cyan",
-            MiroColors::LightPink => "light_pink",
-            MiroColors::Pink => "pink",
-            MiroColors::Violet => "violet",
-            MiroColors::Red => "red",
-            MiroColors::LightBlue => "light_blue",
-            MiroColors::Blue => "blue",
-            MiroColors::DarkBlue => "dark_blue",
-            MiroColors::Black => "black",
-        }
-    }
-
-    pub fn get_colors_vec() -> Vec<String> {
-        vec![
-            // "gray".to_string(),
-            // "light_yellow".to_string(),
-            // "yellow".to_string(),
-            // "orange".to_string(),
-            // "light_green".to_string(),
-            "green".to_string(),
-            "dark_green".to_string(),
-            "cyan".to_string(),
-            "light_pink".to_string(),
-            "pink".to_string(),
-            "violet".to_string(),
-            "red".to_string(),
-            "light_blue".to_string(),
-            "blue".to_string(),
-            "dark_blue".to_string(),
-            "black".to_string(),
-        ]
-    }
-}
 
 use colored::Colorize;
-use shape::{MiroShape, MiroShapeStyle};
 
+use crate::batbelt::markdown::MarkdownFile;
+use crate::batbelt::structs::{SignerInfo, SignerType};
 use crate::{
-    commands::{
-        entrypoints::entrypoints::get_entrypoints_names, miro::api::connector::ConnectorOptions,
-    },
-    markdown::MarkdownFile,
-    structs::{SignerInfo, SignerType},
-    utils::{
+    batbelt::{
         helpers::get::{
             get_string_between_two_index_from_string, get_string_between_two_str_from_string,
         },
         path::FilePathType,
     },
+    commands::entrypoints::entrypoints::get_entrypoints_names,
 };
 
-use self::frame::MiroFrame;
-use self::item::MiroItem;
-
-use super::metadata::source_code::SourceCodeMetadata;
-use super::metadata::source_code::SourceCodeScreenshotOptions;
+use crate::batbelt::metadata::source_code::SourceCodeMetadata;
+use crate::batbelt::metadata::source_code::SourceCodeScreenshotOptions;
+use crate::batbelt::miro::connector::ConnectorOptions;
+use crate::batbelt::miro::frame::MiroFrame;
+use crate::batbelt::miro::image::{MiroImage, MiroImageType};
+use crate::batbelt::miro::item::MiroItem;
+use crate::batbelt::miro::shape::{MiroShape, MiroShapeStyle};
+use crate::batbelt::miro::sticky_note::MiroStickyNote;
+use crate::batbelt::miro::{helpers, image, MiroConfig, MiroItemType};
 
 pub async fn deploy_miro() -> Result<(), String> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
@@ -240,7 +110,7 @@ pub async fn deploy_miro() -> Result<(), String> {
                     "select the content of the signer {} sticky note in Miro",
                     format!("{signer_name}").red()
                 );
-                let selection = utils::cli_inputs::select(
+                let selection = batbelt::cli_inputs::select(
                     &prompt_text,
                     vec![
                         format!("Signer name: {}", signer_name.clone()),
@@ -257,7 +127,7 @@ pub async fn deploy_miro() -> Result<(), String> {
                     "is the signer {} a validated signer?",
                     format!("{signer_name}").red()
                 );
-                let selection = utils::cli_inputs::select_yes_or_no(&prompt_text)?;
+                let selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text)?;
                 let signer_type = if selection {
                     SignerType::Validated
                 } else {
@@ -288,36 +158,47 @@ pub async fn deploy_miro() -> Result<(), String> {
         }
 
         println!("Creating frame in Miro for {selected_folder}");
-        let miro_frame = api::frame::create_frame_for_entrypoint(&selected_folder)
-            .await
-            .unwrap();
+        // let miro_frame = api::frame::create_frame_for_entrypoint(&selected_folder)
+        //     .await
+        //     .unwrap();
+        let mut miro_frame =
+            MiroFrame::new(&selected_folder, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
+        miro_frame.deploy();
         fs::write(
             &selected_co_started_path,
-            &to_start_file_content
-                .replace(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, &miro_frame.url),
+            &to_start_file_content.replace(
+                CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
+                &miro_frame.frame_url.unwrap(),
+            ),
         )
         .unwrap();
 
         println!("Creating signers figures in Miro for {selected_folder}");
 
         for (signer_index, signer) in signers_info.iter_mut().enumerate() {
-            // create the sticky note for every signer
-            let sticky_note_id = api::sticky_note::create_signer_sticky_note(
-                signer.signer_text.clone(),
-                signer_index,
-                miro_frame.id.clone(),
-                signer.signer_type,
-            )
-            .await;
-            let user_figure_id = api::custom_image::create_user_figure_for_signer(
-                signer_index,
-                miro_frame.id.clone(),
-            )
-            .await;
+            let x_position = 550;
+            let y_position = (150 + signer_index * 270) as i64;
+            let width = 374;
+            let mut signer_sticky_note = MiroStickyNote::new(
+                &signer.signer_text,
+                signer.signer_type.get_sticky_note_color(),
+                &miro_frame.item_id,
+                x_position,
+                y_position,
+                width,
+            );
+            signer_sticky_note.deploy().await;
+
+            let user_figure_url = "https://mirostatic.com/app/static/12079327f83ff492.svg";
+            let y_position = (150 + signer_index * 270) as i64;
+            let mut user_figure =
+                MiroImage::new_from_url(user_figure_url, &miro_frame.item_id, 150, y_position, 200);
+            user_figure.deploy().await;
+
             *signer = SignerInfo {
                 signer_text: signer.signer_text.clone(),
-                sticky_note_id: sticky_note_id,
-                user_figure_id: user_figure_id,
+                sticky_note_id: signer_sticky_note.item_id,
+                user_figure_id: user_figure.item_id,
                 signer_type: SignerType::NotSigner,
             }
         }
@@ -339,39 +220,54 @@ pub async fn deploy_miro() -> Result<(), String> {
                     .replace(format!("{}.md", selected_folder).as_str(), snapshot)
             );
             println!("Creating image in Miro for {snapshot}");
-            let id = api::custom_image::create_image_from_device_and_update_position(
-                snapshot_path.to_string(),
-                &selected_folder,
-            )
-            .await?;
+            let file_name = snapshot_path.clone().split('/').last().unwrap().to_string();
+            // let id = api::custom_image::create_image_from_device_and_update_position(
+            //     snapshot_path.to_string(),
+            //     &selected_folder,
+            // )
+            // .await?;
+            let mut snapshot = MiroImage::new_from_file_path(&snapshot_path);
+            snapshot.deploy();
+            let (x_position, y_position) = match file_name.to_string().as_str() {
+                ENTRYPOINT_PNG_NAME => (1300, 250),
+                CONTEXT_ACCOUNTS_PNG_NAME => (2200, 350),
+                VALIDATIONS_PNG_NAME => (3000, 500),
+                HANDLER_PNG_NAME => (2900, 1400),
+                _ => todo!(),
+            };
+            snapshot.update_position(x_position, y_position);
+            let frame_id =
+                batbelt::miro::helpers::get_frame_id_from_co_file(selected_folder.as_str())?;
             fs::write(
                 &selected_co_started_path,
-                &to_start_file_content.replace(placeholder, &id),
+                &to_start_file_content.replace(placeholder, &snapshot.item_id),
             )
             .unwrap();
         }
         // connect snapshots
-        let entrypoint_id =
-            utils::helpers::get::get_screenshot_id(&ENTRYPOINT_PNG_NAME, &selected_co_started_path);
-        let context_accounts_id = utils::helpers::get::get_screenshot_id(
+        let entrypoint_id = batbelt::helpers::get::get_screenshot_id(
+            &ENTRYPOINT_PNG_NAME,
+            &selected_co_started_path,
+        );
+        let context_accounts_id = batbelt::helpers::get::get_screenshot_id(
             &CONTEXT_ACCOUNTS_PNG_NAME,
             &selected_co_started_path,
         );
-        let validations_id = utils::helpers::get::get_screenshot_id(
+        let validations_id = batbelt::helpers::get::get_screenshot_id(
             &VALIDATIONS_PNG_NAME,
             &selected_co_started_path,
         );
         let handler_id =
-            utils::helpers::get::get_screenshot_id(&HANDLER_PNG_NAME, &selected_co_started_path);
+            batbelt::helpers::get::get_screenshot_id(&HANDLER_PNG_NAME, &selected_co_started_path);
         println!("Connecting signers to entrypoint");
         for signer_miro_ids in signers_info {
-            api::connector::create_connector(
+            batbelt::miro::connector::create_connector(
                 &signer_miro_ids.user_figure_id,
                 &signer_miro_ids.sticky_note_id,
                 None,
             )
             .await;
-            api::connector::create_connector(
+            batbelt::miro::connector::create_connector(
                 &signer_miro_ids.sticky_note_id,
                 &entrypoint_id,
                 Some(ConnectorOptions {
@@ -384,9 +280,11 @@ pub async fn deploy_miro() -> Result<(), String> {
             .await;
         }
         println!("Connecting snapshots in Miro");
-        api::connector::create_connector(&entrypoint_id, &context_accounts_id, None).await;
-        api::connector::create_connector(&context_accounts_id, &validations_id, None).await;
-        api::connector::create_connector(&validations_id, &handler_id, None).await;
+        batbelt::miro::connector::create_connector(&entrypoint_id, &context_accounts_id, None)
+            .await;
+        batbelt::miro::connector::create_connector(&context_accounts_id, &validations_id, None)
+            .await;
+        batbelt::miro::connector::create_connector(&validations_id, &handler_id, None).await;
         create_git_commit(
             GitCommit::DeployMiro,
             Some(vec![selected_folder.to_string()]),
@@ -394,7 +292,7 @@ pub async fn deploy_miro() -> Result<(), String> {
     } else {
         // update images
         let prompt_text = format!("select the images to update for {selected_folder}");
-        let selections = utils::cli_inputs::multiselect(
+        let selections = batbelt::cli_inputs::multiselect(
             &prompt_text,
             CO_FIGURES.to_vec(),
             Some(&vec![true, true, true, true]),
@@ -406,9 +304,10 @@ pub async fn deploy_miro() -> Result<(), String> {
                 let file_name = snapshot_path.split('/').last().unwrap();
                 println!("Updating: {file_name}");
                 let item_id =
-                    utils::helpers::get::get_screenshot_id(file_name, &selected_co_started_path);
-                api::custom_image::update_image_from_device(snapshot_path.to_string(), &item_id)
-                    .await
+                    batbelt::helpers::get::get_screenshot_id(file_name, &selected_co_started_path);
+                let mut screenshot_image =
+                    MiroImage::new_from_item_id(&item_id, MiroImageType::FromPath).await;
+                screenshot_image.update_from_path(&snapshot_path).await;
             }
             create_git_commit(
                 GitCommit::UpdateMiro,
@@ -422,7 +321,7 @@ pub async fn deploy_miro() -> Result<(), String> {
 }
 
 fn prompt_select_started_co_folder() -> Result<(String, String), String> {
-    let started_folders: Vec<String> = utils::helpers::get::get_started_entrypoints()?
+    let started_folders: Vec<String> = batbelt::helpers::get::get_started_entrypoints()?
         .iter()
         .filter(|file| !file.contains(".md"))
         .map(|file| file.to_string())
@@ -431,13 +330,13 @@ fn prompt_select_started_co_folder() -> Result<(String, String), String> {
         panic!("No folders found in started folder for the auditor")
     }
     let prompt_text = "select the folder:".to_string();
-    let selection = utils::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
+    let selection = batbelt::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
     let selected_folder = &started_folders[selection];
     // let selected_co_started_file_path =
     //     utils::path::get_auditor_code_overhaul_started_file_path(Some(
     //         selected_folder.clone(),
     //     ))?;
-    let selected_co_started_file_path = utils::path::get_file_path(
+    let selected_co_started_file_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulStarted {
             file_name: selected_folder.clone(),
         },
@@ -448,6 +347,7 @@ fn prompt_select_started_co_folder() -> Result<(String, String), String> {
         selected_co_started_file_path.clone(),
     ))
 }
+
 pub fn create_co_snapshots() -> Result<(), String> {
     assert!(self::helpers::check_silicon_installed());
     let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
@@ -489,8 +389,8 @@ pub async fn deploy_entrypoints() -> Result<(), String> {
     let entrypoints_names = get_entrypoints_names()?;
     // get entrypoint miro frame url
     let prompt_text = format!("Please enter the {}", "entrypoints frame url".green());
-    let entrypoints_frame_url = utils::cli_inputs::input(&prompt_text)?;
-    let miro_frame_id = helpers::get_item_id_from_miro_url(&entrypoints_frame_url);
+    let entrypoints_frame_url = batbelt::cli_inputs::input(&prompt_text)?;
+    let miro_frame_id = batbelt::miro::helpers::get_item_id_from_miro_url(&entrypoints_frame_url);
 
     for (entrypoint_name_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
         // example
@@ -526,17 +426,17 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
         "frames".yellow(),
         "Miro board".yellow()
     );
-    let miro_frames = MiroFrame::get_frames_from_miro().await;
+    let miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await;
     let miro_frame_titles: Vec<&str> = miro_frames
         .iter()
-        .map(|frame| frame.frame_title.as_str())
+        .map(|frame| frame.title.as_str())
         .map(|frame| frame.clone())
         .collect();
     let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
-    let selection = utils::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
-    let selected_miro_frame = &miro_frames[selection];
-    let miro_frame_id = &selected_miro_frame.frame_id;
-    let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
+    let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
+    let selected_miro_frame: &MiroFrame = &miro_frames[selection];
+    let miro_frame_id = selected_miro_frame.item_id.clone();
+    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut continue_selection = true;
     while continue_selection {
@@ -549,7 +449,8 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
             .collect();
         let prompt_text = format!("Please enter the {}", "content type".green());
         let selection =
-            utils::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None).unwrap();
+            batbelt::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None)
+                .unwrap();
         let section_selected = &metadata_sections_names[selection];
         let section = metadata_markdown
             .clone()
@@ -563,7 +464,7 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
             .map(|section| section.title)
             .collect();
         let selection =
-            utils::cli_inputs::select(&prompt_text, metadata_subsections_names.clone(), None)
+            batbelt::cli_inputs::select(&prompt_text, metadata_subsections_names.clone(), None)
                 .unwrap();
         let subsection_selected = section.subsections[selection].clone();
         // Choose metadata final selection
@@ -575,7 +476,7 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
             .map(|section| section.title)
             .collect();
         let selection =
-            utils::cli_inputs::select(&prompt_text, metadata_subsubsections_names.clone(), None)
+            batbelt::cli_inputs::select(&prompt_text, metadata_subsubsections_names.clone(), None)
                 .unwrap();
         let subsubsection_selected = subsection_selected.subsections[selection].clone();
         let source_code_metadata = SourceCodeMetadata::new_from_metadata_data(
@@ -583,23 +484,23 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
             &section.title,
             &subsection_selected.title,
         );
-        let include_path = utils::cli_inputs::select_yes_or_no(&format!(
+        let include_path = batbelt::cli_inputs::select_yes_or_no(&format!(
             "Do you want to {}",
             "include the path?".yellow()
         ))
         .unwrap();
-        let filter_comments = utils::cli_inputs::select_yes_or_no(&format!(
+        let filter_comments = batbelt::cli_inputs::select_yes_or_no(&format!(
             "Do you want to {}",
             "filter the comments?".yellow()
         ))
         .unwrap();
-        let show_line_number = utils::cli_inputs::select_yes_or_no(&format!(
+        let show_line_number = batbelt::cli_inputs::select_yes_or_no(&format!(
             "Do you want to {}",
             "include the line numbers?".yellow()
         ))
         .unwrap();
         let offset_to_start_line = if show_line_number {
-            utils::cli_inputs::select_yes_or_no(&format!(
+            batbelt::cli_inputs::select_yes_or_no(&format!(
                 "Do you want to {}",
                 "offset to he starting line?".yellow()
             ))
@@ -607,14 +508,14 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
         } else {
             false
         };
-        let include_filters = utils::cli_inputs::select_yes_or_no(&format!(
+        let include_filters = batbelt::cli_inputs::select_yes_or_no(&format!(
             "Do you want to {}",
             "add customized filters?".red()
         ))
         .unwrap();
         // utils::cli_inputs::select_yes_or_no("Do you want to include filters?").unwrap();
         let filters = if include_filters {
-            let filters_to_include = utils::cli_inputs::input(
+            let filters_to_include = batbelt::cli_inputs::input(
                 "Please enter the filters, comma separated: #[account,CHECK ",
             )
             .unwrap();
@@ -630,7 +531,7 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
         } else {
             None
         };
-        let screnshot_options = SourceCodeScreenshotOptions {
+        let screenshot_options = SourceCodeScreenshotOptions {
             include_path,
             offset_to_start_line,
             filter_comments,
@@ -638,22 +539,23 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
             filters,
             font_size: Some(20),
         };
-        let png_path = source_code_metadata.create_screenshot(screnshot_options);
+        let png_path = source_code_metadata.create_screenshot(screenshot_options);
         println!(
             "\nCreating {}{} in {} frame",
             subsubsection_selected.title.green(),
             ".png".green(),
-            selected_miro_frame.frame_title.green()
+            selected_miro_frame.title.green()
         );
-        let item_id = image::api::create_image_from_device(&png_path)
-            .await
-            .unwrap();
+        // let screenshot_image = image::api::create_image_from_device(&png_path)
+        //     .await
+        //     .unwrap();
+        let screenshot_image = MiroImage::new_from_file_path(&png_path);
         // let (x_position, y_position) = frame::api::get_frame_positon(&miro_frame_id).await;
         let miro_item = MiroItem::new(
-            item_id,
-            miro_frame_id.to_string(),
+            &screenshot_image.item_id,
+            &miro_frame_id,
             300,
-            selected_miro_frame.height - 300,
+            selected_miro_frame.height as i64 - 300,
             MiroItemType::Image,
         );
 
@@ -669,231 +571,11 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
         let prompt_text = format!(
             "Do you want to {} in the {} frame?",
             "continue creating screenshots".yellow(),
-            selected_miro_frame.frame_title.yellow()
+            selected_miro_frame.title.yellow()
         );
-        continue_selection = utils::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+        continue_selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
     }
     Ok(())
-}
-
-pub mod helpers {
-    use std::collections::HashMap;
-
-    use reqwest::Url;
-
-    use super::*;
-    pub async fn get_accounts_frame_id() -> Result<String, String> {
-        let response = api::item::get_items_on_board(Some(MiroItemType::Frame)).await?;
-        let value: serde_json::Value =
-            serde_json::from_str(&response.to_string()).expect("JSON was not well-formatted");
-        let frames = value["data"].as_array().unwrap();
-        let accounts_frame_id = frames
-            .into_iter()
-            .find(|f| f["data"]["title"] == "Accounts")
-            .unwrap()["id"]
-            .to_string();
-        Ok(accounts_frame_id.clone().replace("\"", ""))
-    }
-
-    pub fn get_data_for_snapshots(
-        co_file_string: String,
-        selected_co_started_path: String,
-        selected_folder_name: String,
-        snapshot_name: String,
-    ) -> Result<(String, String, String, Option<usize>), String> {
-        if snapshot_name == CONTEXT_ACCOUNTS_PNG_NAME {
-            let context_account_lines = get_string_between_two_str_from_string(
-                co_file_string,
-                "# Context Accounts:",
-                "# Validations:",
-            )?;
-            let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "context_accounts.png",
-            );
-            let snapshot_markdown_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "context_accounts.md",
-            );
-            Ok((
-                context_account_lines
-                    .replace("\n- ```rust", "")
-                    .replace("\n  ```", ""),
-                snapshot_image_path,
-                snapshot_markdown_path,
-                None,
-            ))
-        } else if snapshot_name == VALIDATIONS_PNG_NAME {
-            let validation_lines = get_string_between_two_str_from_string(
-                co_file_string,
-                "# Validations:",
-                "# Miro board frame:",
-            )?;
-            let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "validations.png",
-            );
-            let snapshot_markdown_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "validations.md",
-            );
-            Ok((
-                validation_lines,
-                snapshot_image_path,
-                snapshot_markdown_path,
-                None,
-            ))
-        } else if snapshot_name == ENTRYPOINT_PNG_NAME {
-            let RequiredConfig {
-                program_lib_path, ..
-            } = BatConfig::get_validated_config()?.required;
-            let lib_file_string = fs::read_to_string(program_lib_path.clone()).unwrap();
-            let start_entrypoint_index = lib_file_string
-                .lines()
-                .into_iter()
-                .position(|f| f.contains("pub fn") && f.contains(&selected_folder_name))
-                .unwrap();
-            let end_entrypoint_index = lib_file_string
-                .lines()
-                .into_iter()
-                .enumerate()
-                .position(|(f_index, f)| f.trim() == "}" && f_index > start_entrypoint_index)
-                .unwrap();
-            let entrypoint_lines = get_string_between_two_index_from_string(
-                lib_file_string,
-                start_entrypoint_index,
-                end_entrypoint_index,
-            )?;
-            let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "entrypoint.png",
-            );
-            let snapshot_markdown_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "entrypoint.md",
-            );
-            Ok((
-                format!(
-                    "///{}\n\n{}",
-                    program_lib_path.replace("../", ""),
-                    entrypoint_lines,
-                ),
-                snapshot_image_path,
-                snapshot_markdown_path,
-                Some(start_entrypoint_index - 1),
-            ))
-        } else {
-            //
-            let (handler_string, instruction_file_path, start_index, _) =
-                utils::helpers::get::get_instruction_handler_of_entrypoint(
-                    selected_folder_name.clone(),
-                )?;
-            let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name.clone()).as_str(),
-                "handler.png",
-            );
-            let snapshot_markdown_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "handler.md",
-            );
-            // Handler
-            Ok((
-                format!("///{}\n\n{}", instruction_file_path, handler_string),
-                snapshot_image_path,
-                snapshot_markdown_path,
-                Some(start_index - 1),
-            ))
-        }
-    }
-
-    pub fn create_co_figure(
-        contents: String,
-        image_path: String,
-        temporary_markdown_path: String,
-        index: Option<usize>,
-    ) {
-        // write the temporary markdown file
-        fs::write(temporary_markdown_path.clone(), contents).unwrap();
-        // take the snapshot
-        if let Some(offset) = index {
-            take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), offset);
-        } else {
-            take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), 1);
-        }
-
-        // delete the markdown
-        delete_file(temporary_markdown_path);
-    }
-
-    pub fn take_silicon_snapshot<'a>(
-        image_path: String,
-        temporary_markdown_path: String,
-        index: usize,
-    ) {
-        let offset = format!("{}", index);
-        let image_file_name = image_path.split("/").last().unwrap();
-        let mut args = vec![
-            "--no-window-controls",
-            "--language",
-            "Rust",
-            "--line-offset",
-            &offset,
-            "--theme",
-            "Monokai Extended",
-            "--pad-horiz",
-            "40",
-            "--pad-vert",
-            "40",
-            "--background",
-            "#d3d4d5",
-            "--font",
-            match image_file_name {
-                ENTRYPOINT_PNG_NAME => "Hack=15",
-                CONTEXT_ACCOUNTS_PNG_NAME => "Hack=15",
-                VALIDATIONS_PNG_NAME => "Hack=14",
-                HANDLER_PNG_NAME => "Hack=11",
-                _ => "Hack=13",
-            },
-            "--output",
-            &image_path,
-            &temporary_markdown_path,
-        ];
-        if index == 1 {
-            args.insert(0, "--no-line-number");
-        }
-        std::process::Command::new("silicon")
-            .args(args)
-            .output()
-            .unwrap();
-        // match output {
-        //     Ok(_) => println!(""),
-        //     Err(_) => false,
-        // }
-    }
-
-    pub fn delete_file(path: String) {
-        std::process::Command::new("rm")
-            .args([path])
-            .output()
-            .unwrap();
-    }
-
-    pub fn check_silicon_installed() -> bool {
-        let output = std::process::Command::new("silicon")
-            .args(["--version"])
-            .output();
-        match output {
-            Ok(_) => true,
-            Err(_) => false,
-        }
-    }
-
-    pub fn get_item_id_from_miro_url(miro_url: &str) -> String {
-        // example https://miro.com/app/board/uXjVP7aqTzc=/?moveToWidget=3458764541840480526&cot=14
-        let frame_id = Url::parse(miro_url).unwrap();
-        let hash_query: HashMap<_, _> = frame_id.query_pairs().into_owned().collect();
-        hash_query.get("moveToWidget").unwrap().to_owned()
-    }
 }
 
 #[test]
@@ -901,7 +583,7 @@ pub mod helpers {
 fn test_get_miro_item_id_from_url() {
     let miro_url =
         "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544363318703&cot=14";
-    let item_id = helpers::get_item_id_from_miro_url(miro_url);
+    let item_id = batbelt::miro::helpers::get_item_id_from_miro_url(miro_url);
     println!("item id: {}", item_id);
     assert_eq!(item_id, "3458764541840480526".to_string())
 }

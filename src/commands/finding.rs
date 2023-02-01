@@ -9,20 +9,18 @@ use std::{
     string::String,
 };
 
-use crate::{
-    command_line::vs_code_open_file_in_current_window,
-    utils::{
-        self,
-        git::{create_git_commit, GitCommit},
-        helpers::get::get_only_files_from_folder,
-        path::{FilePathType, FolderPathType},
-    },
+use crate::batbelt::command_line::vs_code_open_file_in_current_window;
+use crate::batbelt::{
+    self,
+    git::{create_git_commit, GitCommit},
+    helpers::get::get_only_files_from_folder,
+    path::{FilePathType, FolderPathType},
 };
 
 pub fn reject() -> Result<(), String> {
     prepare_all(true)?;
     println!("Select the finding file to reject:");
-    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -41,9 +39,9 @@ pub fn reject() -> Result<(), String> {
         Some(index) => {
             let rejected_file_name = review_files[index].clone();
             let rejected_path =
-                utils::path::get_folder_path(FolderPathType::FindingsRejected, true);
+                batbelt::path::get_folder_path(FolderPathType::FindingsRejected, true);
             let to_review_path =
-                utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+                batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true);
             Command::new("mv")
                 .args([to_review_path, rejected_path])
                 .output()
@@ -58,9 +56,9 @@ pub fn reject() -> Result<(), String> {
 pub fn accept_all() -> Result<(), String> {
     prepare_all(false)?;
     // let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
-    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // let accepted_path = utils::path::get_auditor_findings_accepted_path(None)?;
-    let accepted_path = utils::path::get_folder_path(FolderPathType::FindingsAccepted, true);
+    let accepted_path = batbelt::path::get_folder_path(FolderPathType::FindingsAccepted, true);
     let findings_to_review_files_info = get_only_files_from_folder(to_review_path)?;
     for to_review_file in findings_to_review_files_info {
         let mut output = Command::new("mv")
@@ -87,7 +85,7 @@ pub fn create_finding() -> Result<(), String> {
     copy_template_to_findings_to_review(finding_name.clone())?;
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]))?;
     // let finding_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
-    let finding_file_path = utils::path::get_file_path(
+    let finding_file_path = batbelt::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name,
         },
@@ -98,7 +96,7 @@ pub fn create_finding() -> Result<(), String> {
 }
 
 pub fn finish_finding() -> Result<(), String> {
-    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -106,24 +104,24 @@ pub fn finish_finding() -> Result<(), String> {
         .filter(|file| file != ".gitkeep")
         .collect::<Vec<String>>();
     let prompt_text = "Select finding file to finish:";
-    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
+    let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
     let finding_name = &review_files[selection].clone();
-    let finding_file_path = utils::path::get_file_path(
+    let finding_file_path = batbelt::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name.clone(),
         },
         false,
     );
     validate_finished_finding_file(finding_file_path, finding_name.clone());
-    let to_review_finding_file_path = utils::path::get_file_path(
+    let to_review_finding_file_path = batbelt::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name.clone(),
         },
         true,
     );
     let auditor_figures_folder_path =
-        utils::path::get_folder_path(FolderPathType::AuditorFigures, true);
+        batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true);
     create_git_commit(
         GitCommit::FinishFinding {
             finding_name: finding_name.to_string(),
@@ -135,7 +133,7 @@ pub fn finish_finding() -> Result<(), String> {
     Ok(())
 }
 pub fn update_finding() -> Result<(), String> {
-    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true);
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
         .unwrap()
@@ -144,17 +142,17 @@ pub fn update_finding() -> Result<(), String> {
         .collect::<Vec<String>>();
 
     let prompt_text = "Select finding file to update:";
-    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
+    let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
     let finding_name = &review_files[selection].clone();
-    let to_review_finding_file_path = utils::path::get_file_path(
+    let to_review_finding_file_path = batbelt::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name.clone(),
         },
         true,
     );
     let auditor_figures_folder_path =
-        utils::path::get_folder_path(FolderPathType::AuditorFigures, true);
+        batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true);
     create_git_commit(
         GitCommit::UpdateFinding {
             finding_name: finding_name.to_string(),
@@ -167,7 +165,7 @@ pub fn update_finding() -> Result<(), String> {
 }
 
 fn prepare_all(create_commit: bool) -> Result<(), String> {
-    let to_review_path = utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true);
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
         let file_name = file.file_name();
@@ -213,7 +211,7 @@ fn prepare_all(create_commit: bool) -> Result<(), String> {
                     finding_name.replace(".md", "").as_str()
                 );
                 // let to_path = utils::path::get_auditor_findings_to_review_path(Some())?;
-                let to_path = utils::path::get_file_path(
+                let to_path = batbelt::path::get_file_path(
                     FilePathType::FindingToReview {
                         file_name: finding_file_name,
                     },
@@ -234,7 +232,7 @@ fn prepare_all(create_commit: bool) -> Result<(), String> {
 }
 
 fn validate_config_create_finding_file(finding_name: String) -> Result<(), String> {
-    let finding_file_path = utils::path::get_file_path(
+    let finding_file_path = batbelt::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name,
         },
@@ -257,12 +255,12 @@ fn copy_template_to_findings_to_review(finding_name: String) -> Result<(), Strin
 
     let template_path = if selection.unwrap() == 0 {
         // utils::path::get_informational_template_path()?
-        utils::path::get_file_path(FilePathType::TemplateInformational, true)
+        batbelt::path::get_file_path(FilePathType::TemplateInformational, true)
     } else {
-        utils::path::get_file_path(FilePathType::TemplateFinding, true)
+        batbelt::path::get_file_path(FilePathType::TemplateFinding, true)
     };
     // let new_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
-    let new_file_path = utils::path::get_file_path(
+    let new_file_path = batbelt::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name,
         },

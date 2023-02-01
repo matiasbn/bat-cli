@@ -1,9 +1,8 @@
 use std::fs;
 
+use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::{
-    command_line::vs_code_open_file_in_current_window,
-    config::BatConfig,
-    utils::{
+    batbelt::{
         self,
         bash::execute_command_to_stdio,
         git::{create_git_commit, GitCommit},
@@ -13,6 +12,7 @@ use crate::{
         },
         path::{get_file_path, get_folder_path, FilePathType, FolderPathType},
     },
+    config::BatConfig,
 };
 
 pub const FINDING_CODE_PREFIX: &str = "KS";
@@ -444,17 +444,17 @@ impl Finding {
 pub fn findings_result(generate_html: bool) -> Result<(), String> {
     // get the audit_result path
     let audit_result_temp_path =
-        utils::path::get_folder_path(FolderPathType::AuditResultTemp, false);
+        batbelt::path::get_folder_path(FolderPathType::AuditResultTemp, false);
     let audit_result_figures_path =
-        utils::path::get_folder_path(FolderPathType::AuditResultFigures, true);
-    let notes_folder = utils::path::get_folder_path(FolderPathType::Notes, true);
+        batbelt::path::get_folder_path(FolderPathType::AuditResultFigures, true);
+    let notes_folder = batbelt::path::get_folder_path(FolderPathType::Notes, true);
 
     // create a temp folder for the findings
-    utils::bash::execute_command_to_stdio("mkdir", &[&audit_result_temp_path]).unwrap();
+    batbelt::bash::execute_command_to_stdio("mkdir", &[&audit_result_temp_path]).unwrap();
     // delete figures folder
-    utils::bash::execute_command_to_stdio("rm", &["-rf", &audit_result_figures_path]).unwrap();
+    batbelt::bash::execute_command_to_stdio("rm", &["-rf", &audit_result_figures_path]).unwrap();
     // create figures folder
-    utils::bash::execute_command_to_stdio("mkdir", &[&audit_result_figures_path]).unwrap();
+    batbelt::bash::execute_command_to_stdio("mkdir", &[&audit_result_figures_path]).unwrap();
 
     // copy all the data to the audit_result folder
     let auditor_names = BatConfig::get_validated_config()?.required.auditor_names;
@@ -465,7 +465,7 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
         let findings_files = get_only_files_from_folder(auditor_accepted_findings_path)?;
         // for each auditor, copy all the findings to the temp folder
         for finding_file in findings_files {
-            utils::bash::execute_command_to_stdio(
+            batbelt::bash::execute_command_to_stdio(
                 "cp",
                 &[&finding_file.path, &audit_result_temp_path],
             )
@@ -476,14 +476,15 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
         let auditor_figures_path = format!("{}/figures", auditor_notes_path);
         let figures_files = get_only_files_from_folder(auditor_figures_path)?;
         for figure_file in figures_files {
-            utils::bash::execute_command_to_stdio(
+            batbelt::bash::execute_command_to_stdio(
                 "cp",
                 &[&figure_file.path, &audit_result_figures_path],
             )
             .unwrap();
         }
     }
-    let findings_result_file_path = get_file_path(utils::path::FilePathType::FindingsResult, true);
+    let findings_result_file_path =
+        get_file_path(batbelt::path::FilePathType::FindingsResult, true);
     // remove previous findings_result.md file
     execute_command_to_stdio("rm", &[&findings_result_file_path]).unwrap();
     // create new findings_result.md file
@@ -569,7 +570,7 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
     vs_code_open_file_in_current_window(&audit_result_file_path)?;
 
     let prompt_text = "Do you want to create the commit already?";
-    let user_decided_to_create_commit = utils::cli_inputs::select_yes_or_no(prompt_text)?;
+    let user_decided_to_create_commit = batbelt::cli_inputs::select_yes_or_no(prompt_text)?;
     if user_decided_to_create_commit {
         create_git_commit(GitCommit::AuditResult, None)?;
     }
@@ -582,7 +583,7 @@ pub fn results_commit() -> Result<(), String> {
 }
 
 mod helpers {
-    use crate::utils::helpers::get::get_string_between_two_str_from_path;
+    use crate::batbelt::helpers::get::get_string_between_two_str_from_path;
 
     use super::*;
 

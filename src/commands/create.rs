@@ -5,13 +5,13 @@ use colored::Colorize;
 
 use walkdir::WalkDir;
 
-use crate::config::{OptionalConfig, RequiredConfig};
-use crate::constants::{
+use crate::batbelt::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
 };
-use crate::structs::FileInfo;
-use crate::utils::git::clone_base_repository;
-use crate::utils::{cli_inputs, helpers};
+use crate::batbelt::git::clone_base_repository;
+use crate::batbelt::structs::FileInfo;
+use crate::batbelt::{cli_inputs, helpers};
+use crate::config::{OptionalConfig, RequiredConfig};
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 

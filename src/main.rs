@@ -2,18 +2,14 @@
 #![feature(exit_status_error)]
 extern crate core;
 
+use batbelt::git::GitCommit;
 use clap::{Parser, Subcommand};
-use utils::git::GitCommit;
 
-mod command_line;
+mod batbelt;
 mod commands;
 mod config;
-mod constants;
-mod markdown;
 mod package;
-mod silicon;
-mod structs;
-mod utils;
+
 use std::{error, result};
 
 type Result<T> = result::Result<T, Box<dyn error::Error>>;
@@ -172,13 +168,13 @@ async fn main() {
             commands::miro::deploy_screenshot_to_frame().await.unwrap()
         }
         Commands::Metadata(MetadataActions::Structs) => {
-            commands::metadata::structs::update_structs().unwrap()
+            commands::metadata::update_structs().unwrap()
         }
         Commands::Metadata(MetadataActions::Miro) => {
-            commands::metadata::miro::update_miro().await.unwrap()
+            commands::metadata::update_miro().await.unwrap()
         }
         Commands::Metadata(MetadataActions::Functions) => {
-            commands::metadata::functions::update_functions().unwrap()
+            commands::metadata::update_functions().unwrap()
         }
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
@@ -187,7 +183,7 @@ async fn main() {
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
-        Commands::Notes => utils::git::create_git_commit(GitCommit::Notes, None).unwrap(),
+        Commands::Notes => batbelt::git::create_git_commit(GitCommit::Notes, None).unwrap(),
         Commands::Result(ResultActions::Findings { html }) => {
             commands::result::findings_result(html).unwrap()
         }

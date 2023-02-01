@@ -2,11 +2,11 @@ use std::{process::Command, str};
 
 use colored::Colorize;
 
+use crate::batbelt::command_line::deprecated_execute_command;
+use crate::batbelt::constants::BASE_REPOSTORY_URL;
 use crate::{
-    command_line::deprecated_execute_command,
+    batbelt::{self, path::FilePathType},
     config::BatConfig,
-    constants::BASE_REPOSTORY_URL,
-    utils::{self, path::FilePathType},
 };
 
 use super::{bash::execute_command_to_stdio, path::FolderPathType};
@@ -77,7 +77,7 @@ pub fn create_git_commit(
             // (commit_string, vec![utils::path::get_auditor_notes_path()?])
             (
                 commit_string,
-                vec![utils::path::get_folder_path(
+                vec![batbelt::path::get_folder_path(
                     FolderPathType::AuditorNotes,
                     true,
                 )],
@@ -90,8 +90,8 @@ pub fn create_git_commit(
             println!("code-overhaul file started with commit: {commit_string:?}");
             let file_to_delete_path =
                 // utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
-                utils::path::get_file_path(FilePathType::CodeOverhaulToReview { file_name: commit_file.clone() }, true);
-            let file_to_add_path = utils::path::get_file_path(
+                batbelt::path::get_file_path(FilePathType::CodeOverhaulToReview { file_name: commit_file.clone() }, true);
+            let file_to_add_path = batbelt::path::get_file_path(
                 FilePathType::CodeOverhaulStarted {
                     file_name: commit_file.clone(),
                 },
@@ -106,9 +106,9 @@ pub fn create_git_commit(
             println!("code-overhaul file started with commit: {commit_string}");
             let file_to_delete_path =
                 // utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
-                utils::path::get_file_path(FilePathType::CodeOverhaulToReview { file_name: commit_file.clone() }, false);
+                batbelt::path::get_file_path(FilePathType::CodeOverhaulToReview { file_name: commit_file.clone() }, false);
             let started_co_folder_path =
-                utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
+                batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
             (
                 commit_string,
                 vec![
@@ -125,8 +125,8 @@ pub fn create_git_commit(
             println!("code-overhaul file finished with commit: {commit_string:?}");
             let file_to_delete_path =
                 // utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
-                utils::path::get_file_path(FilePathType::CodeOverhaulFinished { file_name:  commit_file.clone() }, true);
-            let file_to_add_path = utils::path::get_file_path(
+                batbelt::path::get_file_path(FilePathType::CodeOverhaulFinished { file_name:  commit_file.clone() }, true);
+            let file_to_add_path = batbelt::path::get_file_path(
                 FilePathType::CodeOverhaulFinished {
                     file_name: commit_file.clone(),
                 },
@@ -141,10 +141,10 @@ pub fn create_git_commit(
             println!("code-overhaul file finished with commit: {commit_string:?}");
             // let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
             let started_path =
-                utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
+                batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
             let folder_to_delete_path = format!("{started_path}/{commit_file_name}");
             let finished_folder_path =
-                utils::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
+                batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
             let file_to_add_path = format!("{finished_folder_path}/{commit_file}.md");
             (commit_string, vec![folder_to_delete_path, file_to_add_path])
         }
@@ -153,7 +153,7 @@ pub fn create_git_commit(
             let commit_string = "co: ".to_string() + entrypoint_name + " deployed to Miro";
             println!("code-overhaul files deployed to Miro with commit: {commit_string:?}");
             let started_path =
-                utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
+                batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
             let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
             (commit_string, vec![folder_to_add_path])
         }
@@ -162,7 +162,7 @@ pub fn create_git_commit(
             let commit_string = "co: ".to_string() + entrypoint_name + " updated in Miro";
             println!("code-overhaul files updated in Miro with commit: {commit_string:?}");
             let started_path =
-                utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
+                batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
             let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
             (commit_string, vec![folder_to_add_path])
         }
@@ -173,7 +173,7 @@ pub fn create_git_commit(
             println!("code-overhaul file updated with commit: {commit_string:?}");
             let file_to_add_path =
                 // utils::path::get_auditor_code_overhaul_finished_path(Some(commit_file.clone()))?;
-                utils::path::get_file_path(FilePathType::CodeOverhaulFinished { file_name: commit_file.clone() },true);
+                batbelt::path::get_file_path(FilePathType::CodeOverhaulFinished { file_name: commit_file.clone() }, true);
             (commit_string, vec![file_to_add_path])
         }
         GitCommit::StartFinding => {
@@ -183,7 +183,7 @@ pub fn create_git_commit(
             println!("finding file created with commit: {commit_string}");
             let file_to_add_path =
                 // utils::path::get_file_path(FilePathType::FindingToReview { file_name: commit_file.clone() },true);
-                utils::path::get_file_path(FilePathType::FindingToReview { file_name: commit_file.clone() },true);
+                batbelt::path::get_file_path(FilePathType::FindingToReview { file_name: commit_file.clone() }, true);
             (commit_string, vec![file_to_add_path])
         }
         GitCommit::FinishFinding {
@@ -221,7 +221,7 @@ pub fn create_git_commit(
             let commit_string = "finding: to-review findings severity updated".to_string();
             println!("updating findings severity in repository");
             let file_to_add_path =
-                utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+                batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true);
             (commit_string, vec![file_to_add_path])
         }
         GitCommit::AcceptAllFinding => {
@@ -231,17 +231,17 @@ pub fn create_git_commit(
                 commit_string.green()
             );
             let accepted_path =
-                utils::path::get_folder_path(FolderPathType::FindingsAccepted, true);
+                batbelt::path::get_folder_path(FolderPathType::FindingsAccepted, true);
             let to_review_path =
-                utils::path::get_folder_path(FolderPathType::FindingsToReview, true);
+                batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true);
             (commit_string, vec![accepted_path, to_review_path])
         }
         GitCommit::UpdateRepo => {
             let commit_string = "repo: templates and package.json update".to_string();
             // let file_to_add_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
             let file_to_add_path =
-                utils::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true);
-            let templates_path = utils::path::get_folder_path(FolderPathType::Templates, true);
+                batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true);
+            let templates_path = batbelt::path::get_folder_path(FolderPathType::Templates, true);
             (
                 commit_string,
                 vec![file_to_add_path, templates_path, "package.json".to_string()],
@@ -249,11 +249,12 @@ pub fn create_git_commit(
         }
         GitCommit::Notes => {
             println!("Creating a commit for open_questions.md, finding_candidates.md and threat_modeling.md");
-            let open_questions_path = utils::path::get_file_path(FilePathType::OpenQuestions, true);
+            let open_questions_path =
+                batbelt::path::get_file_path(FilePathType::OpenQuestions, true);
             let finding_candidates_path =
-                utils::path::get_file_path(FilePathType::FindingCandidates, true);
+                batbelt::path::get_file_path(FilePathType::FindingCandidates, true);
             let threat_modeling_path =
-                utils::path::get_file_path(FilePathType::ThreatModeling, true);
+                batbelt::path::get_file_path(FilePathType::ThreatModeling, true);
             let commit_string =
                 "notes: open_questions, finding_candidates and threat_modeling notes".to_string();
             println!("{commit_string}");
@@ -269,9 +270,9 @@ pub fn create_git_commit(
         GitCommit::AuditResult => {
             println!("Creating a commit for {}", "audit_result".green());
             let audit_result_folder_path =
-                utils::path::get_folder_path(FolderPathType::AuditResult, true);
+                batbelt::path::get_folder_path(FolderPathType::AuditResult, true);
             let audit_result_file_path =
-                utils::path::get_file_path(FilePathType::AuditResult, true);
+                batbelt::path::get_file_path(FilePathType::AuditResult, true);
             let commit_string = format!("notes: audit_result updated");
             (
                 commit_string,
@@ -280,13 +281,13 @@ pub fn create_git_commit(
         }
         GitCommit::TMAccounts => {
             println!("Creating a commit for threat_modeling.md");
-            let tm_path = utils::path::get_file_path(FilePathType::ThreatModeling, true);
+            let tm_path = batbelt::path::get_file_path(FilePathType::ThreatModeling, true);
             let commit_string = format!("notes: threat_modeling.md updated");
             (commit_string, vec![tm_path])
         }
         GitCommit::UpdateMetadata => {
             println!("Creating a commit for metadata.md");
-            let metadata_path = utils::path::get_file_path(FilePathType::Metadata, true);
+            let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
             let commit_string = format!("notes: metadata.md updated");
             (commit_string, vec![metadata_path])
         }

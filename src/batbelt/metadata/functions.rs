@@ -1,21 +1,21 @@
-use crate::markdown::{MarkdownFile, MarkdownSection, MarkdownSectionLevel};
-use crate::structs::FileInfo;
-use crate::utils::git::GitCommit;
+use crate::batbelt::git::GitCommit;
+use crate::batbelt::markdown::{MarkdownFile, MarkdownSection, MarkdownSectionLevel};
+use crate::batbelt::structs::FileInfo;
 
-use crate::utils;
-use crate::utils::path::{FilePathType, FolderPathType};
+use crate::batbelt;
+use crate::batbelt::path::{FilePathType, FolderPathType};
 use colored::Colorize;
 
 use std::vec;
 
 use super::MetadataContent;
 
-const FUNCTIONS_SECTION_TITLE: &str = "Functions";
-const HANDLERS_SUBSECTION_TITLE: &str = "Handlers";
-const ENTRYPOINTS_SUBSECTION_TITLE: &str = "Entrypoints";
-const HELPERS_SUBSECTION_TITLE: &str = "Helpers";
-const VALIDATORS_SUBSECTION_TITLE: &str = "Validators";
-const OTHERS_SUBSECTION_TITLE: &str = "Other";
+pub const FUNCTIONS_SECTION_TITLE: &str = "Functions";
+pub const HANDLERS_SUBSECTION_TITLE: &str = "Handlers";
+pub const ENTRYPOINTS_SUBSECTION_TITLE: &str = "Entrypoints";
+pub const HELPERS_SUBSECTION_TITLE: &str = "Helpers";
+pub const VALIDATORS_SUBSECTION_TITLE: &str = "Validators";
+pub const OTHERS_SUBSECTION_TITLE: &str = "Other";
 pub const FUNCTION_TYPES_STRING: &[&str] =
     &["handler", "entry_point", "helper", "validator", "other"];
 
@@ -88,119 +88,6 @@ impl FunctionMetadataType {
     }
 }
 
-pub fn update_functions() -> Result<(), String> {
-    let metadata_path = utils::path::get_file_path(FilePathType::Metadata, false);
-    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
-    let mut functions_section = metadata_markdown
-        .clone()
-        .get_section_by_title(FUNCTIONS_SECTION_TITLE)
-        .clone();
-    // check if empty
-    let is_initialized = !functions_section
-        .subsections
-        .iter()
-        .all(|subsection| subsection.subsections.is_empty());
-    // prompt the user if he wants to replace
-    if is_initialized {
-        let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
-            format!(
-                "{}, are you sure you want to continue?",
-                format!("functions in metadata.md are arealready initialized").bright_red()
-            )
-            .as_str(),
-        )?;
-        if !user_decided_to_continue {
-            panic!("User decided not to continue with the update process for functions metada")
-        }
-    }
-    // get functions in all files
-    let (
-        handlers_metadata_vec,
-        entry_poins_metadata_vec,
-        helpers_metadata_vec,
-        validators_metadata_vec,
-        other_metadata_vec,
-    ) = get_functions_metadata_from_program()?;
-
-    let handlers_subsections: Vec<MarkdownSection> = handlers_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-
-    let entry_points_subsections: Vec<MarkdownSection> = entry_poins_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-
-    let helpers_subsections: Vec<MarkdownSection> = helpers_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-    let validators_subsections: Vec<MarkdownSection> = validators_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-
-    let other_subsections: Vec<MarkdownSection> = other_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-    functions_section
-        .update_subsection_subsections_by_title(HANDLERS_SUBSECTION_TITLE, handlers_subsections)
-        .unwrap();
-    functions_section
-        .update_subsection_subsections_by_title(
-            ENTRYPOINTS_SUBSECTION_TITLE,
-            entry_points_subsections,
-        )
-        .unwrap();
-    functions_section
-        .update_subsection_subsections_by_title(HELPERS_SUBSECTION_TITLE, helpers_subsections)
-        .unwrap();
-    functions_section
-        .update_subsection_subsections_by_title(VALIDATORS_SUBSECTION_TITLE, validators_subsections)
-        .unwrap();
-    functions_section
-        .update_subsection_subsections_by_title(OTHERS_SUBSECTION_TITLE, other_subsections)
-        .unwrap();
-    metadata_markdown
-        .replace_section(
-            metadata_markdown
-                .clone()
-                .get_section_by_title(FUNCTIONS_SECTION_TITLE),
-            functions_section,
-        )
-        .unwrap();
-    metadata_markdown.clone().save()?;
-    utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
-    Ok(())
-}
-
 pub fn get_functions_metadata_from_program() -> Result<
     (
         Vec<FunctionMetadata>,
@@ -211,8 +98,9 @@ pub fn get_functions_metadata_from_program() -> Result<
     ),
     String,
 > {
-    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, false);
-    let program_folder_files_info = utils::helpers::get::get_only_files_from_folder(program_path)?;
+    let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
+    let program_folder_files_info =
+        batbelt::helpers::get::get_only_files_from_folder(program_path)?;
     let mut functions_metadata: Vec<FunctionMetadata> = vec![];
     for file_info in program_folder_files_info {
         let mut function_metadata_result = get_function_metadata_from_file_info(file_info)?;
@@ -261,7 +149,7 @@ pub fn get_functions_metadata_from_program() -> Result<
     ))
 }
 
-fn get_function_metadata_from_file_info(
+pub fn get_function_metadata_from_file_info(
     function_file_info: FileInfo,
 ) -> Result<Vec<FunctionMetadata>, String> {
     let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
@@ -320,10 +208,10 @@ fn get_function_metadata_from_file_info(
                     "function".red(),
                     function_metadata_content.green()
                 );
-                let is_function = utils::cli_inputs::select_yes_or_no(&prompt_text)?;
+                let is_function = batbelt::cli_inputs::select_yes_or_no(&prompt_text)?;
                 if is_function {
                     let prompt_text = "Select the type of function:";
-                    let selection = utils::cli_inputs::select(
+                    let selection = batbelt::cli_inputs::select(
                         prompt_text,
                         function_types_colored.clone(),
                         None,
@@ -350,7 +238,7 @@ fn get_function_metadata_from_file_info(
     Ok(function_metadata_vec)
 }
 
-fn get_function_name(function_line: &str) -> String {
+pub fn get_function_name(function_line: &str) -> String {
     function_line.trim().split("fn ").collect::<Vec<_>>()[1]
         .split("(")
         .next()
@@ -362,7 +250,7 @@ fn get_function_name(function_line: &str) -> String {
         .clone()
 }
 
-fn get_functions_section_content(header: &str, function_metadata: FunctionMetadata) -> String {
+pub fn get_functions_section_content(header: &str, function_metadata: FunctionMetadata) -> String {
     format!(
         "{header}\n\n{}{}{}",
         format!(
