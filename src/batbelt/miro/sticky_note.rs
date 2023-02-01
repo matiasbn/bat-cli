@@ -1,6 +1,5 @@
-use crate::batbelt::miro::image::MiroImageType;
 use crate::batbelt::miro::{MiroColor, MiroConfig, MiroItemType};
-use crate::batbelt::structs::SignerType;
+
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{json, Value};
 

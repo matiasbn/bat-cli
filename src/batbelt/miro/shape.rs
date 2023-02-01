@@ -1,4 +1,3 @@
-use crate::batbelt;
 use crate::batbelt::miro::{helpers::get_id_from_response, MiroConfig};
 use reqwest;
 use serde_json::*;
@@ -91,8 +90,6 @@ impl MiroShape {
         Ok(())
     }
 }
-
-use crate::commands::{self};
 
 mod api {
     use super::*;

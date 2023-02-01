@@ -9,7 +9,7 @@ use crate::batbelt::constants::{
     CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER, CO_FIGURES,
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
-use crate::batbelt::miro::{self, MiroConfig};
+use crate::batbelt::miro::MiroConfig;
 use crate::config::BatConfig;
 
 use crate::batbelt;
@@ -23,7 +23,7 @@ use crate::batbelt::path::{FilePathType, FolderPathType};
 use std::fs;
 
 use crate::batbelt::miro::frame::MiroFrame;
-use crate::batbelt::miro::item::MiroItem;
+
 use std::path::Path;
 use std::process::Command;
 use std::string::String;

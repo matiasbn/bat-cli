@@ -1,15 +1,14 @@
 use crate::batbelt;
-use crate::batbelt::git::*;
+
 use crate::config::*;
 use normalize_url::normalizer;
 use reqwest;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use reqwest::multipart::{self};
+
 use serde_json::*;
 use std::fs;
 use std::result::Result;
-use tokio::fs::File;
-use tokio_util::codec::{BytesCodec, FramedRead};
+
 pub mod connector;
 pub mod frame;
 pub mod image;
@@ -167,28 +166,14 @@ impl MiroColor {
     }
 }
 
-use colored::Colorize;
-use shape::{MiroShape, MiroShapeStyle};
-
-use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::structs::{SignerInfo, SignerType};
-use crate::{
-    batbelt::{
-        helpers::get::{
-            get_string_between_two_index_from_string, get_string_between_two_str_from_string,
-        },
-        path::FilePathType,
+use crate::batbelt::{
+    helpers::get::{
+        get_string_between_two_index_from_string, get_string_between_two_str_from_string,
     },
-    commands::entrypoints::entrypoints::get_entrypoints_names,
+    path::FilePathType,
 };
 
-use self::frame::MiroFrame;
-use self::image::MiroImage;
 use self::item::MiroItem;
-
-use crate::batbelt::metadata::source_code::SourceCodeMetadata;
-use crate::batbelt::metadata::source_code::SourceCodeScreenshotOptions;
-use crate::batbelt::miro::connector::ConnectorOptions;
 
 pub mod helpers {
     use std::collections::HashMap;

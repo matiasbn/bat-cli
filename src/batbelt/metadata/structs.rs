@@ -1,9 +1,7 @@
-use crate::batbelt::git::GitCommit;
-use crate::batbelt::markdown::{MarkdownFile, MarkdownSection, MarkdownSectionLevel};
 use crate::batbelt::structs::FileInfo;
 
 use crate::batbelt;
-use crate::batbelt::path::{FilePathType, FolderPathType};
+use crate::batbelt::path::FolderPathType;
 use colored::Colorize;
 
 use std::vec;

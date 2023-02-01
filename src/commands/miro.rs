@@ -1,29 +1,16 @@
 use crate::batbelt;
 use crate::batbelt::constants::*;
 use crate::batbelt::git::*;
-use crate::config::*;
-use normalize_url::normalizer;
-use reqwest;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use reqwest::multipart::{self};
-use serde_json::*;
+
 use std::fs;
 use std::result::Result;
-use tokio::fs::File;
-use tokio_util::codec::{BytesCodec, FramedRead};
 
 use colored::Colorize;
 
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::structs::{SignerInfo, SignerType};
 use crate::{
-    batbelt::{
-        helpers::get::{
-            get_string_between_two_index_from_string, get_string_between_two_str_from_string,
-        },
-        path::FilePathType,
-    },
-    commands::entrypoints::entrypoints::get_entrypoints_names,
+    batbelt::path::FilePathType, commands::entrypoints::entrypoints::get_entrypoints_names,
 };
 
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
@@ -34,7 +21,7 @@ use crate::batbelt::miro::image::{MiroImage, MiroImageType};
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::shape::{MiroShape, MiroShapeStyle};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
-use crate::batbelt::miro::{helpers, image, MiroConfig, MiroItemType};
+use crate::batbelt::miro::{helpers, MiroConfig, MiroItemType};
 
 pub async fn deploy_miro() -> Result<(), String> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
@@ -236,7 +223,7 @@ pub async fn deploy_miro() -> Result<(), String> {
                 _ => todo!(),
             };
             snapshot.update_position(x_position, y_position);
-            let frame_id =
+            let _frame_id =
                 batbelt::miro::helpers::get_frame_id_from_co_file(selected_folder.as_str())?;
             fs::write(
                 &selected_co_started_path,

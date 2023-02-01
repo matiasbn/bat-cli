@@ -15,12 +15,11 @@ use crate::batbelt::metadata::miro::{
     MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER, MIRO_SUBSECTIONS_HEADERS,
 };
 use crate::batbelt::metadata::structs::{
-    get_structs_metadata_from_program, get_structs_section_content, StructMetadata,
-    StructMetadataType,
+    get_structs_metadata_from_program, get_structs_section_content,
 };
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::{MiroColor, MiroConfig};
-use crate::batbelt::path::{FilePathType, FolderPathType};
+use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
 use std::fs;

@@ -1,22 +1,3 @@
-use crate::batbelt::metadata::metadata_helpers;
-use crate::commands;
-
-use crate::batbelt::miro::{MiroColor, MiroConfig};
-
-use crate::batbelt::constants::{
-    MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE,
-    MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE,
-    MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE,
-};
-use crate::batbelt::markdown::MarkdownFile;
-
-use crate::batbelt::git::GitCommit;
-
-use crate::batbelt;
-use crate::batbelt::path::FilePathType;
-use colored::Colorize;
-
-use std::fs;
 use std::vec;
 
 pub const MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER: &str = "### Accounts frame url";
