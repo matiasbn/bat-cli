@@ -20,6 +20,15 @@ impl MarkdownFile {
         }
     }
 
+    pub fn new_from_path_and_content(path: &str, content: &str) -> Self {
+        let sections = Self::get_sections(content.to_string(), MarkdownSectionLevel::H1);
+        MarkdownFile {
+            path: path.to_string(),
+            content: content.to_string(),
+            sections,
+        }
+    }
+
     pub fn save(&mut self) -> Result<(), String> {
         self.update_content().unwrap();
         fs::write(&self.path, &self.content).unwrap();
@@ -266,6 +275,16 @@ impl MarkdownSectionLevel {
         }
     }
 
+    pub fn get_supersection_prefix(&self) -> String {
+        match self {
+            MarkdownSectionLevel::H1 => "#".to_string(),
+            MarkdownSectionLevel::H2 => "#".to_string(),
+            MarkdownSectionLevel::H3 => "##".to_string(),
+            MarkdownSectionLevel::H4 => "###".to_string(),
+            MarkdownSectionLevel::H5 => "####".to_string(),
+        }
+    }
+
     pub fn get_header(&self, title: &str) -> String {
         format!("{} {}", self.get_prefix(), title)
     }
@@ -276,28 +295,28 @@ impl MarkdownSectionLevel {
 }
 
 pub trait MarkdownParser {
-    fn get_section_content(title: &str, level: MarkdownSectionLevel, content: &str) -> String {
-        let header = level.get_header(title);
+    fn get_section_content(header: &str, level: MarkdownSectionLevel, content: &str) -> String {
         let prefix = level.get_prefix();
-        let last_line_index = content.lines().count() - 1;
-        let start_index = content
-            .trim()
-            .lines()
-            .position(|line| line.trim() == header)
+        let super_section_prefix = level.get_supersection_prefix();
+        let prefixes = [&prefix, &super_section_prefix];
+        let content_lines = content.split("\n");
+        let last_line_index = content_lines.clone().count() - 1;
+        let start_index = content_lines
+            .clone()
+            .position(|line| line == header)
             .unwrap();
-        let mut end_index = content
-            .trim()
-            .lines()
+        let mut end_index = content_lines
+            .clone()
             .enumerate()
             .position(|line| {
-                (line.1.trim().split(" ").next().unwrap() == prefix && line.0 > start_index)
+                (prefixes
+                    .iter()
+                    .any(|pref| line.1.split(" ").next().unwrap() == pref.to_string())
+                    && line.0 > start_index)
                     || line.0 == last_line_index
             })
             .unwrap();
-        if end_index == last_line_index {
-            end_index += 1
-        }
-        let section: String = content.lines().collect::<Vec<&str>>()[start_index..end_index]
+        let section: String = content_lines.collect::<Vec<&str>>()[start_index..end_index]
             .to_vec()
             .join("\n");
         section
@@ -310,6 +329,7 @@ pub trait MarkdownParser {
             .filter(|line| line.trim().split(" ").next().unwrap() == level_prefix)
             .map(|header| header.to_string())
             .collect();
+        println!("headers {:#?}", headers);
         headers
     }
 
@@ -328,7 +348,9 @@ pub trait MarkdownParser {
                     .unwrap()
                     .trim()
                     .to_string();
-                let content = MarkdownSection::get_section_content(&title, level.clone(), &content);
+                println!("title {}", title);
+                let content =
+                    MarkdownSection::get_section_content(&header, level.clone(), &content);
                 MarkdownSection::new(title, level.clone(), &content)
             })
             .collect()

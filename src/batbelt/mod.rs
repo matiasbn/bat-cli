@@ -11,3 +11,4 @@ pub mod path;
 pub mod silicon;
 pub mod sonar;
 pub mod structs;
+pub mod templates;
