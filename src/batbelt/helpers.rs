@@ -27,7 +27,9 @@ use std::string::String;
 use std::{fs, io};
 pub mod parse {
 
-    use std::fmt::Display;
+    use std::fmt::{Debug, Display};
+
+    use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 
     use super::{
         get::{get_string_between_two_index_from_string, prompt_check_validation},
@@ -615,80 +617,38 @@ pub mod parse {
             program_lib_path, ..
         } = required;
 
-        let lib_file = File::open(program_lib_path).unwrap();
-        let mut lib_files_lines = io::BufReader::new(lib_file).lines().map(|l| l.unwrap());
-        lib_files_lines
-            .borrow_mut()
-            .enumerate()
-            .find(|(_, line)| *line == String::from("#[program]"))
+        let mut entrypoints_sonar = BatSonar::new_from_path(
+            &program_lib_path,
+            Some("#[program"),
+            SonarResultType::Function,
+        );
+        entrypoints_sonar.scan_content_to_get_results();
+        let mut entrypoint = entrypoints_sonar
+            .result
+            .into_iter()
+            .find(|function| function.name == co_file_name.replace(".md", ""))
             .unwrap();
-
-        let mut program_lines = vec![String::from(""); 0];
-        for (_, line) in lib_files_lines.borrow_mut().enumerate() {
-            if line == "}" {
-                break;
-            }
-            program_lines.push(line)
-        }
-        let entrypoint_text = "pub fn ".to_string() + co_file_name.replace(".md", "").as_str();
-        let entrypoint_index = program_lines
-            .iter()
-            .position(|line| line.contains(entrypoint_text.clone().as_str()))
-            .unwrap();
-        let mut canditate_lines = vec![program_lines[entrypoint_index].clone()];
-        let mut idx = 0;
-        // collect lines until closing parenthesis
-        while !program_lines[entrypoint_index + idx].contains(')') {
-            canditate_lines.push(program_lines[entrypoint_index + idx].clone());
-            idx += 1;
-        }
-        // same line parameters
-        if idx == 0 {
-            // split by "->"
-            // take only the first element
-            let mut function_line = canditate_lines[0].split("->").collect::<Vec<_>>()[0]
-                .to_string()
-                // replace ) by ""
-                .replace(')', "")
-                // split by ","
-                .split(", ")
-                // if no : then is a lifetime
-                .filter(|l| l.contains(':'))
-                .map(|l| l.to_string())
-                .collect::<Vec<_>>();
-            // if the split produces 1 element, then there's no parameters
-            if function_line.len() == 1 {
-                let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
-                    CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-                    ("- ".to_string() + CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER)
-                        .as_str(),
-                );
-                fs::write(co_file_path, data).unwrap();
-            } else {
-                // delete first element
-                function_line.remove(0);
-                // join
-                let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
-                    CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-                    ("- ```rust\n  ".to_string() + function_line.join("\n  ").as_str() + "\n  ```")
-                        .as_str(),
-                );
-                fs::write(co_file_path, data).unwrap();
-            }
-        } else {
-            let parameters_lines = canditate_lines
-                .iter()
-                .filter(|line| !line.contains("pub fn") && !line.contains("Context"))
-                .map(|l| {
-                    l.to_string()
-                        .replace(' ', "")
-                        .replace(':', ": ")
-                        .replace(';', "; ")
-                })
-                .collect::<Vec<_>>();
+        let entrypoint_subcontent = entrypoint.parse_sub_content();
+        let (parameters, _) = entrypoint_subcontent.parse();
+        // Filter context accounts
+        let filtered_parameters: Vec<String> = parameters
+            .into_iter()
+            .filter(|parameter| !parameter.contains("Context<"))
+            .collect();
+        if filtered_parameters.is_empty() {
             let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
                 CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-                ("- ```rust\n  ".to_string() + parameters_lines.join("\n  ").as_str() + "\n  ```")
+                ("- ".to_string() + CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER)
+                    .as_str(),
+            );
+            fs::write(co_file_path, data).unwrap();
+        } else {
+            // join
+            let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
+                CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
+                ("- ```rust\n  ".to_string()
+                    + filtered_parameters.join("\n  ").as_str()
+                    + "\n  ```")
                     .as_str(),
             );
             fs::write(co_file_path, data).unwrap();

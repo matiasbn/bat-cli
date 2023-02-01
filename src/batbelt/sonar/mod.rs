@@ -1,3 +1,5 @@
+use std::fs;
+
 pub mod functions;
 pub mod structs;
 
@@ -23,6 +25,35 @@ impl BatSonar {
         }
     }
 
+    pub fn new_from_path(
+        path: &str,
+        starting_line_content: Option<&str>,
+        result_type: SonarResultType,
+    ) -> Self {
+        let content = fs::read_to_string(path).unwrap();
+
+        let mut new_sonar = BatSonar::new(&content, result_type.clone());
+
+        if let Some(starting_content) = starting_line_content {
+            let start_line_index = content
+                .clone()
+                .lines()
+                .position(|line| line.contains(starting_content))
+                .unwrap();
+            let first_line = content
+                .lines()
+                .find(|line| line.contains(starting_content))
+                .unwrap();
+            let trailing_whitespaces = Self::get_trailing_whitespaces(first_line);
+            let end_line_index =
+                new_sonar.get_end_line_index(start_line_index, trailing_whitespaces);
+            let new_content = new_sonar.get_result_content(start_line_index, end_line_index);
+            new_sonar.content = new_content;
+        }
+
+        new_sonar
+    }
+
     pub fn scan_content_to_get_results(&mut self) {
         let content_lines = self.content.lines();
         for (line_index, line) in content_lines.enumerate() {
@@ -41,20 +72,21 @@ impl BatSonar {
                     end_line_index,
                     true,
                 );
-                sonar_result.parse_result(line);
+                sonar_result.get_name_and_is_public(line);
                 self.result.push(sonar_result);
             }
         }
     }
 
-    pub fn get_result_content(&self, start_line: usize, end_line: usize) -> String {
-        let result_content = self.content.lines().collect::<Vec<_>>()[start_line..=end_line]
+    fn get_result_content(&self, start_line_index: usize, end_line_index: usize) -> String {
+        let result_content = self.content.lines().collect::<Vec<_>>()
+            [start_line_index..=end_line_index]
             .to_vec()
             .join("\n");
         result_content
     }
 
-    pub fn get_end_line_index(&self, start_index: usize, trailing_whitespaces: usize) -> usize {
+    fn get_end_line_index(&self, start_index: usize, trailing_whitespaces: usize) -> usize {
         let closing_line_candidates = self.get_closing_lines_candidates(trailing_whitespaces);
         let closing_index = self
             .content
@@ -71,7 +103,7 @@ impl BatSonar {
         closing_index
     }
 
-    pub fn get_closing_lines_candidates(&self, trailing_whitespaces: usize) -> Vec<String> {
+    fn get_closing_lines_candidates(&self, trailing_whitespaces: usize) -> Vec<String> {
         self.closure_filters
             .get_filters()
             .iter()
@@ -88,7 +120,7 @@ impl BatSonar {
         trailing_whitespaces
     }
 
-    pub fn check_is_open(&self, line: &str) -> bool {
+    fn check_is_open(&self, line: &str) -> bool {
         let open_filters = self.open_filters.get_filters();
         let end_of_open_filters = self.end_of_open_filters.get_filters();
         if !open_filters.iter().any(|filter| line.contains(filter)) {
@@ -112,13 +144,14 @@ impl BatSonar {
 }
 #[derive(Clone, Debug)]
 pub struct SonarResult {
-    name: String,
-    content: String,
-    trailing_whitespaces: usize,
-    result_type: SonarResultType,
-    start_line: usize,
-    end_line: usize,
-    is_public: bool,
+    pub name: String,
+    pub content: String,
+    pub trailing_whitespaces: usize,
+    pub result_type: SonarResultType,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub is_public: bool,
+    pub sub_content: SonarResultSubContent,
 }
 
 impl SonarResult {
@@ -139,10 +172,11 @@ impl SonarResult {
             start_line,
             end_line,
             is_public,
+            sub_content: SonarResultSubContent::Empty,
         }
     }
 
-    pub fn parse_result(&mut self, first_line: &str) {
+    pub fn get_name_and_is_public(&mut self, first_line: &str) {
         let mut first_line_tokenized = first_line.trim().split(" ");
         let is_public = first_line_tokenized.next().unwrap() == "pub";
         if is_public {
@@ -158,6 +192,93 @@ impl SonarResult {
             .unwrap();
         self.name = name.to_string();
         self.is_public = is_public;
+    }
+
+    pub fn parse_sub_content(&mut self) -> SonarResultSubContent {
+        match self.result_type {
+            SonarResultType::Function => self.parse_function_subcontent(),
+            _ => SonarResultSubContent::Empty,
+        }
+    }
+
+    pub fn parse_function_subcontent(&mut self) -> SonarResultSubContent {
+        let parameters = self.parse_function_parameters();
+        self.sub_content = SonarResultSubContent::FunctionSubContent {
+            parameters,
+            body: self.content.clone().split("{").collect::<Vec<_>>()[1]
+                .split("}")
+                .next()
+                .unwrap()
+                .to_string(),
+        };
+        self.sub_content.clone()
+    }
+
+    fn parse_function_parameters(&self) -> Vec<String> {
+        let content_lines = self.content.lines();
+        let function_signature = self.content.clone();
+        let function_signature = function_signature
+            .split("{")
+            .next()
+            .unwrap()
+            .split("->")
+            .next()
+            .unwrap();
+        //Function parameters
+        // single line function
+        if content_lines.clone().next().unwrap().contains(")") {
+            let function_signature_tokenized = function_signature.split("(").collect::<Vec<_>>()[1]
+                .split(")")
+                .next()
+                .unwrap()
+                .split(" ")
+                .collect::<Vec<_>>();
+            let mut parameters: Vec<String> = vec![];
+            function_signature_tokenized.iter().enumerate().fold(
+                "".to_string(),
+                |total, current| {
+                    if current.1.contains(":") {
+                        if !total.is_empty() {
+                            parameters.push(total);
+                        }
+                        current.1.to_string()
+                    } else if current.0 == function_signature_tokenized.len() - 1 {
+                        parameters.push(format!("{} {}", total, current.1));
+                        total
+                    } else {
+                        format!("{} {}", total, current.1)
+                    }
+                },
+            );
+            parameters
+        } else {
+            //multiline
+            // parameters contains :
+            let filtered: Vec<String> = function_signature
+                .lines()
+                .filter(|line| line.contains(":"))
+                .map(|line| line.trim().to_string())
+                .collect();
+            filtered
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum SonarResultSubContent {
+    FunctionSubContent {
+        parameters: Vec<String>,
+        body: String,
+    },
+    Empty,
+}
+
+impl SonarResultSubContent {
+    pub fn parse(&self) -> (Vec<String>, String) {
+        match self {
+            Self::FunctionSubContent { parameters, body } => (parameters.clone(), body.clone()),
+            Self::Empty => (vec!["".to_string()], "".to_string()),
+        }
     }
 }
 
@@ -259,9 +380,6 @@ fn test_get_structs() {
     assert_eq!(first_result.name, "StructName");
     assert_eq!(second_result.content, expected_second_struct);
     assert_eq!(second_result.name, "create_fleet");
-
-    println!("first_result {:#?}", first_result);
-    println!("second_result {:#?}", second_result);
 }
 #[test]
 fn test_get_modules() {
@@ -294,7 +412,45 @@ fn test_get_modules() {
     assert_eq!(first_result.name, "modName");
     assert_eq!(second_result.content, expected_second_mod);
     assert_eq!(second_result.name, "create_fleet");
+}
 
-    println!("first_result {:#?}", first_result);
-    println!("second_result {:#?}", second_result);
+#[test]
+fn test_get_function_parameters() {
+    // let function_signature = "pub fn cancel_impulse<'info>(ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>, key_index: Option<u16>)";
+    let function_signature = "pub fn cancel_impulse<'info>(){}";
+    let function_signature_tokenized = function_signature.split("(").collect::<Vec<_>>()[1]
+        .split(")")
+        .next()
+        .unwrap()
+        .split(" ")
+        .collect::<Vec<_>>();
+    let mut parameters: Vec<String> = vec![];
+    function_signature_tokenized
+        .iter()
+        .enumerate()
+        .fold("".to_string(), |total, current| {
+            if current.1.contains(":") {
+                if !total.is_empty() {
+                    parameters.push(total);
+                }
+                current.1.to_string()
+            } else if current.0 == function_signature_tokenized.len() - 1 {
+                parameters.push(format!("{} {}", total, current.1));
+                total
+            } else {
+                format!("{} {}", total, current.1)
+            }
+        });
+    println!("parameters {:#?}", parameters)
+}
+
+#[test]
+fn test_get_function_body() {
+    // let function_signature = "pub fn cancel_impulse<'info>(ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>, key_index: Option<u16>)";
+    let function = "pub fn cancel_impulse<'info>()->Result<String, String> { body }";
+    let body = function.split("{").collect::<Vec<_>>()[1]
+        .split("}")
+        .next()
+        .unwrap();
+    println!("body {:#?}", body)
 }
