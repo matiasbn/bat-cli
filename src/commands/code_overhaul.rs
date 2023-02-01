@@ -242,7 +242,7 @@ pub async fn finish_code_overhaul_file() -> Result<(), String> {
         let y_modifier = finished_co as i64 / MIRO_BOARD_COLUMNS;
         let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
         let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
-        frame.update_position(x_position, y_position);
+        frame.update_position(x_position, y_position).await?;
         let started_co_folder_path =
             batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
         let started_co_subfolder_path = format!("{}/{}", started_co_folder_path, finished_endpoint);

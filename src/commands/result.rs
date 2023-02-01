@@ -4,7 +4,7 @@ use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::{
     batbelt::{
         self,
-        bash::execute_command_to_stdio,
+        bash::execute_command,
         git::{create_git_commit, GitCommit},
         helpers::get::{
             get_only_files_from_folder, get_string_between_two_index_from_string,
@@ -450,11 +450,11 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
     let notes_folder = batbelt::path::get_folder_path(FolderPathType::Notes, true);
 
     // create a temp folder for the findings
-    batbelt::bash::execute_command_to_stdio("mkdir", &[&audit_result_temp_path]).unwrap();
+    batbelt::bash::execute_command("mkdir", &[&audit_result_temp_path]).unwrap();
     // delete figures folder
-    batbelt::bash::execute_command_to_stdio("rm", &["-rf", &audit_result_figures_path]).unwrap();
+    batbelt::bash::execute_command("rm", &["-rf", &audit_result_figures_path]).unwrap();
     // create figures folder
-    batbelt::bash::execute_command_to_stdio("mkdir", &[&audit_result_figures_path]).unwrap();
+    batbelt::bash::execute_command("mkdir", &[&audit_result_figures_path]).unwrap();
 
     // copy all the data to the audit_result folder
     let auditor_names = BatConfig::get_validated_config()?.required.auditor_names;
@@ -465,30 +465,24 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
         let findings_files = get_only_files_from_folder(auditor_accepted_findings_path)?;
         // for each auditor, copy all the findings to the temp folder
         for finding_file in findings_files {
-            batbelt::bash::execute_command_to_stdio(
-                "cp",
-                &[&finding_file.path, &audit_result_temp_path],
-            )
-            .unwrap();
+            batbelt::bash::execute_command("cp", &[&finding_file.path, &audit_result_temp_path])
+                .unwrap();
         }
 
         // for each auditor, copy all the figures to the audit_result figures folder
         let auditor_figures_path = format!("{}/figures", auditor_notes_path);
         let figures_files = get_only_files_from_folder(auditor_figures_path)?;
         for figure_file in figures_files {
-            batbelt::bash::execute_command_to_stdio(
-                "cp",
-                &[&figure_file.path, &audit_result_figures_path],
-            )
-            .unwrap();
+            batbelt::bash::execute_command("cp", &[&figure_file.path, &audit_result_figures_path])
+                .unwrap();
         }
     }
     let findings_result_file_path =
         get_file_path(batbelt::path::FilePathType::FindingsResult, true);
     // remove previous findings_result.md file
-    execute_command_to_stdio("rm", &[&findings_result_file_path]).unwrap();
+    execute_command("rm", &[&findings_result_file_path]).unwrap();
     // create new findings_result.md file
-    execute_command_to_stdio("touch", &[&findings_result_file_path]).unwrap();
+    execute_command("touch", &[&findings_result_file_path]).unwrap();
     // create new findings_result.md file
     let findings_temp_files = get_only_files_from_folder(audit_result_temp_path.clone())?;
     let mut table_of_findings: String = if generate_html {
@@ -564,7 +558,7 @@ pub fn findings_result(generate_html: bool) -> Result<(), String> {
     // write to audit_result folder
     fs::write(&findings_result_file_path, audit_folder_content).unwrap();
     // remove temp folder
-    execute_command_to_stdio("rm", &["-rf", &audit_result_temp_path]).unwrap();
+    execute_command("rm", &["-rf", &audit_result_temp_path]).unwrap();
     let audit_result_file_path = get_file_path(FilePathType::AuditResult, true);
     vs_code_open_file_in_current_window(&findings_result_file_path)?;
     vs_code_open_file_in_current_window(&audit_result_file_path)?;

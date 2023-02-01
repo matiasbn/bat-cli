@@ -1,15 +1,15 @@
+use std::str::from_utf8;
 use std::{process::Command, str};
 
 use colored::Colorize;
 
-use crate::batbelt::command_line::deprecated_execute_command;
 use crate::batbelt::constants::BASE_REPOSTORY_URL;
 use crate::{
     batbelt::{self, path::FilePathType},
     config::BatConfig,
 };
 
-use super::{bash::execute_command_to_stdio, path::FolderPathType};
+use super::{bash::execute_command, path::FolderPathType};
 
 // Git
 pub fn get_branch_name() -> Result<String, String> {
@@ -294,9 +294,9 @@ pub fn create_git_commit(
     };
 
     for commit_file in commit_files_path {
-        execute_command_to_stdio("git", &["add", commit_file.as_str()]).unwrap();
+        execute_command("git", &["add", commit_file.as_str()]).unwrap();
     }
-    execute_command_to_stdio("git", &["commit", "-m", commit_message.as_str()]).unwrap();
+    execute_command("git", &["commit", "-m", commit_message.as_str()]).unwrap();
     Ok(())
 }
 
@@ -343,11 +343,11 @@ pub fn git_push() -> Result<(), String> {
 
 // returns false if there are files to commit
 pub fn check_files_not_commited() -> Result<bool, String> {
-    let output = deprecated_execute_command(
-        "git".to_string(),
-        vec!["status", "--porcelain"],
-        "error running git status".to_string(),
-    )?;
+    let output = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .unwrap();
+    let output = from_utf8(output.stdout.as_slice()).unwrap().to_string();
     Ok(output.is_empty())
 }
 
