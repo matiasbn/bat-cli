@@ -165,6 +165,7 @@ impl SonarResult {
 pub enum SonarResultType {
     Function,
     Struct,
+    Module,
 }
 
 #[derive(Clone, Debug)]
@@ -178,11 +179,14 @@ impl SonarFilter {
     pub fn get_filters(&self) -> Vec<&str> {
         match self {
             SonarFilter::Open(SonarResultType::Function) => vec!["fn", "pub fn"],
-            SonarFilter::Open(SonarResultType::Struct) => vec!["struct", "pub struct"],
             SonarFilter::EndOfOpen(SonarResultType::Function) => vec!["("],
+            SonarFilter::Closure(SonarResultType::Function) => vec!["}"],
+            SonarFilter::Open(SonarResultType::Struct) => vec!["struct", "pub struct"],
             SonarFilter::EndOfOpen(SonarResultType::Struct) => vec!["{"],
             SonarFilter::Closure(SonarResultType::Struct) => vec!["}"],
-            SonarFilter::Closure(SonarResultType::Function) => vec!["}"],
+            SonarFilter::Open(SonarResultType::Module) => vec!["mod", "pub mod"],
+            SonarFilter::EndOfOpen(SonarResultType::Module) => vec!["{"],
+            SonarFilter::Closure(SonarResultType::Module) => vec!["}"],
         }
     }
 }
@@ -254,6 +258,41 @@ fn test_get_structs() {
     assert_eq!(first_result.content, expected_first_struct);
     assert_eq!(first_result.name, "StructName");
     assert_eq!(second_result.content, expected_second_struct);
+    assert_eq!(second_result.name, "create_fleet");
+
+    println!("first_result {:#?}", first_result);
+    println!("second_result {:#?}", second_result);
+}
+#[test]
+fn test_get_modules() {
+    let expected_first_mod = format!(
+        "            pub mod modName {{
+                handle_create_game_2(&ctx, key_index, free_create)
+            }}"
+    );
+    let expected_first_function = format!(
+        "{}\n{}\n{}\n{}",
+        "       pub fn create_game_1<'info>() -> Result<()> {",
+        expected_first_mod,
+        "           handle_create_game_1(&ctx, key_index, free_create)",
+        "       }"
+    );
+    let expected_second_mod = format!(
+        "        mod create_fleet {{
+            sector: [i64; 2],
+        ) -> Result<()> {{
+            handle_create_fleet(&ctx, key_index, stats.into(), sector)
+        }}"
+    );
+
+    let content = format!("{}\n\n{}", expected_first_function, expected_second_mod);
+    let mut bat_sonar = BatSonar::new(&content, SonarResultType::Module);
+    bat_sonar.scan_content_to_get_results();
+    let first_result = bat_sonar.result[0].clone();
+    let second_result = bat_sonar.result[1].clone();
+    assert_eq!(first_result.content, expected_first_mod);
+    assert_eq!(first_result.name, "modName");
+    assert_eq!(second_result.content, expected_second_mod);
     assert_eq!(second_result.name, "create_fleet");
 
     println!("first_result {:#?}", first_result);
