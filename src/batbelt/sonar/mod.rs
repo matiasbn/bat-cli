@@ -416,8 +416,7 @@ fn test_get_modules() {
 
 #[test]
 fn test_get_function_parameters() {
-    // let function_signature = "pub fn cancel_impulse<'info>(ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>, key_index: Option<u16>)";
-    let function_signature = "pub fn cancel_impulse<'info>(){}";
+    let function_signature = "pub fn cancel_impulse<'info>(ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>, key_index: Option<u16>)";
     let function_signature_tokenized = function_signature.split("(").collect::<Vec<_>>()[1]
         .split(")")
         .next()
@@ -441,7 +440,11 @@ fn test_get_function_parameters() {
                 format!("{} {}", total, current.1)
             }
         });
-    println!("parameters {:#?}", parameters)
+    assert_eq!(
+        parameters[0],
+        "ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>,"
+    );
+    assert_eq!(parameters[1], "key_index: Option<u16>");
 }
 
 #[test]
