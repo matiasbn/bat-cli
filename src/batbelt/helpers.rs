@@ -6,8 +6,7 @@ use normalize_url::normalizer;
 
 use walkdir::WalkDir;
 
-use crate::config::{BatConfig, RequiredConfig};
-use crate::constants::{
+use crate::batbelt::constants::{
     CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
     CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
     CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER,
@@ -16,10 +15,11 @@ use crate::constants::{
     CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
     CONTEXT_ACCOUNTS_PNG_NAME, ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
 };
+use crate::config::{BatConfig, RequiredConfig};
 
 use std::borrow::{Borrow, BorrowMut};
 
-use crate::utils;
+use crate::batbelt;
 use std::fs::{File, ReadDir};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -737,10 +737,8 @@ pub mod parse {
 pub mod get {
     use std::{fs::DirEntry, io};
 
-    use crate::{
-        structs::FileInfo,
-        utils::{self, cli_inputs::select_yes_or_no},
-    };
+    use crate::batbelt::structs::FileInfo;
+    use crate::batbelt::{self, cli_inputs::select_yes_or_no};
 
     use super::*;
 
@@ -937,7 +935,7 @@ pub mod get {
                 format!("validation").red(),
                 format!("{validation_string}").bright_green(),
             );
-            let is_validation = utils::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+            let is_validation = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
             if is_validation {
                 validation_string
             } else {
@@ -1001,8 +999,10 @@ pub mod get {
     // returns a list of folder and files names
     pub fn get_started_entrypoints() -> Result<Vec<String>, String> {
         // let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
-        let started_path =
-            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulStarted, true);
+        let started_path = batbelt::path::get_folder_path(
+            batbelt::path::FolderPathType::CodeOverhaulStarted,
+            true,
+        );
         let started_files = fs::read_dir(started_path)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
@@ -1074,8 +1074,10 @@ pub mod get {
 
     pub fn get_finished_co_files() -> Result<Vec<(String, String)>, String> {
         // let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
-        let finished_path =
-            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulFinished, true);
+        let finished_path = batbelt::path::get_folder_path(
+            batbelt::path::FolderPathType::CodeOverhaulFinished,
+            true,
+        );
         let mut finished_folder = fs::read_dir(&finished_path)
             .unwrap()
             .map(|file| file.unwrap())
@@ -1307,7 +1309,7 @@ pub mod get {
     ) -> Result<(String, String, usize, usize), String> {
         let mut handler_string: String = "".to_string();
         let instruction_file_path =
-            utils::path::get_instruction_file_path_from_started_co_file(entrypoint_name.clone())?;
+            batbelt::path::get_instruction_file_path_from_started_co_file(entrypoint_name.clone())?;
         let instruction_file_string =
             fs::read_to_string(format!("../{}", instruction_file_path)).unwrap();
         let context_name = get_context_name(entrypoint_name.clone())?;
@@ -1411,16 +1413,22 @@ pub mod count {
     }
     pub fn co_counter() -> Result<(usize, usize, usize), String> {
         // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
-        let to_review_path =
-            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulToReview, true);
+        let to_review_path = batbelt::path::get_folder_path(
+            batbelt::path::FolderPathType::CodeOverhaulToReview,
+            true,
+        );
         let to_review_folder = fs::read_dir(to_review_path).unwrap();
         let to_review_count = count_filtering_gitkeep(to_review_folder);
-        let started_path =
-            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulStarted, true);
+        let started_path = batbelt::path::get_folder_path(
+            batbelt::path::FolderPathType::CodeOverhaulStarted,
+            true,
+        );
         let started_folder = fs::read_dir(started_path).unwrap();
         let started_count = count_filtering_gitkeep(started_folder);
-        let finished_path =
-            utils::path::get_folder_path(utils::path::FolderPathType::CodeOverhaulFinished, true);
+        let finished_path = batbelt::path::get_folder_path(
+            batbelt::path::FolderPathType::CodeOverhaulFinished,
+            true,
+        );
         let finished_folder = fs::read_dir(finished_path).unwrap();
         let finished_count = count_filtering_gitkeep(finished_folder);
         Ok((to_review_count, started_count, finished_count))

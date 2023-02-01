@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
 
-use crate::{commands::miro::MiroConfig, config::BatConfig};
+use crate::batbelt::miro::MiroConfig;
+use crate::config::BatConfig;
 
 pub enum FilePathType {
     Metadata,

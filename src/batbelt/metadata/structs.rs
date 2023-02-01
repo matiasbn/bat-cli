@@ -1,9 +1,7 @@
-use crate::markdown::{MarkdownFile, MarkdownSection, MarkdownSectionLevel};
-use crate::structs::FileInfo;
-use crate::utils::git::GitCommit;
+use crate::batbelt::structs::FileInfo;
 
-use crate::utils;
-use crate::utils::path::{FilePathType, FolderPathType};
+use crate::batbelt;
+use crate::batbelt::path::FolderPathType;
 use colored::Colorize;
 
 use std::vec;
@@ -78,98 +76,6 @@ impl StructMetadataType {
     }
 }
 
-pub fn update_structs() -> Result<(), String> {
-    let metadata_path = utils::path::get_file_path(FilePathType::Metadata, false);
-    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
-    let mut structs_section = metadata_markdown
-        .clone()
-        .get_section_by_title("Structs")
-        .clone();
-    // check if empty
-    let is_initialized = !structs_section.subsections.is_empty();
-    // prompt the user if he wants to replace
-    if is_initialized {
-        let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
-            format!(
-                "{}, are you sure you want to continue?",
-                format!("Structs in metadata.md are arealready initialized").bright_red()
-            )
-            .as_str(),
-        )?;
-        if !user_decided_to_continue {
-            panic!("User decided not to continue with the update process for structs metada")
-        }
-    }
-    // get structs in all files
-    let (
-        context_accounts_metadata_vec,
-        accounts_metadata_vec,
-        input_metadata_vec,
-        other_metadata_vec,
-    ) = get_structs_metadata_from_program()?;
-
-    let context_account_subsections: Vec<MarkdownSection> = context_accounts_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_structs_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-
-    let account_subsections: Vec<MarkdownSection> = accounts_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_structs_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-
-    let input_subsections: Vec<MarkdownSection> = input_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_structs_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-
-    let other_subsections: Vec<MarkdownSection> = other_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_structs_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-    structs_section
-        .update_subsection_subsections_by_title("Context Accounts", context_account_subsections)
-        .unwrap();
-    structs_section
-        .update_subsection_subsections_by_title("Account", account_subsections)
-        .unwrap();
-    structs_section
-        .update_subsection_subsections_by_title("Input", input_subsections)
-        .unwrap();
-    structs_section
-        .update_subsection_subsections_by_title("Other", other_subsections)
-        .unwrap();
-    metadata_markdown
-        .replace_section(
-            metadata_markdown.clone().get_section_by_title("Structs"),
-            structs_section,
-        )
-        .unwrap();
-    metadata_markdown.clone().save()?;
-    utils::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
-    Ok(())
-}
-
 pub fn get_structs_metadata_from_program() -> Result<
     (
         Vec<StructMetadata>,
@@ -179,8 +85,9 @@ pub fn get_structs_metadata_from_program() -> Result<
     ),
     String,
 > {
-    let program_path = utils::path::get_folder_path(FolderPathType::ProgramPath, false);
-    let program_folder_files_info = utils::helpers::get::get_only_files_from_folder(program_path)?;
+    let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
+    let program_folder_files_info =
+        batbelt::helpers::get::get_only_files_from_folder(program_path)?;
     let mut structs_metadata: Vec<StructMetadata> = vec![];
     for file_info in program_folder_files_info {
         let mut struct_metadata_result = get_struct_metadata_from_file_info(file_info)?;
@@ -219,7 +126,7 @@ pub fn get_structs_metadata_from_program() -> Result<
     ))
 }
 
-fn get_struct_metadata_from_file_info(
+pub fn get_struct_metadata_from_file_info(
     struct_file_info: FileInfo,
 ) -> Result<Vec<StructMetadata>, String> {
     let mut struct_metadata_vec: Vec<StructMetadata> = vec![];
@@ -270,11 +177,14 @@ fn get_struct_metadata_from_file_info(
                     "Struct".red(),
                     struct_metadata_content.green()
                 );
-                let is_struct = utils::cli_inputs::select_yes_or_no(&prompt_text)?;
+                let is_struct = batbelt::cli_inputs::select_yes_or_no(&prompt_text)?;
                 if is_struct {
                     let prompt_text = "Select the type of struct:";
-                    let selection =
-                        utils::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
+                    let selection = batbelt::cli_inputs::select(
+                        prompt_text,
+                        struct_types_colored.clone(),
+                        None,
+                    )?;
                     let selection_type_enum = StructMetadataType::from_index(selection);
                     let struct_first_line = struct_metadata_content.split("\n").next().unwrap();
                     let struct_name = get_struct_name(struct_first_line);
@@ -297,7 +207,7 @@ fn get_struct_metadata_from_file_info(
     Ok(struct_metadata_vec)
 }
 
-fn get_struct_name(struct_line: &str) -> String {
+pub fn get_struct_name(struct_line: &str) -> String {
     struct_line.split_whitespace().collect::<Vec<_>>()[2]
         .split("<")
         .next()
@@ -307,7 +217,7 @@ fn get_struct_name(struct_line: &str) -> String {
         .clone()
 }
 
-fn get_structs_section_content(header: &str, struct_metadata: StructMetadata) -> String {
+pub fn get_structs_section_content(header: &str, struct_metadata: StructMetadata) -> String {
     format!(
         "{header}\n\n{}{}{}",
         format!(

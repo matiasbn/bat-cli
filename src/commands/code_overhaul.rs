@@ -3,30 +3,33 @@ use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 
-use crate::command_line::vs_code_open_file_in_current_window;
+use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 
-use crate::commands::miro::{self, MiroConfig};
-use crate::config::BatConfig;
-use crate::constants::{
+use crate::batbelt::constants::{
     CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER, CO_FIGURES,
+    MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
+use crate::batbelt::miro::MiroConfig;
+use crate::config::BatConfig;
 
-use crate::utils;
-use crate::utils::git::{check_correct_branch, create_git_commit, GitCommit};
-use crate::utils::helpers::get::{
+use crate::batbelt;
+use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
+use crate::batbelt::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
     get_table_of_contents_for_results,
 };
-use crate::utils::path::{FilePathType, FolderPathType};
+use crate::batbelt::path::{FilePathType, FolderPathType};
 
 use std::fs;
+
+use crate::batbelt::miro::frame::MiroFrame;
 
 use std::path::Path;
 use std::process::Command;
 use std::string::String;
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
-    let code_overhaul_auditor_file_path = utils::path::get_file_path(
+    let code_overhaul_auditor_file_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulToReview {
             file_name: entrypoint_name.clone(),
         },
@@ -38,7 +41,7 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     let output = Command::new("cp")
         .args([
             "-r",
-            &utils::path::get_file_path(FilePathType::TemplateCodeOverhaul, false),
+            &batbelt::path::get_file_path(FilePathType::TemplateCodeOverhaul, false),
             code_overhaul_auditor_file_path.as_str(),
         ])
         .output()
@@ -67,7 +70,8 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         panic!("program_instructions_path is not a correct folder")
     }
 
-    let to_review_path = utils::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false);
+    let to_review_path =
+        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false);
 
     // get to-review files
     let mut review_files = fs::read_dir(to_review_path)
@@ -81,12 +85,12 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         panic!("no to-review files in code-overhaul folder");
     }
     let prompt_text = "Select the code-overhaul file to start:";
-    let selection = utils::cli_inputs::select(prompt_text, review_files.clone(), None)?;
+    let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)?;
 
     // user select file
     let to_start_file_name = &review_files[selection].clone();
 
-    let to_review_file_path = utils::path::get_file_path(
+    let to_review_file_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulToReview {
             file_name: to_start_file_name.clone(),
         },
@@ -94,7 +98,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     );
 
     let (entrypoint_name, instruction_file_path) =
-        utils::helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
+        batbelt::helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
     let to_review_file_string = fs::read_to_string(to_review_file_path.clone()).unwrap();
     fs::write(
         to_review_file_path.clone(),
@@ -107,7 +111,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     )
     .unwrap();
     let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
-    let context_lines = utils::helpers::get::get_context_lines(
+    let context_lines = batbelt::helpers::get::get_context_lines(
         instruction_file_path.clone(),
         to_start_file_name.clone(),
     )?;
@@ -116,19 +120,19 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
     vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap())?;
 
     // parse text into co file
-    utils::helpers::parse::parse_validations_into_co(
+    batbelt::helpers::parse::parse_validations_into_co(
         to_review_file_path.clone(),
         instruction_file_path.to_str().unwrap().to_string(),
     );
-    utils::helpers::parse::parse_context_accounts_into_co(
+    batbelt::helpers::parse::parse_context_accounts_into_co(
         Path::new(&(to_review_file_path.clone()))
             .canonicalize()
             .unwrap(),
         context_lines.clone(),
     );
 
-    utils::helpers::parse::parse_signers_into_co(to_review_file_path.clone(), context_lines);
-    utils::helpers::parse::parse_function_parameters_into_co(
+    batbelt::helpers::parse::parse_signers_into_co(to_review_file_path.clone(), context_lines);
+    batbelt::helpers::parse::parse_function_parameters_into_co(
         to_review_file_path.clone(),
         to_start_file_name.clone(),
     )?;
@@ -141,10 +145,10 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         // if miro enabled, then create a subfolder
         // let started_folder_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_folder_path =
-            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false);
+            batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false);
         let started_co_folder_path =
             format!("{}/{}", started_folder_path, entrypoint_name.as_str());
-        let started_co_file_path = utils::path::get_file_path(
+        let started_co_file_path = batbelt::path::get_file_path(
             FilePathType::CodeOverhaulStarted {
                 file_name: entrypoint_name.clone(),
             },
@@ -180,7 +184,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         // let started_path = utils::path::get_auditor_code_overhaul_started_file_path(Some(
         //     to_start_file_name.clone(),
         // ))?;
-        let started_path = utils::path::get_file_path(
+        let started_path = batbelt::path::get_file_path(
             FilePathType::CodeOverhaulStarted {
                 file_name: to_start_file_name.clone(),
             },
@@ -206,20 +210,20 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
 pub async fn finish_code_overhaul_file() -> Result<(), String> {
     check_correct_branch()?;
     // get to-review files
-    let started_endpoints = utils::helpers::get::get_started_entrypoints()?;
+    let started_endpoints = batbelt::helpers::get::get_started_entrypoints()?;
     let prompt_text = "Select the code-overhaul to finish:";
-    let selection = utils::cli_inputs::select(prompt_text, started_endpoints.clone(), None)?;
+    let selection = batbelt::cli_inputs::select(prompt_text, started_endpoints.clone(), None)?;
 
     let finished_endpoint = &started_endpoints[selection].clone();
     let finished_co_folder_path =
-        utils::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
-    let started_co_file_path = utils::path::get_file_path(
+        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
+    let started_co_file_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulStarted {
             file_name: finished_endpoint.clone(),
         },
         true,
     );
-    utils::helpers::check::code_overhaul_file_completed(
+    batbelt::helpers::check::code_overhaul_file_completed(
         started_co_file_path.clone(),
         finished_endpoint.clone(),
     );
@@ -230,11 +234,17 @@ pub async fn finish_code_overhaul_file() -> Result<(), String> {
         .unwrap();
 
     if MiroConfig::new().miro_enabled() {
-        let (_, _, finished_co) = utils::helpers::count::co_counter()?;
-        miro::api::frame::update_frame_position(finished_endpoint.clone(), finished_co as i32)
-            .await?;
+        let (_, _, finished_co) = batbelt::helpers::count::co_counter()?;
+        let frame_id =
+            batbelt::miro::helpers::get_frame_id_from_co_file(finished_endpoint.as_str())?;
+        let mut frame = MiroFrame::new_from_item_id(&frame_id).await;
+        let x_modifier = finished_co as i64 % MIRO_BOARD_COLUMNS;
+        let y_modifier = finished_co as i64 / MIRO_BOARD_COLUMNS;
+        let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
+        let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
+        frame.update_position(x_position, y_position).await?;
         let started_co_folder_path =
-            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
+            batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
         let started_co_subfolder_path = format!("{}/{}", started_co_folder_path, finished_endpoint);
 
         // remove co subfolder
@@ -261,7 +271,7 @@ pub async fn finish_code_overhaul_file() -> Result<(), String> {
 pub fn update_code_overhaul_file() -> Result<(), String> {
     println!("Select the code-overhaul file to finish:");
     // let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
-    let finished_path = utils::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
+    let finished_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
     // get to-review files
     let finished_files = fs::read_dir(finished_path)
         .unwrap()
@@ -294,7 +304,7 @@ pub fn update_code_overhaul_file() -> Result<(), String> {
 }
 
 pub fn count_co_files() -> Result<(), String> {
-    let (to_review_count, started_count, finished_count) = utils::helpers::count::co_counter()?;
+    let (to_review_count, started_count, finished_count) = batbelt::helpers::count::co_counter()?;
     println!("to-review co files: {}", format!("{to_review_count}").red());
     println!("started co files: {}", format!("{started_count}").yellow());
     println!("finished co files: {}", format!("{finished_count}").green());
@@ -316,14 +326,14 @@ pub async fn open_co() -> Result<(), String> {
             "Do you want to open a {} or a {} file?",
             options[0], options[1]
         );
-        let selection = utils::cli_inputs::select(&prompt_text, options.clone(), None)?;
+        let selection = batbelt::cli_inputs::select(&prompt_text, options.clone(), None)?;
         let open_started = selection == 0;
         let folder_path = if open_started {
-            utils::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true)
+            batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true)
         } else {
-            utils::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true)
+            batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true)
         };
-        let co_files = utils::helpers::get::get_only_files_from_folder(folder_path)?;
+        let co_files = batbelt::helpers::get::get_only_files_from_folder(folder_path)?;
         let co_files = co_files
             .iter()
             .filter(|f| f.name != ".gitkeep")
@@ -331,17 +341,17 @@ pub async fn open_co() -> Result<(), String> {
             .collect::<Vec<_>>();
         if !co_files.is_empty() {
             let prompt_text = "Select the code-overhaul file to open:";
-            let selection = utils::cli_inputs::select(prompt_text, co_files.clone(), None)?;
+            let selection = batbelt::cli_inputs::select(prompt_text, co_files.clone(), None)?;
             let file_name = &co_files[selection].clone();
             let co_file_path = if open_started {
-                utils::path::get_file_path(
+                batbelt::path::get_file_path(
                     FilePathType::CodeOverhaulStarted {
                         file_name: file_name.clone(),
                     },
                     true,
                 )
             } else {
-                utils::path::get_file_path(
+                batbelt::path::get_file_path(
                     FilePathType::CodeOverhaulFinished {
                         file_name: file_name.clone(),
                     },
@@ -349,7 +359,7 @@ pub async fn open_co() -> Result<(), String> {
                 )
             };
             let instruction_file_path =
-                utils::path::get_instruction_file_path_from_co_file_path(co_file_path.clone())?;
+                batbelt::path::get_instruction_file_path_from_co_file_path(co_file_path.clone())?;
 
             vs_code_open_file_in_current_window(&co_file_path)?;
             vs_code_open_file_in_current_window(&instruction_file_path)?;
@@ -364,7 +374,7 @@ pub async fn open_co() -> Result<(), String> {
 }
 
 pub fn update_audit_results() -> Result<(), String> {
-    let audit_file_path = utils::path::get_file_path(FilePathType::AuditResult, true);
+    let audit_file_path = batbelt::path::get_file_path(FilePathType::AuditResult, true);
     let finished_co_files = get_finished_co_files()?;
     let finished_co_audit_information = get_finished_co_files_info_for_results(finished_co_files)?;
     let mut final_result: Vec<String> = vec!["\n# Code overhaul\n".to_string()];

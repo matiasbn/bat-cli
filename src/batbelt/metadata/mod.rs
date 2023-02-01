@@ -3,7 +3,7 @@ pub mod miro;
 pub mod source_code;
 pub mod structs;
 
-use crate::utils::{self};
+use crate::batbelt::{self};
 
 use colored::Colorize;
 #[derive(strum_macros::Display)]
@@ -152,7 +152,7 @@ pub mod metadata_helpers {
     use super::*;
 
     pub fn prompt_user_update_section(section_name: &str) -> Result<(), String> {
-        let user_decided_to_continue = utils::cli_inputs::select_yes_or_no(
+        let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
             format!(
                 "{}, are you sure you want to continue?",
                 format!("{} in metadata.md is already initialized", section_name).bright_red()
