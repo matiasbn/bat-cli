@@ -58,81 +58,106 @@ pub fn update_functions() -> Result<(), String> {
         other_metadata_vec,
     ) = get_functions_metadata_from_program()?;
 
-    let handlers_subsections: Vec<MarkdownSection> = handlers_metadata_vec
+    let handlers_subsections = handlers_metadata_vec
         .into_iter()
         .map(|metadata| {
             MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                &MarkdownSectionLevel::H4.get_header(&metadata.name),
                 metadata,
             ))
         })
         .collect();
 
-    let entry_points_subsections: Vec<MarkdownSection> = entry_poins_metadata_vec
+    let entry_points_subsections = entry_poins_metadata_vec
         .into_iter()
         .map(|metadata| {
             MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                &MarkdownSectionLevel::H4.get_header(&metadata.name),
                 metadata,
             ))
         })
         .collect();
 
-    let helpers_subsections: Vec<MarkdownSection> = helpers_metadata_vec
+    let helpers_subsections = helpers_metadata_vec
         .into_iter()
         .map(|metadata| {
             MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
-                metadata,
-            ))
-        })
-        .collect();
-    let validators_subsections: Vec<MarkdownSection> = validators_metadata_vec
-        .into_iter()
-        .map(|metadata| {
-            MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                &MarkdownSectionLevel::H4.get_header(&metadata.name),
                 metadata,
             ))
         })
         .collect();
 
-    let other_subsections: Vec<MarkdownSection> = other_metadata_vec
+    let validators_subsections = validators_metadata_vec
         .into_iter()
         .map(|metadata| {
             MarkdownSection::new_from_content(&get_functions_section_content(
-                &MarkdownSectionLevel::H3.get_header(&metadata.name),
+                &MarkdownSectionLevel::H4.get_header(&metadata.name),
                 metadata,
             ))
         })
         .collect();
-    functions_section
-        .update_subsection_subsections_by_title(HANDLERS_SUBSECTION_TITLE, handlers_subsections)
-        .unwrap();
-    functions_section
-        .update_subsection_subsections_by_title(
-            ENTRYPOINTS_SUBSECTION_TITLE,
-            entry_points_subsections,
-        )
-        .unwrap();
-    functions_section
-        .update_subsection_subsections_by_title(HELPERS_SUBSECTION_TITLE, helpers_subsections)
-        .unwrap();
-    functions_section
-        .update_subsection_subsections_by_title(VALIDATORS_SUBSECTION_TITLE, validators_subsections)
-        .unwrap();
-    functions_section
-        .update_subsection_subsections_by_title(OTHERS_SUBSECTION_TITLE, other_subsections)
-        .unwrap();
-    metadata_markdown
-        .replace_section(
-            metadata_markdown
-                .clone()
-                .get_section_by_title(FUNCTIONS_SECTION_TITLE),
-            functions_section,
-        )
-        .unwrap();
-    metadata_markdown.clone().save()?;
+
+    let other_subsections = other_metadata_vec
+        .into_iter()
+        .map(|metadata| {
+            MarkdownSection::new_from_content(&get_functions_section_content(
+                &MarkdownSectionLevel::H4.get_header(&metadata.name),
+                metadata,
+            ))
+        })
+        .collect();
+
+    // New and old sections
+    let new_handlers_subsection = MarkdownSection::new_from_subsections(
+        HANDLERS_SUBSECTION_TITLE,
+        MarkdownSectionLevel::H3,
+        handlers_subsections,
+    );
+    let old_handlers_subsection =
+        functions_section.get_subsection_by_title(HANDLERS_SUBSECTION_TITLE);
+
+    let new_entrypoints_subsection = MarkdownSection::new_from_subsections(
+        ENTRYPOINTS_SUBSECTION_TITLE,
+        MarkdownSectionLevel::H3,
+        entry_points_subsections,
+    );
+    let old_entrypoints_subsection =
+        functions_section.get_subsection_by_title(ENTRYPOINTS_SUBSECTION_TITLE);
+
+    let new_validators_subsection = MarkdownSection::new_from_subsections(
+        VALIDATORS_SUBSECTION_TITLE,
+        MarkdownSectionLevel::H3,
+        validators_subsections,
+    );
+    let old_validators_subsection =
+        functions_section.get_subsection_by_title(VALIDATORS_SUBSECTION_TITLE);
+
+    let new_helpers_subsection = MarkdownSection::new_from_subsections(
+        HELPERS_SUBSECTION_TITLE,
+        MarkdownSectionLevel::H3,
+        helpers_subsections,
+    );
+    let old_helpers_subsection =
+        functions_section.get_subsection_by_title(HELPERS_SUBSECTION_TITLE);
+
+    let new_others_subsection = MarkdownSection::new_from_subsections(
+        OTHERS_SUBSECTION_TITLE,
+        MarkdownSectionLevel::H3,
+        other_subsections,
+    );
+    let old_others_subsection = functions_section.get_subsection_by_title(OTHERS_SUBSECTION_TITLE);
+
+    metadata_markdown.update_section(old_handlers_subsection.clone(), new_handlers_subsection);
+    metadata_markdown.update_section(
+        old_entrypoints_subsection.clone(),
+        new_entrypoints_subsection,
+    );
+    metadata_markdown.update_section(old_validators_subsection.clone(), new_validators_subsection);
+    metadata_markdown.update_section(old_helpers_subsection.clone(), new_helpers_subsection);
+    metadata_markdown.update_section(old_others_subsection.clone(), new_others_subsection);
+
+    metadata_markdown.save()?;
     batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
     Ok(())
 }
@@ -161,7 +186,7 @@ pub async fn update_miro() -> Result<(), String> {
         if miro_accounts_subsection_initialized {
             metadata_helpers::prompt_user_update_section("Miro accounts")?;
         };
-        let structs_section = metadata_markdown.clone().get_section_by_title("Structs");
+        let structs_section = metadata_markdown.get_section_by_title("Structs");
         let account_subsection = structs_section.get_subsection_by_title("Account");
         let accounts_structs_names: Vec<String> = account_subsection
             .clone()
@@ -281,7 +306,7 @@ pub async fn update_miro() -> Result<(), String> {
 pub fn update_structs() -> Result<(), String> {
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
-    let mut structs_section = metadata_markdown
+    let structs_section = metadata_markdown
         .clone()
         .get_section_by_title("Structs")
         .clone();
@@ -308,7 +333,7 @@ pub fn update_structs() -> Result<(), String> {
         other_metadata_vec,
     ) = get_structs_metadata_from_program()?;
 
-    let context_account_subsections: Vec<MarkdownSection> = context_accounts_metadata_vec
+    let context_accounts_subsections = context_accounts_metadata_vec
         .into_iter()
         .map(|metadata| {
             MarkdownSection::new_from_content(&get_structs_section_content(
@@ -318,7 +343,7 @@ pub fn update_structs() -> Result<(), String> {
         })
         .collect();
 
-    let account_subsections: Vec<MarkdownSection> = accounts_metadata_vec
+    let account_subsections = accounts_metadata_vec
         .into_iter()
         .map(|metadata| {
             MarkdownSection::new_from_content(&get_structs_section_content(
@@ -347,24 +372,46 @@ pub fn update_structs() -> Result<(), String> {
             ))
         })
         .collect();
-    structs_section
-        .update_subsection_subsections_by_title("Context Accounts", context_account_subsections)
-        .unwrap();
-    structs_section
-        .update_subsection_subsections_by_title("Account", account_subsections)
-        .unwrap();
-    structs_section
-        .update_subsection_subsections_by_title("Input", input_subsections)
-        .unwrap();
-    structs_section
-        .update_subsection_subsections_by_title("Other", other_subsections)
-        .unwrap();
-    metadata_markdown
-        .replace_section(
-            metadata_markdown.clone().get_section_by_title("Structs"),
-            structs_section,
-        )
-        .unwrap();
+
+    // New and old sections
+    let new_context_accounts_subsection = MarkdownSection::new_from_subsections(
+        "Context Accounts",
+        MarkdownSectionLevel::H2,
+        context_accounts_subsections,
+    );
+    let old_context_accounts_subsection =
+        structs_section.get_subsection_by_title("Context Accounts");
+
+    let new_accounts_subsection = MarkdownSection::new_from_subsections(
+        "Accounts",
+        MarkdownSectionLevel::H2,
+        account_subsections,
+    );
+    let old_accounts_subsection = structs_section.get_subsection_by_title("Accounts");
+
+    let new_input_subsection = MarkdownSection::new_from_subsections(
+        "Inputs",
+        MarkdownSectionLevel::H2,
+        input_subsections,
+    );
+    let old_inputs_subsection = structs_section.get_subsection_by_title("Inputs");
+
+    let new_others_subsection = MarkdownSection::new_from_subsections(
+        OTHERS_SUBSECTION_TITLE,
+        MarkdownSectionLevel::H2,
+        other_subsections,
+    );
+    let old_others_subsection = structs_section.get_subsection_by_title(OTHERS_SUBSECTION_TITLE);
+
+    metadata_markdown.update_section(
+        old_context_accounts_subsection.clone(),
+        new_context_accounts_subsection,
+    );
+    metadata_markdown.update_section(old_accounts_subsection.clone(), new_accounts_subsection);
+    metadata_markdown.update_section(old_inputs_subsection.clone(), new_input_subsection);
+    metadata_markdown.update_section(old_others_subsection.clone(), new_others_subsection);
+
+    metadata_markdown.save()?;
     metadata_markdown.clone().save()?;
     batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
     Ok(())

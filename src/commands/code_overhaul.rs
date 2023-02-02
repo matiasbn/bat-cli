@@ -54,7 +54,6 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     // };
     let mut co_template = batbelt::templates::markdown::MarkdownTemplate::CodeOverhaul
         .new(&code_overhaul_auditor_file_path);
-    println!("template {:#?}", co_template);
     co_template.save()?;
     println!("code-overhaul file created: {entrypoint_name}.md");
     Ok(())

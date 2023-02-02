@@ -18,16 +18,39 @@ pub enum MarkdownTemplate {
 impl MarkdownTemplate {
     pub fn new(&self, path: &str) -> MarkdownFile {
         match self {
-            Self::CodeOverhaul => {
-                let co_template = &Self::get_co_template_content();
-                println!("temp {}", co_template);
-                MarkdownFile::new_from_path_and_content(path, &Self::get_co_template_content())
-            }
+            Self::CodeOverhaul => MarkdownFile::new_from_path_and_content(
+                path,
+                &code_overhaul_template::get_co_template_content(),
+            ),
             _ => unimplemented!(),
         }
     }
+}
 
-    fn get_co_template_content() -> String {
+pub mod code_overhaul_template {
+    use super::*;
+
+    #[derive(strum_macros::Display)]
+    pub enum CodeOverhaulSections {
+        WhatItDoes,
+        Notes,
+        Signers,
+        FunctionParameters,
+        ContextAccounts,
+        Validations,
+        AccountsValidations,
+        Prerequisites,
+        MiroBoardFrame,
+        InstructionFilePath,
+    }
+
+    impl CodeOverhaulSections {
+        pub fn to_title(&self) -> String {
+            self.to_string().to_sentence_case()
+        }
+    }
+
+    pub fn get_co_template_content() -> String {
         format!(
             "# {}?:
             
@@ -49,16 +72,16 @@ impl MarkdownTemplate {
             
             # {}:
             ",
-            code_overhaul::CodeOverhaulSections::WhatItDoes.to_title(),
-            code_overhaul::CodeOverhaulSections::Notes.to_title(),
-            code_overhaul::CodeOverhaulSections::Signers.to_title(),
-            code_overhaul::CodeOverhaulSections::FunctionParameters.to_title(),
-            code_overhaul::CodeOverhaulSections::ContextAccounts.to_title(),
-            code_overhaul::CodeOverhaulSections::Validations.to_title(),
-            code_overhaul::CodeOverhaulSections::AccountsValidations.to_title(),
-            code_overhaul::CodeOverhaulSections::Prerequisites.to_title(),
-            code_overhaul::CodeOverhaulSections::MiroBoardFrame.to_title(),
-            code_overhaul::CodeOverhaulSections::InstructionFilePath.to_title(),
+            CodeOverhaulSections::WhatItDoes.to_title(),
+            CodeOverhaulSections::Notes.to_title(),
+            CodeOverhaulSections::Signers.to_title(),
+            CodeOverhaulSections::FunctionParameters.to_title(),
+            CodeOverhaulSections::ContextAccounts.to_title(),
+            CodeOverhaulSections::Validations.to_title(),
+            CodeOverhaulSections::AccountsValidations.to_title(),
+            CodeOverhaulSections::Prerequisites.to_title(),
+            CodeOverhaulSections::MiroBoardFrame.to_title(),
+            CodeOverhaulSections::InstructionFilePath.to_title(),
         )
         .lines()
         .map(|line| line.trim().to_string())
@@ -66,27 +89,23 @@ impl MarkdownTemplate {
         .join("\n")
     }
 }
-pub mod code_overhaul {
+
+pub mod metadata_template {
     use super::*;
 
     #[derive(strum_macros::Display)]
-    pub enum CodeOverhaulSections {
-        WhatItDoes,
-        Notes,
-        Signers,
-        FunctionParameters,
+    pub enum MetadataSections {
+        Structs,
         ContextAccounts,
-        Validations,
-        AccountsValidations,
-        Prerequisites,
-        MiroBoardFrame,
-        InstructionFilePath,
-    }
-
-    impl CodeOverhaulSections {
-        pub fn to_title(&self) -> String {
-            self.to_string().to_sentence_case()
-        }
+        Accounts,
+        Inputs,
+        Functions,
+        Handlers,
+        Entrypoints,
+        Helpers,
+        Other,
+        Miro,
+        AccountsFrameUrl,
     }
 }
 

@@ -219,7 +219,7 @@ pub fn get_struct_name(struct_line: &str) -> String {
 
 pub fn get_structs_section_content(header: &str, struct_metadata: StructMetadata) -> String {
     format!(
-        "{header}\n\n{}{}{}",
+        "{header}\n{}{}{}",
         format!(
             "{} {}\n",
             MetadataContent::Path.get_prefix(),

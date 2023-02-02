@@ -432,23 +432,21 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
             .clone()
             .sections
             .into_iter()
-            .map(|section| section.title)
+            .map(|section| section.title.to_string())
             .collect();
         let prompt_text = format!("Please enter the {}", "content type".green());
         let selection =
             batbelt::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None)
                 .unwrap();
         let section_selected = &metadata_sections_names[selection];
-        let section = metadata_markdown
-            .clone()
-            .get_section_by_title(section_selected);
+        let section = metadata_markdown.get_section_by_title(section_selected);
         // Choose metadata subsection selection
         let prompt_text = format!("Please enter the {}", "content sub type".green());
         let metadata_subsections_names: Vec<String> = section
             .subsections
             .clone()
             .into_iter()
-            .map(|section| section.title)
+            .map(|section| section.title.to_string())
             .collect();
         let selection =
             batbelt::cli_inputs::select(&prompt_text, metadata_subsections_names.clone(), None)
@@ -460,7 +458,7 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
             .subsections
             .clone()
             .into_iter()
-            .map(|section| section.title)
+            .map(|section| section.title.to_string())
             .collect();
         let selection =
             batbelt::cli_inputs::select(&prompt_text, metadata_subsubsections_names.clone(), None)
