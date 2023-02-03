@@ -1,7 +1,9 @@
 use crate::batbelt;
 use crate::batbelt::constants::*;
 use crate::batbelt::git::*;
+use crate::batbelt::markdown::MarkdownSection;
 
+use std::borrow::Borrow;
 use std::fs;
 use std::result::Result;
 
@@ -413,153 +415,156 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
         "frames".yellow(),
         "Miro board".yellow()
     );
-    let miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await;
-    let miro_frame_titles: Vec<&str> = miro_frames
-        .iter()
-        .map(|frame| frame.title.as_str())
-        .map(|frame| frame.clone())
-        .collect();
-    let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
-    let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
-    let selected_miro_frame: &MiroFrame = &miro_frames[selection];
-    let miro_frame_id = selected_miro_frame.item_id.clone();
-    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
-    let metadata_markdown = MarkdownFile::new(&metadata_path);
-    let mut continue_selection = true;
-    while continue_selection {
-        // Choose metadata section selection
-        let metadata_sections_names: Vec<String> = metadata_markdown
-            .clone()
-            .sections
-            .into_iter()
-            .map(|section| section.title.to_string())
-            .collect();
-        let prompt_text = format!("Please enter the {}", "content type".green());
-        let selection =
-            batbelt::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None)
-                .unwrap();
-        let section_selected = &metadata_sections_names[selection];
-        let section = metadata_markdown.get_section_by_title(section_selected);
-        // Choose metadata subsection selection
-        let prompt_text = format!("Please enter the {}", "content sub type".green());
-        let metadata_subsections_names: Vec<String> = section
-            .subsections
-            .clone()
-            .into_iter()
-            .map(|section| section.title.to_string())
-            .collect();
-        let selection =
-            batbelt::cli_inputs::select(&prompt_text, metadata_subsections_names.clone(), None)
-                .unwrap();
-        let subsection_selected = section.subsections[selection].clone();
-        // Choose metadata final selection
-        let prompt_text = format!("Please enter the {}", "content to deploy".green());
-        let metadata_subsubsections_names: Vec<String> = subsection_selected
-            .subsections
-            .clone()
-            .into_iter()
-            .map(|section| section.title.to_string())
-            .collect();
-        let selection =
-            batbelt::cli_inputs::select(&prompt_text, metadata_subsubsections_names.clone(), None)
-                .unwrap();
-        let subsubsection_selected = subsection_selected.subsections[selection].clone();
-        let source_code_metadata = SourceCodeMetadata::new_from_metadata_data(
-            &subsubsection_selected.title,
-            &section.title,
-            &subsection_selected.title,
-        );
-        let include_path = batbelt::cli_inputs::select_yes_or_no(&format!(
-            "Do you want to {}",
-            "include the path?".yellow()
-        ))
-        .unwrap();
-        let filter_comments = batbelt::cli_inputs::select_yes_or_no(&format!(
-            "Do you want to {}",
-            "filter the comments?".yellow()
-        ))
-        .unwrap();
-        let show_line_number = batbelt::cli_inputs::select_yes_or_no(&format!(
-            "Do you want to {}",
-            "include the line numbers?".yellow()
-        ))
-        .unwrap();
-        let offset_to_start_line = if show_line_number {
-            batbelt::cli_inputs::select_yes_or_no(&format!(
-                "Do you want to {}",
-                "offset to he starting line?".yellow()
-            ))
-            .unwrap()
-        } else {
-            false
-        };
-        let include_filters = batbelt::cli_inputs::select_yes_or_no(&format!(
-            "Do you want to {}",
-            "add customized filters?".red()
-        ))
-        .unwrap();
-        // utils::cli_inputs::select_yes_or_no("Do you want to include filters?").unwrap();
-        let filters = if include_filters {
-            let filters_to_include = batbelt::cli_inputs::input(
-                "Please enter the filters, comma separated: #[account,CHECK ",
-            )
-            .unwrap();
-            if !filters_to_include.is_empty() {
-                let filters: Vec<String> = filters_to_include
-                    .split(",")
-                    .map(|filter| filter.trim().to_string())
-                    .collect();
-                Some(filters)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        let screenshot_options = SourceCodeScreenshotOptions {
-            include_path,
-            offset_to_start_line,
-            filter_comments,
-            show_line_number,
-            filters,
-            font_size: Some(20),
-        };
-        let png_path = source_code_metadata.create_screenshot(screenshot_options);
-        println!(
-            "\nCreating {}{} in {} frame",
-            subsubsection_selected.title.green(),
-            ".png".green(),
-            selected_miro_frame.title.green()
-        );
-        // let screenshot_image = image::api::create_image_from_device(&png_path)
-        //     .await
-        //     .unwrap();
-        let screenshot_image = MiroImage::new_from_file_path(&png_path);
-        // let (x_position, y_position) = frame::api::get_frame_positon(&miro_frame_id).await;
-        let miro_item = MiroItem::new(
-            &screenshot_image.item_id,
-            &miro_frame_id,
-            300,
-            selected_miro_frame.height as i64 - 300,
-            MiroItemType::Image,
-        );
+    // let miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await;
+    // let miro_frame_titles: Vec<&str> = miro_frames
+    //     .iter()
+    //     .map(|frame| frame.title.as_str())
+    //     .map(|frame| frame.clone())
+    //     .collect();
+    // let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
+    // let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
+    // let selected_miro_frame: &MiroFrame = &miro_frames[selection];
+    // let miro_frame_id = selected_miro_frame.item_id.clone();
+    // let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
+    // let metadata_markdown = MarkdownFile::new(&metadata_path);
+    // let mut continue_selection = true;
+    // while continue_selection {
+    //     // Choose metadata section selection
+    //     let metadata_sections_names: Vec<String> = metadata_markdown
+    //         .sections
+    //         .borrow()
+    //         .iter()
+    //         .map(|section| section.title.to_string())
+    //         .collect();
+    //     let prompt_text = format!("Please enter the {}", "content type".green());
+    //     let selection =
+    //         batbelt::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None)
+    //             .unwrap();
+    //     let section_selected = &metadata_sections_names[selection];
+    //     let section: &MarkdownSection = &metadata_markdown.get_section_by_title(section_selected);
+    //     // Choose metadata subsection selection
+    //     let prompt_text = format!("Please enter the {}", "content sub type".green());
+    //     let metadata_subsections_names: Vec<String> = section
+    //         .subsections
+    //         .borrow()
+    //         .iter()
+    //         .map(|section| section.title.to_string())
+    //         .collect();
+    //     let selection =
+    //         batbelt::cli_inputs::select(&prompt_text, metadata_subsections_names.clone(), None)
+    //             .unwrap();
+    //     let selected_subsection_name = &metadata_subsections_names[selection];
+    //     let subsection: &MarkdownSection =
+    //         &section.get_subsection_by_title(&selected_subsection_name);
+    //     // Choose metadata final selection
+    //     let prompt_text = format!("Please enter the {}", "content to deploy".green());
+    //     let metadata_subsubsections_names: Vec<String> = subsection
+    //         .subsections
+    //         .borrow()
+    //         .iter()
+    //         .map(|section| section.title.to_string())
+    //         .collect();
+    //     let selection =
+    //         batbelt::cli_inputs::select(&prompt_text, metadata_subsubsections_names.clone(), None)
+    //             .unwrap();
+    //     let selected_subsubsection_name = &metadata_subsubsections_names[selection];
+    //     let subsubsection = subsection.get_subsection_by_title(selected_subsubsection_name);
+    //     let source_code_metadata = SourceCodeMetadata::new_from_metadata_data(
+    //         &subsubsection.title,
+    //         &section.title,
+    //         &subsection.title,
+    //     );
+    //     let include_path = batbelt::cli_inputs::select_yes_or_no(&format!(
+    //         "Do you want to {}",
+    //         "include the path?".yellow()
+    //     ))
+    //     .unwrap();
+    //     let filter_comments = batbelt::cli_inputs::select_yes_or_no(&format!(
+    //         "Do you want to {}",
+    //         "filter the comments?".yellow()
+    //     ))
+    //     .unwrap();
+    //     let show_line_number = batbelt::cli_inputs::select_yes_or_no(&format!(
+    //         "Do you want to {}",
+    //         "include the line numbers?".yellow()
+    //     ))
+    //     .unwrap();
+    //     let offset_to_start_line = if show_line_number {
+    //         batbelt::cli_inputs::select_yes_or_no(&format!(
+    //             "Do you want to {}",
+    //             "offset to he starting line?".yellow()
+    //         ))
+    //         .unwrap()
+    //     } else {
+    //         false
+    //     };
+    //     let include_filters = batbelt::cli_inputs::select_yes_or_no(&format!(
+    //         "Do you want to {}",
+    //         "add customized filters?".red()
+    //     ))
+    //     .unwrap();
+    //     // utils::cli_inputs::select_yes_or_no("Do you want to include filters?").unwrap();
+    //     let filters = if include_filters {
+    //         let filters_to_include = batbelt::cli_inputs::input(
+    //             "Please enter the filters, comma separated: #[account,CHECK ",
+    //         )
+    //         .unwrap();
+    //         if !filters_to_include.is_empty() {
+    //             let filters: Vec<String> = filters_to_include
+    //                 .split(",")
+    //                 .map(|filter| filter.trim().to_string())
+    //                 .collect();
+    //             Some(filters)
+    //         } else {
+    //             None
+    //         }
+    //     } else {
+    //         None
+    //     };
+    //     let screenshot_options = SourceCodeScreenshotOptions {
+    //         include_path,
+    //         offset_to_start_line,
+    //         filter_comments,
+    //         show_line_number,
+    //         filters,
+    //         font_size: Some(20),
+    //     };
+    //     let png_path = source_code_metadata.create_screenshot(screenshot_options);
+    //     println!(
+    //         "\nCreating {}{} in {} frame",
+    //         subsubsection.title.green(),
+    //         ".png".green(),
+    //         selected_miro_frame.title.green()
+    //     );
+    //     // let screenshot_image = image::api::create_image_from_device(&png_path)
+    //     //     .await
+    //     //     .unwrap();
+    //     let screenshot_image = MiroImage::new_from_file_path(&png_path);
+    //     // let (x_position, y_position) = frame::api::get_frame_positon(&miro_frame_id).await;
+    //     let miro_item = MiroItem::new(
+    //         &screenshot_image.item_id,
+    //         &miro_frame_id,
+    //         300,
+    //         selected_miro_frame.height as i64 - 300,
+    //         MiroItemType::Image,
+    //     );
 
-        println!(
-            "Updating the position of {}{}\n",
-            subsubsection_selected.title.green(),
-            ".png".green()
-        );
-        miro_item.update_item_parent_and_position().await;
+    //     println!(
+    //         "Updating the position of {}{}\n",
+    //         subsubsection.title.green(),
+    //         ".png".green()
+    //     );
+    //     miro_item.update_item_parent_and_position().await;
 
-        // promp if continue
+    //     // promp if continue
 
-        let prompt_text = format!(
-            "Do you want to {} in the {} frame?",
-            "continue creating screenshots".yellow(),
-            selected_miro_frame.title.yellow()
-        );
-        continue_selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
-    }
+    //     let prompt_text = format!(
+    //         "Do you want to {} in the {} frame?",
+    //         "continue creating screenshots".yellow(),
+    //         selected_miro_frame.title.yellow()
+    //     );
+    //     continue_selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+    // }
     Ok(())
 }
 

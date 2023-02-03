@@ -18,10 +18,11 @@ pub enum MarkdownTemplate {
 impl MarkdownTemplate {
     pub fn new(&self, path: &str) -> MarkdownFile {
         match self {
-            Self::CodeOverhaul => MarkdownFile::new_from_path_and_content(
-                path,
-                &code_overhaul_template::get_co_template_content(),
-            ),
+            Self::CodeOverhaul => {
+                let content = code_overhaul_template::get_co_template_content().clone();
+                let template = MarkdownFile::new_from_path_and_content(path, content);
+                template
+            }
             _ => unimplemented!(),
         }
     }

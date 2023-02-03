@@ -40,20 +40,20 @@ impl SourceCodeMetadata {
         let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
         let metadata_markdown = MarkdownFile::new(&metadata_path);
         let section = metadata_markdown.get_section_by_title(section);
-        let subsection = section.get_subsection_by_title(subsection);
-        let source_code_metadata = subsection.get_subsection_by_title(name);
+        let subsection = section.borrow().get_subsection_by_title(subsection);
+        let source_code_metadata = subsection.borrow().get_subsection_by_title(name);
         let path = Self::parse_metadata_info_section(
-            &source_code_metadata.content,
+            &source_code_metadata.borrow().content,
             MetadataContent::Path.get_prefix(),
         );
         let start_line_index: usize = Self::parse_metadata_info_section(
-            &source_code_metadata.content,
+            &source_code_metadata.borrow().content,
             MetadataContent::StartLineIndex.get_prefix(),
         )
         .parse()
         .unwrap();
         let end_line_index: usize = Self::parse_metadata_info_section(
-            &source_code_metadata.content,
+            &source_code_metadata.borrow().content,
             MetadataContent::EndLineIndex.get_prefix(),
         )
         .parse()

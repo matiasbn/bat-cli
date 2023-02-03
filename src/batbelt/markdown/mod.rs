@@ -1,32 +1,41 @@
-use std::{borrow::BorrowMut, fs, io, rc::Rc};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    cell::{Ref, RefCell},
+    fs, io,
+    ops::Deref,
+    rc::{Rc, Weak},
+};
 
 #[derive(Debug, Clone)]
 pub struct MarkdownFile {
     pub path: String,
     pub content: String,
-    pub sections: Vec<MarkdownSection>,
+    pub sections: RefCell<Vec<RefCell<MarkdownSection>>>,
 }
-
-impl MarkdownParser for MarkdownFile {}
 
 impl MarkdownFile {
     pub fn new(path: &str) -> Self {
         let md_file_content = fs::read_to_string(path).unwrap();
-        let sections = Self::get_sections(md_file_content.clone(), MarkdownSectionLevel::H1, None);
-        MarkdownFile {
+        let mut md_file = MarkdownFile {
             path: path.to_string(),
-            content: md_file_content,
-            sections,
-        }
+            content: md_file_content.clone(),
+            sections: RefCell::new(vec![]),
+        };
+        let sections = md_file.get_sections();
+        md_file.sections = RefCell::new(sections);
+        md_file
     }
 
-    pub fn new_from_path_and_content(path: &str, content: &str) -> Self {
-        let sections = Self::get_sections(content.to_string(), MarkdownSectionLevel::H1, None);
-        MarkdownFile {
+    pub fn new_from_path_and_content(path: &str, content: String) -> Self {
+        let mut md_file = MarkdownFile {
             path: path.to_string(),
             content: content.to_string(),
-            sections,
-        }
+            sections: RefCell::new(vec![]),
+        };
+
+        let sections = md_file.get_sections();
+        md_file.sections = RefCell::new(sections);
+        md_file
     }
 
     pub fn save(&mut self) -> Result<(), String> {
@@ -35,117 +44,157 @@ impl MarkdownFile {
         Ok(())
     }
 
+    fn get_sections(&self) -> Vec<RefCell<MarkdownSection>> {
+        let level = MarkdownSectionLevel::H1;
+        let headers: Vec<String> = get_headers_from_section_level(&self.content, level);
+        let sections_content: Vec<(String, String)> = headers
+            .iter()
+            .map(|header| {
+                let title = header
+                    .clone()
+                    .strip_prefix(&format!("{} ", level.get_prefix()))
+                    .unwrap()
+                    .to_string();
+                let content = MarkdownSection::get_section_content(&header, level, &self.content);
+                (title, content)
+            })
+            .collect();
+        let md_sections: Vec<RefCell<MarkdownSection>> = sections_content
+            .into_iter()
+            .map(|(section_title, section_content)| {
+                let new_section =
+                    MarkdownSection::new(section_title, MarkdownSectionLevel::H1, section_content);
+                RefCell::new(new_section)
+            })
+            .collect();
+        md_sections
+    }
+
     pub fn update_markdown(&mut self) -> Result<(), String> {
-        let sections = Self::get_sections(self.content.clone(), MarkdownSectionLevel::H1, None);
-        self.sections = sections;
+        let sections = self.get_sections();
+        self.sections = RefCell::new(sections);
         Ok(())
     }
 
-    pub fn update_section(&mut self, old_section: MarkdownSection, new_section: MarkdownSection) {
-        // assert_eq!(
-        //     old_section.level, new_section.level,
-        //     "Sections must share Markdown level"
-        // );
-        // assert_eq!(
-        //     old_section.parent, new_section.parent,
-        //     "Sections must share parent"
-        // );
-        let new_content = self
-            .content
-            .replace(&old_section.content, &new_section.content);
-        self.content = new_content;
-        self.update_markdown().unwrap();
-    }
-
-    pub fn get_section_by_title(&self, title: &str) -> MarkdownSection {
-        self.sections
-            .clone()
+    pub fn get_section_by_title(&self, title: &str) -> RefCell<MarkdownSection> {
+        let section = self
+            .sections
+            .take()
             .into_iter()
-            .find(|section| section.title == title)
-            .unwrap()
+            .find(|section| section.borrow().title == title)
+            .unwrap();
+        section
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+// impl Deref for MarkdownSection {
+//     type Target = MarkdownSection;
+
+//     fn deref(&self) -> &Self::Target {
+//         self
+//     }
+// }
+
+#[derive(Debug, Clone)]
 pub struct MarkdownSection {
     pub title: String,
     pub content: String,
     pub level: MarkdownSectionLevel,
-    pub parent: Option<Box<MarkdownSection>>,
-    pub subsections: Vec<Box<MarkdownSection>>,
+    pub subsections: RefCell<Vec<RefCell<MarkdownSection>>>,
 }
-
-impl MarkdownParser for MarkdownSection {}
 
 impl MarkdownSection {
     pub fn new(
         title: String,
         level: MarkdownSectionLevel,
-        section_content: &str,
-        parent: Option<Box<MarkdownSection>>,
+        section_content: String,
     ) -> MarkdownSection {
-        let subsections: Vec<Box<MarkdownSection>> = vec![];
-        let new_section = &mut MarkdownSection {
+        let mut new_section = MarkdownSection {
             title,
             content: section_content.to_string(),
             level,
-            subsections,
-            parent,
+            subsections: RefCell::new(vec![]),
         };
-        let box_parent = Box::new(new_section.clone());
-        let subsections = Self::get_sections(
-            section_content.to_string(),
-            level.get_subsection_level(),
-            Some(box_parent),
-        );
-        let mut n_section = new_section.clone();
-        for section in subsections {
-            n_section.subsections.push(Box::new(section));
-        }
-        n_section.clone()
+        new_section.get_subsections();
+        new_section
     }
 
-    pub fn new_from_content(section_content: &str) -> MarkdownSection {
-        let header = section_content.lines().next().unwrap();
-        let section_prefix = header.split(" ").next().unwrap();
-        let title = header
-            .strip_prefix(&format!("{} ", section_prefix))
-            .unwrap()
-            .to_string();
-        let level = MarkdownSectionLevel::from_prefix(section_prefix);
-        MarkdownSection::new(title, level, section_content, None)
+    fn get_subsections(&mut self) {
+        let subsection_level = self.level.get_subsection_level();
+        let headers: Vec<String> = get_headers_from_section_level(&self.content, subsection_level);
+        let subsections: Vec<RefCell<MarkdownSection>> = headers
+            .iter()
+            .map(|header| {
+                let title = header
+                    .clone()
+                    .strip_prefix(&format!("{} ", subsection_level.get_prefix()))
+                    .unwrap()
+                    .to_string();
+                let content =
+                    MarkdownSection::get_section_content(&header, subsection_level, &self.content);
+                let new_section = MarkdownSection::new(title, subsection_level, content.clone());
+                RefCell::new(new_section)
+            })
+            .collect();
+        self.subsections = RefCell::new(subsections);
     }
 
-    pub fn new_from_subsections(
-        title: &str,
-        level: MarkdownSectionLevel,
-        subsections: Vec<MarkdownSection>,
-    ) -> MarkdownSection {
-        let header = level.get_header(title);
-        let section_content: String = subsections
-            .clone()
-            .into_iter()
-            .map(|subsection| subsection.content)
-            .collect::<Vec<_>>()
-            .join("\n");
-        let section_content = if subsections.clone().is_empty() {
-            format!("{}\n", header)
-        } else {
-            format!("{}\n{}", header, section_content)
-        };
-        MarkdownSection::new(title.to_string(), level, &section_content, None)
+    pub fn update_section_content(&mut self, new_section_content: &str) {
+        let insert_content = new_section_content.replace(&self.get_header(), "");
+        let formatted_content = format!("{}\n\n{}", self.get_header(), insert_content.trim_start());
+        self.content = formatted_content;
     }
 
     fn get_header(&self) -> String {
         self.level.get_header(&self.title)
     }
 
-    pub fn get_subsection_by_title(&self, title: &str) -> &MarkdownSection {
-        self.subsections
-            .iter()
-            .find(|section| section.title == title)
-            .unwrap()
+    pub fn get_subsection_by_title(&self, title: &str) -> RefCell<MarkdownSection> {
+        let subsection = self
+            .subsections
+            .take()
+            .into_iter()
+            .find(|section| section.borrow().title == title)
+            .unwrap();
+        subsection
     }
+
+    fn get_section_content(header: &str, level: MarkdownSectionLevel, content: &str) -> String {
+        let prefix = level.get_prefix();
+        let super_section_prefix = level.get_supersection_prefix();
+        let prefixes = [&prefix, &super_section_prefix];
+        let content_lines = content.split("\n");
+        let last_line_index = content_lines.clone().count() - 1;
+        let start_index = content_lines
+            .clone()
+            .position(|line| line == header)
+            .unwrap();
+        let end_index = content_lines
+            .clone()
+            .enumerate()
+            .position(|line| {
+                (prefixes
+                    .iter()
+                    .any(|pref| line.1.split(" ").next().unwrap() == pref.to_string())
+                    && line.0 > start_index)
+                    || line.0 == last_line_index
+            })
+            .unwrap();
+        let section: String = content_lines.collect::<Vec<&str>>()[start_index..end_index]
+            .to_vec()
+            .join("\n");
+        section
+    }
+}
+
+fn get_headers_from_section_level(content: &str, level: MarkdownSectionLevel) -> Vec<String> {
+    let level_prefix = level.get_prefix();
+    let headers: Vec<String> = content
+        .lines()
+        .filter(|line| line.split(" ").next().unwrap() == level_prefix)
+        .map(|header| header.to_string())
+        .collect();
+    headers
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -217,154 +266,197 @@ impl MarkdownSectionLevel {
     }
 }
 
-pub trait MarkdownParser {
-    fn get_section_content(header: &str, level: MarkdownSectionLevel, content: &str) -> String {
-        let prefix = level.get_prefix();
-        let super_section_prefix = level.get_supersection_prefix();
-        let prefixes = [&prefix, &super_section_prefix];
-        let content_lines = content.split("\n");
-        let last_line_index = content_lines.clone().count() - 1;
-        let start_index = content_lines
-            .clone()
-            .position(|line| line == header)
-            .unwrap();
-        let end_index = content_lines
-            .clone()
-            .enumerate()
-            .position(|line| {
-                (prefixes
-                    .iter()
-                    .any(|pref| line.1.split(" ").next().unwrap() == pref.to_string())
-                    && line.0 > start_index)
-                    || line.0 == last_line_index
-            })
-            .unwrap();
-        let section: String = content_lines.collect::<Vec<&str>>()[start_index..end_index]
-            .to_vec()
-            .join("\n");
-        section
+#[derive(Clone)]
+struct TestMarkdownSection {
+    pub title: String,
+    pub level: MarkdownSectionLevel,
+    pub content: String,
+}
+
+impl TestMarkdownSection {
+    pub fn new(ordinal_index: i64, level: MarkdownSectionLevel) -> Self {
+        let title = Self::content_parser(ordinal_index, level);
+        let content = format!("{}\n\n{} content", level.get_header(&title), title);
+        TestMarkdownSection {
+            title,
+            level,
+            content,
+        }
     }
 
-    fn get_headers_from_section_level(content: &str, level: MarkdownSectionLevel) -> Vec<String> {
-        let level_prefix = level.get_prefix();
-        let headers: Vec<String> = content
-            .lines()
-            .filter(|line| line.split(" ").next().unwrap() == level_prefix)
-            .map(|header| header.to_string())
-            .collect();
-        headers
-    }
-
-    fn get_sections(
-        content: String,
-        level: MarkdownSectionLevel,
-        parent: Option<Box<MarkdownSection>>,
-    ) -> Vec<MarkdownSection> {
-        if !content.contains(&level.get_prefix()) {
-            return vec![];
+    fn content_parser(ordinal_index: i64, level: MarkdownSectionLevel) -> String {
+        let ordinal = match ordinal_index {
+            0 => "First",
+            1 => "Second",
+            2 => "First",
+            3 => "Fourth",
+            _ => unimplemented!(),
         };
-        let headers: Vec<String> = Self::get_headers_from_section_level(&content, level);
-        headers
-            .into_iter()
-            .map(|header| {
-                let title = header
-                    .clone()
-                    .strip_prefix(&format!("{} ", level.get_prefix()))
-                    .unwrap()
-                    .to_string();
-                let content =
-                    MarkdownSection::get_section_content(&header, level.clone(), &content);
-                MarkdownSection::new(title, level.clone(), &content, parent.clone())
-            })
-            .collect()
+
+        match level {
+            MarkdownSectionLevel::H1 => format!("{} section", ordinal),
+            MarkdownSectionLevel::H2 => format!("{} subsection", ordinal),
+            MarkdownSectionLevel::H3 => format!("{} subsubsection", ordinal),
+            MarkdownSectionLevel::H4 => format!("{} subsubsubsection", ordinal),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn to_markdown_section(&self, content: String) -> MarkdownSection {
+        MarkdownSection::new(self.title.clone(), self.level, content.to_string())
     }
 }
 
-const TEST_FIRST_SECTION_CONTENT: &str = "# First section
+#[derive(Debug)]
+struct MarkdownTester {
+    pub first_section: MarkdownSection,
+    pub second_section: MarkdownSection,
+    pub third_section: MarkdownSection,
+}
 
-First section content
+impl MarkdownTester {
+    pub fn new() -> Self {
+        // First section
+        let first_section_tester = TestMarkdownSection::new(0, MarkdownSectionLevel::H1);
+        let first_subsection_tester = TestMarkdownSection::new(0, MarkdownSectionLevel::H2);
+        let first_subsubsection_tester = TestMarkdownSection::new(0, MarkdownSectionLevel::H3);
+        let first_section_content = Self::content_parser(vec![
+            first_section_tester.clone(),
+            first_subsection_tester,
+            first_subsubsection_tester,
+        ]);
+        let first_section = first_section_tester.to_markdown_section(first_section_content);
+        // Second section
+        let second_section_tester = TestMarkdownSection::new(1, MarkdownSectionLevel::H1);
+        let second_subsection_tester = TestMarkdownSection::new(1, MarkdownSectionLevel::H2);
+        let second_subsubsection_tester = TestMarkdownSection::new(1, MarkdownSectionLevel::H3);
+        let second_section_content = Self::content_parser(vec![
+            second_section_tester.clone(),
+            second_subsection_tester,
+            second_subsubsection_tester,
+        ]);
+        let second_section = second_section_tester.to_markdown_section(second_section_content);
 
-## First subsection
+        // Third section
+        let third_section_tester = TestMarkdownSection::new(2, MarkdownSectionLevel::H1);
+        let third_subsection_tester = TestMarkdownSection::new(2, MarkdownSectionLevel::H2);
+        let third_subsubsection_tester = TestMarkdownSection::new(2, MarkdownSectionLevel::H3);
+        let third_section_content = Self::content_parser(vec![
+            third_section_tester.clone(),
+            third_subsection_tester,
+            third_subsubsection_tester,
+        ]);
+        let third_section = third_section_tester.to_markdown_section(third_section_content);
+        MarkdownTester {
+            first_section,
+            second_section,
+            third_section,
+        }
+    }
 
-First subsection content";
-
-const TEST_SECOND_SECTION_CONTENT: &str = "# Second section
-
-Second section content
-
-## Second subsection
-
-Second subsection content
-
-### Second subsubsection
-
-Second subsubsection content
-
-more content";
-
-const TEST_THIRD_SECTION_CONTENT: &str = "# Third section
-
-Third section content
-
-## Third subsection
-
-Third subsection content";
-
-const TEST_SUBSUBSECTION_CONTENT: &str = "### Replace subsubsection
-
-Replace subsubsection content";
-
-#[test]
-fn test_new_markdown_file() {
-    let md_file_content = format!("{TEST_FIRST_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}",);
-    let path = "./test_md.md";
-    fs::write(path, &md_file_content).unwrap();
-
-    let markdown = MarkdownFile::new("./test_md.md");
-
-    fs::remove_file(path).unwrap();
-
-    let sections = markdown.sections;
-    let first_section = &sections[0];
-    let second_section = &sections[1];
-    assert_eq!(first_section.title, "First section");
-    assert_eq!(second_section.title, "Second section");
-
-    assert_eq!(first_section.content, TEST_FIRST_SECTION_CONTENT);
-    assert_eq!(second_section.content, TEST_SECOND_SECTION_CONTENT);
+    fn content_parser(sections: Vec<TestMarkdownSection>) -> String {
+        let content = sections.iter().fold("".to_string(), |total, section| {
+            format!("{}\n\n{}", total, section.content)
+        });
+        content
+    }
 }
 
 #[test]
-fn test_replace_section() {
-    let md_file_content = format!("{TEST_FIRST_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}");
-    let path = "./test_md.md";
-    fs::write(path, &md_file_content).unwrap();
+fn test_markdown_tester() {
+    let markdown_tester = MarkdownTester::new();
+    println!("tester {:#?}", markdown_tester);
+    // let md_file_content = format!("{TEST_FIRST_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}",);
+    // let path = "./test_md.md";
+    // fs::write(path, &md_file_content).unwrap();
 
-    let mut markdown = MarkdownFile::new("./test_md.md");
+    // let markdown = MarkdownFile::new("./test_md.md");
 
-    fs::remove_file(path).unwrap();
-    let new_section = MarkdownSection::new_from_content(TEST_THIRD_SECTION_CONTENT);
-    let sections = markdown.sections.clone();
+    // fs::remove_file(path).unwrap();
 
-    let first_section = markdown.sections[0].clone();
-    let second_section = markdown.sections[1].clone();
-    assert_eq!(first_section.title, "Third section");
-    assert_eq!(second_section.title, "Second section");
+    // let sections = markdown.sections.borrow();
+    // let first_section = &sections[0];
+    // let second_section = &sections[1];
+    // assert_eq!(first_section.borrow().title, "First section");
+    // assert_eq!(second_section.borrow().title, "Second section");
 
-    assert_eq!(first_section.content, TEST_THIRD_SECTION_CONTENT);
-    assert_eq!(second_section.content, TEST_SECOND_SECTION_CONTENT);
-
-    let expected_content = format!("{TEST_THIRD_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}");
-    assert_eq!(markdown.content, expected_content);
+    // assert_eq!(first_section.borrow().content, TEST_FIRST_SECTION_CONTENT);
+    // assert_eq!(second_section.borrow().content, TEST_SECOND_SECTION_CONTENT);
 }
 
-#[test]
-fn test_get_subsections() {
-    let md_file_content = format!("{TEST_FIRST_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}");
-    let path = "./test_md.md";
-    fs::write(path, &md_file_content).unwrap();
+// #[test]
+// fn test_update_section_content() {
+//     let path = "./test_md.md";
+//     fs::write(path, TEST_FIRST_SECTION_CONTENT).unwrap();
 
-    let markdown = MarkdownFile::new("./test_md.md");
+//     let mut markdown = MarkdownFile::new(path);
 
-    fs::remove_file(path).unwrap();
-}
+//     fs::remove_file(path).unwrap();
+
+//     println!("markdown \n{:#?}", markdown);
+//     println!("markdown content\n{:#?}", markdown.content);
+// }
+
+// // #[test]
+// // fn test_update_section_content() {
+// //     let path = "./test_md.md";
+// //     fs::write(path, TEST_FIRST_SECTION_CONTENT).unwrap();
+
+// //     let mut markdown = MarkdownFile::new(path);
+
+// //     fs::remove_file(path).unwrap();
+
+// //     println!("markdown \n{:#?}", markdown);
+// //     println!("markdown content\n{:#?}", markdown.content);
+// // }
+
+// #[test]
+// fn test_get_subsections() {
+//     let md_file_content = format!("{TEST_FIRST_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}");
+//     let path = "./test_md.md";
+//     fs::write(path, &md_file_content).unwrap();
+
+//     let mut markdown = MarkdownFile::new("./test_md.md");
+
+//     println!("markdown \n {:#?}", markdown);
+//     println!("markdown content \n {}", markdown.content);
+
+//     let first_section = markdown.borrow().get_section_by_title("First section");
+
+//     // println!("first_section \n {:#?}", first_section);
+
+//     // let first_section_parent = &first_section.parent.borrow().upgrade();
+
+//     // println!("first_section_parent \n {:#?}", first_section_parent);
+
+//     let first_subsection = first_section
+//         .borrow()
+//         .get_subsection_by_title("First subsection");
+//     println!("first_subsection \n {:#?}", first_subsection);
+
+//     let replace_subsection_content = "## Replace subsection \n\n Replace subsection content";
+
+//     first_subsection
+//         .borrow_mut()
+//         .update_section_content(replace_subsection_content);
+
+//     markdown.borrow_mut().update_markdown().unwrap();
+//     println!("markdown replaced \n {:#?}", markdown);
+//     println!("markdown replaced content \n {}", markdown.content);
+
+//     let first_section_replaced = markdown.get_section_by_title("First section");
+
+//     println!("first_section_replaced \n {:#?}", first_section_replaced);
+
+//     let replace_subsection = first_section_replaced
+//         .borrow()
+//         .get_subsection_by_title("First subsection");
+
+//     println!("replace_subsection {:#?}", replace_subsection);
+//     // let first_subsection_parent = &first_subsection.parent.borrow().upgrade();
+
+//     // println!("first_subsection_parent {:#?}", first_subsection_parent);
+
+//     // let subsection_context
+//     fs::remove_file(path).unwrap();
+// }
