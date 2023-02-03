@@ -465,150 +465,33 @@ fn test_title_generation() {
             }
         }
     }
-    // assert_eq!(
-    //     markdown_tester.first_test_section.title, "First section",
-    //     "Incorrect title"
-    // );
-    // assert_eq!(
-    //     markdown_tester.first_test_section.clone().sections[0].title,
-    //     "First subsection / parent_0",
-    //     "Incorrect title"
-    // );
-    // assert_eq!(
-    //     markdown_tester.first_test_section.clone().sections[0].sections[0].title,
-    //     "First subsubsection / parent_0",
-    //     "Incorrect title"
-    // );
-    // assert_eq!(
-    //     markdown_tester.first_test_section.clone().sections[0].sections[1].title,
-    //     "Second subsubsection / parent_0",
-    //     "Incorrect title"
-    // );
 }
 
 #[test]
 fn test_sections_len() {
-    let generator = vec![(2, 2), (0, 0), (0, 0)];
+    let generator = vec![(2, 3), (0, 0), (0, 0)];
     let markdown_tester = MarkdownTester::new(".", generator.clone());
-    let MarkdownTester {
-        markdown_file,
-        test_sections,
-    } = markdown_tester;
+    let MarkdownTester { test_sections, .. } = markdown_tester;
+    assert_eq!(
+        test_sections.len(),
+        generator.len(),
+        "incorrect test_sections len"
+    );
+    for (test_section_index, test_section) in test_sections.iter().enumerate() {
+        let section_level_2_correct_len =
+            test_section.sections.len() == generator[test_section_index].0;
+        assert!(
+            section_level_2_correct_len,
+            "incorrect section level 2 subsections len"
+        );
 
-    // Test first generator
-    // println!(
-    //     "first section content \n\n{}",
-    //     first_test_section.clone().content
-    // );
-    // assert_eq!(
-    //     first_test_section.sections.len(),
-    //     generator.clone()[0].len(),
-    //     "incorrect first generator"
-    // );
-    // for number_of_sections_2 in 0..generator[0].len() {
-    //     let subsection = first_test_section.sections[number_of_sections_2].clone();
-    //     for number_of_sections_3 in generator[0].clone() {
-    //         let correct_length_level_3 = subsection
-    //             .sections
-    //             .iter()
-    //             .all(|section_level_3| section_level_3.sections.len() == number_of_sections_3);
-
-    //         assert!(
-    //             correct_length_level_3,
-    //             "incorrect level of sections level 3"
-    //         );
-    //     }
-    // }
-    // assert_eq!(
-    //     second_test_section.sections.len(),
-    //     generator.clone()[1].len(),
-    //     "incorrect second generator"
-    // );
-    // assert_eq!(
-    //     generator.clone()[2].len(),
-    //     third_test_section.sections.len(),
-    //     "incorrect third generator"
-    // );
-
-    // println!(
-    //     "first section content\n\n{}",
-    //     markdown_tester.first_test_section.content
-    // );
+        let section_level_3_correct_len = test_section
+            .sections
+            .iter()
+            .all(|subsection| subsection.sections.len() == generator[test_section_index].1);
+        assert!(
+            section_level_3_correct_len,
+            "incorrect section level 3 subsections len"
+        );
+    }
 }
-
-// #[test]
-// fn test_update_section_content() {
-//     let path = "./test_md.md";
-//     fs::write(path, TEST_FIRST_SECTION_CONTENT).unwrap();
-
-//     let mut markdown = MarkdownFile::new(path);
-
-//     fs::remove_file(path).unwrap();
-
-//     println!("markdown \n{:#?}", markdown);
-//     println!("markdown content\n{:#?}", markdown.content);
-// }
-
-// // #[test]
-// // fn test_update_section_content() {
-// //     let path = "./test_md.md";
-// //     fs::write(path, TEST_FIRST_SECTION_CONTENT).unwrap();
-
-// //     let mut markdown = MarkdownFile::new(path);
-
-// //     fs::remove_file(path).unwrap();
-
-// //     println!("markdown \n{:#?}", markdown);
-// //     println!("markdown content\n{:#?}", markdown.content);
-// // }
-
-// #[test]
-// fn test_get_subsections() {
-//     let md_file_content = format!("{TEST_FIRST_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}");
-//     let path = "./test_md.md";
-//     fs::write(path, &md_file_content).unwrap();
-
-//     let mut markdown = MarkdownFile::new("./test_md.md");
-
-//     println!("markdown \n {:#?}", markdown);
-//     println!("markdown content \n {}", markdown.content);
-
-//     let first_section = markdown.borrow().get_section_by_title("First section");
-
-//     // println!("first_section \n {:#?}", first_section);
-
-//     // let first_section_parent = &first_section.parent.borrow().upgrade();
-
-//     // println!("first_section_parent \n {:#?}", first_section_parent);
-
-//     let first_subsection = first_section
-//         .borrow()
-//         .get_subsection_by_title("First subsection");
-//     println!("first_subsection \n {:#?}", first_subsection);
-
-//     let replace_subsection_content = "## Replace subsection \n\n Replace subsection content";
-
-//     first_subsection
-//         .borrow_mut()
-//         .update_section_content(replace_subsection_content);
-
-//     markdown.borrow_mut().update_markdown().unwrap();
-//     println!("markdown replaced \n {:#?}", markdown);
-//     println!("markdown replaced content \n {}", markdown.content);
-
-//     let first_section_replaced = markdown.get_section_by_title("First section");
-
-//     println!("first_section_replaced \n {:#?}", first_section_replaced);
-
-//     let replace_subsection = first_section_replaced
-//         .borrow()
-//         .get_subsection_by_title("First subsection");
-
-//     println!("replace_subsection {:#?}", replace_subsection);
-//     // let first_subsection_parent = &first_subsection.parent.borrow().upgrade();
-
-//     // println!("first_subsection_parent {:#?}", first_subsection_parent);
-
-//     // let subsection_context
-//     fs::remove_file(path).unwrap();
-// }
