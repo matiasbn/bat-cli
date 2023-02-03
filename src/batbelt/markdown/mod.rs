@@ -180,7 +180,7 @@ impl MarkdownSection {
                     || line.0 == last_line_index
             })
             .unwrap();
-        let section: String = content_lines.collect::<Vec<&str>>()[start_index..end_index]
+        let section: String = content_lines.collect::<Vec<&str>>()[start_index..=end_index]
             .to_vec()
             .join("\n");
         section
@@ -266,100 +266,147 @@ impl MarkdownSectionLevel {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct TestMarkdownSection {
     pub title: String,
     pub level: MarkdownSectionLevel,
     pub content: String,
+    pub sections: Vec<TestMarkdownSection>,
 }
 
 impl TestMarkdownSection {
-    pub fn new(ordinal_index: i64, level: MarkdownSectionLevel) -> Self {
-        let title = Self::content_parser(ordinal_index, level);
+    pub fn new(
+        ordinal_index: usize,
+        parent_ordinal_index: usize,
+        level: MarkdownSectionLevel,
+    ) -> Self {
+        let title = Self::get_section_title(ordinal_index, parent_ordinal_index, level);
         let content = format!("{}\n{} content", level.get_header(&title), title);
         TestMarkdownSection {
             title,
             level,
             content,
+            sections: vec![],
+        }
+    }
+    // sections: [(2,3), (1,2)] -> first subsection got 2 subsections, and each got 3 subsubsections
+    pub fn generate_subsections(
+        &mut self,
+        parent_ordinal_index: usize,
+        sections: Vec<(usize, usize)>,
+    ) {
+        for (number_of_subsections, number_of_subsubsections) in sections {
+            for subsection_ordinal in 0..number_of_subsections {
+                let mut subsection = TestMarkdownSection::new(
+                    subsection_ordinal,
+                    parent_ordinal_index,
+                    MarkdownSectionLevel::H2,
+                );
+                for subsubsection_ordinal in 0..number_of_subsubsections {
+                    let mut subsubsection = TestMarkdownSection::new(
+                        subsubsection_ordinal,
+                        parent_ordinal_index,
+                        MarkdownSectionLevel::H3,
+                    );
+                    subsubsection.parse_content();
+                    subsection.sections.push(subsubsection);
+                }
+                subsection.parse_content();
+                self.sections.push(subsection);
+            }
+            self.parse_content();
         }
     }
 
-    fn content_parser(ordinal_index: i64, level: MarkdownSectionLevel) -> String {
+    pub fn get_section_title(
+        ordinal_index: usize,
+        parent_ordinal_index: usize,
+        level: MarkdownSectionLevel,
+    ) -> String {
         let ordinal = match ordinal_index {
             0 => "First",
             1 => "Second",
-            2 => "First",
+            2 => "Third",
             3 => "Fourth",
             _ => unimplemented!(),
         };
 
         match level {
             MarkdownSectionLevel::H1 => format!("{} section", ordinal),
-            MarkdownSectionLevel::H2 => format!("{} subsection", ordinal),
-            MarkdownSectionLevel::H3 => format!("{} subsubsection", ordinal),
-            MarkdownSectionLevel::H4 => format!("{} subsubsubsection", ordinal),
+            MarkdownSectionLevel::H2 => {
+                format!("{} subsection / parent_{}", ordinal, parent_ordinal_index)
+            }
+            MarkdownSectionLevel::H3 => {
+                format!(
+                    "{} subsubsection / parent_{}",
+                    ordinal, parent_ordinal_index
+                )
+            }
+            MarkdownSectionLevel::H4 => {
+                format!(
+                    "{} subsubsubsection / parent_{}",
+                    ordinal, parent_ordinal_index
+                )
+            }
             _ => unimplemented!(),
         }
     }
 
-    pub fn to_markdown_section(&self, content: String) -> MarkdownSection {
-        MarkdownSection::new(self.title.clone(), self.level, content.to_string())
+    pub fn parse_content(&mut self) {
+        if !self.sections.is_empty() {
+            let parsed_content = self.sections.iter().enumerate().fold(
+                "".to_string(),
+                |total, (section_index, section)| {
+                    if section_index == 0 {
+                        format!("{}", section.content)
+                    } else {
+                        format!("{}\n{}", total, section.content)
+                    }
+                },
+            );
+            self.content = format!("{}\n\n{}", self.content, parsed_content);
+        }
+    }
+
+    pub fn to_markdown_section(&self) -> MarkdownSection {
+        MarkdownSection::new(self.title.clone(), self.level, self.content.clone())
     }
 }
 
 #[derive(Debug)]
 struct MarkdownTester {
-    pub first_section: MarkdownSection,
-    pub second_section: MarkdownSection,
-    pub third_section: MarkdownSection,
+    pub markdown_file: MarkdownFile,
+    pub first_test_section: TestMarkdownSection,
+    pub second_test_section: TestMarkdownSection,
+    pub third_test_section: TestMarkdownSection,
 }
 
 impl MarkdownTester {
-    pub fn new() -> Self {
-        // First section
-        let first_section_tester = TestMarkdownSection::new(0, MarkdownSectionLevel::H1);
-        let first_subsection_tester = TestMarkdownSection::new(0, MarkdownSectionLevel::H2);
-        let first_subsubsection_tester = TestMarkdownSection::new(0, MarkdownSectionLevel::H3);
-        let first_section_content = Self::content_parser(vec![
-            first_section_tester.clone(),
-            first_subsection_tester.clone(),
-            first_subsubsection_tester.clone(),
-        ]);
-        assert_eq!(
-            first_section_content,
-            format!(
-                "{}\n\n{}\n\n{}\n",
-                first_section_tester.content,
-                first_subsection_tester.content,
-                first_subsubsection_tester.content
-            )
+    pub fn new(path: &str, subsections_generator: [Vec<(usize, usize)>; 3]) -> Self {
+        let mut first_test_section = TestMarkdownSection::new(0, 0, MarkdownSectionLevel::H1);
+        first_test_section.generate_subsections(0, subsections_generator[0].clone());
+        let mut second_test_section = TestMarkdownSection::new(1, 0, MarkdownSectionLevel::H1);
+        second_test_section.generate_subsections(0, subsections_generator[1].clone());
+        let mut third_test_section = TestMarkdownSection::new(2, 0, MarkdownSectionLevel::H1);
+        third_test_section.generate_subsections(0, subsections_generator[2].clone());
+        let first_section = RefCell::new(first_test_section.to_markdown_section());
+        let second_section = RefCell::new(second_test_section.to_markdown_section());
+        let third_section = RefCell::new(third_test_section.to_markdown_section());
+        let markdown_content = format!(
+            "{}\n\n{}\n\n{}",
+            first_test_section.content, second_test_section.content, third_test_section.content
         );
-        let first_section = first_section_tester.to_markdown_section(first_section_content);
-        // Second section
-        let second_section_tester = TestMarkdownSection::new(1, MarkdownSectionLevel::H1);
-        let second_subsection_tester = TestMarkdownSection::new(1, MarkdownSectionLevel::H2);
-        let second_subsubsection_tester = TestMarkdownSection::new(1, MarkdownSectionLevel::H3);
-        let second_section_content = Self::content_parser(vec![
-            second_section_tester.clone(),
-            second_subsection_tester,
-            second_subsubsection_tester,
-        ]);
-        let second_section = second_section_tester.to_markdown_section(second_section_content);
-
-        // Third section
-        let third_section_tester = TestMarkdownSection::new(2, MarkdownSectionLevel::H1);
-        let third_subsection_tester = TestMarkdownSection::new(2, MarkdownSectionLevel::H2);
-        let third_subsubsection_tester = TestMarkdownSection::new(2, MarkdownSectionLevel::H3);
-        let third_section_content = Self::content_parser(vec![
-            third_section_tester.clone(),
-            third_subsection_tester,
-            third_subsubsection_tester,
-        ]);
-        let third_section = third_section_tester.to_markdown_section(third_section_content);
+        let sections = RefCell::new(vec![first_section, second_section, third_section]);
+        let markdown_file = MarkdownFile {
+            path: path.to_string(),
+            content: markdown_content,
+            sections: sections,
+        };
         MarkdownTester {
-            first_section,
-            second_section,
-            third_section,
+            markdown_file,
+            first_test_section: first_test_section,
+            second_test_section: second_test_section,
+            third_test_section: third_test_section,
         }
     }
 
@@ -380,25 +427,130 @@ impl MarkdownTester {
 }
 
 #[test]
+
+fn test_title_generation() {
+    let generator = [vec![(2, 2)], vec![(0, 0)], vec![(0, 0)]];
+    let markdown_tester = MarkdownTester::new(".", generator.clone());
+    assert_eq!(
+        TestMarkdownSection::get_section_title(0, 0, MarkdownSectionLevel::H1),
+        "First section",
+        "Incorrect title"
+    );
+    assert_eq!(
+        TestMarkdownSection::get_section_title(0, 0, MarkdownSectionLevel::H2),
+        "First subsection / parent_0",
+        "Incorrect title"
+    );
+    assert_eq!(
+        markdown_tester.first_test_section.title, "First section",
+        "Incorrect title"
+    );
+    assert_eq!(
+        markdown_tester.first_test_section.clone().sections[0].title,
+        "First subsection / parent_0",
+        "Incorrect title"
+    );
+    assert_eq!(
+        markdown_tester.first_test_section.clone().sections[0].sections[0].title,
+        "First subsubsection / parent_0",
+        "Incorrect title"
+    );
+    assert_eq!(
+        markdown_tester.first_test_section.clone().sections[0].sections[1].title,
+        "Second subsubsection / parent_0",
+        "Incorrect title"
+    );
+    assert_eq!(
+        markdown_tester.first_test_section.clone().sections[1].title,
+        "Second subsection / parent_0",
+        "Incorrect title"
+    );
+    assert_eq!(
+        markdown_tester.first_test_section.clone().sections[1].sections[0].title,
+        "First subsubsection / parent_0",
+        "Incorrect title"
+    );
+    assert_eq!(
+        markdown_tester.first_test_section.clone().sections[1].sections[1].title,
+        "Second subsubsection / parent_0",
+        "Incorrect title"
+    );
+    // Sections length
+    assert_eq!(
+        markdown_tester.first_test_section.clone().sections.len(),
+        generator[0].clone()[0].0,
+        "Incorrect length"
+    );
+    // Subsections length
+    assert_eq!(
+        markdown_tester.first_test_section.clone().sections[0]
+            .sections
+            .len(),
+        generator[0].clone()[0].1,
+        "Incorrect length"
+    );
+
+    assert_eq!(
+        markdown_tester.second_test_section.title, "Second section",
+        "Incorrect title"
+    );
+    assert_eq!(
+        markdown_tester.third_test_section.title, "Third section",
+        "Incorrect title"
+    );
+}
+
 fn test_markdown_tester() {
-    let markdown_tester = MarkdownTester::new();
-    println!("tester {:#?}", markdown_tester);
-    // let md_file_content = format!("{TEST_FIRST_SECTION_CONTENT}\n{TEST_SECOND_SECTION_CONTENT}",);
-    // let path = "./test_md.md";
-    // fs::write(path, &md_file_content).unwrap();
-
-    // let markdown = MarkdownFile::new("./test_md.md");
-
-    // fs::remove_file(path).unwrap();
-
-    // let sections = markdown.sections.borrow();
-    // let first_section = &sections[0];
-    // let second_section = &sections[1];
-    // assert_eq!(first_section.borrow().title, "First section");
-    // assert_eq!(second_section.borrow().title, "Second section");
-
-    // assert_eq!(first_section.borrow().content, TEST_FIRST_SECTION_CONTENT);
-    // assert_eq!(second_section.borrow().content, TEST_SECOND_SECTION_CONTENT);
+    let test_path = "./test_md.md";
+    let first_generator = vec![(1, 1), (2, 1)];
+    let second_generator = vec![(1, 1)];
+    let third_generator = vec![(1, 1)];
+    let markdown_tester = MarkdownTester::new(
+        test_path,
+        [
+            first_generator.clone(),
+            second_generator.clone(),
+            third_generator.clone(),
+        ],
+    );
+    let MarkdownTester {
+        markdown_file,
+        first_test_section,
+        second_test_section,
+        third_test_section,
+    } = markdown_tester;
+    println!(
+        "first section content\n\n{}",
+        first_test_section.content.clone()
+    );
+    assert_eq!(
+        first_test_section.sections.len(),
+        first_generator.len(),
+        "incorrect first generator"
+    );
+    for (number_of_subsection, number_of_subsubsection) in first_generator {
+        assert_eq!(
+            first_test_section.sections.clone()[number_of_subsection]
+                .sections
+                .len(),
+            number_of_subsubsection,
+            "incorrect number of subsubsections for first"
+        )
+    }
+    assert_eq!(
+        second_test_section.sections.len(),
+        second_generator.len(),
+        "incorrect second generator"
+    );
+    assert_eq!(
+        third_test_section.sections.len(),
+        third_generator.len(),
+        "incorrect third generator"
+    );
+    // println!(
+    //     "first section content\n\n{}",
+    //     markdown_tester.first_test_section.content
+    // );
 }
 
 // #[test]
