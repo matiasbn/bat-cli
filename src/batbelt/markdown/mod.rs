@@ -276,7 +276,7 @@ struct TestMarkdownSection {
 impl TestMarkdownSection {
     pub fn new(ordinal_index: i64, level: MarkdownSectionLevel) -> Self {
         let title = Self::content_parser(ordinal_index, level);
-        let content = format!("{}\n\n{} content", level.get_header(&title), title);
+        let content = format!("{}\n{} content", level.get_header(&title), title);
         TestMarkdownSection {
             title,
             level,
@@ -322,9 +322,18 @@ impl MarkdownTester {
         let first_subsubsection_tester = TestMarkdownSection::new(0, MarkdownSectionLevel::H3);
         let first_section_content = Self::content_parser(vec![
             first_section_tester.clone(),
-            first_subsection_tester,
-            first_subsubsection_tester,
+            first_subsection_tester.clone(),
+            first_subsubsection_tester.clone(),
         ]);
+        assert_eq!(
+            first_section_content,
+            format!(
+                "{}\n\n{}\n\n{}\n",
+                first_section_tester.content,
+                first_subsection_tester.content,
+                first_subsubsection_tester.content
+            )
+        );
         let first_section = first_section_tester.to_markdown_section(first_section_content);
         // Second section
         let second_section_tester = TestMarkdownSection::new(1, MarkdownSectionLevel::H1);
@@ -355,9 +364,17 @@ impl MarkdownTester {
     }
 
     fn content_parser(sections: Vec<TestMarkdownSection>) -> String {
-        let content = sections.iter().fold("".to_string(), |total, section| {
-            format!("{}\n\n{}", total, section.content)
-        });
+        let content =
+            sections
+                .iter()
+                .enumerate()
+                .fold("".to_string(), |total, (section_index, section)| {
+                    if section_index == 0 {
+                        format!("{}\n", section.content)
+                    } else {
+                        format!("{}\n{}\n", total, section.content)
+                    }
+                });
         content
     }
 }
