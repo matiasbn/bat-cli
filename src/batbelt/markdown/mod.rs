@@ -500,35 +500,35 @@ fn test_title_generation() {
         }
     }
 }
-//
-// #[test]
-// fn test_sections_len() {
-//     let generator = vec![(2, 3), (0, 0), (0, 0)];
-//     let markdown_tester = MarkdownTester::new(".", generator.clone());
-//     let MarkdownTester { test_sections, .. } = markdown_tester;
-//     assert_eq!(
-//         test_sections.len(),
-//         generator.len(),
-//         "incorrect test_sections len"
-//     );
-//     for (test_section_index, test_section) in test_sections.iter().enumerate() {
-//         let section_level_2_correct_len =
-//             test_section.sections.len() == generator[test_section_index].0;
-//         assert!(
-//             section_level_2_correct_len,
-//             "incorrect section level 2 subsections len"
-//         );
-//
-//         let section_level_3_correct_len = test_section
-//             .sections
-//             .iter()
-//             .all(|subsection| subsection.sections.len() == generator[test_section_index].1);
-//         assert!(
-//             section_level_3_correct_len,
-//             "incorrect section level 3 subsections len"
-//         );
-//     }
-// }
+
+#[test]
+fn test_sections_len() {
+    let generator = vec![(2, 3), (0, 0), (0, 0)];
+    let markdown_tester = MarkdownTester::new(".", generator.clone());
+    let MarkdownTester { test_sections, .. } = markdown_tester;
+    assert_eq!(
+        test_sections.len(),
+        generator.len(),
+        "incorrect test_sections len"
+    );
+    for (test_section_index, test_section) in test_sections.iter().enumerate() {
+        let section_level_2_correct_len =
+            test_section.sections.len() == generator[test_section_index].0;
+        assert!(
+            section_level_2_correct_len,
+            "incorrect section level 2 subsections len"
+        );
+
+        let section_level_3_correct_len = test_section
+            .sections
+            .iter()
+            .all(|subsection| subsection.sections.len() == generator[test_section_index].1);
+        assert!(
+            section_level_3_correct_len,
+            "incorrect section level 3 subsections len"
+        );
+    }
+}
 //
 // #[test]
 // fn test_replace_section_by_path() {
