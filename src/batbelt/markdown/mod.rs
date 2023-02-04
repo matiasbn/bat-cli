@@ -71,12 +71,26 @@ impl MarkdownFile {
     }
 
     pub fn update_markdown(&mut self) -> Result<(), String> {
+        self.update_content_from_sections();
         let sections = self.get_sections();
         self.sections = RefCell::new(sections);
         Ok(())
     }
 
-    pub fn get_section_by_title(&self, title: &str) -> RefCell<MarkdownSection> {
+    fn update_content_from_sections(&mut self) {
+        let mut new_content = String::new();
+        for (section_index, section) in self.sections.borrow_mut().iter().enumerate() {
+            if section_index == 0 {
+                new_content = format!("{}", section.borrow_mut().content.clone());
+            } else {
+                new_content = format!("{}\n\n{}", new_content, &section.borrow_mut().content)
+            }
+        }
+        println!("new content file {}", new_content);
+        self.content = new_content;
+    }
+
+    pub fn get_section_by_title(&mut self, title: &str) -> RefCell<MarkdownSection> {
         let section = self
             .sections
             .take()
@@ -139,10 +153,23 @@ impl MarkdownSection {
         self.subsections = RefCell::new(subsections);
     }
 
-    pub fn update_section_content(&mut self, new_section_content: &str) {
-        let insert_content = new_section_content.replace(&self.get_header(), "");
-        let formatted_content = format!("{}\n\n{}", self.get_header(), insert_content.trim_start());
-        self.content = formatted_content;
+    pub fn update_section(&mut self, new_section: MarkdownSection) {
+        self.title = new_section.title;
+        self.content = new_section.content;
+        self.get_subsections();
+    }
+
+    fn update_content(&mut self) {
+        let mut new_content = String::new();
+        for (subsection_index, subsection) in self.subsections.clone().borrow().iter().enumerate() {
+            if subsection_index == 0 {
+                new_content = subsection.borrow().content.clone();
+            } else {
+                new_content = format!("{}\n\n{}", new_content, subsection.borrow().content)
+            }
+        }
+        println!("new content {}", new_content);
+        self.content = new_content;
     }
 
     fn get_header(&self) -> String {
@@ -318,13 +345,7 @@ impl TestMarkdownSection {
         parent_ordinal_index: usize,
         level: MarkdownSectionLevel,
     ) -> String {
-        let ordinal = match ordinal_index {
-            0 => "First",
-            1 => "Second",
-            2 => "Third",
-            3 => "Fourth",
-            _ => unimplemented!(),
-        };
+        let ordinal = Self::get_ordinal_string(ordinal_index);
 
         match level {
             MarkdownSectionLevel::H1 => format!("{} section", ordinal),
@@ -358,6 +379,17 @@ impl TestMarkdownSection {
             );
             self.content = format!("{}\n\n{}", self.content, parsed_content);
         }
+    }
+
+    fn get_ordinal_string(ordinal_index: usize) -> &'static str {
+        let ordinal = match ordinal_index {
+            0 => "First",
+            1 => "Second",
+            2 => "Third",
+            3 => "Fourth",
+            _ => unimplemented!(),
+        };
+        ordinal
     }
 
     pub fn to_markdown_section(&self) -> MarkdownSection {
@@ -494,4 +526,36 @@ fn test_sections_len() {
             "incorrect section level 3 subsections len"
         );
     }
+}
+
+#[test]
+
+fn test_replace_section() {
+    let generator = vec![(2, 3), (0, 0), (0, 0)];
+    let path = "./test_md.md";
+    let MarkdownTester {
+        mut markdown_file,
+        test_sections,
+    } = MarkdownTester::new(path, generator);
+    let mut replace_test_section = TestMarkdownSection::new(0, 0, MarkdownSectionLevel::H1);
+    replace_test_section.title = replace_test_section.title.replace("First", "Replace");
+    replace_test_section.content = replace_test_section.content.replace("First", "Replace");
+    let replace_markdown_section = replace_test_section.to_markdown_section();
+    let first_test_section = &test_sections[0];
+
+    let first_md_section = markdown_file.get_section_by_title(&first_test_section.title);
+    first_md_section
+        .borrow_mut()
+        .update_section(replace_markdown_section.clone());
+    assert_eq!(
+        first_md_section.borrow().content,
+        replace_test_section.content.clone(),
+        "error updating content"
+    );
+
+    println!("md content before update\n{}", markdown_file.content);
+    markdown_file.update_markdown().unwrap();
+    println!("md content after update\n{:#?}", markdown_file.sections);
+    let replaced_section = markdown_file.get_section_by_title(&first_md_section.borrow().title);
+    println!("md content\n{:#?}", replaced_section);
 }
