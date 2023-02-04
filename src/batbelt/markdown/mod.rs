@@ -94,6 +94,21 @@ impl MarkdownFile {
             .unwrap();
         section
     }
+
+    pub fn get_section_by_content_path(&mut self, content_path: &str) -> MarkdownSection {
+        for section in &self.sections {
+            if section.content_path == content_path {
+                return section.clone();
+            }
+            for subsection in section.clone().subsections {
+                let found_section = subsection.get_subsection_by_content_path(content_path);
+                if let Some(f_section) = found_section {
+                    return f_section;
+                }
+            }
+        }
+        panic!("content_path not found")
+    }
 }
 
 // impl Deref for MarkdownSection {
@@ -219,6 +234,22 @@ impl MarkdownSection {
             .to_vec()
             .join("\n");
         section
+    }
+
+    fn get_subsection_by_content_path(&self, content_path: &str) -> Option<MarkdownSection> {
+        if self.content_path == content_path {
+            return Some(self.clone());
+        }
+        for subsection in &self.subsections {
+            if subsection.content_path == content_path {
+                return Some(subsection.clone());
+            }
+            let found_subsection = subsection.get_subsection_by_content_path(content_path);
+            if let Some(f_subsection) = found_subsection {
+                return Some(f_subsection.clone());
+            }
+        }
+        None
     }
 }
 
@@ -579,30 +610,24 @@ fn test_content_path() {
         "wrong content_path"
     )
 }
-// fn test_replace_section() {
-//     let generator = vec![(2, 3), (0, 0), (0, 0)];
-//     let path = "./test_md.md";
-//     let MarkdownTester {
-//         mut markdown_file,
-//         test_sections,
-//     } = MarkdownTester::new(path, generator);
-//     let mut replace_test_section =
-//         TestMarkdownSection::new(0, 0, MarkdownSectionLevel::H1, "/".to_string());
-//     replace_test_section.title = replace_test_section.title.replace("First", "Replace");
-//     replace_test_section.content = replace_test_section.content.replace("First", "Replace");
-//     let replace_markdown_section = replace_test_section.to_markdown_section();
-//     let first_test_section = &test_sections[0];
 
-//     let first_md_section = markdown_file.get_section_by_title(&first_test_section.title);
-//     assert_eq!(
-//         first_md_section.borrow().content,
-//         replace_test_section.content.clone(),
-//         "error updating content"
-//     );
-
-//     println!("md content before update\n{}", markdown_file.content);
-//     markdown_file.update_markdown().unwrap();
-//     println!("md content after update\n{:#?}", markdown_file.sections);
-//     let replaced_section = markdown_file.get_section_by_title(&first_md_section.borrow().title);
-//     println!("md content\n{:#?}", replaced_section);
-// }
+#[test]
+fn test_get_section_by_path() {
+    let generator = vec![(2, 3), (1, 2), (1, 1)];
+    let path = "./test_md.md";
+    let MarkdownTester {
+        mut markdown_file,
+        test_sections,
+    } = MarkdownTester::new(path, generator);
+    let MarkdownFile { sections, .. } = markdown_file.clone();
+    let target_section = sections[0].subsections[1].clone();
+    let found_section = markdown_file.get_section_by_content_path(&target_section.content_path);
+    assert_eq!(
+        found_section.title, target_section.title,
+        "found_section don't match"
+    );
+    assert_eq!(
+        found_section.content_path, target_section.content_path,
+        "found_section don't match"
+    );
+}
