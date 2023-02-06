@@ -32,7 +32,7 @@ pub mod code_overhaul_template {
     use super::*;
 
     #[derive(strum_macros::Display)]
-    pub enum CodeOverhaulSections {
+    pub enum CodeOverhaulSection {
         WhatItDoes,
         Notes,
         Signers,
@@ -45,7 +45,7 @@ pub mod code_overhaul_template {
         InstructionFilePath,
     }
 
-    impl CodeOverhaulSections {
+    impl CodeOverhaulSection {
         pub fn to_title(&self) -> String {
             self.to_string().to_sentence_case()
         }
@@ -73,16 +73,16 @@ pub mod code_overhaul_template {
             
             # {}:
             ",
-            CodeOverhaulSections::WhatItDoes.to_title(),
-            CodeOverhaulSections::Notes.to_title(),
-            CodeOverhaulSections::Signers.to_title(),
-            CodeOverhaulSections::FunctionParameters.to_title(),
-            CodeOverhaulSections::ContextAccounts.to_title(),
-            CodeOverhaulSections::Validations.to_title(),
-            CodeOverhaulSections::AccountsValidations.to_title(),
-            CodeOverhaulSections::Prerequisites.to_title(),
-            CodeOverhaulSections::MiroBoardFrame.to_title(),
-            CodeOverhaulSections::InstructionFilePath.to_title(),
+            CodeOverhaulSection::WhatItDoes.to_title(),
+            CodeOverhaulSection::Notes.to_title(),
+            CodeOverhaulSection::Signers.to_title(),
+            CodeOverhaulSection::FunctionParameters.to_title(),
+            CodeOverhaulSection::ContextAccounts.to_title(),
+            CodeOverhaulSection::Validations.to_title(),
+            CodeOverhaulSection::AccountsValidations.to_title(),
+            CodeOverhaulSection::Prerequisites.to_title(),
+            CodeOverhaulSection::MiroBoardFrame.to_title(),
+            CodeOverhaulSection::InstructionFilePath.to_title(),
         )
         .lines()
         .map(|line| line.trim().to_string())
@@ -95,18 +95,10 @@ pub mod metadata_template {
     use super::*;
 
     #[derive(strum_macros::Display)]
-    pub enum MetadataSections {
+    pub enum MetadataSection {
         Structs,
-        ContextAccounts,
-        Accounts,
-        Inputs,
         Functions,
-        Handlers,
-        Entrypoints,
-        Helpers,
-        Other,
         Miro,
-        AccountsFrameUrl,
     }
 }
 
@@ -114,8 +106,4 @@ pub mod metadata_template {
 fn test_placeholder_to_string() {
     let co_template = MarkdownTemplate::CodeOverhaul.new(".");
     println!("co_template {:#?}", co_template);
-
-    // let no_validation_placeholder =
-    //     CodeOverhaulPlaceholder::NoValidationFoundPlaceholder.to_placeholder();
-    // assert_eq!(no_validation_placeholder, expected);
 }

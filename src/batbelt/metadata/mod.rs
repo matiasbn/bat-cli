@@ -30,13 +30,6 @@ pub enum MetadataSection {
     Miro,
 }
 
-// #[derive(strum_macros::Display)]
-// pub enum MetadataSubSection {
-//     Structs(StructsSubSection),
-//     Functions(FunctionsSubSection),
-//     Miro,
-// }
-
 #[derive(strum_macros::Display)]
 pub enum StructsSubSection {
     ContextAccounts,

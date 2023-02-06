@@ -9,7 +9,6 @@ use crate::batbelt::metadata::functions::{
     ENTRYPOINTS_SUBSECTION_TITLE, FUNCTIONS_SECTION_TITLE, HANDLERS_SUBSECTION_TITLE,
     HELPERS_SUBSECTION_TITLE, OTHERS_SUBSECTION_TITLE, VALIDATORS_SUBSECTION_TITLE,
 };
-use crate::batbelt::metadata::metadata_helpers;
 use crate::batbelt::metadata::miro::{
     get_format_miro_accounts_to_result_string, MiroAccountMetadata,
     MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER, MIRO_SUBSECTIONS_HEADERS,
@@ -17,14 +16,16 @@ use crate::batbelt::metadata::miro::{
 use crate::batbelt::metadata::structs::{
     get_structs_metadata_from_program, get_structs_section_content,
 };
+use crate::batbelt::metadata::{metadata_helpers, MetadataSection, MetadataSectionParser};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::{MiroColor, MiroConfig};
 use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
 use std::fs;
+use std::process::Command;
 
-pub fn update_functions() -> Result<(), String> {
+pub fn functions() -> Result<(), String> {
     // let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
     // let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     // let mut functions_section = metadata_markdown
@@ -162,7 +163,7 @@ pub fn update_functions() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn update_miro() -> Result<(), String> {
+pub async fn miro() -> Result<(), String> {
     // assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
     // let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
     // let metadata_markdown = MarkdownFile::new(&metadata_path);
@@ -303,35 +304,39 @@ pub async fn update_miro() -> Result<(), String> {
     // }
 }
 
-pub fn update_structs() -> Result<(), String> {
-    // let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
-    // let mut metadata_markdown = MarkdownFile::new(&metadata_path);
-    // let structs_section = metadata_markdown
-    //     .clone()
-    //     .get_section_by_title("Structs")
-    //     .clone();
+pub fn structs() -> Result<(), String> {
+    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
+    let structs_section = metadata_markdown
+        .get_section(
+            MetadataSection::Structs.section_str(),
+            MarkdownSectionLevel::H1,
+        )
+        .clone();
     // // check if empty
-    // let is_initialized = !structs_section.subsections.is_empty();
-    // // prompt the user if he wants to replace
-    // if is_initialized {
-    //     let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
-    //         format!(
-    //             "{}, are you sure you want to continue?",
-    //             format!("Structs in metadata.md are arealready initialized").bright_red()
-    //         )
-    //         .as_str(),
-    //     )?;
-    //     if !user_decided_to_continue {
-    //         panic!("User decided not to continue with the update process for structs metada")
-    //     }
-    // }
-    // // get structs in all files
-    // let (
-    //     context_accounts_metadata_vec,
-    //     accounts_metadata_vec,
-    //     input_metadata_vec,
-    //     other_metadata_vec,
-    // ) = get_structs_metadata_from_program()?;
+    let structs_subsection = metadata_markdown.get_section_subsections(structs_section.clone());
+    println!("{:#?}", structs_subsection);
+    let is_initialized = !structs_section.content.is_empty();
+    // prompt the user if he wants to replace
+    if is_initialized {
+        let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
+            format!(
+                "{}, are you sure you want to continue?",
+                format!("Structs in metadata.md are arealready initialized").bright_red()
+            )
+            .as_str(),
+        )?;
+        if !user_decided_to_continue {
+            panic!("User decided not to continue with the update process for structs metada")
+        }
+    }
+    // get structs in all files
+    let (
+        context_accounts_metadata_vec,
+        accounts_metadata_vec,
+        input_metadata_vec,
+        other_metadata_vec,
+    ) = get_structs_metadata_from_program()?;
 
     // let context_accounts_subsections = context_accounts_metadata_vec
     //     .into_iter()
@@ -342,7 +347,7 @@ pub fn update_structs() -> Result<(), String> {
     //         ))
     //     })
     //     .collect();
-
+    //
     // let account_subsections = accounts_metadata_vec
     //     .into_iter()
     //     .map(|metadata| {
@@ -352,7 +357,7 @@ pub fn update_structs() -> Result<(), String> {
     //         ))
     //     })
     //     .collect();
-
+    //
     // let input_subsections: Vec<MarkdownSection> = input_metadata_vec
     //     .into_iter()
     //     .map(|metadata| {
@@ -362,7 +367,7 @@ pub fn update_structs() -> Result<(), String> {
     //         ))
     //     })
     //     .collect();
-
+    //
     // let other_subsections: Vec<MarkdownSection> = other_metadata_vec
     //     .into_iter()
     //     .map(|metadata| {
@@ -372,7 +377,7 @@ pub fn update_structs() -> Result<(), String> {
     //         ))
     //     })
     //     .collect();
-
+    //
     // // New and old sections
     // let new_context_accounts_subsection = MarkdownSection::new_from_subsections(
     //     "Context Accounts",
@@ -381,28 +386,28 @@ pub fn update_structs() -> Result<(), String> {
     // );
     // let old_context_accounts_subsection =
     //     structs_section.get_subsection_by_title("Context Accounts");
-
+    //
     // let new_accounts_subsection = MarkdownSection::new_from_subsections(
     //     "Accounts",
     //     MarkdownSectionLevel::H2,
     //     account_subsections,
     // );
     // let old_accounts_subsection = structs_section.get_subsection_by_title("Accounts");
-
+    //
     // let new_input_subsection = MarkdownSection::new_from_subsections(
     //     "Inputs",
     //     MarkdownSectionLevel::H2,
     //     input_subsections,
     // );
     // let old_inputs_subsection = structs_section.get_subsection_by_title("Inputs");
-
+    //
     // let new_others_subsection = MarkdownSection::new_from_subsections(
     //     OTHERS_SUBSECTION_TITLE,
     //     MarkdownSectionLevel::H2,
     //     other_subsections,
     // );
     // let old_others_subsection = structs_section.get_subsection_by_title(OTHERS_SUBSECTION_TITLE);
-
+    //
     // metadata_markdown.update_section(
     //     old_context_accounts_subsection.clone(),
     //     new_context_accounts_subsection,
@@ -415,4 +420,15 @@ pub fn update_structs() -> Result<(), String> {
     // metadata_markdown.clone().save()?;
     // batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
     Ok(())
+}
+
+#[test]
+fn test_metadata_structs() {
+    let mut command = Command::new("cargo");
+    command
+        .current_dir("../simple-game-audit")
+        .args(["run", "metadata", "structs"])
+        .output()
+        .unwrap();
+    // println!("child {:#?}", child)
 }
