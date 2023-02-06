@@ -100,7 +100,7 @@ impl MarkdownFile {
         section
     }
 
-    pub fn get_section_subsections(&mut self, section: MarkdownSection) -> Vec<MarkdownSection> {
+    pub fn get_section_subsections(&self, section: MarkdownSection) -> Vec<MarkdownSection> {
         let section: Vec<MarkdownSection> = self
             .sections
             .clone()
@@ -550,19 +550,24 @@ fn test_sections_len() {
 }
 //
 #[test]
-fn test_markdown_section_new_from_header_and_content() {
-    let generator = vec![(1, 0)];
+fn test_get_markdown_section_subsections() {
+    let generator = vec![(1, 2), (2, 3)];
     let markdown_tester = MarkdownTester::new(".", generator.clone());
     let MarkdownTester {
         test_sections,
         markdown_file,
     } = markdown_tester;
 
-    let section_header_content = "# Test section";
+    let section_header_content = "# First section";
     let section_hash = get_section_hash();
     let section_header =
         SectionHeader::new_from_header_and_hash(section_header_content.to_string(), section_hash);
+    let first_section = markdown_file.sections[0].clone();
+    let first_subsection = markdown_file.sections[1].clone();
+    let first_section_subsections = markdown_file.get_section_subsections(first_section);
 
+    let first_subsection_subsections = markdown_file.get_section_subsections(first_subsection);
+    println!("{:#?}", first_section_subsections);
     // let replace_section =
     // assert_eq!(
     //     found_section.title, target_section.title,
