@@ -147,7 +147,8 @@ pub fn get_struct_metadata_from_file_info(
         })
         .collect::<Vec<_>>();
     let bat_sonar = BatSonar::new(&file_info_content, SonarResultType::Struct);
-    println!("{:#?}", bat_sonar);
+    println!("{}", bat_sonar.content);
+    println!("{:#?}", bat_sonar.result);
     for (content_line_index, content_line) in file_info_content_lines.enumerate() {
         if content_line.contains("pub")
             && content_line.contains("struct")

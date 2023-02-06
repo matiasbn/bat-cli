@@ -15,14 +15,16 @@ pub struct BatSonar {
 
 impl BatSonar {
     pub fn new(content: &str, result_type: SonarResultType) -> Self {
-        BatSonar {
+        let mut new_sonar = BatSonar {
             content: content.to_string(),
             result: vec![],
             result_type: result_type.clone(),
             open_filters: SonarFilter::Open(result_type.clone()),
             end_of_open_filters: SonarFilter::EndOfOpen(result_type.clone()),
             closure_filters: SonarFilter::Closure(result_type.clone()),
-        }
+        };
+        new_sonar.scan_content_to_get_results();
+        new_sonar
     }
 
     pub fn new_from_path(
@@ -50,7 +52,7 @@ impl BatSonar {
             let new_content = new_sonar.get_result_content(start_line_index, end_line_index);
             new_sonar.content = new_content;
         }
-
+        new_sonar.scan_content_to_get_results();
         new_sonar
     }
 

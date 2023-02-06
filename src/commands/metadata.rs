@@ -312,7 +312,8 @@ pub fn structs() -> Result<(), io::Error> {
         .unwrap();
     // // check if empty
     let structs_subsections = metadata_markdown.get_section_subsections(structs_section.clone());
-    let is_initialized = !structs_section.content.is_empty() || structs_subsections.len() > 0;
+    // let is_initialized = !structs_section.content.is_empty() || structs_subsections.len() > 0;
+    let is_initialized = false;
     // prompt the user if he wants to replace
     if is_initialized {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
