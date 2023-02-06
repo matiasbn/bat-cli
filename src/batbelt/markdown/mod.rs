@@ -7,7 +7,17 @@ use std::{
     ops::Deref,
     rc::{Rc, Weak},
 };
-use strum_macros;
+
+#[derive(thiserror::Error, Debug)]
+pub enum MarkdownError {
+    #[error("{sections_amount:?} H1 sections detected with name {section_name:?}")]
+    DuplicatedH1Sections {
+        sections_amount: usize,
+        section_name: String,
+    },
+    #[error("no H1 sections detected with name {section_name:?}")]
+    NoH1SectionFound { section_name: String },
+}
 
 fn get_section_hash() -> String {
     let s: String = rand::thread_rng()
@@ -18,7 +28,7 @@ fn get_section_hash() -> String {
     s
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SectionHeader {
     pub header: String,
     pub title: String,
@@ -90,12 +100,37 @@ impl MarkdownFile {
         Ok(())
     }
 
-    pub fn get_section(&mut self, title: &str, level: MarkdownSectionLevel) -> MarkdownSection {
+    pub fn get_section(&self, title: &str) -> Result<MarkdownSection, MarkdownError> {
+        let mut section = self
+            .sections
+            .clone()
+            .into_iter()
+            .filter(|section| section.header.level == MarkdownSectionLevel::H1)
+            .filter(|section| section.header.title == title);
+        let section_count = section.clone().count();
+        if section_count > 1 {
+            return Err(MarkdownError::DuplicatedH1Sections {
+                sections_amount: section_count,
+                section_name: title.to_string(),
+            });
+        }
+        if section_count == 0 {
+            return Err(MarkdownError::NoH1SectionFound {
+                section_name: title.to_string(),
+            });
+        }
+        Ok(section.next().unwrap())
+    }
+
+    pub fn get_subsection(&mut self, title: &str, parent_header: SectionHeader) -> MarkdownSection {
         let section = self
             .sections
             .clone()
             .into_iter()
-            .find(|section| section.header.title == title && section.header.level == level)
+            .find(|section| {
+                section.header.title == title
+                    && section.header.section_hash == parent_header.section_hash
+            })
             .unwrap();
         section
     }
@@ -112,6 +147,8 @@ impl MarkdownFile {
             .collect::<Vec<_>>();
         section
     }
+
+    // pub fn is_empty(&self) -> bool {}
 
     fn get_sections(&mut self) {
         let section_headers: Vec<SectionHeader> = self.get_headers();
@@ -152,20 +189,9 @@ impl MarkdownFile {
             .collect();
         headers
     }
-
-    pub fn get_section_content(&self, section: MarkdownSection) -> String {
-        let content_lines = self.content.split("\n");
-        let section: String = content_lines.collect::<Vec<&str>>()
-            [section.start_line_index..=section.end_line_index]
-            .to_vec()
-            .join("\n");
-        section
-    }
-
-    // pub get_section_content
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MarkdownSection {
     pub header: SectionHeader,
     pub content: String,

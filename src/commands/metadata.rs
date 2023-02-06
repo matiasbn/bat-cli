@@ -22,8 +22,8 @@ use crate::batbelt::miro::{MiroColor, MiroConfig};
 use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
-use std::fs;
 use std::process::Command;
+use std::{fs, io};
 
 pub fn functions() -> Result<(), String> {
     // let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
@@ -304,19 +304,15 @@ pub async fn miro() -> Result<(), String> {
     // }
 }
 
-pub fn structs() -> Result<(), String> {
+pub fn structs() -> Result<(), io::Error> {
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
-        .get_section(
-            MetadataSection::Structs.section_str(),
-            MarkdownSectionLevel::H1,
-        )
-        .clone();
+        .get_section(MetadataSection::Structs.section_str())
+        .unwrap();
     // // check if empty
-    let structs_subsection = metadata_markdown.get_section_subsections(structs_section.clone());
-    println!("{:#?}", structs_subsection);
-    let is_initialized = !structs_section.content.is_empty();
+    let structs_subsections = metadata_markdown.get_section_subsections(structs_section.clone());
+    let is_initialized = !structs_section.content.is_empty() || structs_subsections.len() > 0;
     // prompt the user if he wants to replace
     if is_initialized {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
@@ -325,7 +321,8 @@ pub fn structs() -> Result<(), String> {
                 format!("Structs in metadata.md are arealready initialized").bright_red()
             )
             .as_str(),
-        )?;
+        )
+        .unwrap();
         if !user_decided_to_continue {
             panic!("User decided not to continue with the update process for structs metada")
         }
@@ -336,7 +333,7 @@ pub fn structs() -> Result<(), String> {
         accounts_metadata_vec,
         input_metadata_vec,
         other_metadata_vec,
-    ) = get_structs_metadata_from_program()?;
+    ) = get_structs_metadata_from_program().unwrap();
 
     // let context_accounts_subsections = context_accounts_metadata_vec
     //     .into_iter()
@@ -420,15 +417,4 @@ pub fn structs() -> Result<(), String> {
     // metadata_markdown.clone().save()?;
     // batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
     Ok(())
-}
-
-#[test]
-fn test_metadata_structs() {
-    let mut command = Command::new("cargo");
-    command
-        .current_dir("../simple-game-audit")
-        .args(["run", "metadata", "structs"])
-        .output()
-        .unwrap();
-    // println!("child {:#?}", child)
 }
