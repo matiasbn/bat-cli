@@ -38,20 +38,23 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
         panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
-    let output = Command::new("cp")
-        .args([
-            "-r",
-            &batbelt::path::get_file_path(FilePathType::TemplateCodeOverhaul, false),
-            code_overhaul_auditor_file_path.as_str(),
-        ])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "create auditors note folder failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    // let output = Command::new("cp")
+    //     .args([
+    //         "-r",
+    //         &batbelt::path::get_file_path(FilePathType::TemplateCodeOverhaul, false),
+    //         code_overhaul_auditor_file_path.as_str(),
+    //     ])
+    //     .output()
+    //     .unwrap();
+    // if !output.stderr.is_empty() {
+    //     panic!(
+    //         "create auditors note folder failed with error: {:?}",
+    //         std::str::from_utf8(output.stderr.as_slice()).unwrap()
+    //     )
+    // };
+    let mut co_template = batbelt::templates::markdown::MarkdownTemplate::CodeOverhaul
+        .new(&code_overhaul_auditor_file_path);
+    co_template.save()?;
     println!("code-overhaul file created: {entrypoint_name}.md");
     Ok(())
 }

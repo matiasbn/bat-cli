@@ -142,6 +142,7 @@ impl BatSonar {
         false
     }
 }
+
 #[derive(Clone, Debug)]
 pub struct SonarResult {
     pub name: String,
