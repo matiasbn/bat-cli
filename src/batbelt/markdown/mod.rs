@@ -7,6 +7,7 @@ use std::{
     ops::Deref,
     rc::{Rc, Weak},
 };
+use strum_macros;
 
 fn get_section_hash() -> String {
     let s: String = rand::thread_rng()
@@ -27,11 +28,13 @@ pub struct SectionHeader {
 }
 
 impl SectionHeader {
-    pub fn new_from_header_and_hash(header: String, section_hash: String) -> Self {
-        let mut header_split = header.trim().split(" ");
-        let prefix = header_split.next().unwrap().to_string();
-        let title = header_split.collect::<Vec<&str>>().join(" ");
-        let level = MarkdownSectionLevel::from_prefix(&prefix);
+    pub fn new(
+        header: String,
+        title: String,
+        prefix: String,
+        level: MarkdownSectionLevel,
+        section_hash: String,
+    ) -> Self {
         SectionHeader {
             header,
             title,
@@ -39,6 +42,14 @@ impl SectionHeader {
             level,
             section_hash,
         }
+    }
+
+    pub fn new_from_header_and_hash(header: String, section_hash: String) -> Self {
+        let mut header_split = header.trim().split(" ");
+        let prefix = header_split.next().unwrap().to_string();
+        let title = header_split.collect::<Vec<&str>>().join(" ");
+        let level = MarkdownSectionLevel::from_prefix(&prefix);
+        SectionHeader::new(header, title, prefix, level, section_hash)
     }
 }
 
@@ -49,7 +60,7 @@ pub struct MarkdownFile {
     pub sections: Vec<MarkdownSection>,
 }
 
-const PATH_SEPARATOR: &'static str = "/___/";
+// const PATH_SEPARATOR: &'static str = "/___/";
 
 impl MarkdownFile {
     pub fn new(path: &str) -> Self {
@@ -75,9 +86,31 @@ impl MarkdownFile {
     }
 
     pub fn save(&mut self) -> Result<(), String> {
-        self.update_markdown().unwrap();
         fs::write(&self.path, &self.content).unwrap();
         Ok(())
+    }
+
+    pub fn get_section(&mut self, title: &str, level: MarkdownSectionLevel) -> MarkdownSection {
+        let section = self
+            .sections
+            .clone()
+            .into_iter()
+            .find(|section| section.header.title == title && section.header.level == level)
+            .unwrap();
+        section
+    }
+
+    pub fn get_section_subsections(&mut self, section: MarkdownSection) -> Vec<MarkdownSection> {
+        let section: Vec<MarkdownSection> = self
+            .sections
+            .clone()
+            .into_iter()
+            .filter(|document_section| {
+                document_section.header.section_hash == section.header.section_hash
+                    && document_section.header.level > section.header.level
+            })
+            .collect::<Vec<_>>();
+        section
     }
 
     fn get_sections(&mut self) {
@@ -93,21 +126,6 @@ impl MarkdownFile {
             })
             .collect();
         self.sections = sections;
-    }
-
-    pub fn update_markdown(&mut self) -> Result<(), String> {
-        self.get_sections();
-        Ok(())
-    }
-
-    pub fn get_section_by_title(&mut self, title: &str) -> MarkdownSection {
-        let section = self
-            .sections
-            .clone()
-            .into_iter()
-            .find(|section| section.header.title == title)
-            .unwrap();
-        section
     }
 
     fn get_headers(&self) -> Vec<SectionHeader> {
@@ -150,6 +168,7 @@ impl MarkdownFile {
 #[derive(Debug, Clone)]
 pub struct MarkdownSection {
     pub header: SectionHeader,
+    pub content: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
 }
@@ -157,11 +176,13 @@ pub struct MarkdownSection {
 impl MarkdownSection {
     pub fn new(
         header: SectionHeader,
+        content: String,
         start_line_index: usize,
         end_line_index: usize,
     ) -> MarkdownSection {
         MarkdownSection {
             header,
+            content,
             start_line_index,
             end_line_index,
         }
@@ -169,28 +190,36 @@ impl MarkdownSection {
 
     pub fn new_from_md_content_and_header(
         header: SectionHeader,
-        md_content: &str,
+        md_file_content: &str,
     ) -> MarkdownSection {
-        let super_section_prefix = header.level.get_supersection_prefix();
-        let prefixes = [&header.prefix, &super_section_prefix];
-        let content_lines = md_content.split("\n");
-        let last_line_index = content_lines.clone().count() - 1;
+        let content_lines = md_file_content.lines();
+        let last_line_index = content_lines.clone().count();
         let start_line_index = content_lines
             .clone()
             .position(|line| line == header.header)
             .unwrap();
-        let end_line_index = content_lines
+        let mut end_line_index = content_lines
             .clone()
             .enumerate()
             .position(|line| {
-                (prefixes
-                    .iter()
-                    .any(|pref| line.1.split(" ").next().unwrap() == pref.to_string())
+                (line.1.trim().split(" ").next().unwrap().contains("#")
                     && line.0 > start_line_index)
-                    || line.0 == last_line_index
+                    // || line.1.clone().chars().count() == 0
+                || line.0 == last_line_index - 1
             })
             .unwrap();
-        MarkdownSection::new(header, start_line_index, end_line_index)
+        if end_line_index == last_line_index - 1 {
+            end_line_index += 1
+        }
+        let section_content = content_lines
+            .clone()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()[start_line_index + 1..end_line_index]
+            .to_vec()
+            .join("\n")
+            .trim_start()
+            .to_string();
+        MarkdownSection::new(header, section_content, start_line_index, end_line_index)
     }
 }
 
@@ -353,7 +382,7 @@ impl TestMarkdownSection {
                 "".to_string(),
                 |total, (section_index, section)| {
                     if section_index == 0 {
-                        format!("{}", section.content)
+                        format!("{}\n", section.content)
                     } else {
                         format!("{}\n{}", total, section.content)
                     }
@@ -374,9 +403,9 @@ impl TestMarkdownSection {
         ordinal
     }
 
-    pub fn to_markdown_section(&self, md_content: &str) -> MarkdownSection {
-        MarkdownSection::new_from_md_content_and_header(self.header.clone(), md_content)
-    }
+    // pub fn to_markdown_section(&self, md_content: &str) -> MarkdownSection {
+    //     MarkdownSection::new_from_md_content_and_header(self.header.clone(), md_content)
+    // }
 }
 
 #[derive(Debug)]
@@ -401,22 +430,12 @@ impl MarkdownTester {
             test_section.generate_subsections(section_index, *section_generator);
             test_sections.push(test_section.clone());
             if section_index == 0 {
-                md_content = test_section.content.clone();
+                md_content = format!("{}\n", test_section.content.clone())
             } else {
                 md_content = format!("{}\n{}", md_content, test_section.content.clone())
             }
         }
-        let mut markdown_sections: Vec<MarkdownSection> = vec![];
-        for test_section in test_sections.clone() {
-            let markdown_section = test_section.to_markdown_section(&md_content);
-            markdown_sections.push(markdown_section);
-        }
-        let sections = markdown_sections;
-        let mut markdown_file = MarkdownFile {
-            path: path.to_string(),
-            content: md_content.clone(),
-            sections,
-        };
+        let mut markdown_file = MarkdownFile::new_from_path_and_content(path, md_content);
         markdown_file.get_sections();
         MarkdownTester {
             markdown_file,
@@ -530,23 +549,27 @@ fn test_sections_len() {
     }
 }
 //
-// #[test]
-// fn test_replace_section_by_path() {
-//     let generator = vec![(2, 3), (1, 2), (1, 1)];
-//     let path = "./test_md.md";
-//     let MarkdownTester {
-//         mut markdown_file,
-//         test_sections,
-//     } = MarkdownTester::new(path, generator);
-//     let MarkdownFile { sections, .. } = markdown_file.clone();
-//     let target_section = sections[0].clone();
-//     // let replace_section =
-//     // assert_eq!(
-//     //     found_section.title, target_section.title,
-//     //     "found_section don't match"
-//     // );
-//     // assert_eq!(
-//     //     found_section.content_path, target_section.content_path,
-//     //     "found_section don't match"
-//     // );
-// }
+#[test]
+fn test_markdown_section_new_from_header_and_content() {
+    let generator = vec![(1, 0)];
+    let markdown_tester = MarkdownTester::new(".", generator.clone());
+    let MarkdownTester {
+        test_sections,
+        markdown_file,
+    } = markdown_tester;
+
+    let section_header_content = "# Test section";
+    let section_hash = get_section_hash();
+    let section_header =
+        SectionHeader::new_from_header_and_hash(section_header_content.to_string(), section_hash);
+
+    // let replace_section =
+    // assert_eq!(
+    //     found_section.title, target_section.title,
+    //     "found_section don't match"
+    // );
+    // assert_eq!(
+    //     found_section.content_path, target_section.content_path,
+    //     "found_section don't match"
+    // );
+}

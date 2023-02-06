@@ -4,6 +4,9 @@ use crate::batbelt;
 use crate::batbelt::path::FolderPathType;
 use colored::Colorize;
 
+use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionLevel};
+use crate::batbelt::sonar::{BatSonar, SonarResultType};
+use inflector::Inflector;
 use std::vec;
 
 use super::MetadataContent;
@@ -20,7 +23,7 @@ pub struct StructMetadata {
 }
 
 impl StructMetadata {
-    fn new(
+    pub fn new(
         path: String,
         name: String,
         struct_type: StructMetadataType,
@@ -35,44 +38,39 @@ impl StructMetadata {
             end_line_index,
         }
     }
+
+    pub fn to_markdown_string(&self) -> String {
+        format!(
+            "{}\n\n- type: {}\n- path:{}\n- start_line_index:{}\n- end_line_index:{}",
+            MarkdownSectionLevel::H2.get_header(&self.name),
+            self.struct_type.to_camel_case(),
+            self.path,
+            self.start_line_index,
+            self.end_line_index
+        )
+    }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display)]
 pub enum StructMetadataType {
     ContextAccounts,
-    Account,
+    SolanaAccount,
     Input,
     Other,
 }
 
 impl StructMetadataType {
-    fn get_struct_metadata_index(&self) -> usize {
-        match self {
-            StructMetadataType::ContextAccounts => 0,
-            StructMetadataType::Account => 1,
-            StructMetadataType::Input => 2,
-            StructMetadataType::Other => 3,
-        }
+    pub fn to_camel_case(&self) -> String {
+        self.to_string().to_camel_case()
     }
 
-    fn to_string(&self) -> &str {
-        let index = self.get_struct_metadata_index();
-        STRUCT_TYPES_STRING[index]
-    }
-
-    fn from_index(index: usize) -> StructMetadataType {
-        match index {
-            0 => StructMetadataType::ContextAccounts,
-            1 => StructMetadataType::Account,
-            2 => StructMetadataType::Input,
-            3 => StructMetadataType::Other,
-            _ => todo!(),
-        }
-    }
-    fn get_struct_types<'a>() -> Vec<&'a str> {
-        let mut result_vec = vec![""; STRUCT_TYPES_STRING.len()];
-        result_vec.copy_from_slice(STRUCT_TYPES_STRING);
-        result_vec
+    pub fn get_structs_type_vec() -> Vec<StructMetadataType> {
+        vec![
+            StructMetadataType::ContextAccounts,
+            StructMetadataType::SolanaAccount,
+            StructMetadataType::Input,
+            StructMetadataType::Other,
+        ]
     }
 }
 
@@ -100,7 +98,7 @@ pub fn get_structs_metadata_from_program() -> Result<
         .collect::<Vec<_>>();
     let mut accounts_metadata_vec = structs_metadata
         .iter()
-        .filter(|metadata| metadata.struct_type == StructMetadataType::Account)
+        .filter(|metadata| metadata.struct_type == StructMetadataType::SolanaAccount)
         .map(|f| f.clone())
         .collect::<Vec<_>>();
     let mut input_metadata_vec = structs_metadata
@@ -136,17 +134,20 @@ pub fn get_struct_metadata_from_file_info(
     );
     let file_info_content = struct_file_info.read_content().unwrap();
     let file_info_content_lines = file_info_content.lines();
-    let struct_types_colored = StructMetadataType::get_struct_types()
+    let struct_types_colored = StructMetadataType::get_structs_type_vec()
         .iter()
+        .map(|struct_type| struct_type.to_camel_case())
         .enumerate()
         .map(|f| match f.0 {
             0 => f.1.red(),
             1 => f.1.yellow(),
             2 => f.1.green(),
             3 => f.1.blue(),
-            _ => todo!(),
+            _ => f.1.magenta(),
         })
         .collect::<Vec<_>>();
+    let bat_sonar = BatSonar::new(&file_info_content, SonarResultType::Struct);
+    println!("{:#?}", bat_sonar);
     for (content_line_index, content_line) in file_info_content_lines.enumerate() {
         if content_line.contains("pub")
             && content_line.contains("struct")
@@ -185,7 +186,7 @@ pub fn get_struct_metadata_from_file_info(
                         struct_types_colored.clone(),
                         None,
                     )?;
-                    let selection_type_enum = StructMetadataType::from_index(selection);
+                    let selection_type_enum = StructMetadataType::get_structs_type_vec()[selection];
                     let struct_first_line = struct_metadata_content.split("\n").next().unwrap();
                     let struct_name = get_struct_name(struct_first_line);
                     let struct_metadata = StructMetadata::new(

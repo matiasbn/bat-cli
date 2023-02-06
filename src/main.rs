@@ -167,15 +167,9 @@ async fn main() {
         Commands::Miro(MiroActions::Screenshot) => {
             commands::miro::deploy_screenshot_to_frame().await.unwrap()
         }
-        Commands::Metadata(MetadataActions::Structs) => {
-            commands::metadata::update_structs().unwrap()
-        }
-        Commands::Metadata(MetadataActions::Miro) => {
-            commands::metadata::update_miro().await.unwrap()
-        }
-        Commands::Metadata(MetadataActions::Functions) => {
-            commands::metadata::update_functions().unwrap()
-        }
+        Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
+        Commands::Metadata(MetadataActions::Miro) => commands::metadata::miro().await.unwrap(),
+        Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions().unwrap(),
         Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
