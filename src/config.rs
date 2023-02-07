@@ -9,7 +9,6 @@ use crate::commands::create::{
 #[derive(Debug, Deserialize, Clone)]
 pub struct BatConfig {
     pub required: RequiredConfig,
-    pub optional: OptionalConfig,
     pub auditor: AuditorConfig,
 }
 
@@ -24,12 +23,6 @@ pub struct RequiredConfig {
     pub auditor_names: Vec<String>,
     pub program_lib_path: String,
     pub project_repository_url: String,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct OptionalConfig {
-    pub program_instructions_path: String,
-    pub program_state_path: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -91,16 +91,16 @@ pub mod code_overhaul_template {
     }
 }
 
-pub mod metadata_template {
-    use super::*;
-
-    #[derive(strum_macros::Display)]
-    pub enum MetadataSection {
-        Structs,
-        Functions,
-        Miro,
-    }
-}
+// pub mod metadata_template {
+//     use super::*;
+//
+//     #[derive(strum_macros::Display)]
+//     pub enum MetadataSection {
+//         Structs,
+//         Functions,
+//         Miro,
+//     }
+// }
 
 #[test]
 fn test_placeholder_to_string() {

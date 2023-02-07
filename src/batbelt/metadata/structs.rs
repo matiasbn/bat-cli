@@ -1,13 +1,15 @@
 use crate::batbelt::structs::FileInfo;
+use std::fmt::{Debug, Display};
 
 use crate::batbelt;
 use crate::batbelt::path::{canonicalize_path, FolderPathType};
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use inflector::Inflector;
 use std::vec;
+use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
@@ -16,6 +18,25 @@ pub struct StructMetadata {
     pub struct_type: StructMetadataType,
     pub start_line_index: usize,
     pub end_line_index: usize,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+enum StructMetadataInfoSection {
+    Path,
+    Name,
+    Type,
+    StartLineIndex,
+    EndLineIndex,
+}
+
+impl StructMetadataInfoSection {
+    pub fn get_prefix(&self) -> String {
+        format!("- {}:", self.to_snake_case())
+    }
+
+    pub fn to_snake_case(&self) -> String {
+        self.to_string().to_snake_case()
+    }
 }
 
 impl StructMetadata {
@@ -59,9 +80,47 @@ impl StructMetadata {
         );
         md_section
     }
+
+    pub fn from_markdown_section(md_section: MarkdownSection) -> Self {
+        let name = md_section.section_header.title;
+        let path =
+            Self::parse_metadata_info_section(&md_section.content, StructMetadataInfoSection::Path);
+        let struct_type_string =
+            Self::parse_metadata_info_section(&md_section.content, StructMetadataInfoSection::Type);
+        let start_line_index = Self::parse_metadata_info_section(
+            &md_section.content,
+            StructMetadataInfoSection::StartLineIndex,
+        );
+        let end_line_index = Self::parse_metadata_info_section(
+            &md_section.content,
+            StructMetadataInfoSection::EndLineIndex,
+        );
+        StructMetadata::new(
+            path,
+            name,
+            StructMetadataType::from_str(&struct_type_string),
+            start_line_index.parse::<usize>().unwrap(),
+            end_line_index.parse::<usize>().unwrap(),
+        )
+    }
+
+    fn parse_metadata_info_section(
+        metadata_info_content: &str,
+        struct_section: StructMetadataInfoSection,
+    ) -> String {
+        let section_prefix = struct_section.get_prefix();
+        let data = metadata_info_content
+            .lines()
+            .find(|line| line.contains(&section_prefix))
+            .unwrap()
+            .replace(&section_prefix, "")
+            .trim()
+            .to_string();
+        data
+    }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display)]
+#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 pub enum StructMetadataType {
     ContextAccounts,
     SolanaAccount,
@@ -80,13 +139,32 @@ impl StructMetadataType {
     }
 
     pub fn get_structs_type_vec() -> Vec<StructMetadataType> {
-        vec![
-            StructMetadataType::ContextAccounts,
-            StructMetadataType::SolanaAccount,
-            StructMetadataType::Event,
-            StructMetadataType::Input,
-            StructMetadataType::Other,
-        ]
+        StructMetadataType::iter().collect::<Vec<_>>()
+    }
+
+    pub fn from_str(type_str: &str) -> StructMetadataType {
+        let structs_type_vec = Self::get_structs_type_vec();
+        let struct_type = structs_type_vec
+            .iter()
+            .find(|struct_type| struct_type.to_snake_case() == type_str.to_snake_case())
+            .unwrap();
+        struct_type.clone()
+    }
+
+    pub fn get_colorized_structs_type_vec() -> Vec<ColoredString> {
+        let struct_type_vec = Self::get_structs_type_vec();
+        let structs_type_colorized = struct_type_vec
+            .iter()
+            .map(|struct_type| match struct_type {
+                StructMetadataType::ContextAccounts => struct_type.to_sentence_case().red(),
+                StructMetadataType::SolanaAccount => struct_type.to_sentence_case().yellow(),
+                StructMetadataType::Event => struct_type.to_sentence_case().green(),
+                StructMetadataType::Input => struct_type.to_sentence_case().blue(),
+                StructMetadataType::Other => struct_type.to_sentence_case().magenta(),
+                _ => unimplemented!("color no implemented for given type"),
+            })
+            .collect::<Vec<_>>();
+        structs_type_colorized
     }
 }
 
@@ -112,26 +190,15 @@ pub fn get_struct_metadata_from_file_info(
         struct_file_info.path.clone().blue()
     );
     let file_info_content = struct_file_info.read_content().unwrap();
-    let struct_types_colored = StructMetadataType::get_structs_type_vec()
-        .iter()
-        .map(|struct_type| struct_type.to_sentence_case())
-        .enumerate()
-        .map(|f| match f.0 {
-            0 => f.1.red(),
-            1 => f.1.yellow(),
-            2 => f.1.green(),
-            3 => f.1.blue(),
-            _ => f.1.magenta(),
-        })
-        .collect::<Vec<_>>();
-    let bat_sonar = BatSonar::new(&file_info_content, SonarResultType::Struct);
+    let struct_types_colored = StructMetadataType::get_colorized_structs_type_vec();
+    let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Struct);
     for result in bat_sonar.results {
         println!(
             "Struct found at {}\n{}",
             format!(
                 "{}:{}",
                 struct_file_info.path.clone(),
-                result.end_line_index + 1,
+                result.start_line_index + 1,
             )
             .magenta(),
             result.content.clone().green()
