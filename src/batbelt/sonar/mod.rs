@@ -14,15 +14,19 @@ pub struct BatSonar {
 }
 
 impl BatSonar {
-    pub fn new(content: &str, result_type: SonarResultType) -> Self {
-        let mut new_sonar = BatSonar {
+    fn new(content: &str, result_type: SonarResultType) -> Self {
+        BatSonar {
             content: content.to_string(),
             results: vec![],
             result_type: result_type.clone(),
             open_filters: SonarFilter::Open(result_type.clone()),
             end_of_open_filters: SonarFilter::EndOfOpen(result_type.clone()),
             closure_filters: SonarFilter::Closure(result_type.clone()),
-        };
+        }
+    }
+
+    pub fn new_scanned(content: &str, result_type: SonarResultType) -> Self {
+        let mut new_sonar = BatSonar::new(&content, result_type.clone());
         new_sonar.scan_content_to_get_results();
         new_sonar
     }
@@ -341,7 +345,7 @@ fn test_get_functions() {
     );
 
     let content = format!("{}\n\n{}", expected_first_function, expected_third_function);
-    let mut bat_sonar = BatSonar::new(&content, SonarResultType::Function);
+    let mut bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Function);
     bat_sonar.scan_content_to_get_results();
     let first_result = bat_sonar.results[0].clone();
     let second_result = bat_sonar.results[1].clone();
@@ -377,7 +381,7 @@ fn test_get_structs() {
     );
 
     let content = format!("{}\n\n{}", expected_first_function, expected_second_struct);
-    let mut bat_sonar = BatSonar::new(&content, SonarResultType::Struct);
+    let mut bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Struct);
     bat_sonar.scan_content_to_get_results();
     let first_result = bat_sonar.results[0].clone();
     let second_result = bat_sonar.results[1].clone();
@@ -409,7 +413,7 @@ fn test_get_modules() {
     );
 
     let content = format!("{}\n\n{}", expected_first_function, expected_second_mod);
-    let bat_sonar = BatSonar::new(&content, SonarResultType::Module);
+    let bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Module);
     let first_result = bat_sonar.results[0].clone();
     let second_result = bat_sonar.results[1].clone();
     assert_eq!(first_result.content, expected_first_mod);

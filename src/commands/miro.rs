@@ -573,6 +573,7 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
             _ => unimplemented!(),
         };
     }
+    batbelt::git::create_git_commit(GitCommit::Figures, None).unwrap();
     Ok(())
 }
 

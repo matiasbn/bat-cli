@@ -622,7 +622,6 @@ pub mod parse {
             Some("#[program"),
             SonarResultType::Function,
         );
-        entrypoints_sonar.scan_content_to_get_results();
         let mut entrypoint = entrypoints_sonar
             .results
             .into_iter()

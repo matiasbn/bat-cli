@@ -191,7 +191,7 @@ pub fn get_struct_metadata_from_file_info(
     );
     let file_info_content = struct_file_info.read_content().unwrap();
     let struct_types_colored = StructMetadataType::get_colorized_structs_type_vec();
-    let bat_sonar = BatSonar::new(&file_info_content, SonarResultType::Struct);
+    let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Struct);
     for result in bat_sonar.results {
         println!(
             "Struct found at {}\n{}",

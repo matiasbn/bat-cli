@@ -56,6 +56,7 @@ pub enum GitCommit {
     AuditResult,
     TMAccounts,
     UpdateMetadata,
+    Figures,
 }
 
 pub fn create_git_commit(
@@ -290,6 +291,12 @@ pub fn create_git_commit(
             let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
             let commit_string = format!("notes: metadata.md updated");
             (commit_string, vec![metadata_path])
+        }
+        GitCommit::Figures => {
+            println!("Creating a commit for auditor figures");
+            let figures_path = batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true);
+            let commit_string = format!("notes: figures updated");
+            (commit_string, vec![figures_path])
         }
     };
 
