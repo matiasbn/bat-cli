@@ -624,7 +624,7 @@ pub mod parse {
         );
         entrypoints_sonar.scan_content_to_get_results();
         let mut entrypoint = entrypoints_sonar
-            .result
+            .results
             .into_iter()
             .find(|function| function.name == co_file_name.replace(".md", ""))
             .unwrap();
