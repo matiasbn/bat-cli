@@ -37,8 +37,7 @@ impl StructMetadata {
 
     pub fn get_markdown_section_content_string(&self) -> String {
         format!(
-            "{}\n\n- type: {}\n- path:{}\n- start_line_index:{}\n- end_line_index:{}",
-            MarkdownSectionLevel::H2.get_header(&self.name),
+            "- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
             self.struct_type.to_snake_case(),
             self.path,
             self.start_line_index,
@@ -46,14 +45,20 @@ impl StructMetadata {
         )
     }
 
-    // pub fn get_markdown_section(&self, section_hash: &str) -> MarkdownSection {
-    //     let section_level_header = MarkdownSectionLevel::H2.get_header(&self.name);
-    //     let section_header = MarkdownSectionHeader::new_from_header_and_hash(
-    //         section_level_header,
-    //         section_hash.to_string(),
-    //     );
-    //     let md_section = MarkdownSection::new(section_header, )
-    // }
+    pub fn get_markdown_section(&self, section_hash: &str) -> MarkdownSection {
+        let section_level_header = MarkdownSectionLevel::H2.get_header(&self.name);
+        let section_header = MarkdownSectionHeader::new_from_header_and_hash(
+            section_level_header,
+            section_hash.to_string(),
+        );
+        let md_section = MarkdownSection::new(
+            section_header,
+            self.get_markdown_section_content_string(),
+            0,
+            0,
+        );
+        md_section
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display)]

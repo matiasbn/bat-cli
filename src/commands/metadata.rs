@@ -307,6 +307,7 @@ pub async fn miro() -> Result<(), String> {
 pub fn structs() -> Result<(), io::Error> {
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
+    println!("md {:#?}", metadata_markdown.sections);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_string())
         .unwrap();
@@ -329,18 +330,19 @@ pub fn structs() -> Result<(), io::Error> {
     let structs_metadata = get_structs_metadata_from_program().unwrap();
     let structs_metadata_sections_vec = structs_metadata
         .iter()
-        .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let struct_metadata_markdown_content = format!(
-        "{}\n\n{}",
-        MetadataSection::Structs.to_string(),
-        structs_metadata_sections_vec
-    );
-
-    let mut new_structs_section =
-        MarkdownFile::new_from_path_and_content(&metadata_path, struct_metadata_markdown_content);
-    new_structs_section.save().unwrap();
-    batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None).unwrap();
+        .map(|struct_metadata| {
+            struct_metadata
+                .get_markdown_section(&structs_section.section_header.section_hash.clone())
+        })
+        .collect::<Vec<_>>();
+    metadata_markdown
+        .replace_section(
+            structs_section.clone(),
+            structs_section.clone(),
+            structs_metadata_sections_vec,
+        )
+        .unwrap();
+    metadata_markdown.save().unwrap();
+    // batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None).unwrap();
     Ok(())
 }
