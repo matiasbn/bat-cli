@@ -39,10 +39,6 @@ pub mod code_overhaul_template {
         FunctionParameters,
         ContextAccounts,
         Validations,
-        AccountsValidations,
-        Prerequisites,
-        MiroBoardFrame,
-        InstructionFilePath,
     }
 
     impl CodeOverhaulSection {
@@ -54,20 +50,16 @@ pub mod code_overhaul_template {
     pub fn get_co_template_content() -> String {
         format!(
             "# {}?:
-            
+
+            -
+             
+            # {}:
+
+            -
+
             # {}:
             
             # {}:
-            
-            # {}:
-            
-            # {}:
-            
-            # {}:
-            
-            ## {}:
-            
-            ## {}:
             
             # {}:
             
@@ -79,10 +71,6 @@ pub mod code_overhaul_template {
             CodeOverhaulSection::FunctionParameters.to_title(),
             CodeOverhaulSection::ContextAccounts.to_title(),
             CodeOverhaulSection::Validations.to_title(),
-            CodeOverhaulSection::AccountsValidations.to_title(),
-            CodeOverhaulSection::Prerequisites.to_title(),
-            CodeOverhaulSection::MiroBoardFrame.to_title(),
-            CodeOverhaulSection::InstructionFilePath.to_title(),
         )
         .lines()
         .map(|line| line.trim().to_string())

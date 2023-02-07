@@ -132,24 +132,20 @@ async fn main() {
         Commands::Create => commands::create::create_project().unwrap(),
         Commands::Init => commands::init::initialize_bat_project().unwrap(),
         Commands::CO(CodeOverhaulActions::Start) => {
-            commands::code_overhaul::start_code_overhaul_file()
-                .await
-                .unwrap()
+            commands::code_overhaul::start::start_co_file().unwrap()
         }
         Commands::CO(CodeOverhaulActions::Finish) => {
-            commands::code_overhaul::finish_code_overhaul_file()
+            commands::code_overhaul::finish::finish_co_file()
                 .await
                 .unwrap()
         }
         Commands::CO(CodeOverhaulActions::Update) => {
-            commands::code_overhaul::update_code_overhaul_file().unwrap()
+            commands::code_overhaul::update::update_co_file().unwrap()
         }
         Commands::CO(CodeOverhaulActions::Count) => {
             commands::code_overhaul::count_co_files().unwrap()
         }
-        Commands::CO(CodeOverhaulActions::Open) => {
-            commands::code_overhaul::open_co().await.unwrap()
-        }
+        Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co().unwrap(),
         Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_miro().await.unwrap(),
         Commands::Miro(MiroActions::Images) => commands::miro::create_co_snapshots().unwrap(),
         Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),

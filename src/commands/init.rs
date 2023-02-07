@@ -9,7 +9,6 @@ use colored::Colorize;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 
-use super::code_overhaul::create_overhaul_file;
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::batbelt;
@@ -282,5 +281,22 @@ fn initialize_code_overhaul_files() -> Result<(), String> {
     for entrypoint_name in entrypoints_names {
         create_overhaul_file(entrypoint_name.clone())?;
     }
+    Ok(())
+}
+
+pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
+    let code_overhaul_auditor_file_path = batbelt::path::get_file_path(
+        FilePathType::CodeOverhaulToReview {
+            file_name: entrypoint_name.clone(),
+        },
+        false,
+    );
+    if Path::new(&code_overhaul_auditor_file_path).is_file() {
+        panic!("code overhaul file already exists for: {entrypoint_name:?}");
+    }
+    let mut co_template = batbelt::templates::markdown::MarkdownTemplate::CodeOverhaul
+        .new(&code_overhaul_auditor_file_path);
+    co_template.save()?;
+    println!("code-overhaul file created: {entrypoint_name}.md");
     Ok(())
 }
