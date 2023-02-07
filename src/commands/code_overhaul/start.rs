@@ -31,6 +31,7 @@ use std::{env, fs};
 
 use crate::batbelt::miro::frame::MiroFrame;
 
+use crate::batbelt::helpers::format::format_to_rust_comment;
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
@@ -106,7 +107,6 @@ pub fn start_co_file() -> Result<(), String> {
         .iter()
         .find(|function| {
             let function_parameters = get_function_parameters(function.content.clone());
-            println!("params {:#?}", function_parameters);
             function_parameters
                 .iter()
                 .any(|parameter| parameter.contains(&context_name))
@@ -156,7 +156,7 @@ pub fn start_co_file() -> Result<(), String> {
 
     let ca_content = context_source_code.get_source_code_content();
     let ca_accounts = BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccounts);
-
+    println!("ca \n{:#?}", ca_accounts.results);
     let started_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulStarted {
             file_name: to_start_file_name.clone(),
@@ -165,8 +165,6 @@ pub fn start_co_file() -> Result<(), String> {
     );
 
     let mut started_markdown_file = MarkdownFile::new(&to_review_file_path);
-
-    println!("md {:#?}", started_markdown_file);
 
     let signers_section = started_markdown_file
         .get_section(&CodeOverhaulSection::Signers.to_title())
@@ -211,9 +209,9 @@ pub fn start_co_file() -> Result<(), String> {
     // open instruction file in VSCode
     vs_code_open_file_in_current_window(&instruction_file_path)?;
 
-    println!("if statement\n{:#?}", handler_if_statements.results);
-    println!("handler valdiations\n{:#?}", handler_validations.results);
-    println!("ca accounts\n{:#?}", ca_accounts.results);
+    // println!("if statement\n{:#?}", handler_if_statements.results);
+    // println!("handler valdiations\n{:#?}", handler_validations.results);
+    // println!("ca accounts\n{:#?}", ca_accounts.results);
 
     Ok(())
 }
@@ -245,7 +243,7 @@ pub fn get_context_account(context_accounts_content: &str) -> String {
         .filter(|line| !line.contains("has_one "))
         .collect();
 
-    let mut formatted_lines: Vec<String> = vec!["- ```rust".to_string()];
+    let mut formatted_lines: Vec<String> = vec![];
     for (idx, line) in filtered_context_account_lines.iter().enumerate() {
         // if the current line opens an account, and next does not closes it
         if line.replace(' ', "") == "#[account("
@@ -290,8 +288,13 @@ pub fn get_context_account(context_accounts_content: &str) -> String {
             formatted_lines.push(line.to_string())
         }
     }
-    formatted_lines.push("```".to_string());
-    formatted_lines.join("\n")
+
+    let ca_content = formatted_lines
+        .iter()
+        .map(|line| format!("  {}", line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{}\n{}\n{}", "- ```rust", ca_content, "  ```")
 }
 
 pub fn parse_validations_into_co(co_file_path: String, instruction_file_path: String) {
@@ -919,4 +922,96 @@ pub fn parse_function_parameters_into_co(
 //
 //     // open co file in VSCode
 //     vs_code_open_file_in_current_window(started_path.as_str())?;
+// }
+
+// #[test]
+// fn test_get_ca_accounts() {
+//     // let ca_accounts = vec![
+//     //     SonarResult {
+//     //         name: "NO_NAME".to_string(),
+//     //         content: "    #[account(\n        mut,\n        seeds = [\n            CRAFTING_PROCESS.as_bytes(),\n            crafting_process.load()?.crafting_facility.as_ref(),\n            crafting_process.load()?.recipe.as_ref(),\n            &crafting_process.load()?.crafting_id.to_le_bytes(),\n        ],\n        bump = crafting_process.load()?.bump,\n        has_one = recipe @Errors::IncorrectRecipe,\n        has_one = authority @Errors::IncorrectAuthority,\n    )]\n    pub crafting_process: AccountLoader<'info, CraftingProcess>,".to_string(),
+//     //         trailing_whitespaces: 4,
+//     //         result_type: SonarResultType::ContextAccounts,
+//     //         start_line_index: 6,
+//     //         end_line_index: 18,
+//     //         is_public: true,
+//     //     },
+//     //     SonarResult {
+//     //         name: "NO_NAME".to_string(),
+//     //         content: "    #[account(\n        mut,\n        constraint = token_from.mint == mint.key() @Errors::IncorrectMintAddress,\n        constraint = token_from.owner == crafting_process.key() @Errors::IncorrectAuthority,\n        constraint = token_from.delegated_amount > 0 @Errors::InsufficientAmount,\n    )]\n    pub token_from: Account<'info, TokenAccount>,".to_string(),
+//     //         trailing_whitespaces: 4,
+//     //         result_type: SonarResultType::ContextAccounts,
+//     //         start_line_index: 24,
+//     //         end_line_index: 30,
+//     //         is_public: true,
+//     //     },
+//     //     SonarResult {
+//     //         name: "NO_NAME".to_string(),
+//     //         content: "    #[account(\n        mut,\n        constraint = token_to.mint == mint.key() @Errors::IncorrectMintAddress,\n    )]\n    pub token_to: Account<'info, TokenAccount>,".to_string(),
+//     //         trailing_whitespaces: 4,
+//     //         result_type: SonarResultType::ContextAccounts,
+//     //         start_line_index: 33,
+//     //         end_line_index: 37,
+//     //         is_public: true,
+//     //     },
+//     //     SonarResult {
+//     //         name: "NO_NAME".to_string(),
+//     //         content: "    #[account(\n        mut,\n        constraint = token_from.mint == *mint.key @Errors::IncorrectMintAddress,\n    )]\n    pub mint: UncheckedAccount<'info>,".to_string(),
+//     //         trailing_whitespaces: 4,
+//     //         result_type: SonarResultType::ContextAccounts,
+//     //         start_line_index: 41,
+//     //         end_line_index: 45,
+//     //         is_public: true,
+//     //     },
+//     // ];
+//
+//     let ca_content = "pub struct ClaimNonConsumableIngredient<'info> {
+//     /// The owner/authority of crafting_process account
+//     /// CHECK: Checked in constraints.
+//     pub authority: UncheckedAccount<'info>,
+//
+//     /// The [`CraftingProcess`] account
+//     #[account(
+//         mut,
+//         seeds = [
+//             CRAFTING_PROCESS.as_bytes(),
+//             crafting_process.load()?.crafting_facility.as_ref(),
+//             crafting_process.load()?.recipe.as_ref(),
+//             &crafting_process.load()?.crafting_id.to_le_bytes(),
+//         ],
+//         bump = crafting_process.load()?.bump,
+//         has_one = recipe @Errors::IncorrectRecipe,
+//         has_one = authority @Errors::IncorrectAuthority,
+//     )]
+//     pub crafting_process: AccountLoader<'info, CraftingProcess>,
+//
+//     /// The [`Recipe`] account
+//     pub recipe: AccountLoader<'info, Recipe>,
+//
+//     /// The token account owned by the `crafting_process` which holds the ingredient in escrow
+//     #[account(
+//         mut,
+//         constraint = token_from.mint == mint.key() @Errors::IncorrectMintAddress,
+//         constraint = token_from.owner == crafting_process.key() @Errors::IncorrectAuthority,
+//         constraint = token_from.delegated_amount > 0 @Errors::InsufficientAmount,
+//     )]
+//     pub token_from: Account<'info, TokenAccount>,
+//
+//     /// The token account to receive the non-consumable ingredient.
+//     #[account(mut,constraint = token_to.mint == mint.key() @Errors::IncorrectMintAddress,)]
+//     pub token_to: Account<'info, TokenAccount>,
+//
+//     /// The mint of the recipe ingredient
+//     /// CHECK: checked in cargo program and constraints
+//     #[account(
+//         mut,
+//         constraint = token_from.mint == *mint.key @Errors::IncorrectMintAddress,
+//     )]
+//     pub mint: UncheckedAccount<'info>,
+//
+//     /// The [Token] program
+//     pub token_program: Program<'info, Token>,
+// }";
+//
+//     let result = format_ca_accounts(ca_content);
 // }

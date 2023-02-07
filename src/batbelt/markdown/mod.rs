@@ -69,11 +69,9 @@ impl MarkdownSectionHeader {
     }
 
     pub fn new_from_header_and_hash(header: String, section_hash: String) -> Self {
-        println!("hedaer {}", header);
         let mut header_split = header.trim().split(" ");
         let prefix = header_split.next().unwrap().to_string();
         let title = header_split.collect::<Vec<&str>>().join(" ");
-        println!("prer {}", prefix);
         let level = MarkdownSectionLevel::from_prefix(&prefix);
         MarkdownSectionHeader::new(header, title, prefix, level, section_hash)
     }
@@ -210,7 +208,6 @@ impl MarkdownFile {
         let mut new_sections = new_sections.clone();
         let mut new_sections_vec = vec![new_parent_section];
         new_sections_vec.append(&mut new_sections);
-        println!("new sections vec\n{:#?}", new_sections_vec);
         if !md_old_subsections.is_empty() {
             let last_subsection = md_old_subsections.last().unwrap();
             let last_subsection_index = self
