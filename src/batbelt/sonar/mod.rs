@@ -187,21 +187,33 @@ impl SonarResult {
     }
 
     pub fn get_name_and_is_public(&mut self, first_line: &str) {
-        let mut first_line_tokenized = first_line.trim().split(" ");
-        let is_public = first_line_tokenized.next().unwrap() == "pub";
-        if is_public {
-            first_line_tokenized.next().unwrap();
+        let parsed_types = vec![
+            SonarResultType::Function,
+            SonarResultType::Struct,
+            SonarResultType::Module,
+        ];
+        if parsed_types
+            .iter()
+            .any(|parsed| parsed.clone() == self.result_type)
+        {
+            let mut first_line_tokenized = first_line.trim().split(" ");
+            let is_public = first_line_tokenized.next().unwrap() == "pub";
+            if is_public {
+                first_line_tokenized.next().unwrap();
+            }
+            let name_candidate = first_line_tokenized.next().unwrap();
+            let name = name_candidate
+                .split("<")
+                .next()
+                .unwrap()
+                .split("(")
+                .next()
+                .unwrap();
+            self.name = name.to_string();
+            self.is_public = is_public;
+        } else {
+            self.name = "NO_NAME".to_string();
         }
-        let name_candidate = first_line_tokenized.next().unwrap();
-        let name = name_candidate
-            .split("<")
-            .next()
-            .unwrap()
-            .split("(")
-            .next()
-            .unwrap();
-        self.name = name.to_string();
-        self.is_public = is_public;
     }
 
     pub fn parse_sub_content(&mut self) -> SonarResultSubContent {
@@ -292,11 +304,12 @@ impl SonarResultSubContent {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SonarResultType {
     Function,
     Struct,
     Module,
+    If,
 }
 
 #[derive(Clone, Debug)]
@@ -318,6 +331,9 @@ impl SonarFilter {
             SonarFilter::Open(SonarResultType::Module) => vec!["mod", "pub mod"],
             SonarFilter::EndOfOpen(SonarResultType::Module) => vec!["{"],
             SonarFilter::Closure(SonarResultType::Module) => vec!["}"],
+            SonarFilter::Open(SonarResultType::If) => vec!["if"],
+            SonarFilter::EndOfOpen(SonarResultType::If) => vec!["{"],
+            SonarFilter::Closure(SonarResultType::If) => vec!["}"],
         }
     }
 }
@@ -465,4 +481,26 @@ fn test_get_function_body() {
         .next()
         .unwrap();
     println!("body {:#?}", body)
+}
+#[test]
+fn test_get_if() {
+    let test_text = "
+    if thing > 1 {
+        thing is correct
+    } else if {
+        thing might not be correct
+    } else {
+        thing is cool
+    }
+
+    this is not an if, even knowing i'm writing if {
+        and it looks like an if
+    }
+
+    if the_if_dont_get_else {
+        and is detected
+    }
+    ";
+    let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::If);
+    println!("sonar \n{:#?}", bat_sonar);
 }
