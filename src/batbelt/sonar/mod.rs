@@ -7,7 +7,7 @@ pub mod structs;
 pub struct BatSonar {
     pub content: String,
     pub result_type: SonarResultType,
-    pub result: Vec<SonarResult>,
+    pub results: Vec<SonarResult>,
     pub open_filters: SonarFilter,
     pub end_of_open_filters: SonarFilter,
     pub closure_filters: SonarFilter,
@@ -15,14 +15,16 @@ pub struct BatSonar {
 
 impl BatSonar {
     pub fn new(content: &str, result_type: SonarResultType) -> Self {
-        BatSonar {
+        let mut new_sonar = BatSonar {
             content: content.to_string(),
-            result: vec![],
+            results: vec![],
             result_type: result_type.clone(),
             open_filters: SonarFilter::Open(result_type.clone()),
             end_of_open_filters: SonarFilter::EndOfOpen(result_type.clone()),
             closure_filters: SonarFilter::Closure(result_type.clone()),
-        }
+        };
+        new_sonar.scan_content_to_get_results();
+        new_sonar
     }
 
     pub fn new_from_path(
@@ -50,7 +52,7 @@ impl BatSonar {
             let new_content = new_sonar.get_result_content(start_line_index, end_line_index);
             new_sonar.content = new_content;
         }
-
+        new_sonar.scan_content_to_get_results();
         new_sonar
     }
 
@@ -73,9 +75,11 @@ impl BatSonar {
                     true,
                 );
                 sonar_result.get_name_and_is_public(line);
-                self.result.push(sonar_result);
+                self.results.push(sonar_result);
             }
         }
+        self.results
+            .sort_by(|result_a, result_b| result_a.name.cmp(&result_b.name));
     }
 
     fn get_result_content(&self, start_line_index: usize, end_line_index: usize) -> String {
@@ -149,8 +153,8 @@ pub struct SonarResult {
     pub content: String,
     pub trailing_whitespaces: usize,
     pub result_type: SonarResultType,
-    pub start_line: usize,
-    pub end_line: usize,
+    pub start_line_index: usize,
+    pub end_line_index: usize,
     pub is_public: bool,
     pub sub_content: SonarResultSubContent,
 }
@@ -161,8 +165,8 @@ impl SonarResult {
         content: &str,
         trailing_whitespaces: usize,
         result_type: SonarResultType,
-        start_line: usize,
-        end_line: usize,
+        start_line_index: usize,
+        end_line_index: usize,
         is_public: bool,
     ) -> Self {
         SonarResult {
@@ -170,8 +174,8 @@ impl SonarResult {
             content: content.to_string(),
             trailing_whitespaces,
             result_type,
-            start_line,
-            end_line,
+            start_line_index,
+            end_line_index,
             is_public,
             sub_content: SonarResultSubContent::Empty,
         }
@@ -339,9 +343,9 @@ fn test_get_functions() {
     let content = format!("{}\n\n{}", expected_first_function, expected_third_function);
     let mut bat_sonar = BatSonar::new(&content, SonarResultType::Function);
     bat_sonar.scan_content_to_get_results();
-    let first_result = bat_sonar.result[0].clone();
-    let second_result = bat_sonar.result[1].clone();
-    let third_result = bat_sonar.result[2].clone();
+    let first_result = bat_sonar.results[0].clone();
+    let second_result = bat_sonar.results[1].clone();
+    let third_result = bat_sonar.results[2].clone();
     assert_eq!(first_result.content, expected_first_function);
     assert_eq!(first_result.name, "create_game_1");
     assert_eq!(second_result.content, expected_second_function);
@@ -375,8 +379,8 @@ fn test_get_structs() {
     let content = format!("{}\n\n{}", expected_first_function, expected_second_struct);
     let mut bat_sonar = BatSonar::new(&content, SonarResultType::Struct);
     bat_sonar.scan_content_to_get_results();
-    let first_result = bat_sonar.result[0].clone();
-    let second_result = bat_sonar.result[1].clone();
+    let first_result = bat_sonar.results[0].clone();
+    let second_result = bat_sonar.results[1].clone();
     assert_eq!(first_result.content, expected_first_struct);
     assert_eq!(first_result.name, "StructName");
     assert_eq!(second_result.content, expected_second_struct);
@@ -405,10 +409,9 @@ fn test_get_modules() {
     );
 
     let content = format!("{}\n\n{}", expected_first_function, expected_second_mod);
-    let mut bat_sonar = BatSonar::new(&content, SonarResultType::Module);
-    bat_sonar.scan_content_to_get_results();
-    let first_result = bat_sonar.result[0].clone();
-    let second_result = bat_sonar.result[1].clone();
+    let bat_sonar = BatSonar::new(&content, SonarResultType::Module);
+    let first_result = bat_sonar.results[0].clone();
+    let second_result = bat_sonar.results[1].clone();
     assert_eq!(first_result.content, expected_first_mod);
     assert_eq!(first_result.name, "modName");
     assert_eq!(second_result.content, expected_second_mod);
