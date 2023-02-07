@@ -119,8 +119,8 @@ impl MarkdownFile {
             .sections
             .clone()
             .into_iter()
-            .filter(|section| section.header.level == MarkdownSectionLevel::H1)
-            .filter(|section| section.header.title == title);
+            .filter(|section| section.section_header.level == MarkdownSectionLevel::H1)
+            .filter(|section| section.section_header.title == title);
         let section_count = section.clone().count();
         if section_count > 1 {
             return Err(MarkdownError::DuplicatedH1Sections {
@@ -146,8 +146,8 @@ impl MarkdownFile {
             .clone()
             .into_iter()
             .find(|section| {
-                section.header.title == title
-                    && section.header.section_hash == parent_header.section_hash
+                section.section_header.title == title
+                    && section.section_header.section_hash == parent_header.section_hash
             })
             .unwrap();
         section
@@ -159,8 +159,8 @@ impl MarkdownFile {
             .clone()
             .into_iter()
             .filter(|document_section| {
-                document_section.header.section_hash == section.header.section_hash
-                    && document_section.header.level > section.header.level
+                document_section.section_header.section_hash == section.section_header.section_hash
+                    && document_section.section_header.level > section.section_header.level
             })
             .collect::<Vec<_>>();
         section
@@ -172,24 +172,26 @@ impl MarkdownFile {
         old_parent_section: MarkdownSection,
         new_sections: Vec<MarkdownSection>,
     ) -> Result<(), MarkdownError> {
-        if new_parent_section.header.section_hash != old_parent_section.header.section_hash {
+        if new_parent_section.section_header.section_hash
+            != old_parent_section.section_header.section_hash
+        {
             return Err(MarkdownError::ReplaceSectionHashMismatch {
-                section_header_new: new_parent_section.header,
-                section_header_old: old_parent_section.header,
+                section_header_new: new_parent_section.section_header,
+                section_header_old: old_parent_section.section_header,
             });
         }
 
-        if new_parent_section.header.level != MarkdownSectionLevel::H1 {
+        if new_parent_section.section_header.level != MarkdownSectionLevel::H1 {
             return Err(MarkdownError::OnlyH1CanBeReplaced {
-                section_header: new_parent_section.header,
+                section_header: new_parent_section.section_header,
             });
         }
 
         for new_section in new_sections.clone() {
-            if new_section.header.level <= new_parent_section.header.level {
+            if new_section.section_header.level <= new_parent_section.section_header.level {
                 return Err(MarkdownError::ReplaceSectionSubsectionsLevel {
-                    parent_section_header: new_parent_section.header,
-                    target_section_header: new_section.header,
+                    parent_section_header: new_parent_section.section_header,
+                    target_section_header: new_section.section_header,
                 });
             }
         }
@@ -199,7 +201,7 @@ impl MarkdownFile {
             .sections
             .clone()
             .iter()
-            .position(|section| section.header == old_parent_section.header)
+            .position(|section| section.section_header == old_parent_section.section_header)
             .unwrap();
         let mut new_sections = new_sections.clone();
         let mut new_sections_vec = vec![new_parent_section];
@@ -209,7 +211,7 @@ impl MarkdownFile {
             let last_subsection_index = self
                 .sections
                 .iter()
-                .position(|section| section.header == last_subsection.header)
+                .position(|section| section.section_header == last_subsection.section_header)
                 .unwrap();
             self.sections.splice(
                 old_parent_section_index..=last_subsection_index,
@@ -241,6 +243,7 @@ impl MarkdownFile {
                 }
             });
         self.content = new_content;
+        self.get_sections()
     }
 
     fn get_sections(&mut self) {
@@ -286,7 +289,7 @@ impl MarkdownFile {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MarkdownSection {
-    pub header: MarkdownSectionHeader,
+    pub section_header: MarkdownSectionHeader,
     pub content: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
@@ -294,13 +297,13 @@ pub struct MarkdownSection {
 
 impl MarkdownSection {
     pub fn new(
-        header: MarkdownSectionHeader,
+        section_header: MarkdownSectionHeader,
         content: String,
         start_line_index: usize,
         end_line_index: usize,
     ) -> MarkdownSection {
         MarkdownSection {
-            header,
+            section_header,
             content,
             start_line_index,
             end_line_index,
@@ -344,7 +347,7 @@ impl MarkdownSection {
     pub fn get_md_section_content(&self) -> String {
         format!(
             "{}\n\n{}",
-            self.header.header,
+            self.section_header.header,
             self.content.clone().trim_start()
         )
     }
@@ -702,14 +705,14 @@ fn test_replace_section() {
         mut markdown_file,
         test_sections,
     } = markdown_tester;
-    let mut first_section = markdown_file.get_section("First section").unwrap().clone();
+    let first_section = markdown_file.get_section("First section").unwrap().clone();
     let mut first_section_subsections =
         markdown_file.get_section_subsections(first_section.clone());
 
     let mut replace_subsection = first_section_subsections[0].clone();
-    replace_subsection.header = MarkdownSectionHeader::new_from_header_and_hash(
+    replace_subsection.section_header = MarkdownSectionHeader::new_from_header_and_hash(
         "## First new subsection_parent_0".to_string(),
-        replace_subsection.header.section_hash,
+        replace_subsection.section_header.section_hash,
     );
     first_section_subsections[0] = replace_subsection.clone();
     markdown_file
@@ -719,16 +722,34 @@ fn test_replace_section() {
             first_section_subsections,
         )
         .unwrap();
-    let new_first_section_subsections =
-        markdown_file.get_section_subsections(first_section).clone();
+    let new_first_section = markdown_file.get_section("First section").unwrap().clone();
+    let new_first_section_subsections = markdown_file
+        .get_section_subsections(new_first_section)
+        .clone();
     assert_eq!(
-        replace_subsection, new_first_section_subsections[0],
+        replace_subsection.section_header.title,
+        new_first_section_subsections[0].section_header.title,
+        "error replacing"
+    );
+    assert_eq!(
+        replace_subsection.section_header.level,
+        new_first_section_subsections[0].section_header.level,
+        "error replacing"
+    );
+    assert_eq!(
+        replace_subsection.section_header.prefix,
+        new_first_section_subsections[0].section_header.prefix,
+        "error replacing"
+    );
+    assert_eq!(
+        replace_subsection.section_header.header,
+        new_first_section_subsections[0].section_header.header,
         "error replacing"
     );
     assert!(
         markdown_file
             .content
-            .contains(&replace_subsection.header.header),
+            .contains(&replace_subsection.section_header.header),
         "new header not found"
     );
 }

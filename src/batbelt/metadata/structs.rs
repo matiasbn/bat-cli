@@ -4,7 +4,7 @@ use crate::batbelt;
 use crate::batbelt::path::FolderPathType;
 use colored::Colorize;
 
-use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionLevel};
+use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use inflector::Inflector;
 use std::vec;
@@ -35,7 +35,7 @@ impl StructMetadata {
         }
     }
 
-    pub fn get_markdown_section_string(&self) -> String {
+    pub fn get_markdown_section_content_string(&self) -> String {
         format!(
             "{}\n\n- type: {}\n- path:{}\n- start_line_index:{}\n- end_line_index:{}",
             MarkdownSectionLevel::H2.get_header(&self.name),
@@ -45,6 +45,15 @@ impl StructMetadata {
             self.end_line_index
         )
     }
+
+    // pub fn get_markdown_section(&self, section_hash: &str) -> MarkdownSection {
+    //     let section_level_header = MarkdownSectionLevel::H2.get_header(&self.name);
+    //     let section_header = MarkdownSectionHeader::new_from_header_and_hash(
+    //         section_level_header,
+    //         section_hash.to_string(),
+    //     );
+    //     let md_section = MarkdownSection::new(section_header, )
+    // }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display)]

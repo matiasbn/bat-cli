@@ -327,15 +327,15 @@ pub fn structs() -> Result<(), io::Error> {
         }
     }
     let structs_metadata = get_structs_metadata_from_program().unwrap();
-    let structs_metadata_subsections_content = structs_metadata
+    let structs_metadata_sections_vec = structs_metadata
         .iter()
-        .map(|struct_metadata| struct_metadata.get_markdown_section_string())
+        .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
         .collect::<Vec<_>>()
         .join("\n");
     let struct_metadata_markdown_content = format!(
         "{}\n\n{}",
         MetadataSection::Structs.to_string(),
-        structs_metadata_subsections_content
+        structs_metadata_sections_vec
     );
 
     let mut new_structs_section =
