@@ -65,6 +65,7 @@ impl StructMetadata {
 pub enum StructMetadataType {
     ContextAccounts,
     SolanaAccount,
+    Event,
     Input,
     Other,
 }
@@ -82,6 +83,7 @@ impl StructMetadataType {
         vec![
             StructMetadataType::ContextAccounts,
             StructMetadataType::SolanaAccount,
+            StructMetadataType::Event,
             StructMetadataType::Input,
             StructMetadataType::Other,
         ]
