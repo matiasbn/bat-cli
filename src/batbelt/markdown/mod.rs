@@ -250,7 +250,6 @@ impl MarkdownFile {
 
     fn get_sections(&mut self) {
         let section_headers: Vec<MarkdownSectionHeader> = self.get_headers();
-        println!("content {}", self.content.clone());
         let sections: Vec<MarkdownSection> = section_headers
             .iter()
             .map(|section_header| {

@@ -307,7 +307,6 @@ pub async fn miro() -> Result<(), String> {
 pub fn structs() -> Result<(), io::Error> {
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
-    println!("md {:#?}", metadata_markdown.sections);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_string())
         .unwrap();
@@ -318,7 +317,7 @@ pub fn structs() -> Result<(), io::Error> {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
             format!(
                 "{}, are you sure you want to continue?",
-                format!("Structs in metadata.md are already initialized").bright_red()
+                format!("Structs section in metadata.md is already initialized").bright_red()
             )
             .as_str(),
         )

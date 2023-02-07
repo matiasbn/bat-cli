@@ -124,15 +124,15 @@ pub fn get_struct_metadata_from_file_info(
     let bat_sonar = BatSonar::new(&file_info_content, SonarResultType::Struct);
     for result in bat_sonar.results {
         println!(
-            "Struct found at {}",
+            "Struct found at {}\n{}",
             format!(
                 "{}:{}",
                 struct_file_info.path.clone(),
-                result.end_line_index + 1
+                result.end_line_index + 1,
             )
-            .magenta()
+            .magenta(),
+            result.content.clone().green()
         );
-        println!("{}", result.content.clone().green());
         let prompt_text = "Select the type of struct:";
         let selection =
             batbelt::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
