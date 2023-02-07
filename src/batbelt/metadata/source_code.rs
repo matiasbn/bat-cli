@@ -1,5 +1,6 @@
 use std::fs;
 
+use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::silicon;
 use crate::batbelt::{
     self,
@@ -36,7 +37,7 @@ impl SourceCodeMetadata {
     // pub fn new_from_metadata_data(name: &str, section: &str, subsection: &str) -> Self {
     //     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
     //     let metadata_markdown = MarkdownFile::new(&metadata_path);
-    //     let section = metadata_markdown.get_section_by_title(section);
+    //     let section = metadata_markdown.get_section(section).unwrap();
     //     let subsection = section.borrow().get_subsection_by_title(subsection);
     //     let source_code_metadata = subsection.borrow().get_subsection_by_title(name);
     //     let path = Self::parse_metadata_info_section(
@@ -99,7 +100,7 @@ impl SourceCodeMetadata {
             };
             content = format!("// {}\n\n{}", path_to_include, content);
             offset = if options.offset_to_start_line {
-                offset + 2
+                offset - 2
             } else {
                 0
             };
