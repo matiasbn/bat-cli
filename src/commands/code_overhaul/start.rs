@@ -164,7 +164,9 @@ pub fn start_co_file() -> Result<(), String> {
         false,
     );
 
-    let started_markdown_file = MarkdownFile::new(&started_path);
+    let mut started_markdown_file = MarkdownFile::new(&to_review_file_path);
+
+    println!("md {:#?}", started_markdown_file);
 
     let signers_section = started_markdown_file
         .get_section(&CodeOverhaulSection::Signers.to_title())
@@ -174,14 +176,24 @@ pub fn start_co_file() -> Result<(), String> {
         .get_section(&CodeOverhaulSection::FunctionParameters.to_title())
         .unwrap();
 
+    // Context accounts section
     let context_accounts_section = started_markdown_file
         .get_section(&CodeOverhaulSection::ContextAccounts.to_title())
+        .unwrap();
+
+    let context_accounts_content =
+        get_context_account(&context_source_code.get_source_code_content());
+    let mut new_accounts_section = context_accounts_section.clone();
+    new_accounts_section.content = context_accounts_content;
+    started_markdown_file
+        .replace_section(new_accounts_section, context_accounts_section, vec![])
         .unwrap();
 
     let validations_section = started_markdown_file
         .get_section(&CodeOverhaulSection::Validations.to_title())
         .unwrap();
 
+    started_markdown_file.save().unwrap();
     Command::new("mv")
         .args([to_review_file_path, started_path.clone()])
         .output()
@@ -206,7 +218,8 @@ pub fn start_co_file() -> Result<(), String> {
     Ok(())
 }
 
-pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<String>) {
+pub fn get_context_account(context_accounts_content: &str) -> String {
+    let context_lines = context_accounts_content.lines().collect::<Vec<_>>();
     let filtered_context_account_lines: Vec<_> = context_lines
         .iter()
         .map(|line| {
@@ -278,13 +291,7 @@ pub fn parse_context_accounts_into_co(co_file_path: PathBuf, context_lines: Vec<
         }
     }
     formatted_lines.push("```".to_string());
-
-    // replace formatted lines in co file
-    let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
-        CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
-        formatted_lines.join("\n  ").as_str(),
-    );
-    fs::write(co_file_path, data).unwrap();
+    formatted_lines.join("\n")
 }
 
 pub fn parse_validations_into_co(co_file_path: String, instruction_file_path: String) {
