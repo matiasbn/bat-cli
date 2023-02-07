@@ -336,6 +336,7 @@ impl MarkdownSection {
                 .to_string();
             MarkdownSection::new(header, section_content, start_line_index, end_line_index)
         } else {
+            // no end line means that the file ends with a section header
             MarkdownSection::new(header, "".to_string(), start_line_index, start_line_index)
         };
         md_section

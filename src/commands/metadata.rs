@@ -343,6 +343,6 @@ pub fn structs() -> Result<(), io::Error> {
         )
         .unwrap();
     metadata_markdown.save().unwrap();
-    // batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None).unwrap();
+    batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None).unwrap();
     Ok(())
 }
