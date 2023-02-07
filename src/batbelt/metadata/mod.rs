@@ -1,3 +1,4 @@
+pub mod code_overhaul;
 pub mod functions;
 pub mod miro;
 pub mod source_code;
@@ -9,26 +10,10 @@ use colored::Colorize;
 use inflector::Inflector;
 
 #[derive(strum_macros::Display)]
-pub enum MetadataContent {
-    Path,
-    #[strum(serialize = "start_line_index")]
-    StartLineIndex,
-    #[strum(serialize = "end_line_index")]
-    EndLineIndex,
-}
-
-impl MetadataContent {
-    pub fn get_prefix(&self) -> &'static str {
-        let content_str: String = self.to_string();
-        let prefix = format!("- {}:", content_str.to_lowercase()).into_boxed_str();
-        Box::leak(prefix)
-    }
-}
-
-#[derive(strum_macros::Display)]
 pub enum MetadataSection {
     Structs,
     Functions,
+    CodeOverhaul,
     Miro,
 }
 
@@ -40,15 +25,6 @@ impl MetadataSection {
     pub fn to_sentence_case(&self) -> String {
         self.to_string().to_sentence_case()
     }
-}
-
-#[derive(strum_macros::Display)]
-pub enum FunctionsSubSection {
-    Handler,
-    EntryPoint,
-    Helper,
-    Validator,
-    Other,
 }
 
 pub mod metadata_helpers {
@@ -71,26 +47,4 @@ pub mod metadata_helpers {
         }
         Ok(())
     }
-}
-
-#[test]
-fn test_get_metadata_prefix() {
-    let expected_path = "- path:";
-    let expected_start_line_index = "- start_line_index:";
-    let expected_end_line_index = "- end_line_index:";
-    assert_eq!(MetadataContent::Path.get_prefix(), expected_path);
-    assert_eq!(
-        MetadataContent::StartLineIndex.get_prefix(),
-        expected_start_line_index
-    );
-    assert_eq!(
-        MetadataContent::EndLineIndex.get_prefix(),
-        expected_end_line_index
-    );
-}
-
-#[test]
-fn test_get_struct_title() {
-    let expected_prefix = "Structs";
-    assert_eq!(MetadataSection::Structs.to_string(), expected_prefix)
 }

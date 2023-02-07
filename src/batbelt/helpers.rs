@@ -930,10 +930,12 @@ pub mod get {
     }
 
     pub fn get_instruction_files() -> Result<Vec<FileInfo>, String> {
-        let instructions_path = BatConfig::get_validated_config()?
-            .optional
-            .program_instructions_path;
+        // let instructions_path = BatConfig::get_validated_config()?
+        //     .optional
+        //     .program_instructions_path;
 
+        let instructions_path = ".";
+        unimplemented!();
         let mut instruction_files_info = WalkDir::new(instructions_path)
             .into_iter()
             .map(|entry| {
