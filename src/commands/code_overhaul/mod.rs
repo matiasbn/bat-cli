@@ -16,18 +16,19 @@ use crate::batbelt::constants::{
 use crate::batbelt::miro::MiroConfig;
 use crate::config::BatConfig;
 
-use crate::batbelt;
 use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::batbelt::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
     get_table_of_contents_for_results,
 };
 use crate::batbelt::path::{FilePathType, FolderPathType};
+use crate::{batbelt, commands};
 
 use std::{env, fs};
 
 use crate::batbelt::miro::frame::MiroFrame;
 
+use crate::batbelt::bash::execute_command;
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
@@ -104,6 +105,15 @@ pub fn open_co() -> Result<(), String> {
     } else {
         print!("VSCode integration not enabled");
     }
+    Ok(())
+}
+
+pub fn update_co_templates() -> Result<(), String> {
+    let co_to_review_path =
+        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true);
+    execute_command("rm", &["-rf", &co_to_review_path]).unwrap();
+    execute_command("mkdir", &[&co_to_review_path]).unwrap();
+    commands::init::initialize_code_overhaul_files().unwrap();
     Ok(())
 }
 

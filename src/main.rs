@@ -116,6 +116,8 @@ enum CodeOverhaulActions {
     Count,
     /// Opens the co file and the instruction of a started entrypoint
     Open,
+    /// Updates the templates in to-review folder
+    Templates,
 }
 
 #[derive(Subcommand, Debug)]
@@ -146,6 +148,9 @@ async fn main() {
             commands::code_overhaul::count_co_files().unwrap()
         }
         Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co().unwrap(),
+        Commands::CO(CodeOverhaulActions::Templates) => {
+            commands::code_overhaul::update_co_templates().unwrap()
+        }
         Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_miro().await.unwrap(),
         Commands::Miro(MiroActions::Images) => commands::miro::create_co_snapshots().unwrap(),
         Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),

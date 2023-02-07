@@ -57,6 +57,7 @@ pub enum GitCommit {
     TMAccounts,
     UpdateMetadata,
     Figures,
+    UpdateCOTemplates,
 }
 
 pub fn create_git_commit(
@@ -297,6 +298,13 @@ pub fn create_git_commit(
             let figures_path = batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true);
             let commit_string = format!("notes: figures updated");
             (commit_string, vec![figures_path])
+        }
+        GitCommit::UpdateCOTemplates => {
+            println!("Creating a commit for updated CO templates");
+            let to_review_co_path =
+                batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true);
+            let commit_string = format!("templates: co files updated");
+            (commit_string, vec![to_review_co_path])
         }
     };
 

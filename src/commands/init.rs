@@ -275,7 +275,7 @@ fn create_auditor_notes_folder() -> Result<(), String> {
     Ok(())
 }
 
-fn initialize_code_overhaul_files() -> Result<(), String> {
+pub fn initialize_code_overhaul_files() -> Result<(), String> {
     let entrypoints_names = get_entrypoints_names()?;
 
     for entrypoint_name in entrypoints_names {

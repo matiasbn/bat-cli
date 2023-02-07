@@ -1,9 +1,5 @@
-use std::fmt::Display;
-
 use crate::batbelt::markdown::{MarkdownFile, MarkdownSectionLevel};
 use inflector::Inflector;
-
-use super::*;
 
 pub struct CodeOverhaulFile {
     pub title: String,
