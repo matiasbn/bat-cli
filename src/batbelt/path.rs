@@ -173,7 +173,7 @@ pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> Strin
     path
 }
 
-fn canonicalize_path(path_to_canonicalize: String) -> String {
+pub fn canonicalize_path(path_to_canonicalize: String) -> String {
     let error_message = format!("Error canonicalizing path: {}", path_to_canonicalize);
     let canonicalized_path = Path::new(&(path_to_canonicalize))
         .canonicalize()

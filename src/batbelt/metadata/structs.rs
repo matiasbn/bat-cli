@@ -1,7 +1,7 @@
 use crate::batbelt::structs::FileInfo;
 
 use crate::batbelt;
-use crate::batbelt::path::FolderPathType;
+use crate::batbelt::path::{canonicalize_path, FolderPathType};
 use colored::Colorize;
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
@@ -97,6 +97,7 @@ pub fn get_structs_metadata_from_program() -> Result<Vec<StructMetadata>, String
         let mut struct_metadata_result = get_struct_metadata_from_file_info(file_info)?;
         structs_metadata.append(&mut struct_metadata_result);
     }
+    structs_metadata.sort_by(|struct_a, struct_b| struct_a.name.cmp(&struct_b.name));
     Ok(structs_metadata)
 }
 
@@ -133,7 +134,7 @@ pub fn get_struct_metadata_from_file_info(
             .magenta(),
             result.content.clone().green()
         );
-        let prompt_text = "Select the type of struct:";
+        let prompt_text = "Select the struct type:";
         let selection =
             batbelt::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
         let struct_type = StructMetadataType::get_structs_type_vec()[selection];
