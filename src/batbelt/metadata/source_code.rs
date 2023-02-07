@@ -1,13 +1,10 @@
 use std::fs;
 
-use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::silicon;
 use crate::batbelt::{
     self,
     path::{FilePathType, FolderPathType},
 };
-
-use super::MetadataContent;
 
 pub struct SourceCodeScreenshotOptions {
     pub include_path: bool,

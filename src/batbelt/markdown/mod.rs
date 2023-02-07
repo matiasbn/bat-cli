@@ -221,7 +221,26 @@ impl MarkdownFile {
                 new_sections_vec,
             );
         }
+        self.update_content_from_sections();
         Ok(())
+    }
+
+    fn update_content_from_sections(&mut self) {
+        let new_content = self
+            .sections
+            .iter()
+            .fold("".to_string(), |result, section| {
+                if result.is_empty() {
+                    section.get_md_section_content()
+                } else {
+                    format!(
+                        "{}\n\n{}",
+                        result.clone().trim_end(),
+                        section.get_md_section_content().clone().trim_start()
+                    )
+                }
+            });
+        self.content = new_content;
     }
 
     fn get_sections(&mut self) {
@@ -320,6 +339,14 @@ impl MarkdownSection {
             .trim_start()
             .to_string();
         MarkdownSection::new(header, section_content, start_line_index, end_line_index)
+    }
+
+    pub fn get_md_section_content(&self) -> String {
+        format!(
+            "{}\n\n{}",
+            self.header.header,
+            self.content.clone().trim_start()
+        )
     }
 }
 
@@ -678,7 +705,6 @@ fn test_replace_section() {
     let mut first_section = markdown_file.get_section("First section").unwrap().clone();
     let mut first_section_subsections =
         markdown_file.get_section_subsections(first_section.clone());
-    let second_section = markdown_file.get_section("Second section").unwrap().clone();
 
     let mut replace_subsection = first_section_subsections[0].clone();
     replace_subsection.header = MarkdownSectionHeader::new_from_header_and_hash(
@@ -698,5 +724,11 @@ fn test_replace_section() {
     assert_eq!(
         replace_subsection, new_first_section_subsections[0],
         "error replacing"
+    );
+    assert!(
+        markdown_file
+            .content
+            .contains(&replace_subsection.header.header),
+        "new header not found"
     );
 }
