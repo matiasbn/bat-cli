@@ -29,7 +29,7 @@ pub mod parse {
 
     use std::fmt::{Debug, Display};
 
-    use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultSubContent, SonarResultType};
+    use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, SonarResultType};
 
     use super::{
         get::{get_string_between_two_index_from_string, prompt_check_validation},
@@ -627,7 +627,7 @@ pub mod parse {
             .into_iter()
             .find(|function| function.name == co_file_name.replace(".md", ""))
             .unwrap();
-        let SonarResultSubContent { parameters, .. } = entrypoint.parse_sub_content();
+        let parameters = get_function_parameters(entrypoint.content);
         // Filter context accounts
         let filtered_parameters: Vec<String> = parameters
             .into_iter()
@@ -854,25 +854,13 @@ pub mod get {
 
         // if instruction exists, prompt the user if the file is correct
         let is_match = if instruction_match.len() == 1 {
-            let instruction_match_path = Path::new(&instruction_match[0].path)
-                .canonicalize()
-                .unwrap();
-            let options = vec!["yes", "no"];
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt(
-                    instruction_match_path
-                        .into_os_string()
-                        .into_string()
-                        .unwrap()
-                        + " <--- is this the correct instruction file?:",
-                )
-                .items(&options)
-                .default(0)
-                .interact_on_opt(&Term::stderr())
-                .unwrap()
-                .unwrap();
-
-            options[selection] == "yes"
+            let instruction_match_path = Path::new(&instruction_match[0].path);
+            let prompt_text = format!(
+                "{}  <--- is this the correct instruction file?:",
+                instruction_match_path.to_str().unwrap()
+            );
+            let correct_path = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+            correct_path
         } else {
             false
         };

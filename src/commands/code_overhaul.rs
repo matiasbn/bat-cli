@@ -27,7 +27,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
-use crate::batbelt::sonar::{BatSonar, SonarResultSubContent, SonarResultType};
+use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResultType};
 use clap::builder::Str;
 use std::path::Path;
 use std::process::Command;
@@ -80,19 +80,23 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         false,
     );
 
+    let instruction_file_path =
+        batbelt::helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
+
     let program_lib_path = bat_config.required.program_lib_path;
 
-    let bat_sonar = BatSonar::new_from_path(
+    let entrypoint_functions = BatSonar::new_from_path(
         &program_lib_path,
         Some("#[program"),
         SonarResultType::Function,
     );
-    let entrypoint_function = bat_sonar
+    let entrypoint_function = entrypoint_functions
         .results
         .iter()
         .find(|function| function.name == entrypoint_name)
         .unwrap();
-    let SonarResultSubContent { parameters, .. } = entrypoint_function.sub_content.clone();
+
+    let parameters = get_function_parameters(entrypoint_function.content.clone());
     let context_name = parameters
         .iter()
         .find(|parameter| parameter.contains("Context<"))
@@ -100,7 +104,33 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         .split("Context<")
         .last()
         .unwrap()
-        .replace(">", "");
+        .split(">")
+        .next()
+        .unwrap();
+
+    let instruction_file_content = fs::read_to_string(&instruction_file_path).unwrap();
+    let instruction_file_functions =
+        BatSonar::new_scanned(&instruction_file_content, SonarResultType::Function);
+    let handler_function = instruction_file_functions
+        .results
+        .iter()
+        .find(|function| {
+            let function_parameters = get_function_parameters(function.content.clone());
+            println!("params {:#?}", function_parameters);
+            function_parameters
+                .iter()
+                .any(|parameter| parameter.contains(&context_name))
+        })
+        .unwrap();
+
+    let handler_if_statements = BatSonar::new_from_path(
+        &instruction_file_path,
+        Some(&handler_function.name),
+        SonarResultType::If,
+    );
+    let handler_validations =
+        BatSonar::new_from_path(&instruction_file_path, None, SonarResultType::Validation);
+
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
@@ -115,8 +145,11 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         .unwrap()
         .get_source_code();
 
-    let instruction_file_path =
-        batbelt::helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
+    let ca_content = context_source_code.get_source_code_content();
+    let ca_accounts = BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccounts);
+
+    println!("ca accounts\n{:#?}", ca_accounts);
+    unimplemented!();
     let to_review_file_string = fs::read_to_string(to_review_file_path.clone()).unwrap();
     // fs::write(
     //     to_review_file_path.clone(),
