@@ -35,21 +35,6 @@ pub mod get {
 
     use super::*;
 
-    pub fn get_signers_description_from_co_file(context_lines: &Vec<String>) -> Vec<String> {
-        let signers_names: Vec<_> = context_lines
-            .iter()
-            .filter(|line| line.contains("Signer"))
-            .map(|line| {
-                line.replace("pub ", "")
-                    .replace("  ", "")
-                    .split(':')
-                    .collect::<Vec<&str>>()[0]
-                    .to_string()
-            })
-            .collect();
-        signers_names
-    }
-
     pub fn get_screenshot_id(file_name: &str, started_co_file_path: &String) -> String {
         let screenshot_contains = match file_name {
             ENTRYPOINT_PNG_NAME => "- entrypoint",

@@ -21,12 +21,12 @@ use crate::batbelt;
 use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::batbelt::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results, get_multiple_line_validation,
-    get_signers_description_from_co_file, get_single_line_validation,
-    get_string_between_two_index_from_string, get_table_of_contents_for_results,
-    prompt_check_validation,
+    get_single_line_validation, get_string_between_two_index_from_string,
+    get_table_of_contents_for_results, prompt_check_validation,
 };
 use crate::batbelt::path::{FilePathType, FolderPathType};
 
+use std::borrow::Borrow;
 use std::{env, fs};
 
 use crate::batbelt::miro::frame::MiroFrame;
@@ -36,7 +36,7 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
 use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, SonarResultType};
-use crate::batbelt::templates::markdown::code_overhaul_template::CodeOverhaulSection;
+use crate::batbelt::templates::code_overhaul::CodeOverhaulSection;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::String;
@@ -156,7 +156,6 @@ pub fn start_co_file() -> Result<(), String> {
 
     let ca_content = context_source_code.get_source_code_content();
     let ca_accounts = BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccounts);
-    println!("ca \n{:#?}", ca_accounts.results);
     let started_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulStarted {
             file_name: to_start_file_name.clone(),
@@ -165,10 +164,18 @@ pub fn start_co_file() -> Result<(), String> {
     );
 
     let mut started_markdown_file = MarkdownFile::new(&to_review_file_path);
-
-    let signers_section = started_markdown_file
+    // Signers section
+    let mut signers_section = started_markdown_file
         .get_section(&CodeOverhaulSection::Signers.to_title())
         .unwrap();
+    let signers_section_content =
+        get_signers_section_content(&context_source_code.get_source_code_content());
+    let mut new_signers_section = signers_section.clone();
+    new_signers_section.content = signers_section_content;
+    started_markdown_file
+        .replace_section(new_signers_section, signers_section, vec![])
+        .unwrap();
+    started_markdown_file.save().unwrap();
 
     let function_parameter_section = started_markdown_file
         .get_section(&CodeOverhaulSection::FunctionParameters.to_title())
@@ -180,7 +187,7 @@ pub fn start_co_file() -> Result<(), String> {
         .unwrap();
 
     let context_accounts_content =
-        get_context_account(&context_source_code.get_source_code_content());
+        get_context_account_section_content(&context_source_code.get_source_code_content());
     let mut new_accounts_section = context_accounts_section.clone();
     new_accounts_section.content = context_accounts_content;
     started_markdown_file
@@ -216,7 +223,7 @@ pub fn start_co_file() -> Result<(), String> {
     Ok(())
 }
 
-pub fn get_context_account(context_accounts_content: &str) -> String {
+pub fn get_context_account_section_content(context_accounts_content: &str) -> String {
     let context_lines = context_accounts_content.lines().collect::<Vec<_>>();
     let filtered_context_account_lines: Vec<_> = context_lines
         .iter()
@@ -295,6 +302,128 @@ pub fn get_context_account(context_accounts_content: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!("{}\n{}\n{}", "- ```rust", ca_content, "  ```")
+}
+
+fn get_signers_section_content(context_lines: &str) -> String {
+    // signer names is only the name of the signer
+    // let signers_names = get_signers_description_from_co_file(&context_lines);
+    let signers_lines = context_lines
+        .lines()
+        .filter(|line| line.contains("Signer") && line.contains("pub"))
+        .collect::<Vec<_>>();
+    if signers_lines.is_empty() {
+        return "- No signers detected".to_string();
+    }
+    let mut signers: Vec<String> = vec![];
+    for signer_line in signers_lines {
+        let signer_line_index = context_lines
+            .lines()
+            .position(|line| line == signer_line)
+            .unwrap();
+        let starting_line = context_lines
+            .lines()
+            .enumerate()
+            .find(|line| line.0 < signer_line_index && line.1.contains("pub"))
+            .map(|line| line.0)
+            .unwrap();
+        let mut signer_content = context_lines.lines().collect::<Vec<_>>()
+            [starting_line + 1..=signer_line_index]
+            .to_vec();
+        let signer_name = signer_content
+            .clone()
+            .last()
+            .unwrap()
+            .split("pub ")
+            .next()
+            .unwrap()
+            .split(":")
+            .next()
+            .unwrap();
+        signer_content.pop().unwrap();
+        let signer_comments = signer_content
+            .iter()
+            .filter(|line| line.split(" ").next().unwrap().contains("//"))
+            .collect::<Vec<_>>();
+        if signer_comments.len() == 0 {
+            let signer_description = format!(
+                "- {}: {}",
+                signer_name, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER
+            );
+            signers.push(signer_description)
+        } else if signer_comments.len() == 1 {
+            // prompt the user to state if the comment is correct
+            let signer_description_comment = signer_comments[0].split("// ").last().unwrap();
+            let prompt_text = format!(
+                "is this a proper description of the signer {}?: '{}'",
+                signer_name.red(),
+                signer_description_comment
+            );
+            let is_correct = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+            if is_correct {
+                let signer_description =
+                    format!("- {}: {}", signer_name, signer_description_comment);
+                signers.push(signer_description);
+            } else {
+                let signer_description = format!(
+                    "- {}: {}",
+                    signer_name, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER
+                );
+                signers.push(signer_description);
+            }
+            // multiple line description
+        } else {
+            // prompt the user to select the lines that contains the description and join them
+            let prompt_text = format!(
+                "Use the spacebar to select the lines that describes the signer {}.
+                        Hit enter if is not a proper description:",
+                signer_name.red()
+            );
+            let signer_formatted: Vec<&str> = signer_comments
+                .iter()
+                .map(|line| line.split("// ").last().unwrap())
+                .collect();
+            let selections = batbelt::cli_inputs::multiselect(
+                &prompt_text,
+                signer_formatted.clone(),
+                Some(&vec![true; signer_formatted.clone().len()]),
+            )
+            .unwrap();
+            if selections.is_empty() {
+                let signer_description = format!(
+                    "- {}: {}",
+                    signer_name, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER
+                );
+                signers.push(signer_description);
+            } else {
+                // take the selections and create the array
+                let signer_total_comment = signer_formatted
+                    .into_iter()
+                    .enumerate()
+                    .filter(|line| selections.contains(&line.0))
+                    .map(|line| line.1)
+                    .collect::<Vec<_>>()
+                    .join(". ");
+                let signer_description = format!("- {}: {}", signer_name, signer_total_comment);
+                signers.push(signer_description);
+            }
+        }
+    }
+    signers.join("\n")
+}
+
+pub fn get_signers_description_from_co_file(context_lines: &str) -> Vec<String> {
+    let signers_names: Vec<_> = context_lines
+        .lines()
+        .filter(|line| line.contains("Signer"))
+        .map(|line| {
+            line.replace("pub ", "")
+                .replace("  ", "")
+                .split(':')
+                .collect::<Vec<&str>>()[0]
+                .to_string()
+        })
+        .collect();
+    signers_names
 }
 
 pub fn parse_validations_into_co(co_file_path: String, instruction_file_path: String) {
@@ -675,106 +804,6 @@ fn prompt_acc_val_or_prereq(validation: String) -> usize {
         .unwrap()
         .unwrap();
     selection
-}
-
-pub fn parse_signers_into_co(co_file_path: String, context_lines: Vec<String>) {
-    // signer names is only the name of the signer
-    let signers_names = get_signers_description_from_co_file(&context_lines);
-    // array of signers description: - signer_name: SIGNER_DESCRIPTION
-    let mut signers_text: Vec<String> = vec![];
-    for signer in signers_names.clone() {
-        let signer_index = context_lines
-            .iter()
-            .position(|line| line.contains(&signer) && line.contains("pub"))
-            .unwrap();
-        let mut index = 1;
-        let mut candidate_lines: Vec<String> = vec![];
-        // move up through the lines until getting a pub
-        while !context_lines[signer_index - index].clone().contains("pub") {
-            // push only if is a comment
-            if context_lines[signer_index - index].contains("//") {
-                candidate_lines.push(context_lines[signer_index - index].clone());
-            }
-            index += 1;
-        }
-        // no comments detected, replace with placeholder
-        if candidate_lines.is_empty() {
-            signers_text
-                .push("- ".to_string() + &signer + ": " + CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER);
-            // only 1 comment
-        } else if candidate_lines.len() == 1 {
-            // prompt the user to state if the comment is correct
-            let signer_description = candidate_lines[0].split("// ").last().unwrap();
-            let prompt_text = format!(
-                "is this a proper description of the signer {}?: '{signer_description}'",
-                format!("{signer}").red()
-            );
-            let options = vec!["yes", "no"];
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt(prompt_text)
-                .items(&options)
-                .default(0)
-                .interact_on_opt(&Term::stderr())
-                .unwrap()
-                .unwrap();
-
-            if options[selection] == options[0] {
-                signers_text.push("- ".to_string() + &signer + ": " + signer_description);
-            } else {
-                signers_text.push(
-                    "- ".to_string() + &signer + ": " + CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
-                );
-            }
-            // multiple line description
-        } else {
-            // prompt the user to select the lines that contains the description and join them
-            let prompt_text = format!(
-                "Use the spacebar to select the lines that describes the signer {}. \n Hit enter if is not a proper description:", format!("{signer}").red()
-            );
-            candidate_lines.reverse();
-            let formatted_candidate_lines: Vec<&str> = candidate_lines
-                .iter()
-                .map(|line| line.split("// ").last().unwrap())
-                .collect();
-            let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-                .with_prompt(prompt_text)
-                .items(&formatted_candidate_lines)
-                .interact_on_opt(&Term::stderr())
-                .unwrap()
-                .unwrap();
-            if selections.is_empty() {
-                signers_text.push(
-                    "- ".to_string() + &signer + ": " + CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER,
-                );
-            } else {
-                // take the selections and create the array
-                let mut signer_description_lines: Vec<String> = vec![];
-                for selection in selections.iter() {
-                    signer_description_lines
-                        .push(formatted_candidate_lines.as_slice()[*selection].to_string());
-                }
-                signers_text.push(
-                    "- ".to_string()
-                        + &signer
-                        + ": "
-                        + signer_description_lines.join(". ").as_str(),
-                );
-            }
-        }
-    }
-
-    // replace in co file
-    let signers_text_to_replace = if signers_names.is_empty() {
-        "- No signers found".to_string()
-    } else {
-        signers_text.join("\n")
-    };
-
-    let data = fs::read_to_string(co_file_path.clone()).unwrap().replace(
-        CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER,
-        signers_text_to_replace.as_str(),
-    );
-    fs::write(co_file_path, data).unwrap();
 }
 
 pub fn parse_function_parameters_into_co(

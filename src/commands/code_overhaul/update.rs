@@ -28,7 +28,6 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
 use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, SonarResultType};
-use crate::batbelt::templates::markdown::code_overhaul_template::CodeOverhaulSection;
 use clap::builder::Str;
 use std::path::Path;
 use std::process::Command;

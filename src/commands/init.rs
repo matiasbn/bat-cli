@@ -294,8 +294,10 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
         panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
-    let mut co_template = batbelt::templates::markdown::MarkdownTemplate::CodeOverhaul
-        .new(&code_overhaul_auditor_file_path);
+    let mut co_template =
+        batbelt::templates::code_overhaul::CodeOverhaulFile::template_to_markdown_file(
+            &code_overhaul_auditor_file_path,
+        );
     co_template.save()?;
     println!("code-overhaul file created: {entrypoint_name}.md");
     Ok(())
