@@ -198,7 +198,7 @@ pub fn get_struct_metadata_from_file_info(
             format!(
                 "{}:{}",
                 struct_file_info.path.clone(),
-                result.end_line_index + 1,
+                result.start_line_index + 1,
             )
             .magenta(),
             result.content.clone().green()
