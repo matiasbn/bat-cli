@@ -175,15 +175,19 @@ fn get_required_config() -> Result<RequiredConfig, String> {
 
 fn get_optional_config(program_lib_path: String) -> Result<OptionalConfig, String> {
     let lib_path = program_lib_path.replace("../", "./").replace("lib.rs", "");
-    let prompt_text = "Do you want to include the instructions path?";
     let error_message = format!("Incorrect program lib path: {}", lib_path);
     let files_in_lib_path = fs::read_dir(lib_path).expect(&error_message);
     let folders = files_in_lib_path
         .filter(|f| f.as_ref().unwrap().metadata().unwrap().is_dir())
         .map(|f| f.unwrap().path().to_str().unwrap().to_string())
         .collect::<Vec<_>>();
+    let include_instructions_path = if !folders.is_empty() {
+        let prompt_text = "Do you want to include the instructions path?";
+        cli_inputs::select_yes_or_no(prompt_text)?
+    } else {
+        false
+    };
 
-    let include_instructions_path = cli_inputs::select_yes_or_no(prompt_text)?;
     let program_instructions_path = if include_instructions_path {
         let prompt_text = "Select the instructions folder:";
         let option = cli_inputs::select(prompt_text, folders.clone(), None)?;
@@ -192,8 +196,13 @@ fn get_optional_config(program_lib_path: String) -> Result<OptionalConfig, Strin
         "".to_string()
     };
 
-    let prompt_text = "Do you want to include the state path?";
-    let include_state_path = cli_inputs::select_yes_or_no(prompt_text)?;
+    let include_state_path = if !folders.is_empty() {
+        let prompt_text = "Do you want to include the state path?";
+        cli_inputs::select_yes_or_no(prompt_text)?
+    } else {
+        false
+    };
+
     let program_state_path = if include_state_path {
         let prompt_text = "Select the state folder:";
         let option = cli_inputs::select(prompt_text, folders.clone(), None)?;

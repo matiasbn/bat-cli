@@ -193,22 +193,6 @@ fn update_auditor_toml(
     fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
 }
 
-// fn validate_init_config() -> Result<(), String> {
-//     // audit notes folder should not exist
-//     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
-//     let auditor_folder_path = utils::path::get_auditor_notes_path()?;
-//     if Path::new(&auditor_folder_path).is_dir() {
-//         panic!("auditor folder {:?} already exist", &auditor_folder_path);
-//     }
-//     if !Path::new(&required.program_lib_path).is_file() {
-//         panic!(
-//             "program file at path \"{:?}\" does not exist, please update Bat.toml file",
-//             &required.program_lib_path
-//         );
-//     }
-//     Ok(())
-// }
-
 fn initialize_project_repository() -> Result<(), String> {
     let BatConfig { required, .. } = BatConfig::get_validated_config()?;
     let RequiredConfig {
