@@ -27,7 +27,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
-use crate::batbelt::sonar::{BatSonar, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResultSubContent, SonarResultType};
 use clap::builder::Str;
 use std::path::Path;
 use std::process::Command;
@@ -92,7 +92,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         .iter()
         .find(|function| function.name == entrypoint_name)
         .unwrap();
-    let (parameters, body) = entrypoint_function.sub_content.parse();
+    let SonarResultSubContent { parameters, .. } = entrypoint_function.sub_content.clone();
     let context_name = parameters
         .iter()
         .find(|parameter| parameter.contains("Context<"))

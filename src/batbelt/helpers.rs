@@ -29,7 +29,7 @@ pub mod parse {
 
     use std::fmt::{Debug, Display};
 
-    use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+    use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultSubContent, SonarResultType};
 
     use super::{
         get::{get_string_between_two_index_from_string, prompt_check_validation},
@@ -627,8 +627,7 @@ pub mod parse {
             .into_iter()
             .find(|function| function.name == co_file_name.replace(".md", ""))
             .unwrap();
-        let entrypoint_subcontent = entrypoint.parse_sub_content();
-        let (parameters, _) = entrypoint_subcontent.parse();
+        let SonarResultSubContent { parameters, .. } = entrypoint.parse_sub_content();
         // Filter context accounts
         let filtered_parameters: Vec<String> = parameters
             .into_iter()
@@ -652,43 +651,6 @@ pub mod parse {
             );
             fs::write(co_file_path, data).unwrap();
         }
-        Ok(())
-    }
-
-    pub fn parse_lines_between_two_strings_in_file<T>(
-        file_path: &T,
-        lines_to_parse: &str,
-        inital_str: &str,
-        final_str: &str,
-    ) -> Result<(), String>
-    where
-        T: Clone + AsRef<std::path::Path> + Display,
-    {
-        let file_string = fs::read_to_string(file_path.clone()).unwrap();
-        let file_string_lines_vec = file_string.lines().collect::<Vec<_>>();
-        let first_line_index = file_string
-            .lines()
-            .into_iter()
-            .position(|l| l.contains(inital_str))
-            .expect(format!("Cant find {} in:\n{}", inital_str, file_path).as_str());
-        let last_line_index = file_string
-            .lines()
-            .into_iter()
-            .position(|l| l.contains(final_str))
-            .expect(format!("Cant find {} in:\n{}", final_str, file_path).as_str());
-        let result_lines = &file_string_lines_vec[first_line_index + 1..=last_line_index];
-        fs::write(
-            file_path.clone(),
-            file_string.replace(
-                result_lines.to_vec().join("\n").as_str(),
-                format!(
-                    "\n{lines_to_parse}\n\n{}",
-                    file_string_lines_vec[last_line_index]
-                )
-                .as_str(),
-            ),
-        )
-        .expect(format!("Cant write to:\n{}", file_path).as_str());
         Ok(())
     }
 }
