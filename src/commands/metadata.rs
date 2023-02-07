@@ -6,11 +6,7 @@ use crate::batbelt::constants::{
 use crate::batbelt::markdown::{
     MarkdownFile, MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel,
 };
-use crate::batbelt::metadata::functions::{
-    get_functions_metadata_from_program, get_functions_section_content,
-    ENTRYPOINTS_SUBSECTION_TITLE, FUNCTIONS_SECTION_TITLE, HANDLERS_SUBSECTION_TITLE,
-    HELPERS_SUBSECTION_TITLE, OTHERS_SUBSECTION_TITLE, VALIDATORS_SUBSECTION_TITLE,
-};
+use crate::batbelt::metadata::functions::get_functions_metadata_from_program;
 use crate::batbelt::metadata::miro::{
     get_format_miro_accounts_to_result_string, MiroAccountMetadata,
     MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER, MIRO_SUBSECTIONS_HEADERS,

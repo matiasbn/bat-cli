@@ -62,17 +62,6 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
 pub async fn start_code_overhaul_file() -> Result<(), String> {
     check_correct_branch()?;
 
-    // check if program_lib_path is not empty or panic
-    let BatConfig { optional, .. } = BatConfig::get_validated_config()?;
-
-    if optional.program_instructions_path.is_empty() {
-        panic!("Optional program_instructions_path parameter not set in Bat.toml")
-    }
-
-    if !Path::new(&optional.program_instructions_path).is_dir() {
-        panic!("program_instructions_path is not a correct folder")
-    }
-
     let to_review_path =
         batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false);
 

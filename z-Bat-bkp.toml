@@ -9,5 +9,3 @@ miro_board_url = "test_miro_url"
 audit_folder_path = "."
 program_lib_path = "../star-atlas-programs/sol-programs/scream/programs/crafting/src/lib.rs"
 project_repository_url = "git@git.kudelski.com:Matias.Barrios/test_project.git"
-[optional]
-program_instructions_path = ""

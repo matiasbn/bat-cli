@@ -33,9 +33,6 @@ enum Commands {
     /// findings files management
     #[command(subcommand)]
     Finding(FindingActions),
-    /// threat modeling operations
-    #[command(subcommand)]
-    TM(TMActions),
     /// Miro integration
     #[command(subcommand)]
     Miro(MiroActions),
@@ -89,11 +86,6 @@ enum MiroActions {
     Entrypoints,
     /// Creates an screenshot in a determined frame
     Screenshot,
-}
-#[derive(Subcommand, Debug)]
-enum TMActions {
-    /// Updates the threat_modeling.md Assets/Accounts section
-    Accounts,
 }
 
 #[derive(Subcommand, Debug)]
@@ -170,7 +162,6 @@ async fn main() {
         Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
         Commands::Metadata(MetadataActions::Miro) => commands::metadata::miro().await.unwrap(),
         Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions().unwrap(),
-        Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding().unwrap(),
