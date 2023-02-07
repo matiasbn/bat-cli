@@ -307,42 +307,39 @@ pub fn get_context_account_section_content(context_accounts_content: &str) -> St
 fn get_signers_section_content(context_lines: &str) -> String {
     // signer names is only the name of the signer
     // let signers_names = get_signers_description_from_co_file(&context_lines);
-    let signers_lines = context_lines
-        .lines()
-        .filter(|line| line.contains("Signer") && line.contains("pub"))
-        .collect::<Vec<_>>();
-    if signers_lines.is_empty() {
-        return "- No signers detected".to_string();
-    }
     let mut signers: Vec<String> = vec![];
-    for signer_line in signers_lines {
-        let signer_line_index = context_lines
-            .lines()
-            .position(|line| line == signer_line)
-            .unwrap();
-        let starting_line = context_lines
+    for (line_index, line) in context_lines.lines().enumerate() {
+        if !line.contains("pub") {
+            continue;
+        }
+        let next_pub_line = context_lines
             .lines()
             .enumerate()
-            .find(|line| line.0 < signer_line_index && line.1.contains("pub"))
-            .map(|line| line.0)
+            .position(|line| {
+                line.0 > line_index && line.1.contains("pub")
+                    || line.0 == context_lines.lines().count() - 1
+            })
             .unwrap();
-        let mut signer_content = context_lines.lines().collect::<Vec<_>>()
-            [starting_line + 1..=signer_line_index]
-            .to_vec();
-        let signer_name = signer_content
-            .clone()
-            .last()
-            .unwrap()
-            .split("pub ")
-            .next()
-            .unwrap()
-            .split(":")
-            .next()
-            .unwrap();
-        signer_content.pop().unwrap();
-        let signer_comments = signer_content
+        let mut content =
+            context_lines.lines().collect::<Vec<_>>()[line_index + 1..=next_pub_line].to_vec();
+        let has_signer = content.clone().last().unwrap().contains("Signer<");
+        if !has_signer {
+            continue;
+        }
+        let signer_name = content.clone().last().unwrap().trim().replace("pub ", "");
+        let signer_name = signer_name.split(":").next().unwrap();
+        // delete last line
+        content.pop().unwrap();
+        let signer_comments = content
             .iter()
-            .filter(|line| line.split(" ").next().unwrap().contains("//"))
+            .filter(|line| {
+                line.clone()
+                    .trim()
+                    .split(" ")
+                    .next()
+                    .unwrap()
+                    .contains("//")
+            })
             .collect::<Vec<_>>();
         if signer_comments.len() == 0 {
             let signer_description = format!(
@@ -407,6 +404,9 @@ fn get_signers_section_content(context_lines: &str) -> String {
                 signers.push(signer_description);
             }
         }
+    }
+    if signers.is_empty() {
+        return "- No signers detected".to_string();
     }
     signers.join("\n")
 }
