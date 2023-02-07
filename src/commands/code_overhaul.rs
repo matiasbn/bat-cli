@@ -24,6 +24,11 @@ use std::fs;
 
 use crate::batbelt::miro::frame::MiroFrame;
 
+use crate::batbelt::markdown::MarkdownFile;
+use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::MetadataSection;
+use crate::batbelt::sonar::{BatSonar, SonarResultType};
+use clap::builder::Str;
 use std::path::Path;
 use std::process::Command;
 use std::string::String;
@@ -38,20 +43,6 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
         panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
-    // let output = Command::new("cp")
-    //     .args([
-    //         "-r",
-    //         &batbelt::path::get_file_path(FilePathType::TemplateCodeOverhaul, false),
-    //         code_overhaul_auditor_file_path.as_str(),
-    //     ])
-    //     .output()
-    //     .unwrap();
-    // if !output.stderr.is_empty() {
-    //     panic!(
-    //         "create auditors note folder failed with error: {:?}",
-    //         std::str::from_utf8(output.stderr.as_slice()).unwrap()
-    //     )
-    // };
     let mut co_template = batbelt::templates::markdown::MarkdownTemplate::CodeOverhaul
         .new(&code_overhaul_auditor_file_path);
     co_template.save()?;
@@ -61,7 +52,7 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
 
 pub async fn start_code_overhaul_file() -> Result<(), String> {
     check_correct_branch()?;
-
+    let bat_config = BatConfig::get_validated_config().unwrap();
     let to_review_path =
         batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false);
 
@@ -81,7 +72,7 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
 
     // user select file
     let to_start_file_name = &review_files[selection].clone();
-
+    let entrypoint_name = to_start_file_name.replace(".md", "");
     let to_review_file_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulToReview {
             file_name: to_start_file_name.clone(),
@@ -89,32 +80,67 @@ pub async fn start_code_overhaul_file() -> Result<(), String> {
         false,
     );
 
-    let (entrypoint_name, instruction_file_path) =
+    let program_lib_path = bat_config.required.program_lib_path;
+
+    let bat_sonar = BatSonar::new_from_path(
+        &program_lib_path,
+        Some("#[program"),
+        SonarResultType::Function,
+    );
+    let entrypoint_function = bat_sonar
+        .results
+        .iter()
+        .find(|function| function.name == entrypoint_name)
+        .unwrap();
+    let (parameters, body) = entrypoint_function.sub_content.parse();
+    let context_name = parameters
+        .iter()
+        .find(|parameter| parameter.contains("Context<"))
+        .unwrap()
+        .split("Context<")
+        .last()
+        .unwrap()
+        .replace(">", "");
+    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
+    let metadata_markdown = MarkdownFile::new(&metadata_path);
+    let structs_section = metadata_markdown
+        .get_section(&MetadataSection::Structs.to_sentence_case())
+        .unwrap();
+    let structs_subsections = metadata_markdown.get_section_subsections(structs_section);
+    let context_source_code = structs_subsections
+        .iter()
+        .filter(|subsection| subsection.section_header.title == context_name)
+        .map(|section| StructMetadata::from_markdown_section(section.clone()))
+        .find(|struct_metadata| struct_metadata.struct_type == StructMetadataType::ContextAccounts)
+        .unwrap()
+        .get_source_code();
+
+    let instruction_file_path =
         batbelt::helpers::get::get_instruction_file_with_prompts(&to_start_file_name)?;
     let to_review_file_string = fs::read_to_string(to_review_file_path.clone()).unwrap();
-    fs::write(
-        to_review_file_path.clone(),
-        to_review_file_string
-            .replace(
-                CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER,
-                &instruction_file_path.replace("../", ""),
-            )
-            .as_str(),
-    )
-    .unwrap();
-    let instruction_file_path = Path::new(&instruction_file_path).canonicalize().unwrap();
-    let context_lines = batbelt::helpers::get::get_context_lines(
-        instruction_file_path.clone(),
-        to_start_file_name.clone(),
-    )?;
+    // fs::write(
+    //     to_review_file_path.clone(),
+    //     to_review_file_string
+    //         .replace(
+    //             CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER,
+    //             &instruction_file_path.replace("../", ""),
+    //         )
+    //         .as_str(),
+    // )
+    // .unwrap();
+    let context_lines: Vec<String> = context_source_code
+        .get_source_code_content()
+        .lines()
+        .map(|line| line.to_string())
+        .collect();
 
     // open instruction file in VSCode
-    vs_code_open_file_in_current_window(instruction_file_path.to_str().unwrap())?;
+    vs_code_open_file_in_current_window(&instruction_file_path)?;
 
     // parse text into co file
     batbelt::helpers::parse::parse_validations_into_co(
         to_review_file_path.clone(),
-        instruction_file_path.to_str().unwrap().to_string(),
+        instruction_file_path.clone(),
     );
     batbelt::helpers::parse::parse_context_accounts_into_co(
         Path::new(&(to_review_file_path.clone()))

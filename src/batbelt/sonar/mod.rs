@@ -78,6 +78,7 @@ impl BatSonar {
                     end_line_index,
                     true,
                 );
+                sonar_result.parse_sub_content();
                 sonar_result.get_name_and_is_public(line);
                 self.results.push(sonar_result);
             }

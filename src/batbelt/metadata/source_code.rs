@@ -34,6 +34,15 @@ impl SourceCodeMetadata {
         }
     }
 
+    pub fn get_source_code_content(&self) -> String {
+        let content = fs::read_to_string(&self.path).unwrap();
+        let content_lines = content.lines().collect::<Vec<_>>()
+            [self.start_line_index - 1..=self.end_line_index - 1]
+            .to_vec()
+            .join("\n");
+        content_lines
+    }
+
     // pub fn new_from_metadata_data(name: &str, section: &str, subsection: &str) -> Self {
     //     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
     //     let metadata_markdown = MarkdownFile::new(&metadata_path);

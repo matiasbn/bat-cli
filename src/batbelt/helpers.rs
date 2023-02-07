@@ -696,6 +696,7 @@ pub mod parse {
 pub mod get {
     use std::{fs::DirEntry, io};
 
+    use crate::batbelt::path::FolderPathType;
     use crate::batbelt::structs::FileInfo;
     use crate::batbelt::{self, cli_inputs::select_yes_or_no};
 
@@ -791,86 +792,6 @@ pub mod get {
         Ok(parsed_context_name)
     }
 
-    pub fn get_context_lines(
-        instruction_file_path: PathBuf,
-        co_file_name: String,
-    ) -> Result<Vec<String>, String> {
-        let instruction_file = File::open(instruction_file_path.clone()).unwrap();
-        let instruction_file_lines = io::BufReader::new(instruction_file)
-            .lines()
-            .map(|l| l.unwrap())
-            .collect::<Vec<String>>();
-
-        let context_name = get_context_name(co_file_name.clone())?;
-        // get context lines
-        let first_line_index_opt = instruction_file_lines.iter().position(|line| {
-            line.contains(("pub struct ".to_string() + &context_name.clone() + "<").as_str())
-        });
-        match first_line_index_opt {
-            Some(first_line_index) => {
-                // the closing curly brace "}", starting on first_line_index
-                let last_line_index = instruction_file_lines[first_line_index..]
-                    .iter()
-                    .position(|line| line == &"}")
-                    .unwrap()
-                    + first_line_index;
-                let context_lines: Vec<_> =
-                    instruction_file_lines[first_line_index..=last_line_index].to_vec();
-                Ok(context_lines)
-            }
-            // if the Context Accouns were not found in the file
-            None => {
-                // tell the user that the context was not found in the instruction file
-                let co_name = co_file_name.replace(".md", "");
-                let instruction_file_name = instruction_file_path
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string();
-                // tell the user to select the instruction file that has the context of the file
-                let instruction_files = super::get::get_instruction_files()?;
-                let instruction_files_names: Vec<&String> =
-                    instruction_files.iter().map(|file| &file.name).collect();
-                // list the instruction files
-                let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!(
-                "Context Accounts not found for {co_name} in {instruction_file_name}, please select the file that contains the context:",
-            ))
-            .items(&instruction_files_names)
-            .default(0)
-            .interact_on_opt(&Term::stderr())
-            .unwrap()
-            .unwrap();
-                let selected_instruction_file = &instruction_files[selection];
-                let instruction_file = File::open(selected_instruction_file.path.clone()).unwrap();
-                let instruction_file_lines = io::BufReader::new(instruction_file)
-                    .lines()
-                    .map(|l| l.unwrap())
-                    .collect::<Vec<String>>();
-                // get context lines
-                // check if the context is in the file
-                let first_line_index = instruction_file_lines
-                    .iter()
-                    .position(|line| {
-                        line.contains(
-                            ("pub struct ".to_string() + &context_name.clone() + "<").as_str(),
-                        )
-                    })
-                    // if is not in the file, panic
-                    .unwrap();
-                let last_line_index = instruction_file_lines[first_line_index..]
-                    .iter()
-                    .position(|line| line == &"}")
-                    .unwrap()
-                    + first_line_index;
-                let context_lines: Vec<_> =
-                    instruction_file_lines[first_line_index..=last_line_index].to_vec();
-                Ok(context_lines)
-            }
-        }
-    }
-
     pub fn get_multiple_line_validation(instruction_file: &String, line_index: usize) -> String {
         // let mut validation_candidate: Vec<String> = vec![line.clone().to_string()];
         let instruction_file_lines = instruction_file.lines();
@@ -930,31 +851,14 @@ pub mod get {
     }
 
     pub fn get_instruction_files() -> Result<Vec<FileInfo>, String> {
-        // let instructions_path = BatConfig::get_validated_config()?
-        //     .optional
-        //     .program_instructions_path;
-
-        let instructions_path = ".";
-        unimplemented!();
-        let mut instruction_files_info = WalkDir::new(instructions_path)
+        let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, true);
+        let mut lib_files_info = get_only_files_from_folder(program_path)
+            .unwrap()
             .into_iter()
-            .map(|entry| {
-                let info = FileInfo {
-                    path: entry.as_ref().unwrap().path().display().to_string(),
-                    name: entry
-                        .as_ref()
-                        .unwrap()
-                        .file_name()
-                        .to_os_string()
-                        .into_string()
-                        .unwrap(),
-                };
-                info
-            })
             .filter(|file_info| file_info.name != "mod.rs" && file_info.name.contains(".rs"))
             .collect::<Vec<FileInfo>>();
-        instruction_files_info.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(instruction_files_info)
+        lib_files_info.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(lib_files_info)
     }
 
     // returns a list of folder and files names
@@ -977,7 +881,7 @@ pub mod get {
 
     pub fn get_instruction_file_with_prompts(
         to_start_file_name: &String,
-    ) -> Result<(String, String), String> {
+    ) -> Result<String, String> {
         let instruction_files_info = get_instruction_files()?;
 
         let entrypoint_name = to_start_file_name.replace(".md", "");
@@ -1030,7 +934,7 @@ pub mod get {
             let name = instruction_files_info.as_slice()[selection].path.borrow();
             name
         };
-        Ok((entrypoint_name.clone(), instruction_file_path.clone()))
+        Ok(instruction_file_path.clone())
     }
 
     pub fn get_finished_co_files() -> Result<Vec<(String, String)>, String> {
