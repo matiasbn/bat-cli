@@ -1,6 +1,6 @@
 use std::{fs, io, process::Command};
 
-use crate::utils::{self, git::check_files_not_commited};
+use crate::batbelt::{self, git::check_files_not_commited};
 
 pub fn release() -> io::Result<()> {
     assert!(check_files_not_commited().unwrap());
@@ -72,7 +72,7 @@ fn bump() -> io::Result<String> {
         format!("minor: {}.{}.0", major, minor + 1),
         format!("patch: {}.{}.{}", major, minor, patch + 1),
     ];
-    let selection = utils::cli_inputs::select(&prompt_text, options, None).unwrap();
+    let selection = batbelt::cli_inputs::select(&prompt_text, options, None).unwrap();
     let mut version_vec = vec![major, minor, patch];
     match selection {
         0 => {

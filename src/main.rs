@@ -2,18 +2,14 @@
 #![feature(exit_status_error)]
 extern crate core;
 
+use batbelt::git::GitCommit;
 use clap::{Parser, Subcommand};
-use utils::git::GitCommit;
 
-mod command_line;
+mod batbelt;
 mod commands;
 mod config;
-mod constants;
-mod markdown;
 mod package;
-mod silicon;
-mod structs;
-mod utils;
+
 use std::{error, result};
 
 type Result<T> = result::Result<T, Box<dyn error::Error>>;
@@ -37,9 +33,6 @@ enum Commands {
     /// findings files management
     #[command(subcommand)]
     Finding(FindingActions),
-    /// threat modeling operations
-    #[command(subcommand)]
-    TM(TMActions),
     /// Miro integration
     #[command(subcommand)]
     Miro(MiroActions),
@@ -94,11 +87,6 @@ enum MiroActions {
     /// Creates an screenshot in a determined frame
     Screenshot,
 }
-#[derive(Subcommand, Debug)]
-enum TMActions {
-    /// Updates the threat_modeling.md Assets/Accounts section
-    Accounts,
-}
 
 #[derive(Subcommand, Debug)]
 enum FindingActions {
@@ -128,6 +116,8 @@ enum CodeOverhaulActions {
     Count,
     /// Opens the co file and the instruction of a started entrypoint
     Open,
+    /// Updates the templates in to-review folder
+    Templates,
 }
 
 #[derive(Subcommand, Debug)]
@@ -144,23 +134,22 @@ async fn main() {
         Commands::Create => commands::create::create_project().unwrap(),
         Commands::Init => commands::init::initialize_bat_project().unwrap(),
         Commands::CO(CodeOverhaulActions::Start) => {
-            commands::code_overhaul::start_code_overhaul_file()
-                .await
-                .unwrap()
+            commands::code_overhaul::start::start_co_file().unwrap()
         }
         Commands::CO(CodeOverhaulActions::Finish) => {
-            commands::code_overhaul::finish_code_overhaul_file()
+            commands::code_overhaul::finish::finish_co_file()
                 .await
                 .unwrap()
         }
         Commands::CO(CodeOverhaulActions::Update) => {
-            commands::code_overhaul::update_code_overhaul_file().unwrap()
+            commands::code_overhaul::update::update_co_file().unwrap()
         }
         Commands::CO(CodeOverhaulActions::Count) => {
             commands::code_overhaul::count_co_files().unwrap()
         }
-        Commands::CO(CodeOverhaulActions::Open) => {
-            commands::code_overhaul::open_co().await.unwrap()
+        Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co().unwrap(),
+        Commands::CO(CodeOverhaulActions::Templates) => {
+            commands::code_overhaul::update_co_templates().unwrap()
         }
         Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_miro().await.unwrap(),
         Commands::Miro(MiroActions::Images) => commands::miro::create_co_snapshots().unwrap(),
@@ -171,23 +160,16 @@ async fn main() {
         Commands::Miro(MiroActions::Screenshot) => {
             commands::miro::deploy_screenshot_to_frame().await.unwrap()
         }
-        Commands::Metadata(MetadataActions::Structs) => {
-            commands::metadata::structs::update_structs().unwrap()
-        }
-        Commands::Metadata(MetadataActions::Miro) => {
-            commands::metadata::miro::update_miro().await.unwrap()
-        }
-        Commands::Metadata(MetadataActions::Functions) => {
-            commands::metadata::functions::update_functions().unwrap()
-        }
-        Commands::TM(TMActions::Accounts) => commands::tm::update_accounts().unwrap(),
+        Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
+        Commands::Metadata(MetadataActions::Miro) => commands::metadata::miro().await.unwrap(),
+        Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding().unwrap(),
         Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
-        Commands::Notes => utils::git::create_git_commit(GitCommit::Notes, None).unwrap(),
+        Commands::Notes => batbelt::git::create_git_commit(GitCommit::Notes, None).unwrap(),
         Commands::Result(ResultActions::Findings { html }) => {
             commands::result::findings_result(html).unwrap()
         }

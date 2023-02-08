@@ -5,13 +5,13 @@ use colored::Colorize;
 
 use walkdir::WalkDir;
 
-use crate::config::{OptionalConfig, RequiredConfig};
-use crate::constants::{
+use crate::batbelt::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
 };
-use crate::structs::FileInfo;
-use crate::utils::git::clone_base_repository;
-use crate::utils::{cli_inputs, helpers};
+use crate::batbelt::git::clone_base_repository;
+use crate::batbelt::structs::FileInfo;
+use crate::batbelt::{cli_inputs, helpers};
+use crate::config::RequiredConfig;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 
@@ -20,7 +20,6 @@ pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 pub fn create_project() -> Result<(), String> {
     // get project config
     let required_config = get_required_config()?;
-    let optional_config = get_optional_config(required_config.program_lib_path.clone())?;
     println!("Creating {:#?} project", required_config);
     // clone repository
     clone_base_repository();
@@ -38,7 +37,7 @@ pub fn create_project() -> Result<(), String> {
         .output()
         .unwrap();
     // create config files
-    create_bat_toml(required_config.clone(), optional_config);
+    create_bat_toml(required_config.clone());
     create_auditor_toml();
     // move config files to repo
     move_config_files(required_config.project_name.clone());
@@ -173,42 +172,7 @@ fn get_required_config() -> Result<RequiredConfig, String> {
     })
 }
 
-fn get_optional_config(program_lib_path: String) -> Result<OptionalConfig, String> {
-    let lib_path = program_lib_path.replace("../", "./").replace("lib.rs", "");
-    let prompt_text = "Do you want to include the instructions path?";
-    let error_message = format!("Incorrect program lib path: {}", lib_path);
-    let files_in_lib_path = fs::read_dir(lib_path).expect(&error_message);
-    let folders = files_in_lib_path
-        .filter(|f| f.as_ref().unwrap().metadata().unwrap().is_dir())
-        .map(|f| f.unwrap().path().to_str().unwrap().to_string())
-        .collect::<Vec<_>>();
-
-    let include_instructions_path = cli_inputs::select_yes_or_no(prompt_text)?;
-    let program_instructions_path = if include_instructions_path {
-        let prompt_text = "Select the instructions folder:";
-        let option = cli_inputs::select(prompt_text, folders.clone(), None)?;
-        folders[option].clone().replace("../", ".")
-    } else {
-        "".to_string()
-    };
-
-    let prompt_text = "Do you want to include the state path?";
-    let include_state_path = cli_inputs::select_yes_or_no(prompt_text)?;
-    let program_state_path = if include_state_path {
-        let prompt_text = "Select the state folder:";
-        let option = cli_inputs::select(prompt_text, folders.clone(), None)?;
-        folders[option].clone().replace("../", ".")
-    } else {
-        "".to_string()
-    };
-
-    Ok(OptionalConfig {
-        program_instructions_path,
-        program_state_path,
-    })
-}
-
-fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalConfig) {
+fn create_bat_toml(required_config: RequiredConfig) {
     let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
     let RequiredConfig {
         project_name,
@@ -222,11 +186,6 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
         miro_board_id,
         ..
     } = required_config;
-
-    let OptionalConfig {
-        program_instructions_path,
-        program_state_path,
-    } = optional_config;
 
     if bat_toml_path.exists() {
         panic!("Bat.toml file already exist in {bat_toml_path:?}, aborting")
@@ -270,15 +229,6 @@ fn create_bat_toml(required_config: RequiredConfig, optional_config: OptionalCon
         .replace(
             &String::from("auditor_names = [\""),
             &("auditor_names = [\"".to_string() + &auditor_names.join("\",\"")),
-        )
-        .replace(
-            &String::from("program_instructions_path = \""),
-            &("program_instructions_path = \"".to_string()
-                + &program_instructions_path.replace("./", "../")),
-        )
-        .replace(
-            &String::from("program_state_path = \""),
-            &("program_state_path = \"".to_string() + &program_state_path.replace("./", "../")),
         );
 
     fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");
