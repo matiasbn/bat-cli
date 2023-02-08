@@ -57,6 +57,7 @@ pub enum GitCommit {
     TMAccounts,
     UpdateMetadata,
     Figures,
+    UpdateCOTemplates,
 }
 
 pub fn create_git_commit(
@@ -89,9 +90,12 @@ pub fn create_git_commit(
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
             println!("code-overhaul file started with commit: {commit_string:?}");
-            let file_to_delete_path =
-                // utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
-                batbelt::path::get_file_path(FilePathType::CodeOverhaulToReview { file_name: commit_file.clone() }, true);
+            let file_to_delete_path = batbelt::path::get_file_path(
+                FilePathType::CodeOverhaulToReview {
+                    file_name: commit_file.clone(),
+                },
+                false,
+            );
             let file_to_add_path = batbelt::path::get_file_path(
                 FilePathType::CodeOverhaulStarted {
                     file_name: commit_file.clone(),
@@ -297,6 +301,13 @@ pub fn create_git_commit(
             let figures_path = batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true);
             let commit_string = format!("notes: figures updated");
             (commit_string, vec![figures_path])
+        }
+        GitCommit::UpdateCOTemplates => {
+            println!("Creating a commit for updated CO templates");
+            let to_review_co_path =
+                batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true);
+            let commit_string = format!("templates: co files updated");
+            (commit_string, vec![to_review_co_path])
         }
     };
 

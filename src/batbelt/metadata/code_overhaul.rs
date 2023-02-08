@@ -19,6 +19,7 @@ pub struct CodeOverhaulMetadata {
     pub entry_point_function: FunctionMetadata,
     pub handler_function: FunctionMetadata,
     pub context_accounts: StructMetadata,
+    pub instruction_file_path: String,
     pub dependencies: Vec<FunctionMetadata>,
     pub miro_board_url: String,
 }
@@ -48,6 +49,7 @@ impl CodeOverhaulMetadata {
         entry_point_function: FunctionMetadata,
         handler_function: FunctionMetadata,
         context_accounts: StructMetadata,
+        instruction_file_path: String,
         dependencies: Vec<FunctionMetadata>,
         miro_board_url: String,
     ) -> Self {
@@ -56,6 +58,7 @@ impl CodeOverhaulMetadata {
             entry_point_function,
             handler_function,
             context_accounts,
+            instruction_file_path,
             dependencies,
             miro_board_url,
         }

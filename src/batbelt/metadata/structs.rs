@@ -6,6 +6,7 @@ use crate::batbelt::path::{canonicalize_path, FolderPathType};
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
+use crate::batbelt::metadata::source_code::SourceCodeMetadata;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use inflector::Inflector;
 use std::vec;
@@ -79,6 +80,15 @@ impl StructMetadata {
             0,
         );
         md_section
+    }
+
+    pub fn get_source_code(&self) -> SourceCodeMetadata {
+        SourceCodeMetadata::new(
+            self.name.clone(),
+            self.path.clone(),
+            self.start_line_index,
+            self.end_line_index,
+        )
     }
 
     pub fn from_markdown_section(md_section: MarkdownSection) -> Self {

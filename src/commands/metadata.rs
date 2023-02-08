@@ -22,140 +22,45 @@ use std::process::Command;
 use std::{fs, io};
 
 pub fn functions() -> Result<(), String> {
-    // let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
-    // let mut metadata_markdown = MarkdownFile::new(&metadata_path);
-    // let mut functions_section = metadata_markdown
-    //     .clone()
-    //     .get_section_by_title(FUNCTIONS_SECTION_TITLE)
-    //     .clone();
+    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
+    let functions_section = metadata_markdown
+        .get_section(&MetadataSection::Functions.to_string())
+        .unwrap();
     // // check if empty
-    // let is_initialized = !functions_section
-    //     .subsections
-    //     .iter()
-    //     .all(|subsection| subsection.subsections.is_empty());
-    // // prompt the user if he wants to replace
-    // if is_initialized {
-    //     let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
-    //         format!(
-    //             "{}, are you sure you want to continue?",
-    //             format!("functions in metadata.md are arealready initialized").bright_red()
-    //         )
-    //         .as_str(),
-    //     )?;
-    //     if !user_decided_to_continue {
-    //         panic!("User decided not to continue with the update process for functions metada")
-    //     }
-    // }
-    // // get functions in all files
-    // let (
-    //     handlers_metadata_vec,
-    //     entry_poins_metadata_vec,
-    //     helpers_metadata_vec,
-    //     validators_metadata_vec,
-    //     other_metadata_vec,
-    // ) = get_functions_metadata_from_program()?;
-
-    // let handlers_subsections = handlers_metadata_vec
-    //     .into_iter()
-    //     .map(|metadata| {
-    //         MarkdownSection::new_from_content(&get_functions_section_content(
-    //             &MarkdownSectionLevel::H4.get_header(&metadata.name),
-    //             metadata,
-    //         ))
-    //     })
-    //     .collect();
-
-    // let entry_points_subsections = entry_poins_metadata_vec
-    //     .into_iter()
-    //     .map(|metadata| {
-    //         MarkdownSection::new_from_content(&get_functions_section_content(
-    //             &MarkdownSectionLevel::H4.get_header(&metadata.name),
-    //             metadata,
-    //         ))
-    //     })
-    //     .collect();
-
-    // let helpers_subsections = helpers_metadata_vec
-    //     .into_iter()
-    //     .map(|metadata| {
-    //         MarkdownSection::new_from_content(&get_functions_section_content(
-    //             &MarkdownSectionLevel::H4.get_header(&metadata.name),
-    //             metadata,
-    //         ))
-    //     })
-    //     .collect();
-
-    // let validators_subsections = validators_metadata_vec
-    //     .into_iter()
-    //     .map(|metadata| {
-    //         MarkdownSection::new_from_content(&get_functions_section_content(
-    //             &MarkdownSectionLevel::H4.get_header(&metadata.name),
-    //             metadata,
-    //         ))
-    //     })
-    //     .collect();
-
-    // let other_subsections = other_metadata_vec
-    //     .into_iter()
-    //     .map(|metadata| {
-    //         MarkdownSection::new_from_content(&get_functions_section_content(
-    //             &MarkdownSectionLevel::H4.get_header(&metadata.name),
-    //             metadata,
-    //         ))
-    //     })
-    //     .collect();
-
-    // // New and old sections
-    // let new_handlers_subsection = MarkdownSection::new_from_subsections(
-    //     HANDLERS_SUBSECTION_TITLE,
-    //     MarkdownSectionLevel::H3,
-    //     handlers_subsections,
-    // );
-    // let old_handlers_subsection =
-    //     functions_section.get_subsection_by_title(HANDLERS_SUBSECTION_TITLE);
-
-    // let new_entrypoints_subsection = MarkdownSection::new_from_subsections(
-    //     ENTRYPOINTS_SUBSECTION_TITLE,
-    //     MarkdownSectionLevel::H3,
-    //     entry_points_subsections,
-    // );
-    // let old_entrypoints_subsection =
-    //     functions_section.get_subsection_by_title(ENTRYPOINTS_SUBSECTION_TITLE);
-
-    // let new_validators_subsection = MarkdownSection::new_from_subsections(
-    //     VALIDATORS_SUBSECTION_TITLE,
-    //     MarkdownSectionLevel::H3,
-    //     validators_subsections,
-    // );
-    // let old_validators_subsection =
-    //     functions_section.get_subsection_by_title(VALIDATORS_SUBSECTION_TITLE);
-
-    // let new_helpers_subsection = MarkdownSection::new_from_subsections(
-    //     HELPERS_SUBSECTION_TITLE,
-    //     MarkdownSectionLevel::H3,
-    //     helpers_subsections,
-    // );
-    // let old_helpers_subsection =
-    //     functions_section.get_subsection_by_title(HELPERS_SUBSECTION_TITLE);
-
-    // let new_others_subsection = MarkdownSection::new_from_subsections(
-    //     OTHERS_SUBSECTION_TITLE,
-    //     MarkdownSectionLevel::H3,
-    //     other_subsections,
-    // );
-    // let old_others_subsection = functions_section.get_subsection_by_title(OTHERS_SUBSECTION_TITLE);
-
-    // metadata_markdown.update_section(old_handlers_subsection.clone(), new_handlers_subsection);
-    // metadata_markdown.update_section(
-    //     old_entrypoints_subsection.clone(),
-    //     new_entrypoints_subsection,
-    // );
-    // metadata_markdown.update_section(old_validators_subsection.clone(), new_validators_subsection);
-    // metadata_markdown.update_section(old_helpers_subsection.clone(), new_helpers_subsection);
-    // metadata_markdown.update_section(old_others_subsection.clone(), new_others_subsection);
-
-    // metadata_markdown.save()?;
-    // batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None)?;
+    let functions_subsections =
+        metadata_markdown.get_section_subsections(functions_section.clone());
+    let is_initialized = !functions_section.content.is_empty() || functions_subsections.len() > 0;
+    if is_initialized {
+        let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
+            format!(
+                "{}, are you sure you want to continue?",
+                format!("Functions section in metadata.md is already initialized").bright_red()
+            )
+            .as_str(),
+        )
+        .unwrap();
+        if !user_decided_to_continue {
+            panic!("User decided not to continue with the update process for functions metadata")
+        }
+    }
+    let functions_metadata = get_functions_metadata_from_program().unwrap();
+    let functions_metadata_sections_vec = functions_metadata
+        .iter()
+        .map(|function_metadata| {
+            function_metadata
+                .get_markdown_section(&functions_section.section_header.section_hash.clone())
+        })
+        .collect::<Vec<_>>();
+    metadata_markdown
+        .replace_section(
+            functions_section.clone(),
+            functions_section.clone(),
+            functions_metadata_sections_vec,
+        )
+        .unwrap();
+    metadata_markdown.save().unwrap();
+    batbelt::git::create_git_commit(GitCommit::UpdateMetadata, None).unwrap();
     Ok(())
 }
 
