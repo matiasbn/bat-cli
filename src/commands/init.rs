@@ -41,7 +41,7 @@ pub fn initialize_bat_project() -> Result<(), String> {
         .output()
         .unwrap()
         .stdout;
-    let git_initialized: bool = from_utf8(&output).unwrap() == "true";
+    let git_initialized: bool = from_utf8(&output).unwrap() == "true\n";
     if !git_initialized {
         println!("Initializing project repository");
         initialize_project_repository()?;
