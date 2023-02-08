@@ -1,6 +1,6 @@
 [package]
 name = "bat-cli"
-version = "0.3.8"
+version = "0.4.0"
 edition = "2021"
 description = "Blockchain Auditor Toolkit (BAT)"
 license = "MIT"
