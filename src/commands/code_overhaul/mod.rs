@@ -3,20 +3,14 @@ pub mod start;
 pub mod update;
 
 use colored::Colorize;
-use dialoguer::console::Term;
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::Select;
 
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 
-use crate::batbelt::constants::{
-    CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER, CO_FIGURES,
-    MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
-};
-use crate::batbelt::miro::MiroConfig;
+use crate::batbelt::constants::CODE_OVERHAUL_NOTES_PLACEHOLDER;
+
 use crate::config::BatConfig;
 
-use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
+use crate::batbelt::git::{create_git_commit, GitCommit};
 use crate::batbelt::helpers::get::{
     get_finished_co_files, get_finished_co_files_info_for_results,
     get_table_of_contents_for_results,
@@ -24,18 +18,10 @@ use crate::batbelt::helpers::get::{
 use crate::batbelt::path::{FilePathType, FolderPathType};
 use crate::{batbelt, commands};
 
-use std::{env, fs};
-
-use crate::batbelt::miro::frame::MiroFrame;
+use std::fs;
 
 use crate::batbelt::bash::execute_command;
-use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
-use crate::batbelt::metadata::MetadataSection;
-use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, SonarResultType};
-use clap::builder::Str;
-use std::path::Path;
-use std::process::Command;
+
 use std::string::String;
 
 pub fn count_co_files() -> Result<(), String> {

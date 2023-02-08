@@ -1,6 +1,5 @@
 use std::{fs, path::Path};
 
-use crate::batbelt::miro::MiroConfig;
 use crate::config::BatConfig;
 
 pub enum FilePathType {

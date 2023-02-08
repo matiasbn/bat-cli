@@ -1,7 +1,5 @@
 // VSCode
 
-use std::{path::Path, process::Command, str::from_utf8};
-
 use crate::{batbelt::bash::execute_command, config::BatConfig};
 
 pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), String> {

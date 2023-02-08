@@ -1,17 +1,9 @@
-use crate::batbelt::structs::FileInfo;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
-use crate::batbelt;
-use crate::batbelt::path::{canonicalize_path, FolderPathType};
-use colored::{ColoredString, Colorize};
-
-use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::metadata::functions::FunctionMetadata;
 use crate::batbelt::metadata::structs::StructMetadata;
-use crate::batbelt::sonar::{BatSonar, SonarResultType};
+
 use inflector::Inflector;
-use std::vec;
-use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone)]
 pub struct CodeOverhaulMetadata {
