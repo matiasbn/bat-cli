@@ -1,4 +1,4 @@
-use crate::batbelt::markdown::{MarkdownFile, MarkdownSectionLevel};
+use crate::batbelt::markdown::MarkdownFile;
 use inflector::Inflector;
 
 pub struct CodeOverhaulFile {

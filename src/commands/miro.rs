@@ -3,15 +3,13 @@ use crate::batbelt::constants::*;
 use crate::batbelt::git::*;
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionLevel};
 
-use std::borrow::Borrow;
 use std::fs;
 use std::result::Result;
 
 use colored::Colorize;
-use toml::to_string;
 
 use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::metadata::MetadataSection;
+
 use crate::batbelt::structs::{SignerInfo, SignerType};
 use crate::{
     batbelt::path::FilePathType, commands::entrypoints::entrypoints::get_entrypoints_names,
@@ -465,7 +463,7 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
                     .iter()
                     .map(|struct_metadata| struct_metadata.name.clone())
                     .collect::<Vec<_>>();
-                let selected_subsection = &subsections[selection];
+                let _selected_subsection = &subsections[selection];
                 // Choose metadata final selection
                 let prompt_text = format!("Please enter the {}", "struct to deploy".green());
                 let selection =

@@ -1,37 +1,33 @@
-use colored::Colorize;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::{MultiSelect, Select};
+use dialoguer::Select;
 use normalize_url::normalizer;
 
 use walkdir::WalkDir;
 
 use crate::batbelt::constants::{
-    CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
-    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-    CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER,
-    CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
-    CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
-    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
-    CONTEXT_ACCOUNTS_PNG_NAME, ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
+    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
+    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER,
+    CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER, CONTEXT_ACCOUNTS_PNG_NAME, ENTRYPOINT_PNG_NAME,
+    HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
 };
 use crate::config::{BatConfig, RequiredConfig};
 
-use std::borrow::{Borrow, BorrowMut};
+use std::borrow::Borrow;
 
 use crate::batbelt;
-use std::fs::{File, ReadDir};
+use std::fs;
+use std::fs::ReadDir;
 use std::io::BufRead;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::string::String;
-use std::{fs, io};
 
 pub mod get {
-    use std::{fs::DirEntry, io};
+    use std::fs::DirEntry;
 
     use crate::batbelt::path::FolderPathType;
     use crate::batbelt::structs::FileInfo;
-    use crate::batbelt::{self, cli_inputs::select_yes_or_no};
+    use crate::batbelt::{self};
 
     use super::*;
 

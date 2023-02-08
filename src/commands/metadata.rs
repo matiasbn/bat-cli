@@ -1,25 +1,14 @@
-use crate::batbelt::constants::{
-    MIRO_ACCOUNTS_STICKY_NOTE_COLUMNS, MIRO_INITIAL_X_ACCOUNTS_STICKY_NOTE,
-    MIRO_INITIAL_Y_ACCOUNTS_STICKY_NOTE, MIRO_OFFSET_X_ACCOUNTS_STICKY_NOTE,
-    MIRO_OFFSET_Y_ACCOUNTS_STICKY_NOTE, MIRO_WIDTH_ACCOUNTS_STICKY_NOTE,
-};
-use crate::batbelt::markdown::{
-    MarkdownFile, MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel,
-};
+use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions::get_functions_metadata_from_program;
-use crate::batbelt::metadata::miro::{
-    get_format_miro_accounts_to_result_string, MiroAccountMetadata,
-    MIRO_ACCOUNTS_SUBSECTION_FRAME_URL_HEADER, MIRO_SUBSECTIONS_HEADERS,
-};
+
 use crate::batbelt::metadata::structs::get_structs_metadata_from_program;
-use crate::batbelt::metadata::{metadata_helpers, MetadataSection};
-use crate::batbelt::miro::sticky_note::MiroStickyNote;
-use crate::batbelt::miro::{MiroColor, MiroConfig};
+use crate::batbelt::metadata::MetadataSection;
+
 use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
-use std::process::Command;
-use std::{fs, io};
+
+use std::io;
 
 pub fn functions() -> Result<(), String> {
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);

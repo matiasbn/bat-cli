@@ -1,11 +1,5 @@
 pub mod entrypoints {
     use crate::batbelt::sonar::{BatSonar, SonarResultType};
-    use std::{
-        borrow::BorrowMut,
-        fs,
-        fs::File,
-        io::{self, BufRead},
-    };
 
     use crate::config::{BatConfig, RequiredConfig};
 

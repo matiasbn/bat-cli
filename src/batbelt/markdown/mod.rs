@@ -1,13 +1,6 @@
-use crate::batbelt::templates::code_overhaul::{CodeOverhaulFile, CodeOverhaulSection};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use std::{
-    borrow::{Borrow, BorrowMut},
-    cell::{Ref, RefCell},
-    fs, io,
-    ops::Deref,
-    rc::{Rc, Weak},
-};
+use std::fs;
 
 #[derive(thiserror::Error, Debug)]
 pub enum MarkdownError {

@@ -1,44 +1,26 @@
 use colored::Colorize;
-use dialoguer::console::Term;
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::{MultiSelect, Select};
 
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 
-use crate::batbelt::constants::{
-    CODE_OVERHAUL_ACCOUNTS_VALIDATION_PLACEHOLDER, CODE_OVERHAUL_CONTEXT_ACCOUNTS_PLACEHOLDER,
-    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_FUNCTION_PARAMETERS_PLACEHOLDER,
-    CODE_OVERHAUL_INSTRUCTION_FILE_PATH_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER,
-    CODE_OVERHAUL_NO_FUNCTION_PARAMETERS_FOUND_PLACEHOLDER,
-    CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_PREREQUISITES_PLACEHOLDER,
-    CODE_OVERHAUL_SIGNERS_DESCRIPTION_PLACEHOLDER, CO_FIGURES, MIRO_BOARD_COLUMNS,
-    MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
-};
-use crate::batbelt::miro::MiroConfig;
-use crate::config::{BatConfig, RequiredConfig};
+use crate::batbelt::constants::CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER;
+
+use crate::config::BatConfig;
 
 use crate::batbelt;
 use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
-use crate::batbelt::helpers::get::{
-    get_finished_co_files, get_finished_co_files_info_for_results,
-    get_string_between_two_index_from_string, get_table_of_contents_for_results,
-};
+
 use crate::batbelt::path::{FilePathType, FolderPathType};
 
-use std::borrow::Borrow;
-use std::{env, fs};
-
-use crate::batbelt::miro::frame::MiroFrame;
+use std::fs;
 
 use crate::batbelt::bash::execute_command;
-use crate::batbelt::helpers::format::format_to_rust_comment;
+
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
-use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul::CodeOverhaulSection;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), String> {
@@ -195,7 +177,7 @@ pub fn start_co_file() -> Result<(), String> {
         .unwrap();
 
     // Validations section
-    let mut handler_if_statements = BatSonar::new_from_path(
+    let handler_if_statements = BatSonar::new_from_path(
         &instruction_file_path,
         Some(&handler_function.name),
         SonarResultType::If,
