@@ -20,9 +20,8 @@ use crate::config::{BatConfig, RequiredConfig};
 use crate::batbelt;
 use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::batbelt::helpers::get::{
-    get_finished_co_files, get_finished_co_files_info_for_results, get_multiple_line_validation,
-    get_single_line_validation, get_string_between_two_index_from_string,
-    get_table_of_contents_for_results, prompt_check_validation,
+    get_finished_co_files, get_finished_co_files_info_for_results,
+    get_string_between_two_index_from_string, get_table_of_contents_for_results,
 };
 use crate::batbelt::path::{FilePathType, FolderPathType};
 
