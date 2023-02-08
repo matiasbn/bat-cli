@@ -92,7 +92,17 @@ impl CodeOverhaulSection {
 #[test]
 fn test_to_title() {
     let expected = "Signers:";
-    let signers_title = CodeOverhaulSection::Signers.to_title();
-    println!("co_template {:#?}", signers_title);
-    assert_eq!(expected, signers_title, "Incorrect title");
+    let title = CodeOverhaulSection::Signers.to_title();
+    println!("title {:#?}", title);
+    assert_eq!(expected, title, "Incorrect title");
+
+    let expected = "Context accounts:";
+    let title = CodeOverhaulSection::ContextAccounts.to_title();
+    println!("title {:#?}", title);
+    assert_eq!(expected, title, "Incorrect title");
+
+    let expected = "Validations:";
+    let title = CodeOverhaulSection::Validations.to_title();
+    println!("title {:#?}", title);
+    assert_eq!(expected, title, "Incorrect title");
 }

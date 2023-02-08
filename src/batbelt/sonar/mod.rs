@@ -284,7 +284,7 @@ impl SonarFilter {
                 vec!["require", "valid", "assert", "verify"]
             }
             SonarFilter::EndOfOpen(SonarResultType::Validation) => vec!["("],
-            SonarFilter::Closure(SonarResultType::Validation) => vec![");"],
+            SonarFilter::Closure(SonarResultType::Validation) => vec![");", ")?;"],
             SonarFilter::Open(SonarResultType::ContextAccounts) => {
                 vec!["#[account"]
             }

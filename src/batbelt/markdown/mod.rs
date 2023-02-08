@@ -1,3 +1,4 @@
+use crate::batbelt::templates::code_overhaul::{CodeOverhaulFile, CodeOverhaulSection};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::{
@@ -225,11 +226,6 @@ impl MarkdownFile {
                 new_sections_vec,
             );
         }
-        self.update_content_from_sections();
-        Ok(())
-    }
-
-    fn update_content_from_sections(&mut self) {
         let new_content = self
             .sections
             .iter()
@@ -245,7 +241,8 @@ impl MarkdownFile {
                 }
             });
         self.content = new_content;
-        self.get_sections()
+        self.get_sections();
+        Ok(())
     }
 
     fn get_sections(&mut self) {
@@ -255,7 +252,7 @@ impl MarkdownFile {
             .map(|section_header| {
                 let new_section = MarkdownSection::new_from_md_content_and_header(
                     section_header.clone(),
-                    &self.content,
+                    &self.content.clone(),
                 );
                 new_section
             })
@@ -268,6 +265,9 @@ impl MarkdownFile {
             .content
             .lines()
             .filter(|line| {
+                if line.contains("#[account") {
+                    return false;
+                };
                 let trailing_ws = Self::get_trailing_whitespaces(line);
                 if trailing_ws == 0 {
                     line.trim().split(" ").next().unwrap().contains("#")
@@ -339,6 +339,7 @@ impl MarkdownSection {
             .unwrap();
         let end_line_index_sec = content_lines.clone().enumerate().position(|line| {
             (line.1.trim().split(" ").next().unwrap().contains("#") && line.0 > start_line_index)
+                && !line.1.contains("#[account")
         });
         let md_section = if let Some(end_line_index) = end_line_index_sec {
             let section_content = content_lines
@@ -768,5 +769,136 @@ fn test_replace_section() {
             .content
             .contains(&replace_subsection.section_header.section_header),
         "new header not found"
+    );
+}
+
+#[test]
+fn test_replace_co_file() {
+    let new_signers_content = "
+- key: The key authorized for this instruction
+- funder: The funder - pays for account rent
+";
+    let new_function_params_content = "- input: RecipeIngredients";
+    let new_ca_content = "
+- ```rust
+  pub struct AddConsumableInputToRecipe<'info> {
+      /// The key authorized for this instruction
+      pub key: Signer<'info>,
+  
+      /// The crafting permissions [`Profile`](player_profile::state::Profile)
+      pub profile: AccountLoader<'info, Profile>,
+  
+      /// The funder - pays for account rent
+      #[account(mut)]
+      pub funder: Signer<'info>,
+  
+      /// The [Recipe] account
+      #[account(mut)]
+      pub recipe: AccountLoader<'info, Recipe>,
+  
+      /// The [Domain] account
+      pub domain: AccountLoader<'info, Domain>,
+  
+      /// The Mint Account
+      pub mint: Account<'info, Mint>,
+  
+      /// The System program
+      pub system_program: Program<'info, System>,
+  }
+  ```";
+
+    let new_validations_content = "
+- ```rust
+    #[account(
+        mut,
+        has_one = domain @Errors::IncorrectDomain
+    )]
+    pub recipe: AccountLoader<'info, Recipe>,
+  ```
+
+- ```rust
+    #[account(
+        has_one = profile @Errors::IncorrectProfileAddress,
+    )]
+    pub domain: AccountLoader<'info, Domain>,
+  ```
+
+
+- ```rust
+    validate_permissions(
+        &ctx.accounts.profile,
+        &ctx.accounts.key,
+        input.key_index,
+        CraftingPermissions::MANAGE_RECIPE,
+        None,
+    )?;
+  ```
+
+
+- ```rust
+    require_keys_eq!(
+        input.mint,
+        ctx.accounts.mint.key(),
+        Errors::IncorrectMintAddress
+    );
+  ```
+";
+    let path = "./co_example.md";
+
+    let mut started_markdown_file = CodeOverhaulFile::template_to_markdown_file(path);
+    let started_markdown_file_backup = CodeOverhaulFile::template_to_markdown_file(path);
+    let signers_title = &CodeOverhaulSection::Signers.to_title();
+    let fun_pam_title = &CodeOverhaulSection::FunctionParameters.to_title();
+    let ca_title = &CodeOverhaulSection::ContextAccounts.to_title();
+    let val_title = &CodeOverhaulSection::Validations.to_title();
+    let signers_section = started_markdown_file.get_section(signers_title).unwrap();
+    let mut new_signers_section = signers_section.clone();
+    new_signers_section.content = new_signers_content.to_string();
+    started_markdown_file
+        .replace_section(new_signers_section, signers_section.clone(), vec![])
+        .unwrap();
+    assert_eq!(
+        signers_section.content.clone(),
+        started_markdown_file_backup
+            .get_section(signers_title)
+            .unwrap()
+            .content,
+        "signers section dont match"
+    );
+
+    let function_parameters_section = started_markdown_file.get_section(fun_pam_title).unwrap();
+    let mut new_fun_param_section = function_parameters_section.clone();
+    new_fun_param_section.content = new_function_params_content.to_string();
+    started_markdown_file
+        .replace_section(
+            new_fun_param_section,
+            function_parameters_section.clone(),
+            vec![],
+        )
+        .unwrap();
+
+    let context_accounts_section = started_markdown_file.get_section(ca_title).unwrap();
+    let mut new_context_accounts_section = context_accounts_section.clone();
+    new_context_accounts_section.content = new_ca_content.to_string();
+    started_markdown_file
+        .replace_section(
+            new_context_accounts_section,
+            context_accounts_section.clone(),
+            vec![],
+        )
+        .unwrap();
+    let validations_section = started_markdown_file.get_section(val_title).unwrap();
+    let mut new_validations_section = validations_section.clone();
+    started_markdown_file
+        .replace_section(new_validations_section, validations_section.clone(), vec![])
+        .unwrap();
+
+    assert_eq!(
+        signers_section.content.clone(),
+        started_markdown_file_backup
+            .get_section(signers_title)
+            .unwrap()
+            .content,
+        "signers section dont match"
     );
 }
