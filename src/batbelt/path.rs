@@ -75,11 +75,7 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
         }
         FilePathType::CodeOverhaulStarted { file_name } => {
             let entrypoint_name = file_name.replace(".md", "");
-            if MiroConfig::new().miro_enabled() {
-                format!("{code_overhaul_path}/started/{entrypoint_name}/{entrypoint_name}.md")
-            } else {
-                format!("{code_overhaul_path}/started/{entrypoint_name}.md")
-            }
+            format!("{code_overhaul_path}/started/{entrypoint_name}.md")
         }
         FilePathType::CodeOverhaulFinished { file_name } => {
             let entrypoint_name = file_name.replace(".md", "");

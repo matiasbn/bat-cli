@@ -110,64 +110,6 @@ pub mod get {
         Ok(parsed_context_name)
     }
 
-    pub fn get_multiple_line_validation(instruction_file: &String, line_index: usize) -> String {
-        // let mut validation_candidate: Vec<String> = vec![line.clone().to_string()];
-        let instruction_file_lines = instruction_file.lines();
-        let validation_closing_index = instruction_file_lines
-            .clone()
-            .into_iter()
-            .enumerate()
-            .position(|(l_index, l)| {
-                (l.trim() == ");" || l.trim() == ")?;" || l.trim() == ")" || l.trim() == ")?")
-                    && l_index > line_index
-            });
-        if let Some(closing_index) = validation_closing_index {
-            let validation_string = get_string_between_two_index_from_string(
-                instruction_file.to_string(),
-                line_index,
-                closing_index,
-            )
-            .unwrap();
-            let prompt_text = format!(
-                "is the next function a {}? \n {}",
-                format!("validation").red(),
-                format!("{validation_string}").bright_green(),
-            );
-            let is_validation = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
-            if is_validation {
-                validation_string
-            } else {
-                "".to_string()
-            }
-        } else {
-            "".to_string()
-        }
-    }
-    pub fn get_single_line_validation(line: &str) -> String {
-        let validation = format!("\t{}", line.trim());
-        let prompt = format!(
-            "is the next line a {}?: \n {}",
-            format!("validation").red(),
-            format!("{validation}").bright_green()
-        );
-        let is_validation = select_yes_or_no(&prompt).unwrap();
-        if is_validation {
-            validation
-        } else {
-            "".to_string()
-        }
-    }
-
-    pub fn prompt_check_validation(possible_validation: String) -> bool {
-        let prompt = format!(
-            "is this a {}?: \n {}",
-            format!("validation").red(),
-            format!("{}", possible_validation).bright_green()
-        );
-        let is_validation = select_yes_or_no(&prompt).unwrap();
-        is_validation
-    }
-
     pub fn get_instruction_files() -> Result<Vec<FileInfo>, String> {
         let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, true);
         let mut lib_files_info = get_only_files_from_folder(program_path)
@@ -456,19 +398,6 @@ pub mod get {
         end_index: usize,
     ) -> Result<String, String> {
         let content_result = content.lines().collect::<Vec<_>>()[start_index..=end_index]
-            .to_vec()
-            .join("\n");
-        Ok(content_result)
-    }
-    pub fn get_string_between_two_index_from_path(
-        file_path: String,
-        start_index: usize,
-        end_index: usize,
-    ) -> Result<String, String> {
-        let content_string = fs::read_to_string(file_path.clone())
-            .expect(format!("Error reading: {}", file_path).as_str());
-        let content_lines = content_string.lines();
-        let content_result = content_lines.clone().collect::<Vec<_>>()[start_index..end_index]
             .to_vec()
             .join("\n");
         Ok(content_result)

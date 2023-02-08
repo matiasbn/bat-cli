@@ -90,9 +90,12 @@ pub fn create_git_commit(
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " started";
             println!("code-overhaul file started with commit: {commit_string:?}");
-            let file_to_delete_path =
-                // utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
-                batbelt::path::get_file_path(FilePathType::CodeOverhaulToReview { file_name: commit_file.clone() }, true);
+            let file_to_delete_path = batbelt::path::get_file_path(
+                FilePathType::CodeOverhaulToReview {
+                    file_name: commit_file.clone(),
+                },
+                false,
+            );
             let file_to_add_path = batbelt::path::get_file_path(
                 FilePathType::CodeOverhaulStarted {
                     file_name: commit_file.clone(),
