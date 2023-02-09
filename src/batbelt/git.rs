@@ -77,13 +77,7 @@ pub fn create_git_commit(
                 bat_config.required.project_name, bat_config.auditor.auditor_name
             );
             // (commit_string, vec![utils::path::get_auditor_notes_path()?])
-            (
-                commit_string,
-                vec![batbelt::path::get_folder_path(
-                    FolderPathType::AuditorNotes,
-                    true,
-                )],
-            )
+            (commit_string, vec![".".to_string()])
         }
         GitCommit::StartCO => {
             let commit_file = &commit_files.unwrap()[0];
