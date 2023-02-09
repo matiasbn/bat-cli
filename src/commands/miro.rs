@@ -147,138 +147,123 @@ pub async fn deploy_co() -> Result<(), String> {
             })
         }
 
-        println!("Creating frame in Miro for {selected_folder}");
-        // let miro_frame = api::frame::create_frame_for_entrypoint(&selected_folder)
-        //     .await
+        // println!("Creating signers figures in Miro for {selected_folder}");
+        //
+        // for (signer_index, signer) in signers_info.iter_mut().enumerate() {
+        //     let x_position = 550;
+        //     let y_position = (150 + signer_index * 270) as i64;
+        //     let width = 374;
+        //     let mut signer_sticky_note = MiroStickyNote::new(
+        //         &signer.signer_text,
+        //         signer.signer_type.get_sticky_note_color(),
+        //         &miro_frame.item_id,
+        //         x_position,
+        //         y_position,
+        //         width,
+        //     );
+        //     signer_sticky_note.deploy().await;
+        //
+        //     let user_figure_url = "https://mirostatic.com/app/static/12079327f83ff492.svg";
+        //     let y_position = (150 + signer_index * 270) as i64;
+        //     let mut user_figure =
+        //         MiroImage::new_from_url(user_figure_url, &miro_frame.item_id, 150, y_position, 200);
+        //     user_figure.deploy().await;
+        //
+        //     *signer = SignerInfo {
+        //         signer_text: signer.signer_text.clone(),
+        //         sticky_note_id: signer_sticky_note.item_id,
+        //         user_figure_id: user_figure.item_id,
+        //         signer_type: SignerType::NotSigner,
+        //     }
+        // }
+        //
+        // for snapshot in CO_FIGURES {
+        //     // read the content after every placeholder replacement is essential
+        //     let to_start_file_content = fs::read_to_string(&selected_co_started_path).unwrap();
+        //     let placeholder = match snapshot.to_string().as_str() {
+        //         ENTRYPOINT_PNG_NAME => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
+        //         CONTEXT_ACCOUNTS_PNG_NAME => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
+        //         VALIDATIONS_PNG_NAME => CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
+        //         HANDLER_PNG_NAME => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
+        //         _ => todo!(),
+        //     };
+        //     let snapshot_path = format!(
+        //         "{}",
+        //         selected_co_started_path
+        //             .clone()
+        //             .replace(format!("{}.md", selected_folder).as_str(), snapshot)
+        //     );
+        //     println!("Creating image in Miro for {snapshot}");
+        //     let file_name = snapshot_path.clone().split('/').last().unwrap().to_string();
+        //     // let id = api::custom_image::create_image_from_device_and_update_position(
+        //     //     snapshot_path.to_string(),
+        //     //     &selected_folder,
+        //     // )
+        //     // .await?;
+        //     let mut snapshot = MiroImage::new_from_file_path(&snapshot_path);
+        //     snapshot.deploy();
+        //     let (x_position, y_position) = match file_name.to_string().as_str() {
+        //         ENTRYPOINT_PNG_NAME => (1300, 250),
+        //         CONTEXT_ACCOUNTS_PNG_NAME => (2200, 350),
+        //         VALIDATIONS_PNG_NAME => (3000, 500),
+        //         HANDLER_PNG_NAME => (2900, 1400),
+        //         _ => todo!(),
+        //     };
+        //     snapshot.update_position(x_position, y_position);
+        //     let _frame_id =
+        //         batbelt::miro::helpers::get_frame_id_from_co_file(selected_folder.as_str())?;
+        //     fs::write(
+        //         &selected_co_started_path,
+        //         &to_start_file_content.replace(placeholder, &snapshot.item_id),
+        //     )
         //     .unwrap();
-        let mut miro_frame =
-            MiroFrame::new(&selected_folder, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
-        miro_frame.deploy();
-        fs::write(
-            &selected_co_started_path,
-            &to_start_file_content.replace(
-                CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
-                &miro_frame.frame_url.unwrap(),
-            ),
-        )
-        .unwrap();
-
-        println!("Creating signers figures in Miro for {selected_folder}");
-
-        for (signer_index, signer) in signers_info.iter_mut().enumerate() {
-            let x_position = 550;
-            let y_position = (150 + signer_index * 270) as i64;
-            let width = 374;
-            let mut signer_sticky_note = MiroStickyNote::new(
-                &signer.signer_text,
-                signer.signer_type.get_sticky_note_color(),
-                &miro_frame.item_id,
-                x_position,
-                y_position,
-                width,
-            );
-            signer_sticky_note.deploy().await;
-
-            let user_figure_url = "https://mirostatic.com/app/static/12079327f83ff492.svg";
-            let y_position = (150 + signer_index * 270) as i64;
-            let mut user_figure =
-                MiroImage::new_from_url(user_figure_url, &miro_frame.item_id, 150, y_position, 200);
-            user_figure.deploy().await;
-
-            *signer = SignerInfo {
-                signer_text: signer.signer_text.clone(),
-                sticky_note_id: signer_sticky_note.item_id,
-                user_figure_id: user_figure.item_id,
-                signer_type: SignerType::NotSigner,
-            }
-        }
-
-        for snapshot in CO_FIGURES {
-            // read the content after every placeholder replacement is essential
-            let to_start_file_content = fs::read_to_string(&selected_co_started_path).unwrap();
-            let placeholder = match snapshot.to_string().as_str() {
-                ENTRYPOINT_PNG_NAME => CODE_OVERHAUL_ENTRYPOINT_PLACEHOLDER,
-                CONTEXT_ACCOUNTS_PNG_NAME => CODE_OVERHAUL_CONTEXT_ACCOUNT_PLACEHOLDER,
-                VALIDATIONS_PNG_NAME => CODE_OVERHAUL_VALIDATIONS_PLACEHOLDER,
-                HANDLER_PNG_NAME => CODE_OVERHAUL_HANDLER_PLACEHOLDER,
-                _ => todo!(),
-            };
-            let snapshot_path = format!(
-                "{}",
-                selected_co_started_path
-                    .clone()
-                    .replace(format!("{}.md", selected_folder).as_str(), snapshot)
-            );
-            println!("Creating image in Miro for {snapshot}");
-            let file_name = snapshot_path.clone().split('/').last().unwrap().to_string();
-            // let id = api::custom_image::create_image_from_device_and_update_position(
-            //     snapshot_path.to_string(),
-            //     &selected_folder,
-            // )
-            // .await?;
-            let mut snapshot = MiroImage::new_from_file_path(&snapshot_path);
-            snapshot.deploy();
-            let (x_position, y_position) = match file_name.to_string().as_str() {
-                ENTRYPOINT_PNG_NAME => (1300, 250),
-                CONTEXT_ACCOUNTS_PNG_NAME => (2200, 350),
-                VALIDATIONS_PNG_NAME => (3000, 500),
-                HANDLER_PNG_NAME => (2900, 1400),
-                _ => todo!(),
-            };
-            snapshot.update_position(x_position, y_position);
-            let _frame_id =
-                batbelt::miro::helpers::get_frame_id_from_co_file(selected_folder.as_str())?;
-            fs::write(
-                &selected_co_started_path,
-                &to_start_file_content.replace(placeholder, &snapshot.item_id),
-            )
-            .unwrap();
-        }
-        // connect snapshots
-        let entrypoint_id = batbelt::helpers::get::get_screenshot_id(
-            &ENTRYPOINT_PNG_NAME,
-            &selected_co_started_path,
-        );
-        let context_accounts_id = batbelt::helpers::get::get_screenshot_id(
-            &CONTEXT_ACCOUNTS_PNG_NAME,
-            &selected_co_started_path,
-        );
-        let validations_id = batbelt::helpers::get::get_screenshot_id(
-            &VALIDATIONS_PNG_NAME,
-            &selected_co_started_path,
-        );
-        let handler_id =
-            batbelt::helpers::get::get_screenshot_id(&HANDLER_PNG_NAME, &selected_co_started_path);
-        println!("Connecting signers to entrypoint");
-        for signer_miro_ids in signers_info {
-            batbelt::miro::connector::create_connector(
-                &signer_miro_ids.user_figure_id,
-                &signer_miro_ids.sticky_note_id,
-                None,
-            )
-            .await;
-            batbelt::miro::connector::create_connector(
-                &signer_miro_ids.sticky_note_id,
-                &entrypoint_id,
-                Some(ConnectorOptions {
-                    start_x_position: "100%".to_string(),
-                    start_y_position: "50%".to_string(),
-                    end_x_position: "0%".to_string(),
-                    end_y_position: "50%".to_string(),
-                }),
-            )
-            .await;
-        }
-        println!("Connecting snapshots in Miro");
-        batbelt::miro::connector::create_connector(&entrypoint_id, &context_accounts_id, None)
-            .await;
-        batbelt::miro::connector::create_connector(&context_accounts_id, &validations_id, None)
-            .await;
-        batbelt::miro::connector::create_connector(&validations_id, &handler_id, None).await;
-        create_git_commit(
-            GitCommit::DeployMiro,
-            Some(vec![selected_folder.to_string()]),
-        )
+        // }
+        // // connect snapshots
+        // let entrypoint_id = batbelt::helpers::get::get_screenshot_id(
+        //     &ENTRYPOINT_PNG_NAME,
+        //     &selected_co_started_path,
+        // );
+        // let context_accounts_id = batbelt::helpers::get::get_screenshot_id(
+        //     &CONTEXT_ACCOUNTS_PNG_NAME,
+        //     &selected_co_started_path,
+        // );
+        // let validations_id = batbelt::helpers::get::get_screenshot_id(
+        //     &VALIDATIONS_PNG_NAME,
+        //     &selected_co_started_path,
+        // );
+        // let handler_id =
+        //     batbelt::helpers::get::get_screenshot_id(&HANDLER_PNG_NAME, &selected_co_started_path);
+        // println!("Connecting signers to entrypoint");
+        // for signer_miro_ids in signers_info {
+        //     batbelt::miro::connector::create_connector(
+        //         &signer_miro_ids.user_figure_id,
+        //         &signer_miro_ids.sticky_note_id,
+        //         None,
+        //     )
+        //     .await;
+        //     batbelt::miro::connector::create_connector(
+        //         &signer_miro_ids.sticky_note_id,
+        //         &entrypoint_id,
+        //         Some(ConnectorOptions {
+        //             start_x_position: "100%".to_string(),
+        //             start_y_position: "50%".to_string(),
+        //             end_x_position: "0%".to_string(),
+        //             end_y_position: "50%".to_string(),
+        //         }),
+        //     )
+        //     .await;
+        // }
+        // println!("Connecting snapshots in Miro");
+        // batbelt::miro::connector::create_connector(&entrypoint_id, &context_accounts_id, None)
+        //     .await;
+        // batbelt::miro::connector::create_connector(&context_accounts_id, &validations_id, None)
+        //     .await;
+        // batbelt::miro::connector::create_connector(&validations_id, &handler_id, None).await;
+        // create_git_commit(
+        //     GitCommit::DeployMiro,
+        //     Some(vec![selected_folder.to_string()]),
+        // )
+        Ok(())
     } else {
         // update images
         let prompt_text = format!("select the images to update for {selected_folder}");
