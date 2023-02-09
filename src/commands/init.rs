@@ -99,14 +99,16 @@ pub async fn initialize_bat_project() -> Result<(), String> {
         if auditor_notes_files.is_empty() {
             create_auditor_notes_folder()?;
             // create overhaul files
-            initialize_code_overhaul_files().await?;
+            initialize_code_overhaul_files()?;
             // commit to-review files
+            create_miro_frames_for_entrypoints().await?;
         }
     } else {
         create_auditor_notes_folder()?;
         // create overhaul files
-        initialize_code_overhaul_files().await?;
+        initialize_code_overhaul_files()?;
         // commit to-review files
+        create_miro_frames_for_entrypoints().await?;
     }
 
     println!("Project successfully initialized");
@@ -278,16 +280,29 @@ fn create_auditor_notes_folder() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn initialize_code_overhaul_files() -> Result<(), String> {
+pub fn initialize_code_overhaul_files() -> Result<(), String> {
+    let entrypoints_names = get_entrypoints_names()?;
+
+    for entrypoint_name in entrypoints_names {
+        create_overhaul_file(entrypoint_name.clone())?;
+    }
+    Ok(())
+}
+pub async fn create_miro_frames_for_entrypoints() -> Result<(), String> {
+    let miro_config = MiroConfig::new();
+    if !miro_config.miro_enabled() {
+        return Ok(());
+    }
+    let miro_board_frames = MiroFrame::get_frames_from_miro().await;
+
     let entrypoints_names = get_entrypoints_names()?;
 
     for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
-        create_overhaul_file(entrypoint_name.clone())?;
-        // create miro boards for entrypoints
-
-        println!("Creating frame in Miro for {entrypoint_name}");
-        let miro_config = MiroConfig::new();
-        if miro_config.miro_enabled() {
+        let frame_already_deployed = miro_board_frames
+            .iter()
+            .any(|frame| &frame.title == entrypoint_name);
+        if !frame_already_deployed {
+            println!("Creating frame in Miro for {}", entrypoint_name.green());
             let mut miro_frame =
                 MiroFrame::new(&entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
             miro_frame.deploy().await?;
@@ -317,6 +332,10 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
             &code_overhaul_auditor_file_path,
         );
     co_template.save()?;
-    println!("code-overhaul file created: {entrypoint_name}.md");
+    println!(
+        "code-overhaul file created: {}{}",
+        entrypoint_name.green(),
+        ".md".green()
+    );
     Ok(())
 }

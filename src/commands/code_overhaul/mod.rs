@@ -94,14 +94,14 @@ pub fn open_co() -> Result<(), String> {
     Ok(())
 }
 
-// pub fn update_co_templates() -> Result<(), String> {
-//     let co_to_review_path =
-//         batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true);
-//     execute_command("rm", &["-rf", &co_to_review_path]).unwrap();
-//     execute_command("mkdir", &[&co_to_review_path]).unwrap();
-//     commands::init::initialize_code_overhaul_files().unwrap();
-//     Ok(())
-// }
+pub fn update_co_templates() -> Result<(), String> {
+    let co_to_review_path =
+        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true);
+    execute_command("rm", &["-rf", &co_to_review_path]).unwrap();
+    execute_command("mkdir", &[&co_to_review_path]).unwrap();
+    commands::init::initialize_code_overhaul_files().unwrap();
+    Ok(())
+}
 
 pub fn update_audit_results() -> Result<(), String> {
     let audit_file_path = batbelt::path::get_file_path(FilePathType::AuditResult, true);
