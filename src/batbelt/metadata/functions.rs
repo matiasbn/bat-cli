@@ -8,6 +8,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use inflector::Inflector;
 use std::vec;
+use strum_macros::Display;
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 enum FunctionMetadataInfoSection {
@@ -69,6 +70,7 @@ impl FunctionMetadata {
         let section_header = MarkdownSectionHeader::new_from_header_and_hash(
             section_level_header,
             section_hash.to_string(),
+            0,
         );
         let md_section = MarkdownSection::new(
             section_header,

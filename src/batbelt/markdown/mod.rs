@@ -44,6 +44,7 @@ pub struct MarkdownSectionHeader {
     pub prefix: String,
     pub section_level: MarkdownSectionLevel,
     pub section_hash: String,
+    pub start_line_index: usize,
 }
 
 impl MarkdownSectionHeader {
@@ -53,6 +54,7 @@ impl MarkdownSectionHeader {
         prefix: String,
         level: MarkdownSectionLevel,
         section_hash: String,
+        start_line_index: usize,
     ) -> Self {
         MarkdownSectionHeader {
             section_header: header,
@@ -60,15 +62,20 @@ impl MarkdownSectionHeader {
             prefix,
             section_level: level,
             section_hash,
+            start_line_index,
         }
     }
 
-    pub fn new_from_header_and_hash(header: String, section_hash: String) -> Self {
+    pub fn new_from_header_and_hash(
+        header: String,
+        section_hash: String,
+        start_line_index: usize,
+    ) -> Self {
         let mut header_split = header.trim().split(" ");
         let prefix = header_split.next().unwrap().to_string();
         let title = header_split.collect::<Vec<&str>>().join(" ");
         let level = MarkdownSectionLevel::from_prefix(&prefix);
-        MarkdownSectionHeader::new(header, title, prefix, level, section_hash)
+        MarkdownSectionHeader::new(header, title, prefix, level, section_hash, start_line_index)
     }
 }
 
@@ -255,33 +262,38 @@ impl MarkdownFile {
     }
 
     fn get_headers(&self) -> Vec<MarkdownSectionHeader> {
-        let headers_string: Vec<String> = self
+        let headers_string: Vec<(String, usize)> = self
             .content
             .lines()
-            .filter(|line| {
-                if line.contains("#[account") {
-                    return false;
+            .enumerate()
+            .filter_map(|line| {
+                if line.1.contains("#[account") {
+                    return None;
                 };
-                let trailing_ws = Self::get_trailing_whitespaces(line);
+                let trailing_ws = Self::get_trailing_whitespaces(line.1);
                 if trailing_ws == 0 {
-                    line.trim().split(" ").next().unwrap().contains("#")
+                    if line.1.trim().split(" ").next().unwrap().contains("#") {
+                        Some((line.1.to_string(), line.0))
+                    } else {
+                        None
+                    }
                 } else {
-                    false
+                    None
                 }
             })
-            .map(|header| header.to_string())
             .collect();
         let mut section_hash = String::new();
         let headers = headers_string
             .iter()
             .map(|header_string| {
-                let header_id = header_string.trim().split(" ").next().unwrap();
+                let header_id = header_string.0.trim().split(" ").next().unwrap();
                 if header_id == "#" {
                     section_hash = get_section_hash();
                 }
                 let header = MarkdownSectionHeader::new_from_header_and_hash(
-                    header_string.clone(),
+                    header_string.0.clone(),
                     section_hash.clone(),
+                    header_string.1,
                 );
                 header
             })
@@ -327,10 +339,7 @@ impl MarkdownSection {
         md_file_content: &str,
     ) -> MarkdownSection {
         let content_lines = md_file_content.lines();
-        let start_line_index = content_lines
-            .clone()
-            .position(|line| line == header.section_header)
-            .unwrap();
+        let start_line_index = header.start_line_index;
         let end_line_index_sec = content_lines.clone().enumerate().position(|line| {
             (line.1.trim().split(" ").next().unwrap().contains("#") && line.0 > start_line_index)
                 && !line.1.contains("#[account")
@@ -509,8 +518,11 @@ impl TestMarkdownSection {
     ) -> MarkdownSectionHeader {
         let title = Self::parse_section_title(ordinal_index, parent_ordinal_index, level);
         let header = level.get_header(&title);
-        let section_header =
-            MarkdownSectionHeader::new_from_header_and_hash(header.clone(), section_hash.clone());
+        let section_header = MarkdownSectionHeader::new_from_header_and_hash(
+            header.clone(),
+            section_hash.clone(),
+            0,
+        );
         section_header
     }
 
@@ -721,6 +733,7 @@ fn test_replace_section() {
     replace_subsection.section_header = MarkdownSectionHeader::new_from_header_and_hash(
         "## First new subsection_parent_0".to_string(),
         replace_subsection.section_header.section_hash,
+        0,
     );
     first_section_subsections[0] = replace_subsection.clone();
     markdown_file
