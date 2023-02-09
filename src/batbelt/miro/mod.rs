@@ -69,6 +69,69 @@ impl MiroConfig {
         miro_board_id
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct MiroObject {
+    pub item_id: String,
+    pub title: String,
+    pub height: u64,
+    pub width: u64,
+    pub x_position: i64,
+    pub y_position: i64,
+    pub item_type: MiroItemType,
+}
+
+impl MiroObject {
+    pub fn new(
+        item_id: String,
+        title: String,
+        height: u64,
+        width: u64,
+        x_position: i64,
+        y_position: i64,
+        item_type: MiroItemType,
+    ) -> Self {
+        Self {
+            item_id,
+            title,
+            height,
+            width,
+            x_position,
+            y_position,
+            item_type,
+        }
+    }
+
+    pub async fn multiple_from_response(response: reqwest::Response) -> Vec<Self> {
+        let response_string = response.text().await.unwrap();
+        let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
+        let data = response["data"].as_array().unwrap();
+        let objects = data
+            .clone()
+            .into_iter()
+            .map(|data_response| {
+                let item_id = data_response["id"].to_string().replace("\"", "");
+                let item_type = data_response["type"].to_string().replace("\"", "");
+                let title = data_response["data"]["title"].to_string().replace("\"", "");
+                let height = data_response["geometry"]["height"].as_f64().unwrap() as u64;
+                let width = data_response["geometry"]["width"].as_f64().unwrap() as u64;
+                let x_position = data_response["position"]["x"].as_f64().unwrap() as i64;
+                let y_position = data_response["position"]["y"].as_f64().unwrap() as i64;
+                MiroObject::new(
+                    item_id,
+                    title,
+                    height,
+                    width,
+                    x_position,
+                    y_position,
+                    MiroItemType::from_str(&item_type),
+                )
+            })
+            .collect();
+        objects
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum MiroItemType {
     AppCard,
@@ -94,6 +157,21 @@ impl MiroItemType {
             MiroItemType::Shape => "shape".to_string(),
             MiroItemType::StickyNote => "sticky_note".to_string(),
             MiroItemType::Text => "text".to_string(),
+        }
+    }
+
+    pub fn from_str(type_str: &str) -> MiroItemType {
+        match type_str {
+            "app_card" => MiroItemType::AppCard,
+            "card" => MiroItemType::Card,
+            "document" => MiroItemType::Document,
+            "embed" => MiroItemType::Embed,
+            "frame" => MiroItemType::Frame,
+            "image" => MiroItemType::Image,
+            "shape" => MiroItemType::Shape,
+            "sticky_note" => MiroItemType::StickyNote,
+            "text" => MiroItemType::Text,
+            _ => unimplemented!(),
         }
     }
 }
@@ -194,6 +272,7 @@ use self::item::MiroItem;
 pub mod helpers {
     use std::collections::HashMap;
 
+    use crate::batbelt::miro::MiroItemType;
     use reqwest::Url;
 
     use super::*;

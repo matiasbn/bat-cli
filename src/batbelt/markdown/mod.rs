@@ -1,4 +1,4 @@
-use crate::batbelt::templates::code_overhaul::{CodeOverhaulFile, CodeOverhaulSection};
+use crate::batbelt::templates::code_overhaul::{CodeOverhaulSection, CodeOverhaulTemplate};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::fs;
@@ -356,7 +356,12 @@ impl MarkdownSection {
             MarkdownSection::new(header, section_content, start_line_index, end_line_index)
         } else {
             // no end line means that the file ends with a section header
-            MarkdownSection::new(header, "".to_string(), start_line_index, start_line_index)
+            MarkdownSection::new(
+                header,
+                "".to_string(),
+                start_line_index,
+                content_lines.count(),
+            )
         };
         md_section
     }
@@ -852,8 +857,8 @@ fn test_replace_co_file() {
 ";
     let path = "./co_example.md";
 
-    let mut started_markdown_file = CodeOverhaulFile::template_to_markdown_file(path);
-    let started_markdown_file_backup = CodeOverhaulFile::template_to_markdown_file(path);
+    let mut started_markdown_file = CodeOverhaulTemplate::template_to_markdown_file(path);
+    let started_markdown_file_backup = CodeOverhaulTemplate::template_to_markdown_file(path);
     let signers_title = &CodeOverhaulSection::Signers.to_title();
     let fun_pam_title = &CodeOverhaulSection::FunctionParameters.to_title();
     let ca_title = &CodeOverhaulSection::ContextAccounts.to_title();

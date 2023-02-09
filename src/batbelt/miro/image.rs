@@ -12,12 +12,13 @@ use serde_json::*;
 use std::result::Result;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
-
+#[derive(Debug)]
 pub enum MiroImageType {
     FromUrl,
     FromPath,
 }
 
+#[derive(Debug)]
 pub struct MiroImage {
     pub source: String,
     pub image_type: MiroImageType,
@@ -30,13 +31,13 @@ pub struct MiroImage {
 }
 
 impl MiroImage {
-    pub fn new_from_file_path(file_path: &str) -> Self {
+    pub fn new_from_file_path(file_path: &str, parent_id: &str) -> Self {
         MiroImage {
             source: file_path.to_string(),
             image_type: MiroImageType::FromPath,
             item_type: MiroItemType::Image,
             item_id: "".to_string(),
-            parent_id: "".to_string(),
+            parent_id: parent_id.to_string(),
             x_position: 0,
             y_position: 0,
             height: 0,
