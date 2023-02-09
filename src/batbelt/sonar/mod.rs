@@ -82,12 +82,21 @@ impl BatSonar {
                 if !sonar_result.is_valid_result() {
                     continue;
                 }
+                // The context account filter duplicates the accouns starting with #[account(
+                if self.result_type == SonarResultType::ContextAccountsAll && self.results.len() > 0
+                {
+                    let last_result = self.results.clone();
+                    let last_result = last_result.last().unwrap();
+                    let last_line = last_result.content.clone();
+                    let last_line = last_line.lines().last().unwrap();
+                    if last_line == sonar_result.content {
+                        continue;
+                    }
+                }
                 sonar_result.format_result();
                 self.results.push(sonar_result);
             }
         }
-        // self.results
-        //     .sort_by(|result_a, result_b| result_a.name.cmp(&result_b.name));
     }
 
     fn get_result_content(&self, start_line_index: usize, end_line_index: usize) -> String {
@@ -102,10 +111,11 @@ impl BatSonar {
         &self,
         start_index: usize,
         trailing_whitespaces: usize,
-        line: &str,
+        starting_line: &str,
     ) -> usize {
-        if self.result_type == SonarResultType::Validation
-            && self.first_line_contains_closure_filter(line)
+        if (self.result_type == SonarResultType::Validation
+            || self.result_type == SonarResultType::ContextAccountsAll)
+            && self.starting_line_contains_closure_filter(starting_line)
         {
             return start_index;
         }
@@ -140,11 +150,11 @@ impl BatSonar {
         return closing_index;
     }
 
-    fn first_line_contains_closure_filter(&self, line: &str) -> bool {
+    fn starting_line_contains_closure_filter(&self, starting_line: &str) -> bool {
         self.closure_filters
             .get_filters()
             .iter()
-            .any(|filter| line.contains(filter))
+            .any(|filter| starting_line.contains(filter))
     }
 
     fn get_closing_lines_candidates(&self, trailing_whitespaces: usize) -> Vec<String> {
@@ -414,10 +424,10 @@ impl SonarFilter {
             SonarFilter::EndOfOpen(SonarResultType::Validation) => vec!["("],
             SonarFilter::Closure(SonarResultType::Validation) => vec![");", ")?;", ")"],
             SonarFilter::Open(SonarResultType::ContextAccountsAll) => {
-                vec!["#[account"]
+                vec!["pub", "#[account"]
             }
-            SonarFilter::EndOfOpen(SonarResultType::ContextAccountsAll) => vec!["("],
-            SonarFilter::Closure(SonarResultType::ContextAccountsAll) => vec!["pub"],
+            SonarFilter::EndOfOpen(SonarResultType::ContextAccountsAll) => vec!["(", ">,"],
+            SonarFilter::Closure(SonarResultType::ContextAccountsAll) => vec!["pub", "}"],
             SonarFilter::Open(SonarResultType::ContextAccountsOnlyValidation) => {
                 vec!["#[account"]
             }
@@ -657,7 +667,7 @@ fn test_get_validation() {
     println!("sonar \n{:#?}", bat_sonar);
 }
 #[test]
-fn test_get_content_accounts() {
+fn test_get_context_accounts() {
     let test_text = "
     #[derive(Accounts, Debug)]
     pub struct thing<'info> {
@@ -685,6 +695,7 @@ fn test_get_content_accounts() {
     }
     ";
     let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsAll);
+    assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
     println!("sonar \n{:#?}", bat_sonar);
 }
 
