@@ -1,7 +1,7 @@
 use crate::batbelt::markdown::MarkdownFile;
 use inflector::Inflector;
 
-pub struct CodeOverhaulFile {
+pub struct CodeOverhaulTemplate {
     pub title: String,
     pub state_changes: String,
     pub notes: String,
@@ -11,7 +11,7 @@ pub struct CodeOverhaulFile {
     pub validations: String,
 }
 
-impl CodeOverhaulFile {
+impl CodeOverhaulTemplate {
     pub fn new(
         title: String,
         state_changes: String,
@@ -41,11 +41,11 @@ impl CodeOverhaulFile {
         format!(
             "{}
 
-            -
+            - {}
              
             {}
 
-            -
+            - {}
 
             {}
             
@@ -56,7 +56,9 @@ impl CodeOverhaulFile {
             {}
             ",
             CodeOverhaulSection::StateChanges.to_markdown_header(),
+            CoderOverhaulTemplatePlaceholders::CompleteWithStateChanges.to_placeholder(),
             CodeOverhaulSection::Notes.to_markdown_header(),
+            CoderOverhaulTemplatePlaceholders::CompleteWithNotes.to_placeholder(),
             CodeOverhaulSection::Signers.to_markdown_header(),
             CodeOverhaulSection::FunctionParameters.to_markdown_header(),
             CodeOverhaulSection::ContextAccounts.to_markdown_header(),
@@ -86,6 +88,22 @@ impl CodeOverhaulSection {
 
     pub fn to_title(&self) -> String {
         format!("{}:", self.to_string().to_sentence_case())
+    }
+}
+
+#[derive(strum_macros::Display)]
+pub enum CoderOverhaulTemplatePlaceholders {
+    NoSignersDetected,
+    NoValidationsDetected,
+    NoFunctionParametersDetected,
+    CompleteWithStateChanges,
+    CompleteWithNotes,
+    CompleteWithSignerDescription,
+}
+
+impl CoderOverhaulTemplatePlaceholders {
+    pub fn to_placeholder(&self) -> String {
+        self.to_string().to_snake_case().to_uppercase()
     }
 }
 

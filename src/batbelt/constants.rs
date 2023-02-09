@@ -46,7 +46,6 @@ starting_date = ""
 program_lib_path = ""
 project_repository_url = ""
 miro_board_url = ""
-miro_board_id = ""
 "#;
 pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
 [auditor]

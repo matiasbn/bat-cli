@@ -2,8 +2,6 @@ use colored::Colorize;
 
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 
-use crate::batbelt::constants::CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER;
-
 use crate::config::BatConfig;
 
 use crate::batbelt;
@@ -19,12 +17,13 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
 use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, SonarResultType};
-use crate::batbelt::templates::code_overhaul::CodeOverhaulSection;
+use crate::batbelt::templates::code_overhaul::{
+    CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
+};
 
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
-use crate::batbelt::metadata::MetadataSection::Entrypoints;
-use crate::batbelt::sonar::SonarResultType::ContextAccountsAll;
 
+use crate::batbelt::sonar::SonarResultType::ContextAccountsAll;
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), String> {
@@ -141,7 +140,10 @@ pub fn start_co_file() -> Result<(), String> {
         .unwrap();
     let handler_function_parameters = get_function_parameters(handler_function.content.clone());
     let function_parameters_content = if handler_function_parameters.is_empty() {
-        "- No function parameters found".to_string()
+        format!(
+            "- {}",
+            CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
+        )
     } else {
         handler_function_parameters
             .iter()
@@ -264,15 +266,22 @@ pub fn start_co_file() -> Result<(), String> {
     validations_vec.append(&mut filtered_if_validations);
     validations_vec.append(&mut filtered_handler_validations);
 
-    let validations_content = validations_vec
-        .iter()
-        .fold("".to_string(), |result, validation| {
-            if result.is_empty() {
-                format!("- ```rust\n{}\n  ```\n", validation)
-            } else {
-                format!("{}- ```rust\n{}\n  ```\n", result, validation)
-            }
-        });
+    let validations_content = if validations_vec.is_empty() {
+        format!(
+            "- {}",
+            CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
+        )
+    } else {
+        validations_vec
+            .iter()
+            .fold("".to_string(), |result, validation| {
+                if result.is_empty() {
+                    format!("- ```rust\n{}\n  ```\n", validation)
+                } else {
+                    format!("{}- ```rust\n{}\n  ```\n", result, validation)
+                }
+            })
+    };
     let validations_section = started_markdown_file
         .get_section(&CodeOverhaulSection::Validations.to_title())
         .unwrap();
@@ -381,16 +390,6 @@ pub fn start_co_file() -> Result<(), String> {
 
     Ok(())
 }
-
-// # Entrypoints_template
-//
-// ## cancel_crafting_process
-//
-// - signers: [location, authority]
-// - instruction_file_path: ../star-atlas-programs/sol-programs/programs/crafting/src/instructions/crafting_process/cancel_crafting_process.rs
-// - handler_function: handler
-// - context_name: CancelCraftingProcess
-// - mut_accounts: [[funds_to,UncheckedAccount];[crafting_process,CraftingProcess];[crafting_facility,CraftingFacility]]
 
 fn get_mut_accounts(results: Vec<SonarResult>) -> Vec<Vec<String>> {
     let mut_accounts_results = results
@@ -506,7 +505,8 @@ fn get_signers_section_content(context_lines: &str) -> String {
         if signer_comments.len() == 0 {
             let signer_description = format!(
                 "- {}: {}",
-                signer_name, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER
+                signer_name,
+                CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder()
             );
             signers.push(signer_description)
         } else if signer_comments.len() == 1 {
@@ -525,7 +525,9 @@ fn get_signers_section_content(context_lines: &str) -> String {
             } else {
                 let signer_description = format!(
                     "- {}: {}",
-                    signer_name, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER
+                    signer_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                        .to_placeholder()
                 );
                 signers.push(signer_description);
             }
@@ -550,7 +552,9 @@ fn get_signers_section_content(context_lines: &str) -> String {
             if selections.is_empty() {
                 let signer_description = format!(
                     "- {}: {}",
-                    signer_name, CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER
+                    signer_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                        .to_placeholder()
                 );
                 signers.push(signer_description);
             } else {

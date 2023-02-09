@@ -1,10 +1,9 @@
-use super::MiroItemType;
-use crate::batbelt::miro::MiroConfig;
+use crate::batbelt::miro::{MiroConfig, MiroItemType};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
 pub struct MiroItem {
-    item_id: String,
+    pub item_id: String,
     pub item_type: MiroItemType,
     pub parent_id: String,
     pub x_position: i64,
@@ -102,7 +101,7 @@ mod api {
             .text()
             .await
             .unwrap();
-        // println!("response {}", response);
+        // println!("response {}", _response);
         Ok(())
     }
 
