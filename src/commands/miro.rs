@@ -26,7 +26,7 @@ use crate::batbelt::miro::shape::{MiroShape, MiroShapeStyle};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::{helpers, MiroConfig, MiroItemType};
 
-pub async fn deploy_miro() -> Result<(), String> {
+pub async fn deploy_co() -> Result<(), String> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
     // check empty images
     // get files and folders from started, filter .md files
@@ -40,14 +40,14 @@ pub async fn deploy_miro() -> Result<(), String> {
         )
     });
 
-    // check if some of the snapshots is empty
-    for path in snapshot_paths.clone() {
-        let snapshot_file = fs::read(&path).unwrap();
-        let snapshot_name = path.split('/').clone().last().unwrap();
-        if snapshot_file.is_empty() {
-            panic!("{snapshot_name} snapshot file is empty, please complete it");
-        }
-    }
+    // // check if some of the snapshots is empty
+    // for path in snapshot_paths.clone() {
+    //     let snapshot_file = fs::read(&path).unwrap();
+    //     let snapshot_name = path.split('/').clone().last().unwrap();
+    //     if snapshot_file.is_empty() {
+    //         panic!("{snapshot_name} snapshot file is empty, please complete it");
+    //     }
+    // }
 
     // create the Miro frame
     // Replace placeholder with Miro url

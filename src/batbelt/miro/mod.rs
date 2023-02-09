@@ -30,8 +30,8 @@ impl MiroConfig {
             required, auditor, ..
         } = BatConfig::get_validated_config().unwrap();
         let access_token = auditor.miro_oauth_access_token;
-        let board_id = required.miro_board_id;
         let board_url = required.miro_board_url;
+        let board_id = Self::get_miro_board_id(board_url.clone());
         MiroConfig {
             access_token,
             board_id,
@@ -51,6 +51,22 @@ impl MiroConfig {
         .normalize(None)
         .unwrap();
         url
+    }
+
+    pub fn get_miro_board_id(miro_board_url: String) -> String {
+        let error_msg = format!(
+            "Error obtaining the miro board id for the url: {}",
+            miro_board_url
+        );
+        let miro_board_id = miro_board_url
+            .split("board/")
+            .last()
+            .expect(&error_msg)
+            .split("/")
+            .next()
+            .expect(&error_msg)
+            .to_string();
+        miro_board_id
     }
 }
 #[derive(Debug, Clone)]
