@@ -325,7 +325,7 @@ impl SonarResult {
             )
         } else {
             // multiline account
-            let mut ca_filters = self
+            let ca_filters = self
                 .result_type
                 .get_context_accounts_only_validations_filters();
             let lines_count = content.lines().count();
@@ -387,7 +387,7 @@ impl SonarResult {
             }
         } else {
             // multiline account
-            let mut ca_filters = self
+            let ca_filters = self
                 .result_type
                 .get_context_accounts_only_validations_filters();
             let lines_count = content.lines().count();
