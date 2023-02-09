@@ -3,6 +3,7 @@ use std::fs;
 use crate::batbelt::silicon;
 use crate::batbelt::{self, path::FolderPathType};
 
+#[derive(Debug, Clone)]
 pub struct SourceCodeScreenshotOptions {
     pub include_path: bool,
     pub offset_to_start_line: bool,

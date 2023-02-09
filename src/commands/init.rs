@@ -17,13 +17,16 @@ use crate::batbelt::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
     AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER,
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
+    MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
 use crate::config::{BatConfig, RequiredConfig};
 
 use crate::batbelt::git::GitCommit;
+use crate::batbelt::miro::frame::MiroFrame;
+use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::{FilePathType, FolderPathType};
 
-pub fn initialize_bat_project() -> Result<(), String> {
+pub async fn initialize_bat_project() -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;
     let BatConfig {
         required, auditor, ..
@@ -98,12 +101,14 @@ pub fn initialize_bat_project() -> Result<(), String> {
             // create overhaul files
             initialize_code_overhaul_files()?;
             // commit to-review files
+            create_miro_frames_for_entrypoints().await?;
         }
     } else {
         create_auditor_notes_folder()?;
         // create overhaul files
         initialize_code_overhaul_files()?;
         // commit to-review files
+        create_miro_frames_for_entrypoints().await?;
     }
 
     println!("Project successfully initialized");
@@ -283,6 +288,34 @@ pub fn initialize_code_overhaul_files() -> Result<(), String> {
     }
     Ok(())
 }
+pub async fn create_miro_frames_for_entrypoints() -> Result<(), String> {
+    let miro_config = MiroConfig::new();
+    if !miro_config.miro_enabled() {
+        return Ok(());
+    }
+    let miro_board_frames = MiroFrame::get_frames_from_miro().await;
+
+    let entrypoints_names = get_entrypoints_names()?;
+
+    for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
+        let frame_already_deployed = miro_board_frames
+            .iter()
+            .any(|frame| &frame.title == entrypoint_name);
+        if !frame_already_deployed {
+            println!("Creating frame in Miro for {}", entrypoint_name.green());
+            let mut miro_frame =
+                MiroFrame::new(&entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
+            miro_frame.deploy().await?;
+            let x_modifier = entrypoint_index as i64 % MIRO_BOARD_COLUMNS;
+            let y_modifier = entrypoint_index as i64 / MIRO_BOARD_COLUMNS;
+            let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
+            let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
+            miro_frame.update_position(x_position, y_position).await?;
+        }
+    }
+
+    Ok(())
+}
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
     let code_overhaul_auditor_file_path = batbelt::path::get_file_path(
@@ -295,10 +328,14 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
         panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
     let mut co_template =
-        batbelt::templates::code_overhaul::CodeOverhaulFile::template_to_markdown_file(
+        batbelt::templates::code_overhaul::CodeOverhaulTemplate::template_to_markdown_file(
             &code_overhaul_auditor_file_path,
         );
     co_template.save()?;
-    println!("code-overhaul file created: {entrypoint_name}.md");
+    println!(
+        "code-overhaul file created: {}{}",
+        entrypoint_name.green(),
+        ".md".green()
+    );
     Ok(())
 }

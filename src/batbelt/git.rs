@@ -102,7 +102,12 @@ pub fn create_git_commit(
                 },
                 false,
             );
-            (commit_string, vec![file_to_delete_path, file_to_add_path])
+
+            let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+            (
+                commit_string,
+                vec![file_to_delete_path, file_to_add_path, metadata_path],
+            )
         }
         GitCommit::StartCOMiro => {
             let commit_file = &commit_files.unwrap()[0];
@@ -128,9 +133,12 @@ pub fn create_git_commit(
             let commit_string =
                 "co: ".to_string() + &commit_file.clone().replace(".md", "") + " finished";
             println!("code-overhaul file finished with commit: {commit_string:?}");
-            let file_to_delete_path =
-                // utils::path::get_auditor_code_overhaul_to_review_path(Some(commit_file.clone()))?;
-                batbelt::path::get_file_path(FilePathType::CodeOverhaulFinished { file_name:  commit_file.clone() }, true);
+            let file_to_delete_path = batbelt::path::get_file_path(
+                FilePathType::CodeOverhaulFinished {
+                    file_name: commit_file.clone(),
+                },
+                true,
+            );
             let file_to_add_path = batbelt::path::get_file_path(
                 FilePathType::CodeOverhaulFinished {
                     file_name: commit_file.clone(),
@@ -159,8 +167,7 @@ pub fn create_git_commit(
             println!("code-overhaul files deployed to Miro with commit: {commit_string:?}");
             let started_path =
                 batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true);
-            let folder_to_add_path = format!("{started_path}/{entrypoint_name}");
-            (commit_string, vec![folder_to_add_path])
+            (commit_string, vec![started_path])
         }
         GitCommit::UpdateMiro => {
             let entrypoint_name = &commit_files.unwrap()[0];

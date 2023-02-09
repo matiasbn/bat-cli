@@ -19,7 +19,6 @@ pub struct RequiredConfig {
     pub commit_hash_url: String,
     pub starting_date: String,
     pub miro_board_url: String,
-    pub miro_board_id: String,
     pub auditor_names: Vec<String>,
     pub program_lib_path: String,
     pub project_repository_url: String,

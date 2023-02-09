@@ -1,6 +1,8 @@
 use super::*;
 use crate::batbelt::miro::helpers::get_id_from_response;
+use crate::batbelt::miro::MiroItemType;
 
+#[derive(Debug, Clone)]
 pub struct MiroFrame {
     pub title: String,
     pub item_id: String,
@@ -90,12 +92,17 @@ impl MiroFrame {
         frames
     }
 
+    pub async fn get_items_within_frame(&self) -> Vec<MiroObject> {
+        let response = api::get_items_within_frame(&self.item_id).await.unwrap();
+        MiroObject::multiple_from_response(response).await
+    }
+
     pub async fn update_position(
         &mut self,
         x_position: i64,
         y_position: i64,
     ) -> Result<(), String> {
-        api::update_frame_position(&self.item_id, x_position, y_position);
+        api::update_frame_position(&self.item_id, x_position, y_position).await?;
         self.x_position = x_position;
         self.y_position = y_position;
         Ok(())
@@ -249,35 +256,25 @@ mod api {
             .await
             .unwrap();
         Ok(())
-        // println!("update frame position response: {response}")
     }
 
-    pub async fn get_items_within_frame(frame_id: &str) -> (u64, u64) {
+    pub async fn get_items_within_frame(frame_id: &str) -> Result<reqwest::Response, String> {
         let MiroConfig {
             access_token,
             board_id,
             ..
         } = MiroConfig::new();
         let client = reqwest::Client::new();
-        let board_response = client
+        let response = client
             .get(format!(
-                "https://api.miro.com/v2/boards/{board_id}/frames/{frame_id}"
+                "https://api.miro.com/v2/boards/{board_id}/items?parent_item_id={frame_id}"
             ))
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
             .await
-            .unwrap()
-            .text()
-            .await
             .unwrap();
-        let response: Value = serde_json::from_str(board_response.as_str()).unwrap();
-        let x_position = response["position"]["x"].clone();
-        let y_position = response["position"]["y"].clone();
-        (
-            x_position.as_f64().unwrap() as u64,
-            y_position.as_f64().unwrap() as u64,
-        )
+        Ok(response)
     }
 
     // pub async fn update_frame_position(

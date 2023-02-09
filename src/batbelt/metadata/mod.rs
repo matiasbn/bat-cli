@@ -1,4 +1,4 @@
-pub mod code_overhaul;
+pub mod entrypoint;
 pub mod functions;
 pub mod miro;
 pub mod source_code;
@@ -13,7 +13,7 @@ use inflector::Inflector;
 pub enum MetadataSection {
     Structs,
     Functions,
-    CodeOverhaul,
+    Entrypoints,
     Miro,
 }
 

@@ -59,9 +59,17 @@ fn get_required_config() -> Result<RequiredConfig, String> {
                     .iter()
                     .any(|y| f.file_name().to_str().unwrap().contains(y))
         })
+        .filter(|f| {
+            let path = f.path();
+            let dir = fs::read_dir(path).unwrap();
+            let file_names = dir
+                .map(|f| f.unwrap().file_name().to_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+            let is_bat_project = file_names.contains(&"Bat.toml".to_string());
+            !is_bat_project
+        })
         .map(|f| f.file_name().into_string().unwrap())
         .collect::<Vec<_>>();
-
     // Folder with the program to audit selection
     let prompt_text = "Select the folder with the program to audit";
     let selection = cli_inputs::select(prompt_text, local_folders.clone(), None)?;
@@ -142,18 +150,6 @@ fn get_required_config() -> Result<RequiredConfig, String> {
     let starting_date: String = cli_inputs::input("Starting date, example: (01/01/2023):")?;
     let mut miro_board_url: String = cli_inputs::input("Miro board url:")?;
     miro_board_url = helpers::normalize_url(&miro_board_url)?;
-    let error_msg = format!(
-        "Error obtaining the miro board id for the url: {}",
-        miro_board_url
-    );
-    let miro_board_id = miro_board_url
-        .split("board/")
-        .last()
-        .expect(&error_msg)
-        .split("/")
-        .next()
-        .expect(&error_msg)
-        .to_string();
 
     // let miro_board_id = "https://miro.com/app/board/".to_string() + &miro_board_id;
     let project_repository_url: String =
@@ -164,7 +160,6 @@ fn get_required_config() -> Result<RequiredConfig, String> {
         project_name,
         client_name,
         miro_board_url,
-        miro_board_id,
         starting_date,
         commit_hash_url,
         project_repository_url,
@@ -183,7 +178,6 @@ fn create_bat_toml(required_config: RequiredConfig) {
         program_lib_path,
         project_repository_url,
         miro_board_url,
-        miro_board_id,
         ..
     } = required_config;
 
@@ -221,10 +215,6 @@ fn create_bat_toml(required_config: RequiredConfig) {
         .replace(
             &String::from("miro_board_url = \""),
             &("miro_board_url = \"".to_string() + &miro_board_url),
-        )
-        .replace(
-            &String::from("miro_board_id = \""),
-            &("miro_board_id = \"".to_string() + &miro_board_id),
         )
         .replace(
             &String::from("auditor_names = [\""),
