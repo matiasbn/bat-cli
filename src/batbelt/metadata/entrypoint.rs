@@ -10,6 +10,7 @@ enum EntrypointInfoSection {
     HandlerFunction,
     ContextName,
     MutAccounts,
+    FunctionParameters,
 }
 
 impl EntrypointInfoSection {
@@ -29,6 +30,7 @@ pub struct EntrypointMetadata {
     pub handler_function: String,
     pub context_name: String,
     pub mut_accounts: Vec<Vec<String>>,
+    pub function_parameters: Vec<Vec<String>>,
 }
 
 impl EntrypointMetadata {
@@ -39,6 +41,7 @@ impl EntrypointMetadata {
         handler_function: String,
         context_name: String,
         mut_accounts: Vec<Vec<String>>,
+        function_parameters: Vec<Vec<String>>,
     ) -> Self {
         EntrypointMetadata {
             name,
@@ -47,17 +50,19 @@ impl EntrypointMetadata {
             handler_function,
             context_name,
             mut_accounts,
+            function_parameters,
         }
     }
 
     pub fn get_markdown_section_content_string(&self) -> String {
         format!(
-            "- context_name: {}\n- handler_function: {}\n- instruction_file_path: {}\n- signers: {}\n- mut_accounts: {}",
+            "- context_name: {}\n- handler_function: {}\n- instruction_file_path: {}\n- signers: {}\n- mut_accounts: {}\n- function_parameters: {}",
             self.context_name,
             self.handler_function,
             self.instruction_file_path,
             self.get_signers_string(),
-            self.get_mut_accounts_string()
+            self.get_mut_accounts_string(),
+            self.get_function_parameters_string()
         )
     }
 
@@ -79,11 +84,26 @@ impl EntrypointMetadata {
                 });
         format!("[{}]", cs_mut_accounts)
     }
+    fn get_function_parameters_string(&self) -> String {
+        let function_parameters =
+            self.function_parameters
+                .iter()
+                .fold("".to_string(), |result, mut_account| {
+                    if result.is_empty() {
+                        format!("[{},{}]", mut_account[0], mut_account[1])
+                    } else {
+                        format!("{};[{},{}]", result, mut_account[0], mut_account[1])
+                    }
+                });
+        format!("[{}]", function_parameters)
+    }
+
     pub fn get_markdown_section(&self, section_hash: &str) -> MarkdownSection {
         let section_level_header = MarkdownSectionLevel::H2.get_header(&self.name);
         let section_header = MarkdownSectionHeader::new_from_header_and_hash(
             section_level_header,
             section_hash.to_string(),
+            0,
         );
         let md_section = MarkdownSection::new(
             section_header,
@@ -114,6 +134,10 @@ impl EntrypointMetadata {
             &md_section.content,
             EntrypointInfoSection::MutAccounts,
         );
+        let function_parameters = Self::parse_metadata_info_section(
+            &md_section.content,
+            EntrypointInfoSection::FunctionParameters,
+        );
         let signers = signers
             .trim_start_matches("[")
             .trim_end_matches("]")
@@ -131,6 +155,17 @@ impl EntrypointMetadata {
                 ]
             })
             .collect::<Vec<_>>();
+        let function_parameters = function_parameters
+            .trim_start_matches("[")
+            .trim_end_matches("]")
+            .split(";")
+            .map(|fun_param| {
+                vec![
+                    fun_param.split(",").next().unwrap().to_string(),
+                    fun_param.split(",").last().unwrap().to_string(),
+                ]
+            })
+            .collect::<Vec<_>>();
 
         EntrypointMetadata::new(
             name,
@@ -139,6 +174,7 @@ impl EntrypointMetadata {
             handler_function,
             context_name,
             mut_accounts,
+            function_parameters,
         )
     }
 

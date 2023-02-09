@@ -157,7 +157,7 @@ pub fn start_co_file() -> Result<(), String> {
             })
     };
     let mut new_function_parameters_section = function_parameter_section.clone();
-    new_function_parameters_section.content = function_parameters_content;
+    new_function_parameters_section.content = function_parameters_content.clone();
     started_markdown_file
         .replace_section(
             new_function_parameters_section,
@@ -324,9 +324,42 @@ pub fn start_co_file() -> Result<(), String> {
         SonarResultType::ContextAccountsAll,
     );
     let mut_accounts = get_mut_accounts(context_accounts.results.clone());
+    let function_parameters = if !handler_function_parameters.is_empty() {
+        function_parameters_content
+            .lines()
+            .map(|line| {
+                let name = line
+                    .clone()
+                    .strip_prefix("- ")
+                    .unwrap()
+                    .split(": ")
+                    .next()
+                    .unwrap()
+                    .to_string();
+                let param_type = line
+                    .clone()
+                    .strip_prefix("- ")
+                    .unwrap()
+                    .split(": ")
+                    .last()
+                    .unwrap()
+                    .to_string();
+                vec![name, param_type]
+            })
+            .collect::<Vec<_>>()
+    } else {
+        vec![vec![]]
+    };
+
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let entrypoint_section = metadata_markdown
         .get_section(&MetadataSection::Entrypoints.to_sentence_case())
         .unwrap();
+    let mut entrypoint_section_subsections =
+        metadata_markdown.get_section_subsections(entrypoint_section.clone());
+
+    println!("sec\n{:#?}", entrypoint_section);
+    println!("subsec\n{:#?}", entrypoint_section_subsections);
     let new_entrypoint = EntrypointMetadata::new(
         entrypoint_name,
         signers,
@@ -334,14 +367,16 @@ pub fn start_co_file() -> Result<(), String> {
         handler_function_name,
         context_name.to_string(),
         mut_accounts,
+        function_parameters,
     );
     let new_entrypoint_subsection =
         new_entrypoint.get_markdown_section(&entrypoint_section.section_header.section_hash);
+    entrypoint_section_subsections.push(new_entrypoint_subsection);
     metadata_markdown
         .replace_section(
             entrypoint_section.clone(),
             entrypoint_section.clone(),
-            vec![new_entrypoint_subsection],
+            entrypoint_section_subsections,
         )
         .unwrap();
     metadata_markdown.save().unwrap();

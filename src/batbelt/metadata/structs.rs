@@ -1,4 +1,4 @@
- use crate::batbelt::structs::FileInfo;
+use crate::batbelt::structs::FileInfo;
 use std::fmt::Debug;
 
 use crate::batbelt;
@@ -72,6 +72,7 @@ impl StructMetadata {
         let section_header = MarkdownSectionHeader::new_from_header_and_hash(
             section_level_header,
             section_hash.to_string(),
+            0,
         );
         let md_section = MarkdownSection::new(
             section_header,
