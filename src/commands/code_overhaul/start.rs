@@ -240,22 +240,19 @@ pub fn start_co_file() -> Result<(), String> {
             .collect::<Vec<_>>()
     };
 
-    let ca_accounts = BatSonar::new_scanned(
+    let ca_accounts_only_validations = BatSonar::new_scanned(
         &context_source_code.clone().get_source_code_content(),
-        SonarResultType::ContextAccounts,
+        SonarResultType::ContextAccountsOnlyValidations,
     );
 
-    let mut filtered_ca_accounts = ca_accounts
+    let mut ca_accounts_results = ca_accounts_only_validations
         .results
         .iter()
-        .filter(|result| {
-            result.content.contains("constraint") || result.content.contains("has_one")
-        })
         .map(|result| result.content.clone())
         .collect::<Vec<_>>();
 
     let mut validations_vec: Vec<String> = vec![];
-    validations_vec.append(&mut filtered_ca_accounts);
+    validations_vec.append(&mut ca_accounts_results);
     validations_vec.append(&mut filtered_if_validations);
     validations_vec.append(&mut filtered_handler_validations);
 
@@ -457,7 +454,7 @@ fn get_signers_section_content(context_lines: &str) -> String {
             let selections = batbelt::cli_inputs::multiselect(
                 &prompt_text,
                 signer_formatted.clone(),
-                Some(&vec![true; signer_formatted.clone().len()]),
+                Some(&vec![false; signer_formatted.clone().len()]),
             )
             .unwrap();
             if selections.is_empty() {
