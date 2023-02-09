@@ -177,14 +177,14 @@ pub fn start_co_file() -> Result<(), String> {
         .unwrap();
 
     // Validations section
-    let handler_if_statements = BatSonar::new_from_path(
+    let handler_if_validations = BatSonar::new_from_path(
         &instruction_file_path,
         Some(&handler_function.name),
-        SonarResultType::If,
+        SonarResultType::IfValidation,
     );
 
     // get the if validations inside any if statement to filter from the handler validations
-    let if_validations = handler_if_statements
+    let if_validations = handler_if_validations
         .results
         .iter()
         .map(|if_validation| {
@@ -204,7 +204,7 @@ pub fn start_co_file() -> Result<(), String> {
         });
 
     // any if that contains an if validation is considered a validation
-    let mut filtered_if_validations = handler_if_statements
+    let mut filtered_if_validations = handler_if_validations
         .clone()
         .results
         .iter()
@@ -232,9 +232,10 @@ pub fn start_co_file() -> Result<(), String> {
             .results
             .iter()
             .filter(|validation| {
-                !if_validations
+                !handler_if_validations
+                    .results
                     .iter()
-                    .any(|if_val| validation.content == if_val.content)
+                    .any(|if_val| if_val.content.contains(&validation.content.to_string()))
             })
             .map(|val| val.content.clone())
             .collect::<Vec<_>>()
@@ -242,7 +243,7 @@ pub fn start_co_file() -> Result<(), String> {
 
     let ca_accounts_only_validations = BatSonar::new_scanned(
         &context_source_code.clone().get_source_code_content(),
-        SonarResultType::ContextAccountsOnlyValidations,
+        SonarResultType::ContextAccountsOnlyValidation,
     );
 
     let mut ca_accounts_results = ca_accounts_only_validations
