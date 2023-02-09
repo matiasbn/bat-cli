@@ -23,7 +23,6 @@ use crate::batbelt::templates::code_overhaul::{
 
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 
-use crate::batbelt::sonar::SonarResultType::ContextAccountsAll;
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), String> {
@@ -99,7 +98,7 @@ pub fn start_co_file() -> Result<(), String> {
         .unwrap();
 
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
-    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
+    let metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_sentence_case())
         .unwrap();
@@ -398,7 +397,7 @@ fn get_mut_accounts(results: Vec<SonarResult>) -> Vec<Vec<String>> {
         .collect::<Vec<_>>();
     let mut result_vec: Vec<Vec<String>> = vec![];
     for mut_account_result in mut_accounts_results {
-        let mut content_lines = mut_account_result.content.lines().clone();
+        let content_lines = mut_account_result.content.lines().clone();
         let account_name = mut_account_result.name.clone();
         let prefix = format!("pub {}: ", account_name);
         let mut is_mut = false;

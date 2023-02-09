@@ -1,4 +1,3 @@
-use crate::batbelt::templates::code_overhaul::{CodeOverhaulSection, CodeOverhaulTemplate};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::fs;
@@ -709,7 +708,7 @@ fn test_get_markdown_section_subsections() {
     let generator = vec![(1, 2), (2, 3)];
     let markdown_tester = MarkdownTester::new(".", generator.clone());
     let MarkdownTester {
-        test_sections,
+        test_sections: _,
         markdown_file,
     } = markdown_tester;
 
@@ -728,7 +727,7 @@ fn test_replace_section() {
     let markdown_tester = MarkdownTester::new(".", generator.clone());
     let MarkdownTester {
         mut markdown_file,
-        test_sections,
+        test_sections: _,
     } = markdown_tester;
     let first_section = markdown_file.get_section("First section").unwrap().clone();
     let mut first_section_subsections =
@@ -819,7 +818,7 @@ fn test_replace_co_file() {
   }
   ```";
 
-    let new_validations_content = "
+    let _new_validations_content = "
 - ```rust
     #[account(
         mut,
@@ -900,7 +899,7 @@ fn test_replace_co_file() {
         )
         .unwrap();
     let validations_section = started_markdown_file.get_section(val_title).unwrap();
-    let mut new_validations_section = validations_section.clone();
+    let new_validations_section = validations_section.clone();
     started_markdown_file
         .replace_section(new_validations_section, validations_section.clone(), vec![])
         .unwrap();

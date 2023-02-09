@@ -24,14 +24,14 @@ use crate::batbelt::metadata::source_code::SourceCodeScreenshotOptions;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::miro::connector::ConnectorOptions;
 use crate::batbelt::miro::frame::MiroFrame;
-use crate::batbelt::miro::image::{MiroImage, MiroImageType};
+use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::shape::{MiroShape, MiroShapeStyle};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::{helpers, MiroConfig, MiroItemType};
 use crate::batbelt::path::FolderPathType;
 use crate::batbelt::templates::code_overhaul::{
-    CodeOverhaulSection, CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
+    CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
 };
 
 pub async fn deploy_co() -> Result<(), String> {
@@ -78,13 +78,13 @@ pub async fn deploy_co() -> Result<(), String> {
         let started_entrypoint_section =
             metadata_markdown.get_subsection(&entrypoint_name, entrypoints_section.section_header);
         let EntrypointMetadata {
-            name,
+            name: _,
             signers,
             instruction_file_path,
             handler_function,
-            context_name,
-            mut_accounts,
-            function_parameters,
+            context_name: _,
+            mut_accounts: _,
+            function_parameters: _,
         } = EntrypointMetadata::from_markdown_section(started_entrypoint_section);
         // get the signers name and description
 
