@@ -59,9 +59,17 @@ fn get_required_config() -> Result<RequiredConfig, String> {
                     .iter()
                     .any(|y| f.file_name().to_str().unwrap().contains(y))
         })
+        .filter(|f| {
+            let path = f.path();
+            let dir = fs::read_dir(path).unwrap();
+            let file_names = dir
+                .map(|f| f.unwrap().file_name().to_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+            let is_bat_project = file_names.contains(&"Bat.toml".to_string());
+            !is_bat_project
+        })
         .map(|f| f.file_name().into_string().unwrap())
         .collect::<Vec<_>>();
-
     // Folder with the program to audit selection
     let prompt_text = "Select the folder with the program to audit";
     let selection = cli_inputs::select(prompt_text, local_folders.clone(), None)?;
