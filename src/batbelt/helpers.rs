@@ -106,7 +106,7 @@ pub mod get {
     }
 
     pub fn get_instruction_files() -> Result<Vec<FileInfo>, String> {
-        let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, true);
+        let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
         let mut lib_files_info = get_only_files_from_folder(program_path)
             .unwrap()
             .into_iter()

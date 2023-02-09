@@ -22,8 +22,9 @@ use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, Sona
 use crate::batbelt::templates::code_overhaul::CodeOverhaulSection;
 
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
-use crate::batbelt::metadata::MetadataSection::Entrypoint;
+use crate::batbelt::metadata::MetadataSection::Entrypoints;
 use crate::batbelt::sonar::SonarResultType::ContextAccountsAll;
+
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), String> {
@@ -324,7 +325,7 @@ pub fn start_co_file() -> Result<(), String> {
     );
     let mut_accounts = get_mut_accounts(context_accounts.results.clone());
     let entrypoint_section = metadata_markdown
-        .get_section(&MetadataSection::Entrypoint.to_sentence_case())
+        .get_section(&MetadataSection::Entrypoints.to_sentence_case())
         .unwrap();
     let new_entrypoint = EntrypointMetadata::new(
         entrypoint_name,
@@ -346,6 +347,16 @@ pub fn start_co_file() -> Result<(), String> {
     metadata_markdown.save().unwrap();
     Ok(())
 }
+
+// # Entrypoints_template
+//
+// ## cancel_crafting_process
+//
+// - signers: [location, authority]
+// - instruction_file_path: ../star-atlas-programs/sol-programs/programs/crafting/src/instructions/crafting_process/cancel_crafting_process.rs
+// - handler_function: handler
+// - context_name: CancelCraftingProcess
+// - mut_accounts: [[funds_to,UncheckedAccount];[crafting_process,CraftingProcess];[crafting_facility,CraftingFacility]]
 
 fn get_mut_accounts(results: Vec<SonarResult>) -> Vec<Vec<String>> {
     let mut_accounts_results = results

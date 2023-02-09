@@ -13,7 +13,7 @@ use inflector::Inflector;
 pub enum MetadataSection {
     Structs,
     Functions,
-    Entrypoint,
+    Entrypoints,
     Miro,
 }
 
