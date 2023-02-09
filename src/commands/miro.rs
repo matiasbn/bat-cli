@@ -541,16 +541,13 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
                 let _selected_subsection = &subsections[selection];
                 // Choose metadata final selection
                 let prompt_text = format!("Please enter the {}", "struct to deploy".green());
-                let selection =
-                    batbelt::cli_inputs::select(&prompt_text, struct_metadata_names.clone(), None)
-                        .unwrap();
-                let selected_struct_metadata = &struct_metadata_vec[selection];
-                let source_code_metadata = SourceCodeMetadata::new(
-                    selected_struct_metadata.name.clone(),
-                    selected_struct_metadata.path.clone(),
-                    selected_struct_metadata.start_line_index,
-                    selected_struct_metadata.end_line_index,
-                );
+                let selections = batbelt::cli_inputs::multiselect(
+                    &prompt_text,
+                    struct_metadata_names.clone(),
+                    None,
+                )
+                .unwrap();
+
                 let include_path = batbelt::cli_inputs::select_yes_or_no(&format!(
                     "Do you want to {}",
                     "include the path?".yellow()
@@ -606,33 +603,45 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
                     filters,
                     font_size: Some(20),
                 };
-                let png_path = source_code_metadata.create_screenshot(screenshot_options);
-                println!(
-                    "\nCreating {}{} in {} frame",
-                    selected_struct_metadata.name.green(),
-                    ".png".green(),
-                    selected_miro_frame.title.green()
-                );
-                // let screenshot_image = image::api::create_image_from_device(&png_path)
-                //     .await
-                //     .unwrap();
-                let mut screenshot_image = MiroImage::new_from_file_path(&png_path, &miro_frame_id);
-                screenshot_image.deploy().await;
-                // let (x_position, y_position) = frame::api::get_frame_positon(&miro_frame_id).await;
-                let miro_item = MiroItem::new(
-                    &screenshot_image.item_id,
-                    &miro_frame_id,
-                    300,
-                    selected_miro_frame.height as i64 - 300,
-                    MiroItemType::Image,
-                );
 
-                println!(
-                    "Updating the position of {}{}\n",
-                    selected_struct_metadata.name.green(),
-                    ".png".green()
-                );
-                miro_item.update_item_parent_and_position().await;
+                for selection in selections {
+                    let selected_struct_metadata = &struct_metadata_vec[selection];
+                    let source_code_metadata = SourceCodeMetadata::new(
+                        selected_struct_metadata.name.clone(),
+                        selected_struct_metadata.path.clone(),
+                        selected_struct_metadata.start_line_index,
+                        selected_struct_metadata.end_line_index,
+                    );
+                    let png_path =
+                        source_code_metadata.create_screenshot(screenshot_options.clone());
+                    println!(
+                        "\nCreating {}{} in {} frame",
+                        selected_struct_metadata.name.green(),
+                        ".png".green(),
+                        selected_miro_frame.title.green()
+                    );
+                    // let screenshot_image = image::api::create_image_from_device(&png_path)
+                    //     .await
+                    //     .unwrap();
+                    let mut screenshot_image =
+                        MiroImage::new_from_file_path(&png_path, &miro_frame_id);
+                    screenshot_image.deploy().await;
+                    // let (x_position, y_position) = frame::api::get_frame_positon(&miro_frame_id).await;
+                    let miro_item = MiroItem::new(
+                        &screenshot_image.item_id,
+                        &miro_frame_id,
+                        300,
+                        selected_miro_frame.height as i64 - 300,
+                        MiroItemType::Image,
+                    );
+
+                    println!(
+                        "Updating the position of {}{}\n",
+                        selected_struct_metadata.name.green(),
+                        ".png".green()
+                    );
+                    miro_item.update_item_parent_and_position().await;
+                }
 
                 // promp if continue
 
