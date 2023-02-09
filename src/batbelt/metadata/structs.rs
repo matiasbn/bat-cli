@@ -1,4 +1,4 @@
-use crate::batbelt::structs::FileInfo;
+ use crate::batbelt::structs::FileInfo;
 use std::fmt::Debug;
 
 use crate::batbelt;

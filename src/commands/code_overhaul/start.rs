@@ -18,9 +18,12 @@ use crate::batbelt::bash::execute_command;
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
-use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResultType};
+use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::templates::code_overhaul::CodeOverhaulSection;
 
+use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
+use crate::batbelt::metadata::MetadataSection::Entrypoint;
+use crate::batbelt::sonar::SonarResultType::ContextAccountsAll;
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), String> {
@@ -96,7 +99,7 @@ pub fn start_co_file() -> Result<(), String> {
         .unwrap();
 
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
-    let metadata_markdown = MarkdownFile::new(&metadata_path);
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_sentence_case())
         .unwrap();
@@ -125,7 +128,7 @@ pub fn start_co_file() -> Result<(), String> {
     let signers_section_content =
         get_signers_section_content(&context_source_code.clone().get_source_code_content());
     let mut new_signers_section = signers_section.clone();
-    new_signers_section.content = signers_section_content;
+    new_signers_section.content = signers_section_content.clone();
     started_markdown_file
         .replace_section(new_signers_section, signers_section, vec![])
         .unwrap();
@@ -136,7 +139,9 @@ pub fn start_co_file() -> Result<(), String> {
         .get_section(&CodeOverhaulSection::FunctionParameters.to_title())
         .unwrap();
     let handler_function_parameters = get_function_parameters(handler_function.content.clone());
-    let function_parameters_content =
+    let function_parameters_content = if handler_function_parameters.is_empty() {
+        "- No function parameters found".to_string()
+    } else {
         handler_function_parameters
             .iter()
             .fold("".to_string(), |result, parameter| {
@@ -148,7 +153,8 @@ pub fn start_co_file() -> Result<(), String> {
                 } else {
                     format!("{}\n- {}", result, parameter.trim_end_matches(","))
                 }
-            });
+            })
+    };
     let mut new_function_parameters_section = function_parameter_section.clone();
     new_function_parameters_section.content = function_parameters_content;
     started_markdown_file
@@ -279,6 +285,7 @@ pub fn start_co_file() -> Result<(), String> {
         .unwrap();
 
     started_markdown_file.save().unwrap();
+
     execute_command("mv", &[&to_review_file_path, &started_path]).unwrap();
 
     println!("{to_start_file_name} file moved to started");
@@ -293,82 +300,99 @@ pub fn start_co_file() -> Result<(), String> {
     // open instruction file in VSCode
     vs_code_open_file_in_current_window(&instruction_file_path)?;
 
+    // fill metadata
+    let handler_function_name = handler_function.name.clone();
+    let entrypoint_name = entrypoint_name.clone();
+    let instruction_file_path = instruction_file_path.clone();
+    let context_name = context_name.clone();
+
+    // signers
+    let signers = signers_section_content
+        .lines()
+        .map(|signer| {
+            signer
+                .trim_start_matches("- ")
+                .split(":")
+                .next()
+                .unwrap()
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    let context_accounts = BatSonar::new_scanned(
+        &context_source_code.get_source_code_content(),
+        SonarResultType::ContextAccountsAll,
+    );
+    let mut_accounts = get_mut_accounts(context_accounts.results.clone());
+    let entrypoint_section = metadata_markdown
+        .get_section(&MetadataSection::Entrypoint.to_sentence_case())
+        .unwrap();
+    let new_entrypoint = EntrypointMetadata::new(
+        entrypoint_name,
+        signers,
+        instruction_file_path,
+        handler_function_name,
+        context_name.to_string(),
+        mut_accounts,
+    );
+    let new_entrypoint_subsection =
+        new_entrypoint.get_markdown_section(&entrypoint_section.section_header.section_hash);
+    metadata_markdown
+        .replace_section(
+            entrypoint_section.clone(),
+            entrypoint_section.clone(),
+            vec![new_entrypoint_subsection],
+        )
+        .unwrap();
+    metadata_markdown.save().unwrap();
     Ok(())
 }
 
-pub fn get_context_account_section_content(context_accounts_content: &str) -> String {
-    // let context_lines = context_accounts_content.lines().collect::<Vec<_>>();
-    // let filtered_context_account_lines: Vec<_> = context_lines
-    //     .iter()
-    //     .map(|line| {
-    //         // if has validation in a single line, then delete the validation, so the filters don't erase them
-    //         if line.contains("#[account(")
-    //             && line.contains(")]")
-    //             && (line.contains("constraint") || line.contains("has_one"))
-    //         {
-    //             let new_line = line
-    //                 .split(',')
-    //                 .filter(|element| {
-    //                     !(element.contains("has_one") || element.contains("constraint"))
-    //                 })
-    //                 .map(|l| l.to_string())
-    //                 .collect::<Vec<String>>()
-    //                 .join(",");
-    //             new_line + ")]"
-    //         } else {
-    //             line.to_string()
-    //         }
-    //     })
-    //     .filter(|line| !line.contains("constraint "))
-    //     .filter(|line| !line.contains("has_one "))
-    //     .collect();
-    //
-    // let mut formatted_lines: Vec<String> = vec![];
-    // for (idx, line) in filtered_context_account_lines.iter().enumerate() {
-    //     // if the current line opens an account, and next does not closes it
-    //     if line.replace(' ', "") == "#[account("
-    //         && filtered_context_account_lines[idx + 1].replace(' ', "") != ")]"
-    //     {
-    //         let mut counter = 1;
-    //         let mut lines_to_add: Vec<String> = vec![];
-    //         // iterate next lines until reaching )]
-    //         while filtered_context_account_lines[idx + counter].replace(' ', "") != ")]" {
-    //             let next_line = filtered_context_account_lines[idx + counter].clone();
-    //             lines_to_add.push(next_line);
-    //             counter += 1;
-    //         }
-    //
-    //         // single attribute, join to single line
-    //         if counter == 2 {
-    //             formatted_lines.push(
-    //                 line.to_string() + lines_to_add[0].replace([' ', ','], "").as_str() + ")]",
-    //             )
-    //             // multiple attributes, join to multiple lines
-    //         } else {
-    //             // multiline attributes, join line, the lines_to_add and the closure )] line
-    //             formatted_lines.push(
-    //                 [
-    //                     &[line.to_string()],
-    //                     &lines_to_add[..],
-    //                     &[filtered_context_account_lines[idx + counter].clone()],
-    //                 ]
-    //                 .concat()
-    //                 .join("\n  "),
-    //             );
-    //         }
-    //         // if the line defines an account, is a comment, an empty line or closure of context accounts
-    //     } else if line.contains("pub")
-    //         || line.contains("///")
-    //         || line.replace(' ', "") == "}"
-    //         || line.is_empty()
-    //     {
-    //         formatted_lines.push(line.to_string())
-    //         // if is an already single line account
-    //     } else if line.contains("#[account(") && line.contains(")]") {
-    //         formatted_lines.push(line.to_string())
-    //     }
-    // }
+fn get_mut_accounts(results: Vec<SonarResult>) -> Vec<Vec<String>> {
+    let mut_accounts_results = results
+        .iter()
+        .filter(|account| account.content.contains("#[account(") && account.content.contains("mut"))
+        .collect::<Vec<_>>();
+    let mut result_vec: Vec<Vec<String>> = vec![];
+    for mut_account_result in mut_accounts_results {
+        let mut content_lines = mut_account_result.content.lines().clone();
+        let account_name = mut_account_result.name.clone();
+        let prefix = format!("pub {}: ", account_name);
+        let mut is_mut = false;
+        if content_lines.count() == 2 {
+            let first_line = mut_account_result.content.lines().next().unwrap();
+            let first_line = first_line
+                .trim()
+                .trim_start_matches("#[account(")
+                .trim_end_matches(")]");
+            is_mut = first_line.split(",").any(|spl| spl.trim() == "mut");
+        } else {
+            is_mut = mut_account_result
+                .content
+                .lines()
+                .any(|line| line.trim().trim_end_matches(",") == "mut");
+        };
+        if is_mut {
+            let last_line = mut_account_result
+                .content
+                .lines()
+                .last()
+                .unwrap()
+                .trim_end_matches(">,");
+            let account_definition = last_line.trim().strip_prefix(&prefix).unwrap();
+            let lifetime = account_definition.clone().split("<").last().unwrap();
+            let lifetime_split = lifetime.split(" ").collect::<Vec<_>>();
+            let account_type = if lifetime_split.len() > 1 {
+                lifetime_split.last().unwrap().to_string()
+            } else {
+                account_definition.split("<").next().unwrap().to_string()
+            };
+            result_vec.push(vec![account_name, account_type]);
+        }
+    }
+    result_vec
+}
 
+pub fn get_context_account_section_content(context_accounts_content: &str) -> String {
     let accounts = BatSonar::new_scanned(
         context_accounts_content,
         SonarResultType::ContextAccountsNoValidation,
@@ -502,4 +526,67 @@ fn get_signers_section_content(context_lines: &str) -> String {
         return "- No signers detected".to_string();
     }
     signers.join("\n")
+}
+
+#[test]
+fn test_get_mut_accounts() {
+    let example_results: Vec<SonarResult> = vec![
+    SonarResult {
+        name: "key".to_string(),
+        content: "    pub key: Signer<'info>,".to_string(),
+        trailing_whitespaces: 4,
+        result_type: ContextAccountsAll,
+        start_line_index: 2,
+        end_line_index: 2,
+        is_public: true,
+    },
+    SonarResult {
+        name: "profile".to_string(),
+        content: "    pub profile: AccountLoader<'info, Profile>,".to_string(),
+        trailing_whitespaces: 4,
+        result_type: ContextAccountsAll,
+        start_line_index: 5,
+        end_line_index: 5,
+        is_public: true,
+    },
+    SonarResult {
+        name: "funds_to".to_string(),
+        content: "    #[account(mut)]\n    pub funds_to: UncheckedAccount<'info>,".to_string(),
+        trailing_whitespaces: 4,
+        result_type: ContextAccountsAll,
+        start_line_index: 9,
+        end_line_index: 10,
+        is_public: true,
+    },
+    SonarResult {
+        name: "funds_to2".to_string(),
+        content: "    #[account(mut, has_one = thing)]\n    pub funds_to2: UncheckedAccount<'info>,".to_string(),
+        trailing_whitespaces: 4,
+        result_type: ContextAccountsAll,
+        start_line_index: 9,
+        end_line_index: 10,
+        is_public: true,
+    },
+    SonarResult {
+        name: "crafting_facility".to_string(),
+        content: "    #[account(\n        mut,\n        has_one = domain @Errors::IncorrectDomain,\n        close = funds_to\n    )]\n    pub crafting_facility: AccountLoader<'info, CraftingFacility>,".to_string(),
+        trailing_whitespaces: 4,
+        result_type: ContextAccountsAll,
+        start_line_index: 13,
+        end_line_index: 18,
+        is_public: true,
+    },
+    SonarResult {
+        name: "domain".to_string(),
+        content: "    #[account(\n        has_one = profile @Errors::IncorrectProfileAddress,\n    )]\n    pub domain: AccountLoader<'info, Domain>,".to_string(),
+        trailing_whitespaces: 4,
+        result_type: ContextAccountsAll,
+        start_line_index: 21,
+        end_line_index: 24,
+        is_public: true,
+    },
+];
+    let mut_accounts = get_mut_accounts(example_results);
+
+    println!("mut_accounts {:#?}", mut_accounts);
 }

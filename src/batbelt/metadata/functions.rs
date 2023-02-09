@@ -8,6 +8,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use inflector::Inflector;
 use std::vec;
+use strum_macros::Display;
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 enum FunctionMetadataInfoSection {
