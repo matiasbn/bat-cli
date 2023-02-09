@@ -95,7 +95,7 @@ impl MiroFrame {
         x_position: i64,
         y_position: i64,
     ) -> Result<(), String> {
-        api::update_frame_position(&self.item_id, x_position, y_position);
+        api::update_frame_position(&self.item_id, x_position, y_position).await?;
         self.x_position = x_position;
         self.y_position = y_position;
         Ok(())
@@ -249,7 +249,6 @@ mod api {
             .await
             .unwrap();
         Ok(())
-        // println!("update frame position response: {response}")
     }
 
     pub async fn get_items_within_frame(frame_id: &str) -> (u64, u64) {

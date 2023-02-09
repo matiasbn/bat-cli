@@ -132,7 +132,7 @@ async fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
         Commands::Create => commands::create::create_project().unwrap(),
-        Commands::Init => commands::init::initialize_bat_project().unwrap(),
+        Commands::Init => commands::init::initialize_bat_project().await.unwrap(),
         Commands::CO(CodeOverhaulActions::Start) => {
             commands::code_overhaul::start::start_co_file().unwrap()
         }
@@ -148,9 +148,9 @@ async fn main() {
             commands::code_overhaul::count_co_files().unwrap()
         }
         Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co().unwrap(),
-        Commands::CO(CodeOverhaulActions::Templates) => {
-            commands::code_overhaul::update_co_templates().unwrap()
-        }
+        // Commands::CO(CodeOverhaulActions::Templates) => {
+        //     commands::code_overhaul::update_co_templates().unwrap()
+        // }
         Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_co().await.unwrap(),
         Commands::Miro(MiroActions::Images) => commands::miro::create_co_snapshots().unwrap(),
         Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),
