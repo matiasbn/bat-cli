@@ -83,7 +83,9 @@ impl BatSonar {
                     continue;
                 }
                 // The context account filter duplicates the accouns starting with #[account(
-                if self.result_type == SonarResultType::ContextAccountsAll && self.results.len() > 0
+                if (self.result_type == SonarResultType::ContextAccountsAll
+                    || self.result_type == SonarResultType::ContextAccountsNoValidation)
+                    && self.results.len() > 0
                 {
                     let last_result = self.results.clone();
                     let last_result = last_result.last().unwrap();
@@ -114,7 +116,8 @@ impl BatSonar {
         starting_line: &str,
     ) -> usize {
         if (self.result_type == SonarResultType::Validation
-            || self.result_type == SonarResultType::ContextAccountsAll)
+            || self.result_type == SonarResultType::ContextAccountsAll
+            || self.result_type == SonarResultType::ContextAccountsNoValidation)
             && self.starting_line_contains_closure_filter(starting_line)
         {
             return start_index;
@@ -232,14 +235,9 @@ impl SonarResult {
 
     pub fn is_valid_result(&self) -> bool {
         match self.result_type {
-            SonarResultType::Function => true,
-            SonarResultType::Struct => true,
-            SonarResultType::Module => true,
-            SonarResultType::If => true,
             SonarResultType::IfValidation => self.is_valid_if_validation(),
-            SonarResultType::Validation => true,
-            SonarResultType::ContextAccountsAll => true,
             SonarResultType::ContextAccountsOnlyValidation => self.is_valid_ca_only_validation(),
+            _ => true,
         }
     }
 
@@ -252,6 +250,10 @@ impl SonarResult {
             SonarResultType::ContextAccountsOnlyValidation => {
                 self.get_name();
                 self.format_ca_only_validations()
+            }
+            SonarResultType::ContextAccountsNoValidation => {
+                self.get_name();
+                self.format_ca_no_validations()
             }
             _ => {}
         }
@@ -349,6 +351,83 @@ impl SonarResult {
         }
     }
 
+    fn format_ca_no_validations(&mut self) {
+        let content = self.content.clone();
+        if !content.contains("#[account(") {
+            return;
+        }
+        // single line, only filter the first line
+        if content.clone().lines().count() == 2 {
+            let first_line = content.lines().next().unwrap();
+            let first_line_formatted = first_line
+                .trim_start()
+                .trim_start_matches("#[account(")
+                .trim_end_matches(")]");
+            let first_line_tokenized = first_line_formatted.split(",");
+            let first_line_filtered = first_line_tokenized
+                .filter(|token| {
+                    !self
+                        .result_type
+                        .get_context_accounts_only_validations_filters()
+                        .iter()
+                        .any(|filter| token.contains(filter))
+                })
+                .collect::<Vec<_>>();
+            let last_line = content.lines().last().unwrap();
+            if first_line_filtered.len() == 0 {
+                self.content = last_line.to_string();
+            } else {
+                let result_filtered = first_line_filtered.join(",");
+                self.content = format!(
+                    "{}#[account({})]\n{}",
+                    " ".repeat(self.trailing_whitespaces),
+                    result_filtered,
+                    last_line
+                )
+            }
+        } else {
+            // multiline account
+            let mut ca_filters = self
+                .result_type
+                .get_context_accounts_only_validations_filters();
+            let lines_count = content.lines().count();
+            // remove first and last line
+            let filtered_lines = content.lines().collect::<Vec<_>>()[1..lines_count - 1]
+                .to_vec()
+                .join("\n")
+                .split(",\n")
+                .filter(|line| {
+                    !ca_filters.iter().any(|filter| line.contains(filter)) && line.trim() != ")]"
+                })
+                .map(|line| line.trim_end_matches(")]").to_string())
+                .collect::<Vec<String>>();
+            let first_line = content.lines().next().unwrap();
+            let last_line = content.lines().last().unwrap();
+            if filtered_lines.len() == 0 {
+                self.content = last_line.to_string();
+            } else if filtered_lines.len() == 1 {
+                // only 1 line, convert multiline to single line
+                let formatted_content = format!(
+                    "{}{})]\n{}",
+                    first_line.trim_end_matches("\n"),
+                    filtered_lines[0].trim().trim_end_matches("\n"),
+                    last_line
+                );
+                self.content = formatted_content
+            } else {
+                let filtered_lines = filtered_lines.join(",\n");
+                let formatted_content = format!(
+                    "{}\n{})]\n{}",
+                    first_line,
+                    filtered_lines,
+                    // " ".repeat(self.trailing_whitespaces),
+                    last_line
+                );
+                self.content = formatted_content
+            }
+        }
+    }
+
     fn is_valid_ca_only_validation(&self) -> bool {
         self.result_type
             .get_context_accounts_only_validations_filters()
@@ -372,6 +451,7 @@ pub enum SonarResultType {
     Validation,
     ContextAccountsAll,
     ContextAccountsOnlyValidation,
+    ContextAccountsNoValidation,
 }
 
 impl SonarResultType {
@@ -379,6 +459,7 @@ impl SonarResultType {
         vec![
             SonarResultType::ContextAccountsAll,
             SonarResultType::ContextAccountsOnlyValidation,
+            SonarResultType::ContextAccountsNoValidation,
         ]
     }
 
@@ -428,6 +509,11 @@ impl SonarFilter {
             }
             SonarFilter::EndOfOpen(SonarResultType::ContextAccountsAll) => vec!["(", ">,"],
             SonarFilter::Closure(SonarResultType::ContextAccountsAll) => vec!["pub", "}"],
+            SonarFilter::Open(SonarResultType::ContextAccountsNoValidation) => {
+                vec!["pub", "#[account"]
+            }
+            SonarFilter::EndOfOpen(SonarResultType::ContextAccountsNoValidation) => vec!["(", ">,"],
+            SonarFilter::Closure(SonarResultType::ContextAccountsNoValidation) => vec!["pub", "}"],
             SonarFilter::Open(SonarResultType::ContextAccountsOnlyValidation) => {
                 vec!["#[account"]
             }
@@ -697,6 +783,39 @@ fn test_get_context_accounts() {
     let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsAll);
     assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
     println!("sonar \n{:#?}", bat_sonar);
+}
+
+#[test]
+fn test_get_context_accounts_no_validations() {
+    let test_text = "
+    #[derive(Accounts, Debug)]
+    pub struct thing<'info> {
+        pub acc_1: Signer<'info>,
+    
+        #[account(has_one = thing)]
+        pub acc_2: AccountLoader<'info, Pf>,
+    
+        #[account(mut)]
+        pub acc_3: Signer<'info>,
+    
+        #[account(
+            mut,
+            has_one = thing,
+        )]
+        pub acc_4: AccountLoader<'info, Rc>,
+    
+        #[account(
+            has_one = thing,
+        )]
+        pub acc_5: AccountLoader<'info, A>,
+    
+        pub acc_6: Account<'info, Mint>,
+    
+        pub acc_7: Program<'info, B>,
+    }
+    ";
+    let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsNoValidation);
+    assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
 }
 
 #[test]

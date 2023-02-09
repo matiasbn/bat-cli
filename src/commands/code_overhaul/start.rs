@@ -297,84 +297,104 @@ pub fn start_co_file() -> Result<(), String> {
 }
 
 pub fn get_context_account_section_content(context_accounts_content: &str) -> String {
-    let context_lines = context_accounts_content.lines().collect::<Vec<_>>();
-    let filtered_context_account_lines: Vec<_> = context_lines
+    // let context_lines = context_accounts_content.lines().collect::<Vec<_>>();
+    // let filtered_context_account_lines: Vec<_> = context_lines
+    //     .iter()
+    //     .map(|line| {
+    //         // if has validation in a single line, then delete the validation, so the filters don't erase them
+    //         if line.contains("#[account(")
+    //             && line.contains(")]")
+    //             && (line.contains("constraint") || line.contains("has_one"))
+    //         {
+    //             let new_line = line
+    //                 .split(',')
+    //                 .filter(|element| {
+    //                     !(element.contains("has_one") || element.contains("constraint"))
+    //                 })
+    //                 .map(|l| l.to_string())
+    //                 .collect::<Vec<String>>()
+    //                 .join(",");
+    //             new_line + ")]"
+    //         } else {
+    //             line.to_string()
+    //         }
+    //     })
+    //     .filter(|line| !line.contains("constraint "))
+    //     .filter(|line| !line.contains("has_one "))
+    //     .collect();
+    //
+    // let mut formatted_lines: Vec<String> = vec![];
+    // for (idx, line) in filtered_context_account_lines.iter().enumerate() {
+    //     // if the current line opens an account, and next does not closes it
+    //     if line.replace(' ', "") == "#[account("
+    //         && filtered_context_account_lines[idx + 1].replace(' ', "") != ")]"
+    //     {
+    //         let mut counter = 1;
+    //         let mut lines_to_add: Vec<String> = vec![];
+    //         // iterate next lines until reaching )]
+    //         while filtered_context_account_lines[idx + counter].replace(' ', "") != ")]" {
+    //             let next_line = filtered_context_account_lines[idx + counter].clone();
+    //             lines_to_add.push(next_line);
+    //             counter += 1;
+    //         }
+    //
+    //         // single attribute, join to single line
+    //         if counter == 2 {
+    //             formatted_lines.push(
+    //                 line.to_string() + lines_to_add[0].replace([' ', ','], "").as_str() + ")]",
+    //             )
+    //             // multiple attributes, join to multiple lines
+    //         } else {
+    //             // multiline attributes, join line, the lines_to_add and the closure )] line
+    //             formatted_lines.push(
+    //                 [
+    //                     &[line.to_string()],
+    //                     &lines_to_add[..],
+    //                     &[filtered_context_account_lines[idx + counter].clone()],
+    //                 ]
+    //                 .concat()
+    //                 .join("\n  "),
+    //             );
+    //         }
+    //         // if the line defines an account, is a comment, an empty line or closure of context accounts
+    //     } else if line.contains("pub")
+    //         || line.contains("///")
+    //         || line.replace(' ', "") == "}"
+    //         || line.is_empty()
+    //     {
+    //         formatted_lines.push(line.to_string())
+    //         // if is an already single line account
+    //     } else if line.contains("#[account(") && line.contains(")]") {
+    //         formatted_lines.push(line.to_string())
+    //     }
+    // }
+
+    let accounts = BatSonar::new_scanned(
+        context_accounts_content,
+        SonarResultType::ContextAccountsNoValidation,
+    );
+
+    let accounts_string = accounts
+        .results
         .iter()
-        .map(|line| {
-            // if has validation in a single line, then delete the validation, so the filters don't erase them
-            if line.contains("#[account(")
-                && line.contains(")]")
-                && (line.contains("constraint") || line.contains("has_one"))
-            {
-                let new_line = line
-                    .split(',')
-                    .filter(|element| {
-                        !(element.contains("has_one") || element.contains("constraint"))
-                    })
-                    .map(|l| l.to_string())
-                    .collect::<Vec<String>>()
-                    .join(",");
-                new_line + ")]"
-            } else {
-                line.to_string()
-            }
-        })
-        .filter(|line| !line.contains("constraint "))
-        .filter(|line| !line.contains("has_one "))
-        .collect();
-
-    let mut formatted_lines: Vec<String> = vec![];
-    for (idx, line) in filtered_context_account_lines.iter().enumerate() {
-        // if the current line opens an account, and next does not closes it
-        if line.replace(' ', "") == "#[account("
-            && filtered_context_account_lines[idx + 1].replace(' ', "") != ")]"
-        {
-            let mut counter = 1;
-            let mut lines_to_add: Vec<String> = vec![];
-            // iterate next lines until reaching )]
-            while filtered_context_account_lines[idx + counter].replace(' ', "") != ")]" {
-                let next_line = filtered_context_account_lines[idx + counter].clone();
-                lines_to_add.push(next_line);
-                counter += 1;
-            }
-
-            // single attribute, join to single line
-            if counter == 2 {
-                formatted_lines.push(
-                    line.to_string() + lines_to_add[0].replace([' ', ','], "").as_str() + ")]",
-                )
-                // multiple attributes, join to multiple lines
-            } else {
-                // multiline attributes, join line, the lines_to_add and the closure )] line
-                formatted_lines.push(
-                    [
-                        &[line.to_string()],
-                        &lines_to_add[..],
-                        &[filtered_context_account_lines[idx + counter].clone()],
-                    ]
-                    .concat()
-                    .join("\n  "),
-                );
-            }
-            // if the line defines an account, is a comment, an empty line or closure of context accounts
-        } else if line.contains("pub")
-            || line.contains("///")
-            || line.replace(' ', "") == "}"
-            || line.is_empty()
-        {
-            formatted_lines.push(line.to_string())
-            // if is an already single line account
-        } else if line.contains("#[account(") && line.contains(")]") {
-            formatted_lines.push(line.to_string())
-        }
-    }
-
-    let ca_content = formatted_lines
-        .iter()
+        .fold("".to_string(), |result, next| {
+            format!("{}\n\n{}", result, next.content)
+        });
+    let first_line = context_accounts_content.lines().next().unwrap();
+    let last_line = context_accounts_content.lines().last().unwrap();
+    let context_filtered = format!(
+        "{}\n{}\n{}",
+        first_line,
+        accounts_string.trim_start_matches("\n"),
+        last_line,
+    );
+    let formatted = context_filtered
+        .lines()
         .map(|line| format!("  {}", line))
         .collect::<Vec<_>>()
         .join("\n");
-    format!("{}\n{}\n{}", "- ```rust", ca_content, "  ```")
+
+    format!("{}\n{}\n{}", "- ```rust", formatted, "  ```")
 }
 
 fn get_signers_section_content(context_lines: &str) -> String {
