@@ -102,7 +102,12 @@ pub fn create_git_commit(
                 },
                 false,
             );
-            (commit_string, vec![file_to_delete_path, file_to_add_path])
+
+            let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+            (
+                commit_string,
+                vec![file_to_delete_path, file_to_add_path, metadata_path],
+            )
         }
         GitCommit::StartCOMiro => {
             let commit_file = &commit_files.unwrap()[0];

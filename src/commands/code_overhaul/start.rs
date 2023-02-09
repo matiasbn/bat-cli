@@ -291,16 +291,6 @@ pub fn start_co_file() -> Result<(), String> {
 
     println!("{to_start_file_name} file moved to started");
 
-    create_git_commit(
-        GitCommit::StartCO,
-        Some(vec![to_start_file_name.to_string()]),
-    )?;
-
-    // open co file in VSCode
-    vs_code_open_file_in_current_window(started_path.as_str())?;
-    // open instruction file in VSCode
-    vs_code_open_file_in_current_window(&instruction_file_path)?;
-
     // fill metadata
     let handler_function_name = handler_function.name.clone();
     let entrypoint_name = entrypoint_name.clone();
@@ -358,12 +348,10 @@ pub fn start_co_file() -> Result<(), String> {
     let mut entrypoint_section_subsections =
         metadata_markdown.get_section_subsections(entrypoint_section.clone());
 
-    println!("sec\n{:#?}", entrypoint_section);
-    println!("subsec\n{:#?}", entrypoint_section_subsections);
     let new_entrypoint = EntrypointMetadata::new(
         entrypoint_name,
         signers,
-        instruction_file_path,
+        instruction_file_path.clone(),
         handler_function_name,
         context_name.to_string(),
         mut_accounts,
@@ -380,6 +368,17 @@ pub fn start_co_file() -> Result<(), String> {
         )
         .unwrap();
     metadata_markdown.save().unwrap();
+
+    create_git_commit(
+        GitCommit::StartCO,
+        Some(vec![to_start_file_name.to_string()]),
+    )?;
+
+    // open co file in VSCode
+    vs_code_open_file_in_current_window(started_path.as_str())?;
+    // open instruction file in VSCode
+    vs_code_open_file_in_current_window(&instruction_file_path)?;
+
     Ok(())
 }
 
