@@ -576,65 +576,65 @@ fn get_signers_section_content(context_lines: &str) -> String {
     signers.join("\n")
 }
 
-#[test]
-fn test_get_mut_accounts() {
-    let example_results: Vec<SonarResult> = vec![
-    SonarResult {
-        name: "key".to_string(),
-        content: "    pub key: Signer<'info>,".to_string(),
-        trailing_whitespaces: 4,
-        result_type: ContextAccountsAll,
-        start_line_index: 2,
-        end_line_index: 2,
-        is_public: true,
-    },
-    SonarResult {
-        name: "profile".to_string(),
-        content: "    pub profile: AccountLoader<'info, Profile>,".to_string(),
-        trailing_whitespaces: 4,
-        result_type: ContextAccountsAll,
-        start_line_index: 5,
-        end_line_index: 5,
-        is_public: true,
-    },
-    SonarResult {
-        name: "funds_to".to_string(),
-        content: "    #[account(mut)]\n    pub funds_to: UncheckedAccount<'info>,".to_string(),
-        trailing_whitespaces: 4,
-        result_type: ContextAccountsAll,
-        start_line_index: 9,
-        end_line_index: 10,
-        is_public: true,
-    },
-    SonarResult {
-        name: "funds_to2".to_string(),
-        content: "    #[account(mut, has_one = thing)]\n    pub funds_to2: UncheckedAccount<'info>,".to_string(),
-        trailing_whitespaces: 4,
-        result_type: ContextAccountsAll,
-        start_line_index: 9,
-        end_line_index: 10,
-        is_public: true,
-    },
-    SonarResult {
-        name: "crafting_facility".to_string(),
-        content: "    #[account(\n        mut,\n        has_one = domain @Errors::IncorrectDomain,\n        close = funds_to\n    )]\n    pub crafting_facility: AccountLoader<'info, CraftingFacility>,".to_string(),
-        trailing_whitespaces: 4,
-        result_type: ContextAccountsAll,
-        start_line_index: 13,
-        end_line_index: 18,
-        is_public: true,
-    },
-    SonarResult {
-        name: "domain".to_string(),
-        content: "    #[account(\n        has_one = profile @Errors::IncorrectProfileAddress,\n    )]\n    pub domain: AccountLoader<'info, Domain>,".to_string(),
-        trailing_whitespaces: 4,
-        result_type: ContextAccountsAll,
-        start_line_index: 21,
-        end_line_index: 24,
-        is_public: true,
-    },
-];
-    let mut_accounts = get_mut_accounts(example_results);
+// #[test]
+// fn test_get_mut_accounts() {
+//     let example_results: Vec<SonarResult> = vec![
+//     SonarResult {
+//         name: "key".to_string(),
+//         content: "    pub key: Signer<'info>,".to_string(),
+//         trailing_whitespaces: 4,
+//         result_type: ContextAccountsAll,
+//         start_line_index: 2,
+//         end_line_index: 2,
+//         is_public: true,
+//     },
+//     SonarResult {
+//         name: "profile".to_string(),
+//         content: "    pub profile: AccountLoader<'info, Profile>,".to_string(),
+//         trailing_whitespaces: 4,
+//         result_type: ContextAccountsAll,
+//         start_line_index: 5,
+//         end_line_index: 5,
+//         is_public: true,
+//     },
+//     SonarResult {
+//         name: "funds_to".to_string(),
+//         content: "    #[account(mut)]\n    pub funds_to: UncheckedAccount<'info>,".to_string(),
+//         trailing_whitespaces: 4,
+//         result_type: ContextAccountsAll,
+//         start_line_index: 9,
+//         end_line_index: 10,
+//         is_public: true,
+//     },
+//     SonarResult {
+//         name: "funds_to2".to_string(),
+//         content: "    #[account(mut, has_one = thing)]\n    pub funds_to2: UncheckedAccount<'info>,".to_string(),
+//         trailing_whitespaces: 4,
+//         result_type: ContextAccountsAll,
+//         start_line_index: 9,
+//         end_line_index: 10,
+//         is_public: true,
+//     },
+//     SonarResult {
+//         name: "crafting_facility".to_string(),
+//         content: "    #[account(\n        mut,\n        has_one = domain @Errors::IncorrectDomain,\n        close = funds_to\n    )]\n    pub crafting_facility: AccountLoader<'info, CraftingFacility>,".to_string(),
+//         trailing_whitespaces: 4,
+//         result_type: ContextAccountsAll,
+//         start_line_index: 13,
+//         end_line_index: 18,
+//         is_public: true,
+//     },
+//     SonarResult {
+//         name: "domain".to_string(),
+//         content: "    #[account(\n        has_one = profile @Errors::IncorrectProfileAddress,\n    )]\n    pub domain: AccountLoader<'info, Domain>,".to_string(),
+//         trailing_whitespaces: 4,
+//         result_type: ContextAccountsAll,
+//         start_line_index: 21,
+//         end_line_index: 24,
+//         is_public: true,
+//     },
+// ];
+//     let mut_accounts = get_mut_accounts(example_results);
 
-    println!("mut_accounts {:#?}", mut_accounts);
-}
+//     println!("mut_accounts {:#?}", mut_accounts);
+// }
