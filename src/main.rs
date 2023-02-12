@@ -137,7 +137,10 @@ enum PackageActions {
 async fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
-        Commands::Init { .. } | Commands::Create => {}
+        Commands::Init { .. }
+        | Commands::Create
+        | Commands::Package(PackageActions::Format)
+        | Commands::Package(PackageActions::Release) => {}
         _ => {
             check_correct_branch().unwrap();
         }
