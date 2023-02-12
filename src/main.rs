@@ -204,9 +204,6 @@ async fn main() {
 }
 
 mod test {
-    use std::{thread, time::Duration};
-
-    use indicatif::{ProgressBar, ProgressStyle};
 
     #[test]
     fn test_bat_cli_loader() {
