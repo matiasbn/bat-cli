@@ -540,9 +540,10 @@ pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
                     .iter()
                     .map(|struct_metadata| {
                         format!(
-                            "{}: {}",
+                            "{}: {}:{}",
                             struct_metadata.name.clone(),
-                            struct_metadata.path.clone()
+                            struct_metadata.path.clone(),
+                            struct_metadata.start_line_index.clone()
                         )
                     })
                     .collect::<Vec<_>>();
@@ -618,9 +619,10 @@ pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
                     .iter()
                     .map(|function_metadata| {
                         format!(
-                            "{}: {}",
+                            "{}: {}:{}",
                             function_metadata.name.clone(),
-                            function_metadata.path.clone()
+                            function_metadata.path.clone(),
+                            function_metadata.start_line_index.clone()
                         )
                     })
                     .collect::<Vec<_>>();
