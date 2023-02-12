@@ -491,13 +491,13 @@ pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
         "frames".yellow(),
         "Miro board".yellow()
     );
-    let miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await;
-    let mut miro_frame_titles: Vec<&str> = miro_frames
+    let mut miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await;
+    miro_frames.sort_by(|a, b| a.title.cmp(&b.title));
+    let miro_frame_titles: Vec<&str> = miro_frames
         .iter()
         .map(|frame| frame.title.as_str())
         .map(|frame| frame.clone())
         .collect();
-    miro_frame_titles.sort();
 
     let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
     let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
