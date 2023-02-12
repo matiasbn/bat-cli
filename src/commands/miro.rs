@@ -25,10 +25,10 @@ use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::miro::connector::ConnectorOptions;
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
-use crate::batbelt::miro::item::MiroItem;
+
 use crate::batbelt::miro::shape::{MiroShape, MiroShapeStyle};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
-use crate::batbelt::miro::{helpers, MiroConfig, MiroItemType};
+use crate::batbelt::miro::{helpers, MiroConfig};
 use crate::batbelt::path::FolderPathType;
 use crate::batbelt::templates::code_overhaul::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
@@ -485,7 +485,7 @@ pub async fn deploy_entrypoints() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn deploy_screenshot_to_frame(default: bool) -> Result<(), String> {
+pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
     println!(
         "\n\nGetting the {} from the {} ...\n\n",
         "frames".yellow(),
@@ -500,7 +500,7 @@ pub async fn deploy_screenshot_to_frame(default: bool) -> Result<(), String> {
     let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
     let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
     let selected_miro_frame: &MiroFrame = &miro_frames[selection];
-    let miro_frame_id = selected_miro_frame.item_id.clone();
+    let _miro_frame_id = selected_miro_frame.item_id.clone();
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut continue_selection = true;

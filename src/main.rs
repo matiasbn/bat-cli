@@ -187,12 +187,6 @@ async fn main() {
 }
 
 mod test {
-    use super::*;
-    use colored::Colorize;
-    use indicatif::{ProgressBar, ProgressState, ProgressStyle};
-    use std::cmp::min;
-    use std::thread;
-    use std::time::Duration;
 
     #[test]
     fn test_bat_cli_loader() {
