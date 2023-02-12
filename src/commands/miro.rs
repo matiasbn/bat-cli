@@ -492,15 +492,16 @@ pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
         "Miro board".yellow()
     );
     let miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await;
-    let miro_frame_titles: Vec<&str> = miro_frames
+    let mut miro_frame_titles: Vec<&str> = miro_frames
         .iter()
         .map(|frame| frame.title.as_str())
         .map(|frame| frame.clone())
         .collect();
+    miro_frame_titles.sort();
+
     let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
     let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
     let selected_miro_frame: &MiroFrame = &miro_frames[selection];
-    let _miro_frame_id = selected_miro_frame.item_id.clone();
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut continue_selection = true;
