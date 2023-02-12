@@ -25,10 +25,10 @@ use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::miro::connector::ConnectorOptions;
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
-use crate::batbelt::miro::item::MiroItem;
+
 use crate::batbelt::miro::shape::{MiroShape, MiroShapeStyle};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
-use crate::batbelt::miro::{helpers, MiroConfig, MiroItemType};
+use crate::batbelt::miro::{helpers, MiroConfig};
 use crate::batbelt::path::FolderPathType;
 use crate::batbelt::templates::code_overhaul::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
@@ -485,7 +485,7 @@ pub async fn deploy_entrypoints() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
+pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
     println!(
         "\n\nGetting the {} from the {} ...\n\n",
         "frames".yellow(),
@@ -500,7 +500,7 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
     let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
     let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
     let selected_miro_frame: &MiroFrame = &miro_frames[selection];
-    let miro_frame_id = selected_miro_frame.item_id.clone();
+    let _miro_frame_id = selected_miro_frame.item_id.clone();
     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut continue_selection = true;
@@ -518,9 +518,11 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
                 .unwrap();
         let section_selected = &metadata_sections_names[selection];
         let section: MarkdownSection = metadata_markdown.get_section(&section_selected).unwrap();
-        // let structs_metadata_section_title = MetadataSection::Structs.to_string().as_str();
-        match section.section_header.title.clone().as_str() {
-            "Structs" => {
+        let selected_section_title = section.section_header.title.clone();
+        let structs_title = MetadataSection::Structs.to_string();
+        let functions_title = MetadataSection::Functions.to_string();
+        match true {
+            _ if selected_section_title == structs_title => {
                 // Choose metadata subsection selection
                 let prompt_text = format!("Please enter the {}", "struct type to deploy".green());
                 let struct_types_colorized = StructMetadataType::get_colorized_structs_type_vec();
@@ -536,10 +538,14 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
                     .collect::<Vec<_>>();
                 let struct_metadata_names = struct_metadata_vec
                     .iter()
-                    .map(|struct_metadata| struct_metadata.name.clone())
+                    .map(|struct_metadata| {
+                        format!(
+                            "{}: {}",
+                            struct_metadata.name.clone(),
+                            struct_metadata.path.clone()
+                        )
+                    })
                     .collect::<Vec<_>>();
-                let _selected_subsection = &subsections[selection];
-                // Choose metadata final selection
                 let prompt_text = format!("Please enter the {}", "struct to deploy".green());
                 let selections = batbelt::cli_inputs::multiselect(
                     &prompt_text,
@@ -547,61 +553,21 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
                     None,
                 )
                 .unwrap();
+                let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                    MetadataSection::Structs,
+                );
 
-                let include_path = batbelt::cli_inputs::select_yes_or_no(&format!(
-                    "Do you want to {}",
-                    "include the path?".yellow()
+                let use_default = batbelt::cli_inputs::select_yes_or_no(&format!(
+                    "Do you want to {}\n{:#?}",
+                    "use the default screenshot config?".yellow(),
+                    default_config
                 ))
                 .unwrap();
-                let filter_comments = batbelt::cli_inputs::select_yes_or_no(&format!(
-                    "Do you want to {}",
-                    "filter the comments?".yellow()
-                ))
-                .unwrap();
-                let show_line_number = batbelt::cli_inputs::select_yes_or_no(&format!(
-                    "Do you want to {}",
-                    "include the line numbers?".yellow()
-                ))
-                .unwrap();
-                let offset_to_start_line = if show_line_number {
-                    batbelt::cli_inputs::select_yes_or_no(&format!(
-                        "Do you want to {}",
-                        "offset to the starting line?".yellow()
-                    ))
-                    .unwrap()
+
+                let screenshot_options = if use_default {
+                    default_config
                 } else {
-                    false
-                };
-                let include_filters = batbelt::cli_inputs::select_yes_or_no(&format!(
-                    "Do you want to {}",
-                    "add customized filters?".red()
-                ))
-                .unwrap();
-                // utils::cli_inputs::select_yes_or_no("Do you want to include filters?").unwrap();
-                let filters = if include_filters {
-                    let filters_to_include = batbelt::cli_inputs::input(
-                        "Please enter the filters, comma separated: #[account,CHECK ",
-                    )
-                    .unwrap();
-                    if !filters_to_include.is_empty() {
-                        let filters: Vec<String> = filters_to_include
-                            .split(",")
-                            .map(|filter| filter.trim().to_string())
-                            .collect();
-                        Some(filters)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-                let screenshot_options = SourceCodeScreenshotOptions {
-                    include_path,
-                    offset_to_start_line,
-                    filter_comments,
-                    show_line_number,
-                    filters,
-                    font_size: Some(20),
+                    SourceCodeMetadata::prompt_screenshot_options()
                 };
 
                 for selection in selections {
@@ -612,48 +578,105 @@ pub async fn deploy_screenshot_to_frame() -> Result<(), String> {
                         selected_struct_metadata.start_line_index,
                         selected_struct_metadata.end_line_index,
                     );
-                    let png_path =
-                        source_code_metadata.create_screenshot(screenshot_options.clone());
-                    println!(
-                        "\nCreating {}{} in {} frame",
-                        selected_struct_metadata.name.green(),
-                        ".png".green(),
-                        selected_miro_frame.title.green()
-                    );
-                    // let screenshot_image = image::api::create_image_from_device(&png_path)
-                    //     .await
-                    //     .unwrap();
-                    let mut screenshot_image =
-                        MiroImage::new_from_file_path(&png_path, &miro_frame_id);
-                    screenshot_image.deploy().await;
-                    // let (x_position, y_position) = frame::api::get_frame_positon(&miro_frame_id).await;
-                    let miro_item = MiroItem::new(
-                        &screenshot_image.item_id,
-                        &miro_frame_id,
-                        300,
-                        selected_miro_frame.height as i64 - 300,
-                        MiroItemType::Image,
-                    );
-
-                    println!(
-                        "Updating the position of {}{}\n",
-                        selected_struct_metadata.name.green(),
-                        ".png".green()
-                    );
-                    miro_item.update_item_parent_and_position().await;
+                    source_code_metadata
+                        .deploy_screenshot_to_miro_frame(
+                            selected_miro_frame.clone(),
+                            300,
+                            selected_miro_frame.height as i64 - 300,
+                            screenshot_options.clone(),
+                        )
+                        .await;
                 }
+            }
+            _ if selected_section_title == functions_title => {
+                // Choose metadata subsection selection
+                let prompt_text = format!("Please enter the {}", "function type to deploy".green());
+                let function_types_colorized =
+                    FunctionMetadataType::get_colorized_functions_type_vec();
+                let selection = batbelt::cli_inputs::select(
+                    &prompt_text,
+                    function_types_colorized.clone(),
+                    None,
+                )
+                .unwrap();
+                let selected_function_type =
+                    FunctionMetadataType::get_functions_type_vec()[selection];
+                let subsections = metadata_markdown.get_section_subsections(section.clone());
+                let function_metadata_vec = subsections
+                    .iter()
+                    .filter_map(|section| {
+                        let function_metadata =
+                            FunctionMetadata::from_markdown_section(section.clone());
+                        if function_metadata.function_type == selected_function_type {
+                            Some(function_metadata)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let function_metadata_names = function_metadata_vec
+                    .iter()
+                    .map(|function_metadata| {
+                        format!(
+                            "{}: {}",
+                            function_metadata.name.clone(),
+                            function_metadata.path.clone()
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let prompt_text = format!("Please enter the {}", "function to deploy".green());
+                let selections = batbelt::cli_inputs::multiselect(
+                    &prompt_text,
+                    function_metadata_names.clone(),
+                    None,
+                )
+                .unwrap();
 
-                // promp if continue
-
-                let prompt_text = format!(
-                    "Do you want to {} in the {} frame?",
-                    "continue creating screenshots".yellow(),
-                    selected_miro_frame.title.yellow()
+                let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                    MetadataSection::Functions,
                 );
-                continue_selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+
+                let use_default = batbelt::cli_inputs::select_yes_or_no(&format!(
+                    "Do you want to {}\n{:#?}",
+                    "use the default screenshot config?".yellow(),
+                    default_config
+                ))
+                .unwrap();
+
+                let screenshot_options = if use_default {
+                    default_config
+                } else {
+                    SourceCodeMetadata::prompt_screenshot_options()
+                };
+
+                for selection in selections {
+                    let selected_function_metadata = &function_metadata_vec[selection];
+                    let source_code_metadata = SourceCodeMetadata::new(
+                        selected_function_metadata.name.clone(),
+                        selected_function_metadata.path.clone(),
+                        selected_function_metadata.start_line_index,
+                        selected_function_metadata.end_line_index,
+                    );
+                    source_code_metadata
+                        .deploy_screenshot_to_miro_frame(
+                            selected_miro_frame.clone(),
+                            300,
+                            selected_miro_frame.height as i64 - 300,
+                            screenshot_options.clone(),
+                        )
+                        .await;
+                }
             }
             _ => unimplemented!(),
         };
+        // promp if continue
+
+        let prompt_text = format!(
+            "Do you want to {} in the {} frame?",
+            "continue creating screenshots".yellow(),
+            selected_miro_frame.title.yellow()
+        );
+        continue_selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
     }
     batbelt::git::create_git_commit(GitCommit::Figures, None).unwrap();
     Ok(())

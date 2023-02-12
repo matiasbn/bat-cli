@@ -41,7 +41,7 @@ fn take_silicon_snapshot(
     let font = if let Some(size) = font_size {
         format!("Hack={size}")
     } else {
-        format!("Hack=16")
+        format!("Hack=20")
     };
 
     let mut args = vec![

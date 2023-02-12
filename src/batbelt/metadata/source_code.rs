@@ -1,7 +1,15 @@
 use std::fs;
 
+use colored::Colorize;
+
+use crate::batbelt::miro::frame::MiroFrame;
+use crate::batbelt::miro::image::MiroImage;
+use crate::batbelt::miro::item::MiroItem;
+use crate::batbelt::miro::MiroItemType;
 use crate::batbelt::silicon;
 use crate::batbelt::{self, path::FolderPathType};
+
+use super::MetadataSection;
 
 #[derive(Debug, Clone)]
 pub struct SourceCodeScreenshotOptions {
@@ -11,6 +19,45 @@ pub struct SourceCodeScreenshotOptions {
     pub font_size: Option<usize>,
     pub filters: Option<Vec<String>>,
     pub show_line_number: bool,
+}
+
+impl SourceCodeScreenshotOptions {
+    pub fn get_default_metadata_options(metadata_section: MetadataSection) -> Self {
+        match metadata_section {
+            MetadataSection::Structs => Self {
+                include_path: true,
+                offset_to_start_line: true,
+                filter_comments: false,
+                font_size: Some(20),
+                filters: None,
+                show_line_number: true,
+            },
+            MetadataSection::Functions => Self {
+                include_path: true,
+                offset_to_start_line: true,
+                filter_comments: false,
+                font_size: Some(20),
+                filters: None,
+                show_line_number: true,
+            },
+            MetadataSection::Entrypoints => Self {
+                include_path: true,
+                offset_to_start_line: true,
+                filter_comments: false,
+                font_size: Some(20),
+                filters: None,
+                show_line_number: true,
+            },
+            MetadataSection::Miro => Self {
+                include_path: true,
+                offset_to_start_line: true,
+                filter_comments: false,
+                font_size: Some(20),
+                filters: None,
+                show_line_number: true,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -121,6 +168,98 @@ impl SourceCodeMetadata {
             options.show_line_number,
         );
         png_screenshot_path
+    }
+
+    pub fn prompt_screenshot_options() -> SourceCodeScreenshotOptions {
+        let include_path = batbelt::cli_inputs::select_yes_or_no(&format!(
+            "Do you want to {}",
+            "include the path?".yellow()
+        ))
+        .unwrap();
+        let filter_comments = batbelt::cli_inputs::select_yes_or_no(&format!(
+            "Do you want to {}",
+            "filter the comments?".yellow()
+        ))
+        .unwrap();
+        let show_line_number = batbelt::cli_inputs::select_yes_or_no(&format!(
+            "Do you want to {}",
+            "include the line numbers?".yellow()
+        ))
+        .unwrap();
+        let offset_to_start_line = if show_line_number {
+            batbelt::cli_inputs::select_yes_or_no(&format!(
+                "Do you want to {}",
+                "offset to the starting line?".yellow()
+            ))
+            .unwrap()
+        } else {
+            false
+        };
+        let include_filters = batbelt::cli_inputs::select_yes_or_no(&format!(
+            "Do you want to {}",
+            "add customized filters?".red()
+        ))
+        .unwrap();
+        // utils::cli_inputs::select_yes_or_no("Do you want to include filters?").unwrap();
+        let filters = if include_filters {
+            let filters_to_include = batbelt::cli_inputs::input(
+                "Please enter the filters, comma separated: #[account,CHECK ",
+            )
+            .unwrap();
+            if !filters_to_include.is_empty() {
+                let filters: Vec<String> = filters_to_include
+                    .split(",")
+                    .map(|filter| filter.trim().to_string())
+                    .collect();
+                Some(filters)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let screenshot_options = SourceCodeScreenshotOptions {
+            include_path,
+            offset_to_start_line,
+            filter_comments,
+            show_line_number,
+            filters,
+            font_size: Some(20),
+        };
+        screenshot_options
+    }
+
+    pub async fn deploy_screenshot_to_miro_frame(
+        &self,
+        miro_frame: MiroFrame,
+        x_position: i64,
+        y_position: i64,
+        options: SourceCodeScreenshotOptions,
+    ) {
+        let png_path = self.create_screenshot(options.clone());
+        let miro_frame_id = miro_frame.item_id.clone();
+        println!(
+            "\nCreating {}{} in {} frame",
+            self.name.green(),
+            ".png".green(),
+            miro_frame.title.green()
+        );
+        let mut screenshot_image =
+            MiroImage::new_from_file_path(&png_path, &miro_frame.item_id.clone());
+        screenshot_image.deploy().await;
+        let miro_item = MiroItem::new(
+            &screenshot_image.item_id,
+            &miro_frame_id,
+            x_position,
+            y_position,
+            MiroItemType::Image,
+        );
+        println!(
+            "Updating the position of {}{}\n",
+            self.name.green(),
+            ".png".green()
+        );
+        miro_item.update_item_parent_and_position().await;
     }
 
     fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {
