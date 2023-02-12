@@ -2,7 +2,7 @@
 #![feature(exit_status_error)]
 extern crate core;
 
-use batbelt::git::GitCommit;
+use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 
 mod batbelt;
@@ -26,7 +26,11 @@ enum Commands {
     /// Creates a Bat project
     Create,
     /// Initializes the project from the Bat.toml config file
-    Init,
+    Init {
+        /// Skips the initial commit process
+        #[arg(short, long)]
+        skip_initial_commit: bool,
+    },
     /// code-overhaul files management
     #[command(subcommand)]
     CO(CodeOverhaulActions),
@@ -133,8 +137,21 @@ enum PackageActions {
 async fn main() {
     let cli: Cli = Cli::parse();
     match cli.command {
+        Commands::Init { .. }
+        | Commands::Create
+        | Commands::Package(PackageActions::Format)
+        | Commands::Package(PackageActions::Release) => {}
+        _ => {
+            check_correct_branch().unwrap();
+        }
+    }
+    match cli.command {
         Commands::Create => commands::create::create_project().unwrap(),
-        Commands::Init => commands::init::initialize_bat_project().await.unwrap(),
+        Commands::Init {
+            skip_initial_commit,
+        } => commands::init::initialize_bat_project(skip_initial_commit)
+            .await
+            .unwrap(),
         Commands::CO(CodeOverhaulActions::Start) => {
             commands::code_overhaul::start::start_co_file().unwrap()
         }
