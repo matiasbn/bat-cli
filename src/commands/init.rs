@@ -26,7 +26,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::{FilePathType, FolderPathType};
 
-pub async fn initialize_bat_project() -> Result<(), String> {
+pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), String> {
     let bat_config: BatConfig = BatConfig::get_init_config()?;
     let BatConfig {
         required, auditor, ..
@@ -112,7 +112,9 @@ pub async fn initialize_bat_project() -> Result<(), String> {
     }
 
     println!("Project successfully initialized");
-    batbelt::git::create_git_commit(GitCommit::InitAuditor, None)?;
+    if !skip_initial_commit {
+        batbelt::git::create_git_commit(GitCommit::InitAuditor, None)?;
+    }
     // let lib_file_path = utils::path::get_program_lib_path()?;
     let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, true);
     // Open lib.rs file in vscode
