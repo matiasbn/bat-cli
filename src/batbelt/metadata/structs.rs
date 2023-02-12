@@ -149,10 +149,6 @@ impl StructMetadataType {
         self.to_string().to_sentence_case()
     }
 
-    pub fn get_structs_type_vec() -> Vec<StructMetadataType> {
-        StructMetadataType::iter().collect::<Vec<_>>()
-    }
-
     pub fn from_str(type_str: &str) -> StructMetadataType {
         let structs_type_vec = Self::get_structs_type_vec();
         let struct_type = structs_type_vec
@@ -160,6 +156,10 @@ impl StructMetadataType {
             .find(|struct_type| struct_type.to_snake_case() == type_str.to_snake_case())
             .unwrap();
         struct_type.clone()
+    }
+
+    pub fn get_structs_type_vec() -> Vec<StructMetadataType> {
+        StructMetadataType::iter().collect::<Vec<_>>()
     }
 
     pub fn get_colorized_structs_type_vec() -> Vec<ColoredString> {

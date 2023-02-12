@@ -78,14 +78,16 @@ enum MetadataActions {
 enum MiroActions {
     /// Deploy or updates a code-overhaul frame
     Deploy,
-    /// Updates a the images for a code-overhaul folder
-    Images,
     /// Creates or updates the Accounts frame
     Accounts,
     /// Creates or updates the Entrypoints frame
     Entrypoints,
     /// Creates an screenshot in a determined frame
-    Screenshot,
+    Metadata {
+        /// deploy the screenshots with the default configuration
+        #[arg(long)]
+        defaulr: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -152,13 +154,14 @@ async fn main() {
             commands::code_overhaul::update_co_templates().unwrap()
         }
         Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_co().await.unwrap(),
-        Commands::Miro(MiroActions::Images) => commands::miro::create_co_snapshots().unwrap(),
         Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),
         Commands::Miro(MiroActions::Entrypoints) => {
             commands::miro::deploy_entrypoints().await.unwrap()
         }
-        Commands::Miro(MiroActions::Screenshot) => {
-            commands::miro::deploy_screenshot_to_frame().await.unwrap()
+        Commands::Miro(MiroActions::Metadata { defaulr: default }) => {
+            commands::miro::deploy_screenshot_to_frame(default)
+                .await
+                .unwrap()
         }
         Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
         Commands::Metadata(MetadataActions::Miro) => commands::metadata::miro().await.unwrap(),
