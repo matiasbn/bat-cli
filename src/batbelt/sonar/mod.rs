@@ -1,5 +1,8 @@
+use colored::Colorize;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fmt::Debug;
-use std::fs;
+use std::time::Duration;
+use std::{fs, thread};
 
 pub mod functions;
 pub mod structs;
@@ -99,6 +102,44 @@ impl BatSonar {
                 self.results.push(sonar_result);
             }
         }
+    }
+
+    pub fn display_looking_for_loader(&self) {
+        let pb = ProgressBar::new_spinner();
+        pb.enable_steady_tick(Duration::from_millis(200));
+        pb.set_style(
+            ProgressStyle::with_template("{spinner:.blue} {msg}")
+                .unwrap()
+                .tick_strings(&[
+                    "📂                  〰️🦇",
+                    "📂                  〰️🦇",
+                    "📂                〰️  🦇",
+                    "📂              〰️    🦇",
+                    "📂            〰️      🦇",
+                    "📂          〰️        🦇",
+                    "📂        〰️          🦇",
+                    "📂      〰️            🦇",
+                    "📂    〰️              🦇",
+                    "📂  〰️                🦇",
+                    "📂〰️                  🦇",
+                    "📂  〰️                🦇",
+                    "📂    〰️              🦇",
+                    "📂      〰️            🦇",
+                    "📂        〰️          🦇",
+                    "📂          〰️        🦇",
+                    "📂            〰️      🦇",
+                    "📂              〰️    🦇",
+                    "📂                〰️  🦇",
+                    "📂                  〰️🦇",
+                ]),
+        );
+        pb.set_message(format!(
+            "Looking for {} with {}...",
+            "BatSonar".red(),
+            self.result_type.to_string()
+        ));
+        thread::sleep(Duration::from_millis(3400));
+        pb.finish_with_message("Done");
     }
 
     fn get_result_content(&self, start_line_index: usize, end_line_index: usize) -> String {
@@ -441,7 +482,7 @@ impl SonarResult {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, strum_macros::Display)]
 pub enum SonarResultType {
     Function,
     Struct,

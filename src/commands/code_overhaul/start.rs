@@ -571,7 +571,10 @@ fn get_signers_section_content(context_lines: &str) -> String {
         }
     }
     if signers.is_empty() {
-        return "- No signers detected".to_string();
+        return format!(
+            "- {}",
+            CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder(),
+        );
     }
     signers.join("\n")
 }
