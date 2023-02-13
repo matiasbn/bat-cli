@@ -525,7 +525,7 @@ pub enum SonarFilter {
 impl SonarFilter {
     pub fn get_filters(&self) -> Vec<&str> {
         match self {
-            SonarFilter::Open(SonarResultType::Function) => vec!["fn", "pub fn"],
+            SonarFilter::Open(SonarResultType::Function) => vec!["fn", "pub fn", "pub(crate) fn"],
             SonarFilter::EndOfOpen(SonarResultType::Function) => vec!["("],
             SonarFilter::Closure(SonarResultType::Function) => vec!["}"],
             SonarFilter::Open(SonarResultType::Struct) => vec!["struct", "pub struct"],
