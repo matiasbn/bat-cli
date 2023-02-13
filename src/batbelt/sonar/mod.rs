@@ -306,7 +306,7 @@ impl SonarResult {
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
                 let mut first_line_tokenized = first_line.trim().split(" ");
-                let is_public = first_line_tokenized.next().unwrap() == "pub";
+                let is_public = first_line_tokenized.next().unwrap().contains("pub");
                 if is_public {
                     first_line_tokenized.next().unwrap();
                 }
