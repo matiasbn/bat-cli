@@ -203,40 +203,40 @@ async fn main() {
     }
 }
 
-mod test {
+// mod test {
 
-    #[test]
-    fn test_bat_cli_loader() {
-        let pb = ProgressBar::new_spinner();
-        pb.enable_steady_tick(Duration::from_millis(200));
-        pb.set_style(
-            ProgressStyle::with_template("{spinner:.blue} {msg}")
-                .unwrap()
-                .tick_strings(&[
-                    "📂                  〰️🦇",
-                    "📂                  〰️🦇",
-                    "📂                〰️  🦇",
-                    "📂              〰️    🦇",
-                    "📂            〰️      🦇",
-                    "📂          〰️        🦇",
-                    "📂        〰️          🦇",
-                    "📂      〰️            🦇",
-                    "📂    〰️              🦇",
-                    "📂  〰️                🦇",
-                    "📂〰️                  🦇",
-                    "📂  〰️                🦇",
-                    "📂    〰️              🦇",
-                    "📂      〰️            🦇",
-                    "📂        〰️          🦇",
-                    "📂          〰️        🦇",
-                    "📂            〰️      🦇",
-                    "📂              〰️    🦇",
-                    "📂                〰️  🦇",
-                    "📂                  〰️🦇",
-                ]),
-        );
-        pb.set_message(format!("Looking for Structs with {}...", "BatSonar".red()));
-        thread::sleep(Duration::from_millis(3400));
-        pb.finish_with_message("Done");
-    }
-}
+//     #[test]
+//     fn test_bat_cli_loader() {
+//         let pb = ProgressBar::new_spinner();
+//         pb.enable_steady_tick(Duration::from_millis(200));
+//         pb.set_style(
+//             ProgressStyle::with_template("{spinner:.blue} {msg}")
+//                 .unwrap()
+//                 .tick_strings(&[
+//                     "📂                  〰️🦇",
+//                     "📂                  〰️🦇",
+//                     "📂                〰️  🦇",
+//                     "📂              〰️    🦇",
+//                     "📂            〰️      🦇",
+//                     "📂          〰️        🦇",
+//                     "📂        〰️          🦇",
+//                     "📂      〰️            🦇",
+//                     "📂    〰️              🦇",
+//                     "📂  〰️                🦇",
+//                     "📂〰️                  🦇",
+//                     "📂  〰️                🦇",
+//                     "📂    〰️              🦇",
+//                     "📂      〰️            🦇",
+//                     "📂        〰️          🦇",
+//                     "📂          〰️        🦇",
+//                     "📂            〰️      🦇",
+//                     "📂              〰️    🦇",
+//                     "📂                〰️  🦇",
+//                     "📂                  〰️🦇",
+//                 ]),
+//         );
+//         pb.set_message(format!("Looking for Structs with {}...", "BatSonar".red()));
+//         thread::sleep(Duration::from_millis(3400));
+//         pb.finish_with_message("Done");
+//     }
+// }

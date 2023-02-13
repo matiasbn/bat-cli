@@ -55,8 +55,9 @@ impl BatSonar {
                 .find(|line| line.contains(starting_content))
                 .unwrap();
             let trailing_whitespaces = Self::get_trailing_whitespaces(first_line);
-            let end_line_index =
-                new_sonar.get_end_line_index(start_line_index, trailing_whitespaces, "");
+            let end_line_index = new_sonar
+                .get_end_line_index(start_line_index, trailing_whitespaces, "")
+                .unwrap();
             let new_content = new_sonar.get_result_content(start_line_index, end_line_index);
             new_sonar.content = new_content;
         }
@@ -68,10 +69,20 @@ impl BatSonar {
         let content_lines = self.content.lines();
         for (line_index, line) in content_lines.enumerate() {
             if self.check_is_open(line) {
+                if self.result_type.test_last_char_is_semicolon() {
+                    let last_line_is_semicolon = line.chars().last().unwrap() == ';';
+                    if last_line_is_semicolon {
+                        continue;
+                    }
+                }
                 let trailing_whitespaces = Self::get_trailing_whitespaces(line);
                 let start_line_index = line_index;
                 let end_line_index =
                     self.get_end_line_index(start_line_index, trailing_whitespaces, line);
+                if end_line_index.is_none() {
+                    continue;
+                }
+                let end_line_index = end_line_index.unwrap();
                 let result_content = self.get_result_content(start_line_index, end_line_index);
                 let mut sonar_result = SonarResult::new(
                     "",
@@ -155,42 +166,30 @@ impl BatSonar {
         start_index: usize,
         trailing_whitespaces: usize,
         starting_line: &str,
-    ) -> usize {
+    ) -> Option<usize> {
         if (self.result_type == SonarResultType::Validation
             || self.result_type == SonarResultType::ContextAccountsAll
             || self.result_type == SonarResultType::ContextAccountsNoValidation)
             && self.starting_line_contains_closure_filter(starting_line)
         {
-            return start_index;
+            return Some(start_index);
         }
         let closing_line_candidates = self.get_closing_lines_candidates(trailing_whitespaces);
         if self.result_type.is_context_accounts_sonar_result_type() {
-            let closing_index = self
-                .content
-                .clone()
-                .lines()
-                .enumerate()
-                .position(|line| {
-                    closing_line_candidates
-                        .iter()
-                        .any(|candidate| line.1.contains(candidate))
-                        && line.0 > start_index
-                })
-                .unwrap();
-            return closing_index;
-        }
-        let closing_index = self
-            .content
-            .clone()
-            .lines()
-            .enumerate()
-            .position(|line| {
+            let closing_index = self.content.clone().lines().enumerate().position(|line| {
                 closing_line_candidates
                     .iter()
-                    .any(|candidate| line.1 == candidate)
+                    .any(|candidate| line.1.contains(candidate))
                     && line.0 > start_index
-            })
-            .unwrap();
+            });
+            return closing_index;
+        }
+        let closing_index = self.content.clone().lines().enumerate().position(|line| {
+            closing_line_candidates
+                .iter()
+                .any(|candidate| line.1 == candidate)
+                && line.0 > start_index
+        });
         return closing_index;
     }
 
@@ -512,6 +511,10 @@ impl SonarResultType {
 
     fn get_context_accounts_only_validations_filters(&self) -> Vec<&'static str> {
         vec!["has_one", "constraint"]
+    }
+
+    fn test_last_char_is_semicolon(&self) -> bool {
+        vec![SonarResultType::Function].contains(self)
     }
 }
 
