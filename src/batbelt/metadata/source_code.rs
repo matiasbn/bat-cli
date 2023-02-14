@@ -125,13 +125,19 @@ impl SourceCodeMetadata {
             .to_vec();
         let content_vec = content_lines
             .iter()
-            .map(|line| line.to_string())
-            .filter(|line| {
+            .filter_map(|line| {
                 if options.filter_comments {
-                    !line.contains("//")
-                } else {
-                    true
+                    let starts_with_comment = line.trim().split(" ").next().unwrap().contains("//");
+                    if starts_with_comment {
+                        return None;
+                    }
+                    // at this point it does not start with comment
+                    let line_contains_comment = line.contains("//");
+                    if line_contains_comment {
+                        return Some(line.split("//").next().unwrap().to_string());
+                    }
                 }
+                return Some(line.to_string());
             })
             .filter(|line| {
                 if let Some(filters) = options.filters.clone() {
@@ -272,4 +278,33 @@ impl SourceCodeMetadata {
             .to_string();
         path
     }
+}
+
+#[test]
+fn test_filter_comments() {
+    let test_text = "this part should not be filtered //this part should be filtered
+    // this line should be completely filtered
+
+    previous line is empty
+    ";
+    let test_text_lines = test_text.lines();
+    let filtered_lines = test_text_lines
+        .filter_map(|line| {
+            if !line.is_empty() {
+                let starts_with_comment = line.trim().split(" ").next().unwrap().contains("//");
+                if starts_with_comment {
+                    return None;
+                }
+                // at this point it does not start with comment
+                let line_contains_comment = line.contains("//");
+                if line_contains_comment {
+                    return Some(line.split("//").next().unwrap());
+                }
+            }
+            return Some(line);
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    println!("filtered \n{}", filtered_lines)
 }
