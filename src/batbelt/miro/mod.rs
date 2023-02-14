@@ -43,6 +43,15 @@ impl MiroConfig {
         !self.access_token.is_empty()
     }
 
+    pub fn check_miro_enabled() {
+        let BatConfig { auditor, .. } = BatConfig::get_validated_config().unwrap();
+        let access_token = auditor.miro_oauth_access_token;
+        assert!(
+            !access_token.is_empty(),
+            "miro_oauth_access_token is empty in BatAuditor.toml"
+        );
+    }
+
     pub fn get_frame_url(&self, frame_id: &str) -> String {
         let url = normalizer::UrlNormalizer::new(
             format!("{}/?moveToWidget={frame_id}", self.board_url).as_str(),

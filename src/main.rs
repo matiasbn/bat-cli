@@ -2,6 +2,9 @@
 #![feature(exit_status_error)]
 extern crate core;
 
+#[macro_use]
+extern crate log;
+
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 
@@ -90,7 +93,10 @@ enum MiroActions {
     Metadata {
         /// deploy the screenshots with the default configuration
         #[arg(long)]
-        defaulr: bool,
+        default: bool,
+        /// select all options as true
+        #[arg(short, long)]
+        select_all: bool,
     },
 }
 
@@ -135,6 +141,7 @@ enum PackageActions {
 }
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     let cli: Cli = Cli::parse();
     match cli.command {
         Commands::Init { .. }
@@ -175,11 +182,12 @@ async fn main() {
         Commands::Miro(MiroActions::Entrypoints) => {
             commands::miro::deploy_entrypoints().await.unwrap()
         }
-        Commands::Miro(MiroActions::Metadata { defaulr: default }) => {
-            commands::miro::deploy_screenshot_to_frame(default)
-                .await
-                .unwrap()
-        }
+        Commands::Miro(MiroActions::Metadata {
+            default,
+            select_all,
+        }) => commands::miro::deploy_screenshot_to_frame(default, select_all)
+            .await
+            .unwrap(),
         Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
         Commands::Metadata(MetadataActions::Miro) => commands::metadata::miro().await.unwrap(),
         Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions().unwrap(),

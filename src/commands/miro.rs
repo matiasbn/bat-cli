@@ -485,7 +485,9 @@ pub async fn deploy_entrypoints() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
+pub async fn deploy_screenshot_to_frame(_default: bool, select_all: bool) -> Result<(), String> {
+    MiroConfig::check_miro_enabled();
+
     println!(
         "\n\nGetting the {} from the {} ...\n\n",
         "frames".yellow(),
@@ -552,7 +554,7 @@ pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
                 let selections = batbelt::cli_inputs::multiselect(
                     &prompt_text,
                     struct_metadata_names.clone(),
-                    None,
+                    Some(&vec![select_all; struct_metadata_names.len()]),
                 )
                 .unwrap();
                 let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
@@ -631,7 +633,7 @@ pub async fn deploy_screenshot_to_frame(_default: bool) -> Result<(), String> {
                 let selections = batbelt::cli_inputs::multiselect(
                     &prompt_text,
                     function_metadata_names.clone(),
-                    None,
+                    Some(&vec![select_all; function_metadata_names.len()]),
                 )
                 .unwrap();
 
