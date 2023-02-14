@@ -69,6 +69,7 @@ impl MiroFrame {
             .unwrap();
         let response_string = response.text().await.unwrap();
         let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
+        debug!("MiroItem::get_items_on_board:\n {}", response);
         let data = response["data"].as_array().unwrap();
         // println!("data {:#?}", data);
         let miro_config = MiroConfig::new();
