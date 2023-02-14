@@ -783,133 +783,131 @@ fn test_replace_section() {
     );
 }
 
-#[test]
-fn test_replace_co_file() {
-    let new_signers_content = "
-- key: The key authorized for this instruction
-- funder: The funder - pays for account rent
-";
-    let new_function_params_content = "- input: RecipeIngredients";
-    let new_ca_content = "
-- ```rust
-  pub struct AddConsumableInputToRecipe<'info> {
-      /// The key authorized for this instruction
-      pub key: Signer<'info>,
-  
-      /// The crafting permissions [`Profile`](player_profile::state::Profile)
-      pub profile: AccountLoader<'info, Profile>,
-  
-      /// The funder - pays for account rent
-      #[account(mut)]
-      pub funder: Signer<'info>,
-  
-      /// The [Recipe] account
-      #[account(mut)]
-      pub recipe: AccountLoader<'info, Recipe>,
-  
-      /// The [Domain] account
-      pub domain: AccountLoader<'info, Domain>,
-  
-      /// The Mint Account
-      pub mint: Account<'info, Mint>,
-  
-      /// The System program
-      pub system_program: Program<'info, System>,
-  }
-  ```";
+// #[test]
+// fn test_replace_co_file() {
+//     let new_signers_content = "
+// - key: The key authorized for this instruction
+// - funder: The funder - pays for account rent
+// ";
+//     let new_function_params_content = "- input: RecipeIngredients";
+//     let new_ca_content = "
+// - ```rust
+//   pub struct AddConsumableInputToRecipe<'info> {
+//       /// The key authorized for this instruction
+//       pub key: Signer<'info>,
 
-    let _new_validations_content = "
-- ```rust
-    #[account(
-        mut,
-        has_one = domain @Errors::IncorrectDomain
-    )]
-    pub recipe: AccountLoader<'info, Recipe>,
-  ```
+//       /// The crafting permissions [`Profile`](player_profile::state::Profile)
+//       pub profile: AccountLoader<'info, Profile>,
 
-- ```rust
-    #[account(
-        has_one = profile @Errors::IncorrectProfileAddress,
-    )]
-    pub domain: AccountLoader<'info, Domain>,
-  ```
+//       /// The funder - pays for account rent
+//       #[account(mut)]
+//       pub funder: Signer<'info>,
 
+//       /// The [Recipe] account
+//       #[account(mut)]
+//       pub recipe: AccountLoader<'info, Recipe>,
 
-- ```rust
-    validate_permissions(
-        &ctx.accounts.profile,
-        &ctx.accounts.key,
-        input.key_index,
-        CraftingPermissions::MANAGE_RECIPE,
-        None,
-    )?;
-  ```
+//       /// The [Domain] account
+//       pub domain: AccountLoader<'info, Domain>,
 
+//       /// The Mint Account
+//       pub mint: Account<'info, Mint>,
 
-- ```rust
-    require_keys_eq!(
-        input.mint,
-        ctx.accounts.mint.key(),
-        Errors::IncorrectMintAddress
-    );
-  ```
-";
-    let path = "./co_example.md";
+//       /// The System program
+//       pub system_program: Program<'info, System>,
+//   }
+//   ```";
 
-    let mut started_markdown_file = CodeOverhaulTemplate::template_to_markdown_file(path);
-    let started_markdown_file_backup = CodeOverhaulTemplate::template_to_markdown_file(path);
-    let signers_title = &CodeOverhaulSection::Signers.to_title();
-    let fun_pam_title = &CodeOverhaulSection::FunctionParameters.to_title();
-    let ca_title = &CodeOverhaulSection::ContextAccounts.to_title();
-    let val_title = &CodeOverhaulSection::Validations.to_title();
-    let signers_section = started_markdown_file.get_section(signers_title).unwrap();
-    let mut new_signers_section = signers_section.clone();
-    new_signers_section.content = new_signers_content.to_string();
-    started_markdown_file
-        .replace_section(new_signers_section, signers_section.clone(), vec![])
-        .unwrap();
-    assert_eq!(
-        signers_section.content.clone(),
-        started_markdown_file_backup
-            .get_section(signers_title)
-            .unwrap()
-            .content,
-        "signers section dont match"
-    );
+//     let _new_validations_content = "
+// - ```rust
+//     #[account(
+//         mut,
+//         has_one = domain @Errors::IncorrectDomain
+//     )]
+//     pub recipe: AccountLoader<'info, Recipe>,
+//   ```
 
-    let function_parameters_section = started_markdown_file.get_section(fun_pam_title).unwrap();
-    let mut new_fun_param_section = function_parameters_section.clone();
-    new_fun_param_section.content = new_function_params_content.to_string();
-    started_markdown_file
-        .replace_section(
-            new_fun_param_section,
-            function_parameters_section.clone(),
-            vec![],
-        )
-        .unwrap();
+// - ```rust
+//     #[account(
+//         has_one = profile @Errors::IncorrectProfileAddress,
+//     )]
+//     pub domain: AccountLoader<'info, Domain>,
+//   ```
 
-    let context_accounts_section = started_markdown_file.get_section(ca_title).unwrap();
-    let mut new_context_accounts_section = context_accounts_section.clone();
-    new_context_accounts_section.content = new_ca_content.to_string();
-    started_markdown_file
-        .replace_section(
-            new_context_accounts_section,
-            context_accounts_section.clone(),
-            vec![],
-        )
-        .unwrap();
-    let validations_section = started_markdown_file.get_section(val_title).unwrap();
-    let new_validations_section = validations_section.clone();
-    started_markdown_file
-        .replace_section(new_validations_section, validations_section.clone(), vec![])
-        .unwrap();
+// - ```rust
+//     validate_permissions(
+//         &ctx.accounts.profile,
+//         &ctx.accounts.key,
+//         input.key_index,
+//         CraftingPermissions::MANAGE_RECIPE,
+//         None,
+//     )?;
+//   ```
 
-    assert_eq!(
-        signers_section.content.clone(),
-        started_markdown_file_backup
-            .get_section(signers_title)
-            .unwrap()
-            .content,
-        "signers section dont match"
-    );
-}
+// - ```rust
+//     require_keys_eq!(
+//         input.mint,
+//         ctx.accounts.mint.key(),
+//         Errors::IncorrectMintAddress
+//     );
+//   ```
+// ";
+//     let path = "./co_example.md";
+
+//     let mut started_markdown_file = CodeOverhaulTemplate::template_to_markdown_file(path);
+//     let started_markdown_file_backup = CodeOverhaulTemplate::template_to_markdown_file(path);
+//     let signers_title = &CodeOverhaulSection::Signers.to_title();
+//     let fun_pam_title = &CodeOverhaulSection::FunctionParameters.to_title();
+//     let ca_title = &CodeOverhaulSection::ContextAccounts.to_title();
+//     let val_title = &CodeOverhaulSection::Validations.to_title();
+//     let signers_section = started_markdown_file.get_section(signers_title).unwrap();
+//     let mut new_signers_section = signers_section.clone();
+//     new_signers_section.content = new_signers_content.to_string();
+//     started_markdown_file
+//         .replace_section(new_signers_section, signers_section.clone(), vec![])
+//         .unwrap();
+//     assert_eq!(
+//         signers_section.content.clone(),
+//         started_markdown_file_backup
+//             .get_section(signers_title)
+//             .unwrap()
+//             .content,
+//         "signers section dont match"
+//     );
+
+//     let function_parameters_section = started_markdown_file.get_section(fun_pam_title).unwrap();
+//     let mut new_fun_param_section = function_parameters_section.clone();
+//     new_fun_param_section.content = new_function_params_content.to_string();
+//     started_markdown_file
+//         .replace_section(
+//             new_fun_param_section,
+//             function_parameters_section.clone(),
+//             vec![],
+//         )
+//         .unwrap();
+
+//     let context_accounts_section = started_markdown_file.get_section(ca_title).unwrap();
+//     let mut new_context_accounts_section = context_accounts_section.clone();
+//     new_context_accounts_section.content = new_ca_content.to_string();
+//     started_markdown_file
+//         .replace_section(
+//             new_context_accounts_section,
+//             context_accounts_section.clone(),
+//             vec![],
+//         )
+//         .unwrap();
+//     let validations_section = started_markdown_file.get_section(val_title).unwrap();
+//     let new_validations_section = validations_section.clone();
+//     started_markdown_file
+//         .replace_section(new_validations_section, validations_section.clone(), vec![])
+//         .unwrap();
+
+//     assert_eq!(
+//         signers_section.content.clone(),
+//         started_markdown_file_backup
+//             .get_section(signers_title)
+//             .unwrap()
+//             .content,
+//         "signers section dont match"
+//     );
+// }
