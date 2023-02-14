@@ -128,7 +128,7 @@ impl SourceCodeMetadata {
             .map(|line| line.to_string())
             .filter(|line| {
                 if options.filter_comments {
-                    !line.contains("//")
+                    !line.trim().split(" ").next().unwrap().contains("//")
                 } else {
                     true
                 }
