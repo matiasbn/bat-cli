@@ -451,7 +451,6 @@ pub async fn deploy_accounts() -> Result<(), String> {
 }
 
 pub async fn deploy_entrypoint_screenshots_to_frame(
-    new_frame: bool,
     select_all: bool,
     sorted: bool,
 ) -> Result<(), String> {
@@ -466,9 +465,6 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
         Some(&vec![select_all; entrypoints_names.clone().len()]),
     )
     .unwrap();
-    if new_frame {
-        unimplemented!()
-    }
     // prompt to select the frame
     let mut miro_frames = MiroFrame::get_frames_from_miro().await;
     miro_frames.sort_by(|frame_a, frame_b| frame_a.title.cmp(&frame_b.title));
@@ -506,7 +502,11 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
         filters: None,
         show_line_number: true,
     };
-    let selected_entrypoints_amount = selected_entrypoints_index.len();
+    let selected_entrypoints_amount = if selected_entrypoints_index.len() % 2 == 0 {
+        selected_entrypoints_index.len()
+    } else {
+        selected_entrypoints_index.len() + 1
+    };
     for (index, selected_ep_index) in selected_entrypoints_index.iter().enumerate() {
         let selected_entrypoint = &entrypoints_names[selected_ep_index.clone()];
         // get context_accounts name
@@ -550,7 +550,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
             }
         } else {
             let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
-                * (2 * index as i64 + 1 - selected_entrypoints_amount as i64 / 2);
+                * (2 * (index as i64 - (selected_entrypoints_amount as i64 / 2)) + 1);
 
             let ep_id = ep_source_code
                 .deploy_screenshot_to_miro_frame(
@@ -582,14 +582,6 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 create_connector(&ca_id, &handler_id, None).await;
             }
         }
-        // if index < selected_entrypoints_index.len() - 1 {
-        //     let user_decided_to_continue =
-        //         batbelt::cli_inputs::select_yes_or_no("Do you want to continue deploying?")
-        //             .unwrap();
-        //     if !user_decided_to_continue {
-        //         break;
-        //     }
-        // }
     }
     // // get entrypoint miro frame url
     // let prompt_text = format!("Please enter the {}", "entrypoints frame url".green());

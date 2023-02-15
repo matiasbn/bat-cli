@@ -87,9 +87,6 @@ enum MiroActions {
     Accounts,
     /// Deploys the entrypoint, context accounts and handler to a Miro frame
     Entrypoint {
-        /// Creates a new frame
-        #[arg(short, long)]
-        new_frame: bool,
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
@@ -187,13 +184,11 @@ async fn main() {
         }
         Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_co().await.unwrap(),
         Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),
-        Commands::Miro(MiroActions::Entrypoint {
-            new_frame,
-            select_all,
-            sorted,
-        }) => commands::miro::deploy_entrypoint_screenshots_to_frame(new_frame, select_all, sorted)
-            .await
-            .unwrap(),
+        Commands::Miro(MiroActions::Entrypoint { select_all, sorted }) => {
+            commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted)
+                .await
+                .unwrap()
+        }
         Commands::Miro(MiroActions::Metadata {
             default,
             select_all,
