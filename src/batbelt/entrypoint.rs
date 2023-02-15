@@ -1,7 +1,8 @@
 use crate::batbelt;
 use crate::batbelt::helpers::get::get_all_rust_files_from_program_path;
 use crate::batbelt::metadata::functions::{
-    get_function_parameters, FunctionMetadata, FunctionMetadataType,
+    get_function_body, get_function_parameters, get_function_signature, FunctionMetadata,
+    FunctionMetadataType,
 };
 use crate::batbelt::metadata::metadata_is_initialized;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
@@ -51,21 +52,27 @@ impl Entrypoint {
                     && function_metadata.name == entrypoint_name
             })
             .unwrap();
+        let entrypoint_content = entrypoint_function
+            .to_source_code()
+            .get_source_code_content();
+        let entrypoint_function_body = get_function_body(&entrypoint_content);
+        let entrypoint_parameters = get_function_parameters(entrypoint_content.clone());
+        let first_parameter_name = entrypoint_parameters[0].split(":").next().unwrap();
         let handlers =
             FunctionMetadata::get_functions_metadata_by_type(FunctionMetadataType::Handler);
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
         let handler = handlers.into_iter().find(|function_metadata| {
             let function_source_code = function_metadata.to_source_code();
             let function_content = function_source_code.get_source_code_content();
-            let function_parameters = get_function_parameters(function_content);
-            if !function_parameters.is_empty()
+            // info!("handler content: \n{:#?}", function_content);
+            let function_parameters = get_function_parameters(function_content.clone());
+            !function_parameters.is_empty()
                 && function_parameters[0].contains("Context<")
                 && function_parameters[0].contains(&context_name)
-            {
-                return true;
-            } else {
-                return false;
-            }
+                && entrypoint_function_body.contains(&format!(
+                    "{}({}",
+                    function_metadata.name, first_parameter_name
+                ))
         });
         let structs_metadata = StructMetadata::get_structs_metadata_from_metadata_file();
         let context_accounts = structs_metadata

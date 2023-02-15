@@ -269,11 +269,14 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
     let function_signature = get_function_signature(&function_content);
     //Function parameters
     // single line function
-    if content_lines.clone().next().unwrap().contains(")") {
-        let function_signature_tokenized = function_signature.split("(").collect::<Vec<_>>()[1]
-            .split(")")
-            .next()
+    if content_lines.clone().next().unwrap().contains("{") {
+        let function_signature_tokenized = function_signature
+            .trim_start_matches("pub (crate) fn ")
+            .trim_start_matches("pub fn ")
+            .split("(")
+            .last()
             .unwrap()
+            .trim_end_matches(")")
             .split(" ")
             .collect::<Vec<_>>();
         let mut parameters: Vec<String> = vec![];
@@ -384,7 +387,7 @@ pub fn get_function_metadata_from_file_info(
 #[test]
 
 fn test_function_parse() {
-    let test_function = "pub fn get_function_metadata_from_file_info(
+    let test_function = "pub(crate) fn get_function_metadata_from_file_info(
     function_file_info: FileInfo,
     function_file_info2: FileInfo2,
 ) -> Result<Vec<FunctionMetadata>, String> {
@@ -407,7 +410,7 @@ fn test_function_parse() {
     }
     Ok(function_metadata_vec)
 }";
-    let expected_function_signature = "pub fn get_function_metadata_from_file_info(
+    let expected_function_signature = "pub(crate) fn get_function_metadata_from_file_info(
     function_file_info: FileInfo,
     function_file_info2: FileInfo2,
 )";

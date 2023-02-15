@@ -513,7 +513,6 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
         let entrypoint = Entrypoint::new_from_name(selected_entrypoint.as_str());
         let ep_source_code = entrypoint.entrypoint_function.to_source_code();
         let ca_source_code = entrypoint.context_accounts.to_source_code_metadata();
-        // let handler_source_code = entrypoint.handler.get_source_code();
         let grid_amount = 24;
         let height_grid = selected_frame.height as i64 / grid_amount;
         // deploy the first half to the top of the frame, and the second to the bottom
@@ -536,16 +535,19 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     context_accounts_sc_options.clone(),
                 )
                 .await;
-            // let handler_id = handler_source_code
-            //     .deploy_screenshot_to_miro_frame(
-            //         selected_frame.clone(),
-            //         x_position,
-            //         9 * height_grid,
-            //         handler_sc_options.clone(),
-            //     )
-            //     .await;
             create_connector(&ep_id, &ca_id, None).await;
-            // create_connector(&ca_id, &handler_id, None).await;
+            if let Some(entrypoint_handler) = entrypoint.handler {
+                let handler_source_code = entrypoint_handler.to_source_code();
+                let handler_id = handler_source_code
+                    .deploy_screenshot_to_miro_frame(
+                        selected_frame.clone(),
+                        x_position,
+                        9 * height_grid,
+                        handler_sc_options.clone(),
+                    )
+                    .await;
+                create_connector(&ca_id, &handler_id, None).await;
+            }
         } else {
             let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
                 * (index as i64 + 1 - selected_entrypoints_amount as i64 / 2);
@@ -566,16 +568,19 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     context_accounts_sc_options.clone(),
                 )
                 .await;
-            // let handler_id = handler_source_code
-            //     .deploy_screenshot_to_miro_frame(
-            //         selected_frame.clone(),
-            //         x_position,
-            //         (grid_amount - 9) * height_grid,
-            //         handler_sc_options.clone(),
-            //     )
-            //     .await;
             create_connector(&ep_id, &ca_id, None).await;
-            // create_connector(&ca_id, &handler_id, None).await;
+            if let Some(entrypoint_handler) = entrypoint.handler {
+                let handler_source_code = entrypoint_handler.to_source_code();
+                let handler_id = handler_source_code
+                    .deploy_screenshot_to_miro_frame(
+                        selected_frame.clone(),
+                        x_position,
+                        (grid_amount - 9) * height_grid,
+                        handler_sc_options.clone(),
+                    )
+                    .await;
+                create_connector(&ca_id, &handler_id, None).await;
+            }
         }
         // if index < selected_entrypoints_index.len() - 1 {
         //     let user_decided_to_continue =
