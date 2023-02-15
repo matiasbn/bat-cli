@@ -504,3 +504,7 @@ fn test_function_parse() {
         "wrong signature"
     );
 }
+
+#[test]
+
+fn test_parse_handler_in_entrypoint() {}

@@ -56,8 +56,6 @@ impl EntrypointParser {
             .to_source_code()
             .get_source_code_content();
         let entrypoint_function_body = get_function_body(&entrypoint_content);
-        let entrypoint_parameters = get_function_parameters(entrypoint_content.clone());
-        let first_parameter_name = entrypoint_parameters[0].split(":").next().unwrap();
         let handlers =
             FunctionMetadata::get_functions_metadata_by_type(FunctionMetadataType::Handler);
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
@@ -68,10 +66,7 @@ impl EntrypointParser {
             !function_parameters.is_empty()
                 && function_parameters[0].contains("Context<")
                 && function_parameters[0].contains(&context_name)
-                && entrypoint_function_body.contains(&format!(
-                    "{}({}",
-                    function_metadata.name, first_parameter_name
-                ))
+                && (entrypoint_function_body.contains(&function_metadata.name))
         });
         let structs_metadata = StructMetadata::get_structs_metadata_from_metadata_file();
         let context_accounts = structs_metadata

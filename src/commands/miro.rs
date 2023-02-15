@@ -531,7 +531,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 .deploy_screenshot_to_miro_frame(
                     selected_frame.clone(),
                     x_position,
-                    5 * height_grid,
+                    2 * height_grid,
                     context_accounts_sc_options.clone(),
                 )
                 .await;
@@ -542,7 +542,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     .deploy_screenshot_to_miro_frame(
                         selected_frame.clone(),
                         x_position,
-                        9 * height_grid,
+                        4 * height_grid,
                         handler_sc_options.clone(),
                     )
                     .await;
@@ -550,7 +550,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
             }
         } else {
             let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
-                * (index as i64 + 1 - selected_entrypoints_amount as i64 / 2);
+                * (2 * index as i64 + 1 - selected_entrypoints_amount as i64 / 2);
 
             let ep_id = ep_source_code
                 .deploy_screenshot_to_miro_frame(
@@ -564,7 +564,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 .deploy_screenshot_to_miro_frame(
                     selected_frame.clone(),
                     x_position,
-                    (grid_amount - 5) * height_grid,
+                    (grid_amount - 2) * height_grid,
                     context_accounts_sc_options.clone(),
                 )
                 .await;
@@ -575,7 +575,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     .deploy_screenshot_to_miro_frame(
                         selected_frame.clone(),
                         x_position,
-                        (grid_amount - 9) * height_grid,
+                        (grid_amount - 4) * height_grid,
                         handler_sc_options.clone(),
                     )
                     .await;
