@@ -1,12 +1,10 @@
-use crate::batbelt;
-
 use crate::config::*;
 use normalize_url::normalizer;
 use reqwest;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use serde_json::*;
-use std::fs;
+
 use std::result::Result;
 
 pub mod connector;
@@ -269,15 +267,11 @@ impl MiroColor {
     }
 }
 
-use crate::batbelt::path::FilePathType;
-
 use self::item::MiroItem;
 
 pub mod helpers {
-    use std::collections::HashMap;
 
     use crate::batbelt::miro::MiroItemType;
-    use reqwest::Url;
 
     use super::*;
     pub async fn get_accounts_frame_id() -> Result<String, String> {

@@ -1,10 +1,9 @@
 use crate::batbelt;
 use crate::batbelt::helpers::get::get_all_rust_files_from_program_path;
 use crate::batbelt::metadata::functions::{
-    get_function_body, get_function_parameters, get_function_signature, FunctionMetadata,
-    FunctionMetadataType,
+    get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataType,
 };
-use crate::batbelt::metadata::metadata_is_initialized;
+
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;

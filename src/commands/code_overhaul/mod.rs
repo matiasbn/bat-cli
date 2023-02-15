@@ -6,19 +6,14 @@ use colored::Colorize;
 
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 
-use crate::batbelt::constants::CODE_OVERHAUL_NOTES_PLACEHOLDER;
-
 use crate::config::BatConfig;
 
-use crate::batbelt::git::{create_git_commit, GitCommit};
 // use crate::batbelt::helpers::get::{
 //     get_finished_co_files, get_finished_co_files_info_for_results,
 //     get_table_of_contents_for_results,
 // };
 use crate::batbelt::path::{FilePathType, FolderPathType};
 use crate::{batbelt, commands};
-
-use std::fs;
 
 use crate::batbelt::bash::execute_command;
 

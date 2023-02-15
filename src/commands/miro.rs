@@ -1,13 +1,11 @@
 use crate::batbelt;
-use crate::batbelt::constants::*;
-use crate::batbelt::git::*;
+
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionLevel};
 
 use std::fs;
 use std::result::Result;
 
 use colored::Colorize;
-use toml::map::Entry;
 
 use crate::batbelt::markdown::MarkdownFile;
 
@@ -26,8 +24,6 @@ use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 
-use crate::batbelt::miro::item::MiroItem;
-use crate::batbelt::miro::shape::{MiroShape, MiroShapeStyle};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::{helpers, MiroConfig};
 use crate::batbelt::path::FolderPathType;

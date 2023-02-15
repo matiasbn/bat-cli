@@ -2,7 +2,7 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions::{get_functions_metadata_from_program, FunctionMetadata};
 
 use crate::batbelt::metadata::structs::{get_structs_metadata_from_program, StructMetadata};
-use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
+use crate::batbelt::metadata::MetadataSection;
 
 use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};

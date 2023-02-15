@@ -8,17 +8,12 @@ use walkdir::WalkDir;
 use crate::batbelt::constants::{
     CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER, CODE_OVERHAUL_NOTES_PLACEHOLDER,
     CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER, CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
-    CONTEXT_ACCOUNTS_PNG_NAME, ENTRYPOINT_PNG_NAME, HANDLER_PNG_NAME, VALIDATIONS_PNG_NAME,
 };
-use crate::config::{BatConfig, RequiredConfig};
-
-use std::borrow::Borrow;
 
 use crate::batbelt;
 use std::fs;
 use std::fs::ReadDir;
-use std::io::BufRead;
-use std::path::Path;
+
 use std::string::String;
 
 pub mod get {
