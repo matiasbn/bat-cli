@@ -47,9 +47,9 @@ enum Commands {
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
-    /// Updates the audit_result.md file in the root of the audit
-    #[command(subcommand)]
-    Result(ResultActions),
+    // /// Updates the audit_result.md file in the root of the audit
+    // #[command(subcommand)]
+    // Result(ResultActions),
     /// Updates the metadata.md file
     #[command(subcommand)]
     Metadata(MetadataActions),
@@ -58,25 +58,23 @@ enum Commands {
     Package(PackageActions),
 }
 
-#[derive(Subcommand, Debug)]
-enum ResultActions {
-    /// Updates the Code Overhaul section of the audit_result.md file
-    CodeOverhaul,
-    /// Updates the Findings section of the audit_result.md file
-    Findings {
-        /// updates the result, formatting with html structure
-        #[arg(long)]
-        html: bool,
-    },
-    /// Creates the commit for the results files
-    Commit,
-}
+// #[derive(Subcommand, Debug)]
+// enum ResultActions {
+//     /// Updates the Code Overhaul section of the audit_result.md file
+//     CodeOverhaul,
+//     /// Updates the Findings section of the audit_result.md file
+//     Findings {
+//         /// updates the result, formatting with html structure
+//         #[arg(long)]
+//         html: bool,
+//     },
+//     /// Creates the commit for the results files
+//     Commit,
+// }
 #[derive(Subcommand, Debug)]
 enum MetadataActions {
     /// Updates the Structs section of the metadata.md file
     Structs,
-    /// Updates the Miro section of the metadata.md file
-    Miro,
     /// Updates the Functions section of the metadata.md file
     Functions,
 }
@@ -87,8 +85,15 @@ enum MiroActions {
     Deploy,
     /// Creates or updates the Accounts frame
     Accounts,
-    /// Creates or updates the Entrypoints frame
-    Entrypoints,
+    /// Deploys the entrypoint, context accounts and handler to a Miro frame
+    Entrypoint {
+        /// select all options as true
+        #[arg(short, long)]
+        select_all: bool,
+        /// shows the list of entrypoints sorted by name
+        #[arg(long)]
+        sorted: bool,
+    },
     /// Creates an screenshot in a determined frame
     Metadata {
         /// deploy the screenshots with the default configuration
@@ -179,17 +184,18 @@ async fn main() {
         }
         Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_co().await.unwrap(),
         Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),
-        Commands::Miro(MiroActions::Entrypoints) => {
-            commands::miro::deploy_entrypoints().await.unwrap()
+        Commands::Miro(MiroActions::Entrypoint { select_all, sorted }) => {
+            commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted)
+                .await
+                .unwrap()
         }
         Commands::Miro(MiroActions::Metadata {
             default,
             select_all,
-        }) => commands::miro::deploy_screenshot_to_frame(default, select_all)
+        }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all)
             .await
             .unwrap(),
         Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
-        Commands::Metadata(MetadataActions::Miro) => commands::metadata::miro().await.unwrap(),
         Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
@@ -198,10 +204,10 @@ async fn main() {
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
         Commands::Notes => batbelt::git::create_git_commit(GitCommit::Notes, None).unwrap(),
-        Commands::Result(ResultActions::Findings { html }) => {
-            commands::result::findings_result(html).unwrap()
-        }
-        Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
+        // Commands::Result(ResultActions::Findings { html }) => {
+        //     commands::result::findings_result(html).unwrap()
+        // }
+        // Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Format) => package::format().unwrap(),
@@ -212,6 +218,10 @@ async fn main() {
 }
 
 // mod test {
+//     use std::{thread, time::Duration};
+
+//     use colored::Colorize;
+//     use indicatif::{ProgressBar, ProgressStyle};
 
 //     #[test]
 //     fn test_bat_cli_loader() {

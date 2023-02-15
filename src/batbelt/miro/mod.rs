@@ -1,12 +1,10 @@
-use crate::batbelt;
-
 use crate::config::*;
 use normalize_url::normalizer;
 use reqwest;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use serde_json::*;
-use std::fs;
+
 use std::result::Result;
 
 pub mod connector;
@@ -269,20 +267,11 @@ impl MiroColor {
     }
 }
 
-use crate::batbelt::{
-    helpers::get::{
-        get_string_between_two_index_from_string, get_string_between_two_str_from_string,
-    },
-    path::FilePathType,
-};
-
 use self::item::MiroItem;
 
 pub mod helpers {
-    use std::collections::HashMap;
 
     use crate::batbelt::miro::MiroItemType;
-    use reqwest::Url;
 
     use super::*;
     pub async fn get_accounts_frame_id() -> Result<String, String> {
@@ -299,205 +288,205 @@ pub mod helpers {
         Ok(accounts_frame_id.clone().replace("\"", ""))
     }
 
-    pub fn get_data_for_snapshots(
-        co_file_string: String,
-        selected_co_started_path: String,
-        selected_folder_name: String,
-        snapshot_name: String,
-    ) -> Result<(String, String, String, Option<usize>), String> {
-        if snapshot_name == CONTEXT_ACCOUNTS_PNG_NAME {
-            let context_account_lines = get_string_between_two_str_from_string(
-                co_file_string,
-                "# Context Accounts:",
-                "# Validations:",
-            )?;
-            let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "context_accounts.png",
-            );
-            let snapshot_markdown_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "context_accounts.md",
-            );
-            Ok((
-                context_account_lines
-                    .replace("\n- ```rust", "")
-                    .replace("\n  ```", ""),
-                snapshot_image_path,
-                snapshot_markdown_path,
-                None,
-            ))
-        } else if snapshot_name == VALIDATIONS_PNG_NAME {
-            let validation_lines = get_string_between_two_str_from_string(
-                co_file_string,
-                "# Validations:",
-                "# Miro board frame:",
-            )?;
-            let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "validations.png",
-            );
-            let snapshot_markdown_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "validations.md",
-            );
-            Ok((
-                validation_lines,
-                snapshot_image_path,
-                snapshot_markdown_path,
-                None,
-            ))
-        } else if snapshot_name == ENTRYPOINT_PNG_NAME {
-            let RequiredConfig {
-                program_lib_path, ..
-            } = BatConfig::get_validated_config()?.required;
-            let lib_file_string = fs::read_to_string(program_lib_path.clone()).unwrap();
-            let start_entrypoint_index = lib_file_string
-                .lines()
-                .into_iter()
-                .position(|f| f.contains("pub fn") && f.contains(&selected_folder_name))
-                .unwrap();
-            let end_entrypoint_index = lib_file_string
-                .lines()
-                .into_iter()
-                .enumerate()
-                .position(|(f_index, f)| f.trim() == "}" && f_index > start_entrypoint_index)
-                .unwrap();
-            let entrypoint_lines = get_string_between_two_index_from_string(
-                lib_file_string,
-                start_entrypoint_index,
-                end_entrypoint_index,
-            )?;
-            let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "entrypoint.png",
-            );
-            let snapshot_markdown_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "entrypoint.md",
-            );
-            Ok((
-                format!(
-                    "///{}\n\n{}",
-                    program_lib_path.replace("../", ""),
-                    entrypoint_lines,
-                ),
-                snapshot_image_path,
-                snapshot_markdown_path,
-                Some(start_entrypoint_index - 1),
-            ))
-        } else {
-            //
-            let (handler_string, instruction_file_path, start_index, _) =
-                batbelt::helpers::get::get_instruction_handler_of_entrypoint(
-                    selected_folder_name.clone(),
-                )?;
-            let snapshot_image_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name.clone()).as_str(),
-                "handler.png",
-            );
-            let snapshot_markdown_path = selected_co_started_path.replace(
-                format!("{}.md", selected_folder_name).as_str(),
-                "handler.md",
-            );
-            // Handler
-            Ok((
-                format!("///{}\n\n{}", instruction_file_path, handler_string),
-                snapshot_image_path,
-                snapshot_markdown_path,
-                Some(start_index - 1),
-            ))
-        }
-    }
+    // pub fn get_data_for_snapshots(
+    //     co_file_string: String,
+    //     selected_co_started_path: String,
+    //     selected_folder_name: String,
+    //     snapshot_name: String,
+    // ) -> Result<(String, String, String, Option<usize>), String> {
+    //     if snapshot_name == CONTEXT_ACCOUNTS_PNG_NAME {
+    //         let context_account_lines = get_string_between_two_str_from_string(
+    //             co_file_string,
+    //             "# Context Accounts:",
+    //             "# Validations:",
+    //         )?;
+    //         let snapshot_image_path = selected_co_started_path.replace(
+    //             format!("{}.md", selected_folder_name).as_str(),
+    //             "context_accounts.png",
+    //         );
+    //         let snapshot_markdown_path = selected_co_started_path.replace(
+    //             format!("{}.md", selected_folder_name).as_str(),
+    //             "context_accounts.md",
+    //         );
+    //         Ok((
+    //             context_account_lines
+    //                 .replace("\n- ```rust", "")
+    //                 .replace("\n  ```", ""),
+    //             snapshot_image_path,
+    //             snapshot_markdown_path,
+    //             None,
+    //         ))
+    //     } else if snapshot_name == VALIDATIONS_PNG_NAME {
+    //         let validation_lines = get_string_between_two_str_from_string(
+    //             co_file_string,
+    //             "# Validations:",
+    //             "# Miro board frame:",
+    //         )?;
+    //         let snapshot_image_path = selected_co_started_path.replace(
+    //             format!("{}.md", selected_folder_name).as_str(),
+    //             "validations.png",
+    //         );
+    //         let snapshot_markdown_path = selected_co_started_path.replace(
+    //             format!("{}.md", selected_folder_name).as_str(),
+    //             "validations.md",
+    //         );
+    //         Ok((
+    //             validation_lines,
+    //             snapshot_image_path,
+    //             snapshot_markdown_path,
+    //             None,
+    //         ))
+    //     } else if snapshot_name == ENTRYPOINT_PNG_NAME {
+    //         let RequiredConfig {
+    //             program_lib_path, ..
+    //         } = BatConfig::get_validated_config()?.required;
+    //         let lib_file_string = fs::read_to_string(program_lib_path.clone()).unwrap();
+    //         let start_entrypoint_index = lib_file_string
+    //             .lines()
+    //             .into_iter()
+    //             .position(|f| f.contains("pub fn") && f.contains(&selected_folder_name))
+    //             .unwrap();
+    //         let end_entrypoint_index = lib_file_string
+    //             .lines()
+    //             .into_iter()
+    //             .enumerate()
+    //             .position(|(f_index, f)| f.trim() == "}" && f_index > start_entrypoint_index)
+    //             .unwrap();
+    //         let entrypoint_lines = get_string_between_two_index_from_string(
+    //             lib_file_string,
+    //             start_entrypoint_index,
+    //             end_entrypoint_index,
+    //         )?;
+    //         let snapshot_image_path = selected_co_started_path.replace(
+    //             format!("{}.md", selected_folder_name).as_str(),
+    //             "entrypoint.png",
+    //         );
+    //         let snapshot_markdown_path = selected_co_started_path.replace(
+    //             format!("{}.md", selected_folder_name).as_str(),
+    //             "entrypoint.md",
+    //         );
+    //         Ok((
+    //             format!(
+    //                 "///{}\n\n{}",
+    //                 program_lib_path.replace("../", ""),
+    //                 entrypoint_lines,
+    //             ),
+    //             snapshot_image_path,
+    //             snapshot_markdown_path,
+    //             Some(start_entrypoint_index - 1),
+    //         ))
+    //     } else {
+    //         //
+    //         let (handler_string, instruction_file_path, start_index, _) =
+    //             batbelt::helpers::get::get_instruction_handler_of_entrypoint(
+    //                 selected_folder_name.clone(),
+    //             )?;
+    //         let snapshot_image_path = selected_co_started_path.replace(
+    //             format!("{}.md", selected_folder_name.clone()).as_str(),
+    //             "handler.png",
+    //         );
+    //         let snapshot_markdown_path = selected_co_started_path.replace(
+    //             format!("{}.md", selected_folder_name).as_str(),
+    //             "handler.md",
+    //         );
+    //         // Handler
+    //         Ok((
+    //             format!("///{}\n\n{}", instruction_file_path, handler_string),
+    //             snapshot_image_path,
+    //             snapshot_markdown_path,
+    //             Some(start_index - 1),
+    //         ))
+    //     }
+    // }
 
-    pub fn create_co_figure(
-        contents: String,
-        image_path: String,
-        temporary_markdown_path: String,
-        index: Option<usize>,
-    ) {
-        // write the temporary markdown file
-        fs::write(temporary_markdown_path.clone(), contents).unwrap();
-        // take the snapshot
-        if let Some(offset) = index {
-            take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), offset);
-        } else {
-            take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), 1);
-        }
+    // pub fn create_co_figure(
+    //     contents: String,
+    //     image_path: String,
+    //     temporary_markdown_path: String,
+    //     index: Option<usize>,
+    // ) {
+    //     // write the temporary markdown file
+    //     fs::write(temporary_markdown_path.clone(), contents).unwrap();
+    //     // take the snapshot
+    //     if let Some(offset) = index {
+    //         take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), offset);
+    //     } else {
+    //         take_silicon_snapshot(image_path.clone(), temporary_markdown_path.clone(), 1);
+    //     }
+    //
+    //     // delete the markdown
+    //     delete_file(temporary_markdown_path);
+    // }
 
-        // delete the markdown
-        delete_file(temporary_markdown_path);
-    }
+    // pub fn take_silicon_snapshot<'a>(
+    //     image_path: String,
+    //     temporary_markdown_path: String,
+    //     index: usize,
+    // ) {
+    //     let offset = format!("{}", index);
+    //     let image_file_name = image_path.split("/").last().unwrap();
+    //     let mut args = vec![
+    //         "--no-window-controls",
+    //         "--language",
+    //         "Rust",
+    //         "--line-offset",
+    //         &offset,
+    //         "--theme",
+    //         "Monokai Extended",
+    //         "--pad-horiz",
+    //         "40",
+    //         "--pad-vert",
+    //         "40",
+    //         "--background",
+    //         "#d3d4d5",
+    //         "--font",
+    //         match image_file_name {
+    //             ENTRYPOINT_PNG_NAME => "Hack=15",
+    //             CONTEXT_ACCOUNTS_PNG_NAME => "Hack=15",
+    //             VALIDATIONS_PNG_NAME => "Hack=14",
+    //             HANDLER_PNG_NAME => "Hack=11",
+    //             _ => "Hack=13",
+    //         },
+    //         "--output",
+    //         &image_path,
+    //         &temporary_markdown_path,
+    //     ];
+    //     if index == 1 {
+    //         args.insert(0, "--no-line-number");
+    //     }
+    //     std::process::Command::new("silicon")
+    //         .args(args)
+    //         .output()
+    //         .unwrap();
+    //     // match output {
+    //     //     Ok(_) => println!(""),
+    //     //     Err(_) => false,
+    //     // }
+    // }
 
-    pub fn take_silicon_snapshot<'a>(
-        image_path: String,
-        temporary_markdown_path: String,
-        index: usize,
-    ) {
-        let offset = format!("{}", index);
-        let image_file_name = image_path.split("/").last().unwrap();
-        let mut args = vec![
-            "--no-window-controls",
-            "--language",
-            "Rust",
-            "--line-offset",
-            &offset,
-            "--theme",
-            "Monokai Extended",
-            "--pad-horiz",
-            "40",
-            "--pad-vert",
-            "40",
-            "--background",
-            "#d3d4d5",
-            "--font",
-            match image_file_name {
-                ENTRYPOINT_PNG_NAME => "Hack=15",
-                CONTEXT_ACCOUNTS_PNG_NAME => "Hack=15",
-                VALIDATIONS_PNG_NAME => "Hack=14",
-                HANDLER_PNG_NAME => "Hack=11",
-                _ => "Hack=13",
-            },
-            "--output",
-            &image_path,
-            &temporary_markdown_path,
-        ];
-        if index == 1 {
-            args.insert(0, "--no-line-number");
-        }
-        std::process::Command::new("silicon")
-            .args(args)
-            .output()
-            .unwrap();
-        // match output {
-        //     Ok(_) => println!(""),
-        //     Err(_) => false,
-        // }
-    }
+    // pub fn delete_file(path: String) {
+    //     std::process::Command::new("rm")
+    //         .args([path])
+    //         .output()
+    //         .unwrap();
+    // }
 
-    pub fn delete_file(path: String) {
-        std::process::Command::new("rm")
-            .args([path])
-            .output()
-            .unwrap();
-    }
+    // pub fn check_silicon_installed() -> bool {
+    //     let output = std::process::Command::new("silicon")
+    //         .args(["--version"])
+    //         .output();
+    //     match output {
+    //         Ok(_) => true,
+    //         Err(_) => false,
+    //     }
+    // }
 
-    pub fn check_silicon_installed() -> bool {
-        let output = std::process::Command::new("silicon")
-            .args(["--version"])
-            .output();
-        match output {
-            Ok(_) => true,
-            Err(_) => false,
-        }
-    }
-
-    pub fn get_item_id_from_miro_url(miro_url: &str) -> String {
-        // example https://miro.com/app/board/uXjVP7aqTzc=/?moveToWidget=3458764541840480526&cot=14
-        let frame_id = Url::parse(miro_url).unwrap();
-        let hash_query: HashMap<_, _> = frame_id.query_pairs().into_owned().collect();
-        hash_query.get("moveToWidget").unwrap().to_owned()
-    }
+    // pub fn get_item_id_from_miro_url(miro_url: &str) -> String {
+    //     // example https://miro.com/app/board/uXjVP7aqTzc=/?moveToWidget=3458764541840480526&cot=14
+    //     let frame_id = Url::parse(miro_url).unwrap();
+    //     let hash_query: HashMap<_, _> = frame_id.query_pairs().into_owned().collect();
+    //     hash_query.get("moveToWidget").unwrap().to_owned()
+    // }
 
     pub async fn get_id_from_response(
         response: Result<reqwest::Response, reqwest::Error>,
@@ -512,38 +501,38 @@ pub mod helpers {
         }
     }
 
-    pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> Result<String, String> {
-        // let started_file_path = utils::path::get_auditor_code_overhaul_started_file_path(
-        //     Some(entrypoint_name.to_string()),
-        // )?;
-        let started_file_path = batbelt::path::get_file_path(
-            FilePathType::CodeOverhaulStarted {
-                file_name: entrypoint_name.to_string(),
-            },
-            true,
-        );
-        let miro_url = fs::read_to_string(started_file_path)
-            .unwrap()
-            .lines()
-            .find(|line| line.contains("https://miro.com/app/board/"))
-            .unwrap()
-            .to_string();
-        let frame_id = miro_url
-            .split("moveToWidget=")
-            .last()
-            .unwrap()
-            .to_string()
-            .replace("\"", "");
-        Ok(frame_id)
-    }
+    // pub fn get_frame_id_from_co_file(entrypoint_name: &str) -> Result<String, String> {
+    //     // let started_file_path = utils::path::get_auditor_code_overhaul_started_file_path(
+    //     //     Some(entrypoint_name.to_string()),
+    //     // )?;
+    //     let started_file_path = batbelt::path::get_file_path(
+    //         FilePathType::CodeOverhaulStarted {
+    //             file_name: entrypoint_name.to_string(),
+    //         },
+    //         true,
+    //     );
+    //     let miro_url = fs::read_to_string(started_file_path)
+    //         .unwrap()
+    //         .lines()
+    //         .find(|line| line.contains("https://miro.com/app/board/"))
+    //         .unwrap()
+    //         .to_string();
+    //     let frame_id = miro_url
+    //         .split("moveToWidget=")
+    //         .last()
+    //         .unwrap()
+    //         .to_string()
+    //         .replace("\"", "");
+    //     Ok(frame_id)
+    // }
 }
 
-#[test]
-
-fn test_get_miro_item_id_from_url() {
-    let miro_url =
-        "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544363318703&cot=14";
-    let item_id = helpers::get_item_id_from_miro_url(miro_url);
-    println!("item id: {}", item_id);
-    assert_eq!(item_id, "3458764541840480526".to_string())
-}
+// #[test]
+//
+// fn test_get_miro_item_id_from_url() {
+//     let miro_url =
+//         "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544363318703&cot=14";
+//     let item_id = helpers::get_item_id_from_miro_url(miro_url);
+//     println!("item id: {}", item_id);
+//     assert_eq!(item_id, "3458764541840480526".to_string())
+// }

@@ -134,7 +134,11 @@ pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> Strin
         FolderPathType::AuditResultTemp => "./audit_result/temp".to_string(),
         FolderPathType::AuditorNotes => auditor_notes_folder_path,
         FolderPathType::AuditorFigures => format!("{auditor_notes_folder_path}/figures"),
-        FolderPathType::ProgramPath => bat_config.required.program_lib_path.replace("/lib.rs", ""),
+        FolderPathType::ProgramPath => bat_config
+            .required
+            .program_lib_path
+            .trim_end_matches("/lib.rs")
+            .to_string(),
         FolderPathType::Templates => {
             format!("./templates")
         }

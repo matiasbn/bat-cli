@@ -1,13 +1,15 @@
+use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::structs::FileInfo;
 use std::fmt::Debug;
 
 use crate::batbelt;
-use crate::batbelt::path::FolderPathType;
+use crate::batbelt::path::{FilePathType, FolderPathType};
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
-use crate::batbelt::sonar::{BatSonar, SonarResultType};
+use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
+use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use inflector::Inflector;
 use std::vec;
 use strum::IntoEnumIterator;
@@ -67,7 +69,76 @@ impl StructMetadata {
         )
     }
 
-    pub fn get_markdown_section(&self, section_hash: &str) -> MarkdownSection {
+    pub fn structs_metadata_is_initialized() -> bool {
+        let metadata_markdown = get_metadata_markdown();
+        let structs_section = metadata_markdown
+            .get_section(&MetadataSection::Structs.to_string())
+            .unwrap();
+        // // check if empty
+        let structs_subsections =
+            metadata_markdown.get_section_subsections(structs_section.clone());
+        let is_initialized = !structs_section.content.is_empty() || structs_subsections.len() > 0;
+        is_initialized
+    }
+
+    pub fn get_structs_metadata_by_type(struct_type: StructMetadataType) -> Vec<StructMetadata> {
+        let structs_metadata = Self::get_structs_metadata_from_metadata_file();
+        structs_metadata
+            .into_iter()
+            .filter(|struct_metadata| struct_metadata.struct_type == struct_type)
+            .collect::<Vec<_>>()
+    }
+
+    pub fn get_structs_metadata_names_by_type(struct_type: StructMetadataType) -> Vec<String> {
+        let structs_metadata = Self::get_structs_metadata_from_metadata_file();
+        structs_metadata
+            .into_iter()
+            .filter_map(|struct_metadata| {
+                if struct_metadata.struct_type == struct_type {
+                    Some(struct_metadata.name)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
+    pub fn get_structs_markdown_subsections_from_metadata_file() -> Vec<MarkdownSection> {
+        let metadata_markdown = get_metadata_markdown();
+        let structs_section = metadata_markdown
+            .get_section(&MetadataSection::Structs.to_sentence_case())
+            .unwrap();
+        let structs_subsections = metadata_markdown.get_section_subsections(structs_section);
+        structs_subsections
+    }
+
+    pub fn get_structs_metadata_from_metadata_file() -> Vec<StructMetadata> {
+        let structs_subsections = Self::get_structs_markdown_subsections_from_metadata_file();
+        let structs_sourcecodes = structs_subsections
+            .into_iter()
+            .map(|subsection| StructMetadata::from_markdown_section(subsection))
+            .collect::<Vec<StructMetadata>>();
+        structs_sourcecodes
+    }
+
+    pub fn get_structs_sourcecodes() -> Vec<SourceCodeMetadata> {
+        let structs_subsections = Self::get_structs_markdown_subsections_from_metadata_file();
+        let structs_sourcecodes = structs_subsections
+            .into_iter()
+            .map(|subsection| StructMetadata::from_markdown_section(subsection))
+            .map(|struct_metadata| {
+                SourceCodeMetadata::new(
+                    struct_metadata.name,
+                    struct_metadata.path,
+                    struct_metadata.start_line_index,
+                    struct_metadata.end_line_index,
+                )
+            })
+            .collect::<Vec<SourceCodeMetadata>>();
+        structs_sourcecodes
+    }
+
+    pub fn to_markdown_section(&self, section_hash: &str) -> MarkdownSection {
         let section_level_header = MarkdownSectionLevel::H2.get_header(&self.name);
         let section_header = MarkdownSectionHeader::new_from_header_and_hash(
             section_level_header,
@@ -83,7 +154,7 @@ impl StructMetadata {
         md_section
     }
 
-    pub fn get_source_code(&self) -> SourceCodeMetadata {
+    pub fn to_source_code_metadata(&self) -> SourceCodeMetadata {
         SourceCodeMetadata::new(
             self.name.clone(),
             self.path.clone(),
@@ -135,8 +206,6 @@ impl StructMetadata {
 pub enum StructMetadataType {
     ContextAccounts,
     SolanaAccount,
-    Event,
-    Input,
     Other,
 }
 
@@ -169,8 +238,6 @@ impl StructMetadataType {
             .map(|struct_type| match struct_type {
                 StructMetadataType::ContextAccounts => struct_type.to_sentence_case().red(),
                 StructMetadataType::SolanaAccount => struct_type.to_sentence_case().yellow(),
-                StructMetadataType::Event => struct_type.to_sentence_case().green(),
-                StructMetadataType::Input => struct_type.to_sentence_case().blue(),
                 StructMetadataType::Other => struct_type.to_sentence_case().magenta(),
                 _ => unimplemented!("color no implemented for given type"),
             })
@@ -201,7 +268,7 @@ pub fn get_struct_metadata_from_file_info(
         struct_file_info.path.clone().blue()
     );
     let file_info_content = struct_file_info.read_content().unwrap();
-    let struct_types_colored = StructMetadataType::get_colorized_structs_type_vec();
+    let _struct_types_colored = StructMetadataType::get_colorized_structs_type_vec();
     let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Struct);
     for result in bat_sonar.results {
         println!(
@@ -214,10 +281,36 @@ pub fn get_struct_metadata_from_file_info(
             .magenta(),
             result.content.clone().green()
         );
-        let prompt_text = "Select the struct type:";
-        let selection =
-            batbelt::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
-        let struct_type = StructMetadataType::get_structs_type_vec()[selection];
+        if assert_struct_is_context_accounts(&file_info_content, result.clone()) {
+            println!("{}", "Struct found is ContextAccounts type!".yellow());
+            let struct_type = StructMetadataType::ContextAccounts;
+            let struct_metadata = StructMetadata::new(
+                struct_file_info.path.clone(),
+                result.name.to_string(),
+                struct_type,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+            );
+            struct_metadata_vec.push(struct_metadata);
+            continue;
+        }
+        if assert_struct_is_solana_account(&file_info_content, result.clone()) {
+            println!("{}", "Struct found is SolanaAccount type!".yellow());
+            let struct_type = StructMetadataType::SolanaAccount;
+            let struct_metadata = StructMetadata::new(
+                struct_file_info.path.clone(),
+                result.name.to_string(),
+                struct_type,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+            );
+            struct_metadata_vec.push(struct_metadata);
+            continue;
+        }
+        // let prompt_text = "Select the struct type:";
+        // let selection =
+        //     batbelt::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
+        let struct_type = StructMetadataType::Other;
         let struct_metadata = StructMetadata::new(
             struct_file_info.path.clone(),
             result.name.to_string(),
@@ -232,4 +325,64 @@ pub fn get_struct_metadata_from_file_info(
         struct_file_info.path.clone().blue()
     );
     Ok(struct_metadata_vec)
+}
+
+fn assert_struct_is_context_accounts(file_info_content: &str, sonar_result: SonarResult) -> bool {
+    if sonar_result.start_line_index > 0 {
+        let previous_line =
+            file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 1];
+        let filtered_previous_line = previous_line
+            .trim()
+            .trim_end_matches(")]")
+            .trim_start_matches("#[derive(");
+        let mut tokenized = filtered_previous_line.split(", ");
+        if tokenized.any(|token| token == "Acccounts") {
+            return true;
+        }
+    }
+    let context_accounts_content = vec![
+        "Signer<",
+        "AccountLoader<",
+        "UncheckedAccount<",
+        "#[account(",
+    ];
+    if context_accounts_content
+        .iter()
+        .any(|content| sonar_result.content.contains(content))
+    {
+        return true;
+    }
+    let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false);
+    let entrypoints = BatSonar::new_from_path(
+        &lib_file_path,
+        Some("#[program]"),
+        SonarResultType::Function,
+    );
+    let mut entrypoints_context_accounts_names = entrypoints
+        .results
+        .iter()
+        .map(|result| EntrypointParser::get_context_name(&result.name).unwrap());
+    if entrypoints_context_accounts_names.any(|name| name == sonar_result.name) {
+        return true;
+    }
+    return false;
+}
+
+fn assert_struct_is_solana_account(file_info_content: &str, sonar_result: SonarResult) -> bool {
+    if sonar_result.start_line_index > 3 {
+        let previous_line_1 =
+            file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 1];
+        let previous_line_2 =
+            file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 2];
+        let previous_line_3 =
+            file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 3];
+        if previous_line_1.contains("#[account")
+            || previous_line_2.contains("#[account")
+            || previous_line_3.contains("#[account")
+        {
+            return true;
+        }
+    }
+
+    return false;
 }

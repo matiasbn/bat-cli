@@ -10,7 +10,6 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 
 use super::create::AUDITOR_TOML_INITIAL_PATH;
-use super::entrypoints::entrypoints::get_entrypoints_names;
 use crate::batbelt;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::constants::{
@@ -19,6 +18,7 @@ use crate::batbelt::constants::{
     AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
+use crate::batbelt::entrypoint::EntrypointParser;
 use crate::config::{BatConfig, RequiredConfig};
 
 use crate::batbelt::git::GitCommit;
@@ -283,7 +283,7 @@ fn create_auditor_notes_folder() -> Result<(), String> {
 }
 
 pub fn initialize_code_overhaul_files() -> Result<(), String> {
-    let entrypoints_names = get_entrypoints_names()?;
+    let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
 
     for entrypoint_name in entrypoints_names {
         create_overhaul_file(entrypoint_name.clone())?;
@@ -297,7 +297,7 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), String> {
     }
     let miro_board_frames = MiroFrame::get_frames_from_miro().await;
 
-    let entrypoints_names = get_entrypoints_names()?;
+    let entrypoints_names = EntrypointParser::get_entrypoints_names(false)?;
 
     for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
         let frame_already_deployed = miro_board_frames
