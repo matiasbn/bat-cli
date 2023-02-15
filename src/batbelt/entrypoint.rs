@@ -38,11 +38,11 @@ impl Entrypoint {
     pub fn new_from_name(entrypoint_name: &str) -> Self {
         assert!(
             StructMetadata::structs_metadata_is_initialized(),
-            "Can't run without initializing structs metadata"
+            "Can't run without initializing Structs metadata"
         );
         assert!(
-            StructMetadata::structs_metadata_is_initialized(),
-            "Can't run without initializing structs metadata"
+            FunctionMetadata::functions_metadata_is_initialized(),
+            "Can't run without initializing Functions metadata"
         );
         let functions_metadata = FunctionMetadata::get_functions_metadata_from_metadata_file();
         let entrypoint_function = functions_metadata
