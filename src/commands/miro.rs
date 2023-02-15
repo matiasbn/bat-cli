@@ -7,10 +7,12 @@ use std::fs;
 use std::result::Result;
 
 use colored::Colorize;
+use toml::map::Entry;
 
 use crate::batbelt::markdown::MarkdownFile;
 
-use crate::batbelt::helpers::get::get_only_files_from_folder;
+use crate::batbelt::entrypoint::Entrypoint;
+use crate::batbelt::helpers::get::{get_context_name, get_only_files_from_folder};
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::{FunctionMetadata, FunctionMetadataType};
 use crate::batbelt::metadata::MetadataSection;
@@ -22,10 +24,11 @@ use crate::{
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
 use crate::batbelt::metadata::source_code::SourceCodeScreenshotOptions;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
-use crate::batbelt::miro::connector::ConnectorOptions;
+use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 
+use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::shape::{MiroShape, MiroShapeStyle};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::{helpers, MiroConfig};
@@ -449,43 +452,143 @@ pub async fn deploy_accounts() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn deploy_entrypoints() -> Result<(), String> {
+pub async fn deploy_entrypoint_screenshots_to_frame(
+    new_frame: bool,
+    select_all: bool,
+    sorted: bool,
+) -> Result<(), String> {
     // get entrypoints name
-    let entrypoints_names = get_entrypoints_names()?;
-    // get entrypoint miro frame url
-    let prompt_text = format!("Please enter the {}", "entrypoints frame url".green());
-    let entrypoints_frame_url = batbelt::cli_inputs::input(&prompt_text)?;
-    let miro_frame_id = batbelt::miro::helpers::get_item_id_from_miro_url(&entrypoints_frame_url);
+    let entrypoints_names = Entrypoint::get_entrypoints_names(sorted)?;
 
-    for (entrypoint_name_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
-        // example
-        let columns = 5;
-        let initial_x_position = 372;
-        let initial_y_position = 243;
-        let entrypoint_width = 374;
-        let entrypoint_height = 164;
-        let x_offset = 40;
-        let y_offset = 40;
-        let x_position = initial_x_position
-            + (x_offset + initial_x_position) * (entrypoint_name_index as i32 % columns);
-        let y_position = initial_y_position
-            + (y_offset + initial_y_position) * (entrypoint_name_index as i32 / columns);
-        let miro_shape = MiroShape::new(
-            x_position,
-            y_position,
-            entrypoint_width,
-            entrypoint_height,
-            entrypoint_name.to_string(),
-        );
-        let miro_shape_style = MiroShapeStyle::new_from_hex_border_color("#2d9bf0");
-        miro_shape
-            .create_shape_in_frame(miro_shape_style, &miro_frame_id)
-            .await?;
+    // prompt the user to select an entrypoint
+    let prompt_text = "Please select the entrypoints to deploy";
+    let selected_entrypoints_index = batbelt::cli_inputs::multiselect(
+        prompt_text,
+        entrypoints_names.clone(),
+        Some(&vec![select_all; entrypoints_names.clone().len()]),
+    )
+    .unwrap();
+    if new_frame {
+        unimplemented!()
     }
+    // prompt to select the frame
+    let miro_frames = MiroFrame::get_frames_from_miro().await;
+    let miro_frames_names = miro_frames
+        .iter()
+        .map(|frame| frame.title.to_string())
+        .collect::<Vec<_>>();
+    let prompt_text = "Please select the Miro frame to deploy";
+    let selected_frame_index =
+        batbelt::cli_inputs::select(prompt_text, miro_frames_names, None).unwrap();
+    let selected_frame = &miro_frames[selected_frame_index];
+    // let structs_subsections = StructMetadata::get_structs_from_metadata_file();
+    let entrypoint_sc_options = SourceCodeScreenshotOptions {
+        include_path: false,
+        offset_to_start_line: true,
+        filter_comments: true,
+        font_size: None,
+        filters: None,
+        show_line_number: true,
+    };
+    let context_accounts_sc_options = SourceCodeScreenshotOptions {
+        include_path: false,
+        offset_to_start_line: false,
+        filter_comments: true,
+        font_size: None,
+        filters: None,
+        show_line_number: false,
+    };
+
+    let handler_sc_options = SourceCodeScreenshotOptions {
+        include_path: true,
+        offset_to_start_line: true,
+        filter_comments: true,
+        font_size: None,
+        filters: None,
+        show_line_number: true,
+    };
+    for (index, selected_ep_index) in selected_entrypoints_index.iter().enumerate() {
+        let selected_entrypoint = &entrypoints_names[selected_ep_index.clone()];
+        // get context_accounts name
+        let entrypoint = Entrypoint::new_from_name(selected_entrypoint.as_str());
+        let ep_source_code = entrypoint.entrypoint_function.get_source_code();
+        let ca_source_code = entrypoint.context_accounts.get_source_code();
+        let handler_source_code = entrypoint.handler.get_source_code();
+        let ep_id = ep_source_code
+            .deploy_screenshot_to_miro_frame(
+                selected_frame.clone(),
+                (selected_frame.clone().width / 2) as i64,
+                (selected_frame.clone().height * 2 / 6) as i64,
+                // 0,
+                entrypoint_sc_options.clone(),
+            )
+            .await;
+        let ca_id = ca_source_code
+            .deploy_screenshot_to_miro_frame(
+                selected_frame.clone(),
+                (selected_frame.clone().width / 2) as i64,
+                (selected_frame.clone().height * 3 / 6) as i64,
+                // 0,
+                context_accounts_sc_options.clone(),
+            )
+            .await;
+        let handler_id = handler_source_code
+            .deploy_screenshot_to_miro_frame(
+                selected_frame.clone(),
+                (selected_frame.clone().width / 2) as i64,
+                (selected_frame.clone().height * 4 / 6) as i64,
+                // 0,
+                handler_sc_options.clone(),
+            )
+            .await;
+        create_connector(&ep_id, &ca_id, None).await;
+        create_connector(&ca_id, &handler_id, None).await;
+        if index < selected_entrypoints_index.len() - 1 {
+            let user_decided_to_continue =
+                batbelt::cli_inputs::select_yes_or_no("Do you want to continue deploying?")
+                    .unwrap();
+            if !user_decided_to_continue {
+                break;
+            }
+        }
+    }
+    // // get entrypoint miro frame url
+    // let prompt_text = format!("Please enter the {}", "entrypoints frame url".green());
+    // let entrypoints_frame_url = batbelt::cli_inputs::input(&prompt_text)?;
+    // let miro_frame_id = batbelt::miro::helpers::get_item_id_from_miro_url(&entrypoints_frame_url);
+
+    // for (entrypoint_name_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
+    //     // example
+    //     let columns = 5;
+    //     let initial_x_position = 372;
+    //     let initial_y_position = 243;
+    //     let entrypoint_width = 374;
+    //     let entrypoint_height = 164;
+    //     let x_offset = 40;
+    //     let y_offset = 40;
+    //     let x_position = initial_x_position
+    //         + (x_offset + initial_x_position) * (entrypoint_name_index as i32 % columns);
+    //     let y_position = initial_y_position
+    //         + (y_offset + initial_y_position) * (entrypoint_name_index as i32 / columns);
+    //     let miro_shape = MiroShape::new(
+    //         x_position,
+    //         y_position,
+    //         entrypoint_width,
+    //         entrypoint_height,
+    //         entrypoint_name.to_string(),
+    //     );
+    //     let miro_shape_style = MiroShapeStyle::new_from_hex_border_color("#2d9bf0");
+    //     miro_shape
+    //         .create_shape_in_frame(miro_shape_style, &miro_frame_id)
+    //         .await?;
+    // }
     Ok(())
 }
 
-pub async fn deploy_screenshot_to_frame(_default: bool, select_all: bool) -> Result<(), String> {
+pub async fn deploy_metadata_screenshot_to_frame(
+    _default: bool,
+    select_all: bool,
+) -> Result<(), String> {
     MiroConfig::check_miro_enabled();
 
     println!(
@@ -688,7 +791,6 @@ pub async fn deploy_screenshot_to_frame(_default: bool, select_all: bool) -> Res
 }
 
 #[test]
-
 fn test_get_miro_item_id_from_url() {
     let miro_url =
         "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544363318703&cot=14";

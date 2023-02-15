@@ -241,7 +241,7 @@ impl SourceCodeMetadata {
         x_position: i64,
         y_position: i64,
         options: SourceCodeScreenshotOptions,
-    ) {
+    ) -> String {
         let png_path = self.create_screenshot(options.clone());
         let miro_frame_id = miro_frame.item_id.clone();
         println!(
@@ -266,6 +266,7 @@ impl SourceCodeMetadata {
             ".png".green()
         );
         miro_item.update_item_parent_and_position().await;
+        screenshot_image.item_id
     }
 
     fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {

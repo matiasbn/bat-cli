@@ -87,8 +87,18 @@ enum MiroActions {
     Deploy,
     /// Creates or updates the Accounts frame
     Accounts,
-    /// Creates or updates the Entrypoints frame
-    Entrypoints,
+    /// Deploys the entrypoint, context accounts and handler to a Miro frame
+    Entrypoint {
+        /// Creates a new frame
+        #[arg(short, long)]
+        new_frame: bool,
+        /// select all options as true
+        #[arg(short, long)]
+        select_all: bool,
+        /// shows the list of entrypoints sorted by name
+        #[arg(long)]
+        sorted: bool,
+    },
     /// Creates an screenshot in a determined frame
     Metadata {
         /// deploy the screenshots with the default configuration
@@ -179,13 +189,17 @@ async fn main() {
         }
         Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_co().await.unwrap(),
         Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),
-        Commands::Miro(MiroActions::Entrypoints) => {
-            commands::miro::deploy_entrypoints().await.unwrap()
-        }
+        Commands::Miro(MiroActions::Entrypoint {
+            new_frame,
+            select_all,
+            sorted,
+        }) => commands::miro::deploy_entrypoint_screenshots_to_frame(new_frame, select_all, sorted)
+            .await
+            .unwrap(),
         Commands::Miro(MiroActions::Metadata {
             default,
             select_all,
-        }) => commands::miro::deploy_screenshot_to_frame(default, select_all)
+        }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all)
             .await
             .unwrap(),
         Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
@@ -212,6 +226,10 @@ async fn main() {
 }
 
 // mod test {
+//     use std::{thread, time::Duration};
+
+//     use colored::Colorize;
+//     use indicatif::{ProgressBar, ProgressStyle};
 
 //     #[test]
 //     fn test_bat_cli_loader() {

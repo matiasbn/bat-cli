@@ -7,6 +7,7 @@ use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
+use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use inflector::Inflector;
 use std::vec;
@@ -65,6 +66,41 @@ impl StructMetadata {
             self.start_line_index,
             self.end_line_index
         )
+    }
+
+    pub fn get_structs_markdown_sections_from_metadata_file() -> Vec<MarkdownSection> {
+        let metadata_markdown = get_metadata_markdown();
+        let structs_section = metadata_markdown
+            .get_section(&MetadataSection::Structs.to_sentence_case())
+            .unwrap();
+        let structs_subsections = metadata_markdown.get_section_subsections(structs_section);
+        structs_subsections
+    }
+
+    pub fn get_structs_metadata_from_metadata_file() -> Vec<StructMetadata> {
+        let structs_subsections = Self::get_structs_markdown_sections_from_metadata_file();
+        let structs_sourcecodes = structs_subsections
+            .into_iter()
+            .map(|subsection| StructMetadata::from_markdown_section(subsection))
+            .collect::<Vec<StructMetadata>>();
+        structs_sourcecodes
+    }
+
+    pub fn get_structs_sourcecodes() -> Vec<SourceCodeMetadata> {
+        let structs_subsections = Self::get_structs_markdown_sections_from_metadata_file();
+        let structs_sourcecodes = structs_subsections
+            .into_iter()
+            .map(|subsection| StructMetadata::from_markdown_section(subsection))
+            .map(|struct_metadata| {
+                SourceCodeMetadata::new(
+                    struct_metadata.name,
+                    struct_metadata.path,
+                    struct_metadata.start_line_index,
+                    struct_metadata.end_line_index,
+                )
+            })
+            .collect::<Vec<SourceCodeMetadata>>();
+        structs_sourcecodes
     }
 
     pub fn get_markdown_section(&self, section_hash: &str) -> MarkdownSection {

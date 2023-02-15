@@ -4,6 +4,8 @@ use colored::{ColoredString, Colorize};
 use strum::IntoEnumIterator;
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
+use crate::batbelt::metadata::source_code::SourceCodeMetadata;
+use crate::batbelt::metadata::MetadataSection;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use inflector::Inflector;
@@ -61,6 +63,50 @@ impl FunctionMetadata {
             self.path,
             self.start_line_index,
             self.end_line_index
+        )
+    }
+
+    pub fn get_functions_markdown_sections_from_metadata_file() -> Vec<MarkdownSection> {
+        let metadata_markdown = batbelt::metadata::get_metadata_markdown();
+        let functions_section = metadata_markdown
+            .get_section(&MetadataSection::Functions.to_sentence_case())
+            .unwrap();
+        let functions_subsections = metadata_markdown.get_section_subsections(functions_section);
+        functions_subsections
+    }
+
+    pub fn get_functions_metadata_from_metadata_file() -> Vec<FunctionMetadata> {
+        let functions_subsections = Self::get_functions_markdown_sections_from_metadata_file();
+        let functions_sourcecodes = functions_subsections
+            .into_iter()
+            .map(|subsection| FunctionMetadata::from_markdown_section(subsection))
+            .collect::<Vec<FunctionMetadata>>();
+        functions_sourcecodes
+    }
+
+    pub fn get_functions_sourcecodes_from_metadata_file() -> Vec<SourceCodeMetadata> {
+        let functions_subsections = Self::get_functions_markdown_sections_from_metadata_file();
+        let functions_sourcecodes = functions_subsections
+            .into_iter()
+            .map(|subsection| FunctionMetadata::from_markdown_section(subsection))
+            .map(|struct_metadata| {
+                SourceCodeMetadata::new(
+                    struct_metadata.name,
+                    struct_metadata.path,
+                    struct_metadata.start_line_index,
+                    struct_metadata.end_line_index,
+                )
+            })
+            .collect::<Vec<SourceCodeMetadata>>();
+        functions_sourcecodes
+    }
+
+    pub fn get_source_code(&self) -> SourceCodeMetadata {
+        SourceCodeMetadata::new(
+            self.name.clone(),
+            self.path.clone(),
+            self.start_line_index,
+            self.end_line_index,
         )
     }
 

@@ -6,6 +6,8 @@ pub mod structs;
 
 use crate::batbelt::{self};
 
+use crate::batbelt::markdown::MarkdownFile;
+use crate::batbelt::path::FilePathType;
 use colored::Colorize;
 use inflector::Inflector;
 
@@ -25,6 +27,11 @@ impl MetadataSection {
     pub fn to_sentence_case(&self) -> String {
         self.to_string().to_sentence_case()
     }
+}
+
+pub fn get_metadata_markdown() -> MarkdownFile {
+    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+    MarkdownFile::new(&metadata_path)
 }
 
 pub mod metadata_helpers {
