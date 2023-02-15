@@ -265,6 +265,7 @@ impl SourceCodeMetadata {
             self.name.green(),
             ".png".green()
         );
+        fs::remove_file(png_path).unwrap();
         miro_item.update_item_parent_and_position().await;
         screenshot_image.item_id
     }

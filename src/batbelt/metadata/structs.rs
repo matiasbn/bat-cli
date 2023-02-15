@@ -1,14 +1,15 @@
+use crate::batbelt::entrypoint::Entrypoint;
 use crate::batbelt::structs::FileInfo;
 use std::fmt::Debug;
 
 use crate::batbelt;
-use crate::batbelt::path::FolderPathType;
+use crate::batbelt::path::{FilePathType, FolderPathType};
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
 use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
-use crate::batbelt::sonar::{BatSonar, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use inflector::Inflector;
 use std::vec;
 use strum::IntoEnumIterator;
@@ -250,6 +251,19 @@ pub fn get_struct_metadata_from_file_info(
             .magenta(),
             result.content.clone().green()
         );
+        if assert_struct_is_context_accounts(&file_info_content, result.clone()) {
+            println!("{}", "Struct found is ContextAccounts type!".yellow());
+            let struct_type = StructMetadataType::ContextAccounts;
+            let struct_metadata = StructMetadata::new(
+                struct_file_info.path.clone(),
+                result.name.to_string(),
+                struct_type,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+            );
+            struct_metadata_vec.push(struct_metadata);
+            continue;
+        }
         let prompt_text = "Select the struct type:";
         let selection =
             batbelt::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
@@ -268,4 +282,45 @@ pub fn get_struct_metadata_from_file_info(
         struct_file_info.path.clone().blue()
     );
     Ok(struct_metadata_vec)
+}
+
+fn assert_struct_is_context_accounts(file_info_content: &str, sonar_result: SonarResult) -> bool {
+    if sonar_result.start_line_index > 0 {
+        let previous_line =
+            file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 1];
+        let filtered_previous_line = previous_line
+            .trim()
+            .trim_end_matches(")]")
+            .trim_start_matches("#[derive(");
+        let mut tokenized = filtered_previous_line.split(", ");
+        if tokenized.any(|token| token == "Acccounts") {
+            return true;
+        }
+    }
+    let context_accounts_content = vec![
+        "Signer<",
+        "AccountLoader<",
+        "UncheckedAccount<",
+        "#[account(",
+    ];
+    if context_accounts_content
+        .iter()
+        .any(|content| sonar_result.content.contains(content))
+    {
+        return true;
+    }
+    let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false);
+    let entrypoints = BatSonar::new_from_path(
+        &lib_file_path,
+        Some("#[program]"),
+        SonarResultType::Function,
+    );
+    let mut entrypoints_context_accounts_names = entrypoints
+        .results
+        .iter()
+        .map(|result| Entrypoint::get_context_name(&result.name).unwrap());
+    if entrypoints_context_accounts_names.any(|name| name == sonar_result.name) {
+        return true;
+    }
+    return false;
 }
