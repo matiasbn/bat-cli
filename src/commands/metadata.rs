@@ -1,8 +1,8 @@
 use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::metadata::functions::get_functions_metadata_from_program;
+use crate::batbelt::metadata::functions::{get_functions_metadata_from_program, FunctionMetadata};
 
-use crate::batbelt::metadata::structs::get_structs_metadata_from_program;
-use crate::batbelt::metadata::MetadataSection;
+use crate::batbelt::metadata::structs::{get_structs_metadata_from_program, StructMetadata};
+use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
 
 use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};
@@ -11,15 +11,7 @@ use colored::Colorize;
 use std::io;
 
 pub fn functions() -> Result<(), String> {
-    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
-    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
-    let functions_section = metadata_markdown
-        .get_section(&MetadataSection::Functions.to_string())
-        .unwrap();
-    // // check if empty
-    let functions_subsections =
-        metadata_markdown.get_section_subsections(functions_section.clone());
-    let is_initialized = !functions_section.content.is_empty() || functions_subsections.len() > 0;
+    let is_initialized = FunctionMetadata::functions_metadata_is_initialized();
     if is_initialized {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
             format!(
@@ -33,6 +25,8 @@ pub fn functions() -> Result<(), String> {
             panic!("User decided not to continue with the update process for functions metadata")
         }
     }
+    let mut metadata_markdown = get_metadata_markdown();
+    let functions_section = FunctionMetadata::get_functions_metadata_section();
     let functions_metadata = get_functions_metadata_from_program().unwrap();
     let functions_metadata_sections_vec = functions_metadata
         .iter()
@@ -60,8 +54,7 @@ pub fn structs() -> Result<(), io::Error> {
         .get_section(&MetadataSection::Structs.to_string())
         .unwrap();
     // // check if empty
-    let structs_subsections = metadata_markdown.get_section_subsections(structs_section.clone());
-    let is_initialized = !structs_section.content.is_empty() || structs_subsections.len() > 0;
+    let is_initialized = StructMetadata::structs_metadata_is_initialized();
     if is_initialized {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
             format!(

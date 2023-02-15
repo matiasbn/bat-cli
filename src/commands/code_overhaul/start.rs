@@ -16,7 +16,7 @@ use crate::batbelt::bash::execute_command;
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::metadata::MetadataSection;
-use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::templates::code_overhaul::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
 };
@@ -24,6 +24,7 @@ use crate::batbelt::templates::code_overhaul::{
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 
 use crate::batbelt::entrypoint::Entrypoint;
+use crate::batbelt::metadata::functions::get_function_parameters;
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), String> {

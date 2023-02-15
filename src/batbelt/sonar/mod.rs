@@ -567,55 +567,6 @@ impl SonarFilter {
     }
 }
 
-pub fn get_function_parameters(function_content: String) -> Vec<String> {
-    let content_lines = function_content.lines();
-    let function_signature = function_content.clone();
-    let function_signature = function_signature
-        .split("{")
-        .next()
-        .unwrap()
-        .split("->")
-        .next()
-        .unwrap();
-    //Function parameters
-    // single line function
-    if content_lines.clone().next().unwrap().contains(")") {
-        let function_signature_tokenized = function_signature.split("(").collect::<Vec<_>>()[1]
-            .split(")")
-            .next()
-            .unwrap()
-            .split(" ")
-            .collect::<Vec<_>>();
-        let mut parameters: Vec<String> = vec![];
-        function_signature_tokenized
-            .iter()
-            .enumerate()
-            .fold("".to_string(), |total, current| {
-                if current.1.contains(":") {
-                    if !total.is_empty() {
-                        parameters.push(total);
-                    }
-                    current.1.to_string()
-                } else if current.0 == function_signature_tokenized.len() - 1 {
-                    parameters.push(format!("{} {}", total, current.1));
-                    total
-                } else {
-                    format!("{} {}", total, current.1)
-                }
-            });
-        parameters
-    } else {
-        //multiline
-        // parameters contains :
-        let filtered: Vec<String> = function_signature
-            .lines()
-            .filter(|line| line.contains(":"))
-            .map(|line| line.trim().to_string())
-            .collect();
-        filtered
-    }
-}
-
 #[test]
 fn test_get_functions() {
     let expected_second_function = format!(
@@ -715,39 +666,6 @@ fn test_get_modules() {
     assert_eq!(first_result.name, "modName");
     assert_eq!(second_result.content, expected_second_mod);
     assert_eq!(second_result.name, "create_fleet");
-}
-
-#[test]
-fn test_get_function_parameters() {
-    let function_signature = "pub fn cancel_impulse<'info>(ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>, key_index: Option<u16>)";
-    let function_signature_tokenized = function_signature.split("(").collect::<Vec<_>>()[1]
-        .split(")")
-        .next()
-        .unwrap()
-        .split(" ")
-        .collect::<Vec<_>>();
-    let mut parameters: Vec<String> = vec![];
-    function_signature_tokenized
-        .iter()
-        .enumerate()
-        .fold("".to_string(), |total, current| {
-            if current.1.contains(":") {
-                if !total.is_empty() {
-                    parameters.push(total);
-                }
-                current.1.to_string()
-            } else if current.0 == function_signature_tokenized.len() - 1 {
-                parameters.push(format!("{} {}", total, current.1));
-                total
-            } else {
-                format!("{} {}", total, current.1)
-            }
-        });
-    assert_eq!(
-        parameters[0],
-        "ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>,"
-    );
-    assert_eq!(parameters[1], "key_index: Option<u16>");
 }
 
 #[test]

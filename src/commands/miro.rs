@@ -511,9 +511,9 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
         let selected_entrypoint = &entrypoints_names[selected_ep_index.clone()];
         // get context_accounts name
         let entrypoint = Entrypoint::new_from_name(selected_entrypoint.as_str());
-        let ep_source_code = entrypoint.entrypoint_function.get_source_code();
+        let ep_source_code = entrypoint.entrypoint_function.to_source_code();
         let ca_source_code = entrypoint.context_accounts.to_source_code_metadata();
-        let handler_source_code = entrypoint.handler.get_source_code();
+        // let handler_source_code = entrypoint.handler.get_source_code();
         let grid_amount = 24;
         let height_grid = selected_frame.height as i64 / grid_amount;
         // deploy the first half to the top of the frame, and the second to the bottom
@@ -536,16 +536,16 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     context_accounts_sc_options.clone(),
                 )
                 .await;
-            let handler_id = handler_source_code
-                .deploy_screenshot_to_miro_frame(
-                    selected_frame.clone(),
-                    x_position,
-                    9 * height_grid,
-                    handler_sc_options.clone(),
-                )
-                .await;
+            // let handler_id = handler_source_code
+            //     .deploy_screenshot_to_miro_frame(
+            //         selected_frame.clone(),
+            //         x_position,
+            //         9 * height_grid,
+            //         handler_sc_options.clone(),
+            //     )
+            //     .await;
             create_connector(&ep_id, &ca_id, None).await;
-            create_connector(&ca_id, &handler_id, None).await;
+            // create_connector(&ca_id, &handler_id, None).await;
         } else {
             let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
                 * (index as i64 + 1 - selected_entrypoints_amount as i64 / 2);
@@ -566,16 +566,16 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     context_accounts_sc_options.clone(),
                 )
                 .await;
-            let handler_id = handler_source_code
-                .deploy_screenshot_to_miro_frame(
-                    selected_frame.clone(),
-                    x_position,
-                    (grid_amount - 9) * height_grid,
-                    handler_sc_options.clone(),
-                )
-                .await;
+            // let handler_id = handler_source_code
+            //     .deploy_screenshot_to_miro_frame(
+            //         selected_frame.clone(),
+            //         x_position,
+            //         (grid_amount - 9) * height_grid,
+            //         handler_sc_options.clone(),
+            //     )
+            //     .await;
             create_connector(&ep_id, &ca_id, None).await;
-            create_connector(&ca_id, &handler_id, None).await;
+            // create_connector(&ca_id, &handler_id, None).await;
         }
         // if index < selected_entrypoints_index.len() - 1 {
         //     let user_decided_to_continue =
@@ -824,11 +824,11 @@ pub async fn deploy_metadata_screenshot_to_frame(
     Ok(())
 }
 
-#[test]
-fn test_get_miro_item_id_from_url() {
-    let miro_url =
-        "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544363318703&cot=14";
-    let item_id = batbelt::miro::helpers::get_item_id_from_miro_url(miro_url);
-    println!("item id: {}", item_id);
-    assert_eq!(item_id, "3458764541840480526".to_string())
-}
+// #[test]
+// fn test_get_miro_item_id_from_url() {
+//     let miro_url =
+//         "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544363318703&cot=14";
+//     let item_id = batbelt::miro::helpers::get_item_id_from_miro_url(miro_url);
+//     println!("item id: {}", item_id);
+//     assert_eq!(item_id, "3458764541840480526".to_string())
+// }

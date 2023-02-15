@@ -66,6 +66,14 @@ impl FunctionMetadata {
         )
     }
 
+    pub fn get_functions_metadata_section() -> MarkdownSection {
+        let mut metadata_markdown = get_metadata_markdown();
+        let functions_section = metadata_markdown
+            .get_section(&MetadataSection::Functions.to_string())
+            .unwrap();
+        functions_section
+    }
+
     pub fn functions_metadata_is_initialized() -> bool {
         let mut metadata_markdown = get_metadata_markdown();
         let functions_section = metadata_markdown
@@ -140,7 +148,7 @@ impl FunctionMetadata {
         functions_sourcecodes
     }
 
-    pub fn get_source_code(&self) -> SourceCodeMetadata {
+    pub fn to_source_code(&self) -> SourceCodeMetadata {
         SourceCodeMetadata::new(
             self.name.clone(),
             self.path.clone(),
@@ -256,6 +264,68 @@ impl FunctionMetadataType {
     }
 }
 
+pub fn get_function_parameters(function_content: String) -> Vec<String> {
+    let content_lines = function_content.lines();
+    let function_signature = get_function_signature(&function_content);
+    //Function parameters
+    // single line function
+    if content_lines.clone().next().unwrap().contains(")") {
+        let function_signature_tokenized = function_signature.split("(").collect::<Vec<_>>()[1]
+            .split(")")
+            .next()
+            .unwrap()
+            .split(" ")
+            .collect::<Vec<_>>();
+        let mut parameters: Vec<String> = vec![];
+        function_signature_tokenized
+            .iter()
+            .enumerate()
+            .fold("".to_string(), |total, current| {
+                if current.1.contains(":") {
+                    if !total.is_empty() {
+                        parameters.push(total);
+                    }
+                    current.1.to_string()
+                } else if current.0 == function_signature_tokenized.len() - 1 {
+                    parameters.push(format!("{} {}", total, current.1));
+                    total
+                } else {
+                    format!("{} {}", total, current.1)
+                }
+            });
+        parameters
+    } else {
+        //multiline
+        // parameters contains :
+        let filtered: Vec<String> = function_signature
+            .lines()
+            .filter(|line| line.contains(":"))
+            .map(|line| line.trim().trim_end_matches(",").to_string())
+            .collect();
+        filtered
+    }
+}
+
+pub fn get_function_signature(function_content: &str) -> String {
+    let function_signature = function_content.clone();
+    let function_signature = function_signature
+        .split("{")
+        .next()
+        .unwrap()
+        .split("->")
+        .next()
+        .unwrap();
+    function_signature.trim().to_string()
+}
+
+pub fn get_function_body(function_content: &str) -> String {
+    let function_body = function_content.clone();
+    let mut body = function_body.split("{");
+    body.next();
+    let body = body.collect::<Vec<_>>().join("{");
+    body.trim_end_matches("}").trim().to_string()
+}
+
 pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, String> {
     let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
     let program_folder_files_info =
@@ -309,4 +379,70 @@ pub fn get_function_metadata_from_file_info(
         function_file_info.path.clone().blue()
     );
     Ok(function_metadata_vec)
+}
+
+#[test]
+
+fn test_function_parse() {
+    let test_function = "pub fn get_function_metadata_from_file_info(
+    function_file_info: FileInfo,
+    function_file_info2: FileInfo2,
+) -> Result<Vec<FunctionMetadata>, String> {
+    let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
+    let file_info_content = function_file_info.read_content().unwrap();
+    let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
+    let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
+    for result in bat_sonar.results {
+        let selection =
+            batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
+        let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
+        let function_metadata = FunctionMetadata::new(
+            function_file_info.path.clone(),
+            result.name.to_string(),
+            function_type,
+            result.start_line_index + 1,
+            result.end_line_index + 1,
+        );
+        function_metadata_vec.push(function_metadata);
+    }
+    Ok(function_metadata_vec)
+}";
+    let expected_function_signature = "pub fn get_function_metadata_from_file_info(
+    function_file_info: FileInfo,
+    function_file_info2: FileInfo2,
+)";
+    let expected_function_parameters = vec![
+        "function_file_info: FileInfo".to_string(),
+        "function_file_info2: FileInfo2".to_string(),
+    ];
+    let expected_function_body = "let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
+    let file_info_content = function_file_info.read_content().unwrap();
+    let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
+    let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
+    for result in bat_sonar.results {
+        let selection =
+            batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
+        let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
+        let function_metadata = FunctionMetadata::new(
+            function_file_info.path.clone(),
+            result.name.to_string(),
+            function_type,
+            result.start_line_index + 1,
+            result.end_line_index + 1,
+        );
+        function_metadata_vec.push(function_metadata);
+    }
+    Ok(function_metadata_vec)";
+    let function_parameters = get_function_parameters(test_function.to_string());
+    assert_eq!(
+        expected_function_parameters, function_parameters,
+        "wrong parameters"
+    );
+    let function_body = get_function_body(test_function);
+    assert_eq!(expected_function_body, function_body, "wrong body");
+    let function_signature = get_function_signature(test_function);
+    assert_eq!(
+        expected_function_signature, function_signature,
+        "wrong signature"
+    );
 }

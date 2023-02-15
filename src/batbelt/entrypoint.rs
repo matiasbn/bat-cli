@@ -1,9 +1,11 @@
 use crate::batbelt;
 use crate::batbelt::helpers::get::get_all_rust_files_from_program_path;
-use crate::batbelt::metadata::functions::{FunctionMetadata, FunctionMetadataType};
+use crate::batbelt::metadata::functions::{
+    get_function_parameters, FunctionMetadata, FunctionMetadataType,
+};
 use crate::batbelt::metadata::metadata_is_initialized;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
-use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use crate::config::{BatConfig, RequiredConfig};
 use colored::Colorize;
@@ -12,25 +14,22 @@ use std::path::Path;
 
 pub struct Entrypoint {
     pub name: String,
-    pub handler: FunctionMetadata,
+    pub handler: Option<FunctionMetadata>,
     pub context_accounts: StructMetadata,
-    pub instruction_file_path: String,
     pub entrypoint_function: FunctionMetadata,
 }
 
 impl Entrypoint {
     pub fn new(
         name: String,
-        handler: FunctionMetadata,
+        handler: Option<FunctionMetadata>,
         context_accounts: StructMetadata,
-        instruction_file_path: String,
         entrypoint_function: FunctionMetadata,
     ) -> Self {
         Self {
             name,
             handler,
             context_accounts,
-            instruction_file_path,
             entrypoint_function,
         }
     }
@@ -52,17 +51,22 @@ impl Entrypoint {
                     && function_metadata.name == entrypoint_name
             })
             .unwrap();
-        let instruction_file_path =
-            Self::get_instruction_file_path_with_prompts(entrypoint_name).unwrap();
+        let handlers =
+            FunctionMetadata::get_functions_metadata_by_type(FunctionMetadataType::Handler);
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
-
-        let handler = functions_metadata
-            .iter()
-            .find(|function_metadata| {
-                function_metadata.function_type == FunctionMetadataType::Handler
-                    && function_metadata.path == instruction_file_path
-            })
-            .unwrap();
+        let handler = handlers.into_iter().find(|function_metadata| {
+            let function_source_code = function_metadata.to_source_code();
+            let function_content = function_source_code.get_source_code_content();
+            let function_parameters = get_function_parameters(function_content);
+            if !function_parameters.is_empty()
+                && function_parameters[0].contains("Context<")
+                && function_parameters[0].contains(&context_name)
+            {
+                return true;
+            } else {
+                return false;
+            }
+        });
         let structs_metadata = StructMetadata::get_structs_metadata_from_metadata_file();
         let context_accounts = structs_metadata
             .iter()
@@ -75,7 +79,6 @@ impl Entrypoint {
             name: entrypoint_name.to_string(),
             handler: handler.clone(),
             context_accounts: context_accounts.clone(),
-            instruction_file_path,
             entrypoint_function: entrypoint_function.clone(),
         }
     }
