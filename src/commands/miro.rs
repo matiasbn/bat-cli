@@ -473,10 +473,11 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
     }
     // prompt to select the frame
     let miro_frames = MiroFrame::get_frames_from_miro().await;
-    let miro_frames_names = miro_frames
+    let mut miro_frames_names = miro_frames
         .iter()
         .map(|frame| frame.title.to_string())
         .collect::<Vec<_>>();
+    miro_frames_names.sort();
     let prompt_text = "Please select the Miro frame to deploy";
     let selected_frame_index =
         batbelt::cli_inputs::select(prompt_text, miro_frames_names, None).unwrap();
