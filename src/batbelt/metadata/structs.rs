@@ -6,9 +6,7 @@ use crate::batbelt;
 use crate::batbelt::path::{FilePathType, FolderPathType};
 use colored::{ColoredString, Colorize};
 
-use crate::batbelt::markdown::{
-    MarkdownFile, MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel,
-};
+use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
 use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
@@ -72,7 +70,7 @@ impl StructMetadata {
     }
 
     pub fn structs_metadata_is_initialized() -> bool {
-        let mut metadata_markdown = get_metadata_markdown();
+        let metadata_markdown = get_metadata_markdown();
         let structs_section = metadata_markdown
             .get_section(&MetadataSection::Structs.to_string())
             .unwrap();
@@ -270,7 +268,7 @@ pub fn get_struct_metadata_from_file_info(
         struct_file_info.path.clone().blue()
     );
     let file_info_content = struct_file_info.read_content().unwrap();
-    let struct_types_colored = StructMetadataType::get_colorized_structs_type_vec();
+    let _struct_types_colored = StructMetadataType::get_colorized_structs_type_vec();
     let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Struct);
     for result in bat_sonar.results {
         println!(
