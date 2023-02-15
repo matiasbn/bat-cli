@@ -37,9 +37,6 @@ use crate::batbelt::templates::code_overhaul::{
 
 pub async fn deploy_co() -> Result<(), String> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
-    // check empty images
-    // get files and folders from started, filter .md files
-    // let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
     let started_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false);
     let started_files_file_info = get_only_files_from_folder(started_path).unwrap();
     let file_names = started_files_file_info
@@ -583,36 +580,6 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
             }
         }
     }
-    // // get entrypoint miro frame url
-    // let prompt_text = format!("Please enter the {}", "entrypoints frame url".green());
-    // let entrypoints_frame_url = batbelt::cli_inputs::input(&prompt_text)?;
-    // let miro_frame_id = batbelt::miro::helpers::get_item_id_from_miro_url(&entrypoints_frame_url);
-
-    // for (entrypoint_name_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
-    //     // example
-    //     let columns = 5;
-    //     let initial_x_position = 372;
-    //     let initial_y_position = 243;
-    //     let entrypoint_width = 374;
-    //     let entrypoint_height = 164;
-    //     let x_offset = 40;
-    //     let y_offset = 40;
-    //     let x_position = initial_x_position
-    //         + (x_offset + initial_x_position) * (entrypoint_name_index as i32 % columns);
-    //     let y_position = initial_y_position
-    //         + (y_offset + initial_y_position) * (entrypoint_name_index as i32 / columns);
-    //     let miro_shape = MiroShape::new(
-    //         x_position,
-    //         y_position,
-    //         entrypoint_width,
-    //         entrypoint_height,
-    //         entrypoint_name.to_string(),
-    //     );
-    //     let miro_shape_style = MiroShapeStyle::new_from_hex_border_color("#2d9bf0");
-    //     miro_shape
-    //         .create_shape_in_frame(miro_shape_style, &miro_frame_id)
-    //         .await?;
-    // }
     Ok(())
 }
 
