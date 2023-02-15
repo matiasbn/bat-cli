@@ -1,4 +1,4 @@
-use crate::batbelt::entrypoint::Entrypoint;
+use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::structs::FileInfo;
 use std::fmt::Debug;
 
@@ -208,8 +208,6 @@ impl StructMetadata {
 pub enum StructMetadataType {
     ContextAccounts,
     SolanaAccount,
-    Event,
-    Input,
     Other,
 }
 
@@ -242,8 +240,6 @@ impl StructMetadataType {
             .map(|struct_type| match struct_type {
                 StructMetadataType::ContextAccounts => struct_type.to_sentence_case().red(),
                 StructMetadataType::SolanaAccount => struct_type.to_sentence_case().yellow(),
-                StructMetadataType::Event => struct_type.to_sentence_case().green(),
-                StructMetadataType::Input => struct_type.to_sentence_case().blue(),
                 StructMetadataType::Other => struct_type.to_sentence_case().magenta(),
                 _ => unimplemented!("color no implemented for given type"),
             })
@@ -300,10 +296,23 @@ pub fn get_struct_metadata_from_file_info(
             struct_metadata_vec.push(struct_metadata);
             continue;
         }
-        let prompt_text = "Select the struct type:";
-        let selection =
-            batbelt::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
-        let struct_type = StructMetadataType::get_structs_type_vec()[selection];
+        if assert_struct_is_solana_account(&file_info_content, result.clone()) {
+            println!("{}", "Struct found is SolanaAccount type!".yellow());
+            let struct_type = StructMetadataType::SolanaAccount;
+            let struct_metadata = StructMetadata::new(
+                struct_file_info.path.clone(),
+                result.name.to_string(),
+                struct_type,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+            );
+            struct_metadata_vec.push(struct_metadata);
+            continue;
+        }
+        // let prompt_text = "Select the struct type:";
+        // let selection =
+        //     batbelt::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
+        let struct_type = StructMetadataType::Other;
         let struct_metadata = StructMetadata::new(
             struct_file_info.path.clone(),
             result.name.to_string(),
@@ -354,9 +363,28 @@ fn assert_struct_is_context_accounts(file_info_content: &str, sonar_result: Sona
     let mut entrypoints_context_accounts_names = entrypoints
         .results
         .iter()
-        .map(|result| Entrypoint::get_context_name(&result.name).unwrap());
+        .map(|result| EntrypointParser::get_context_name(&result.name).unwrap());
     if entrypoints_context_accounts_names.any(|name| name == sonar_result.name) {
         return true;
     }
+    return false;
+}
+
+fn assert_struct_is_solana_account(file_info_content: &str, sonar_result: SonarResult) -> bool {
+    if sonar_result.start_line_index > 3 {
+        let previous_line_1 =
+            file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 1];
+        let previous_line_2 =
+            file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 2];
+        let previous_line_3 =
+            file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 3];
+        if previous_line_1.contains("#[account")
+            || previous_line_2.contains("#[account")
+            || previous_line_3.contains("#[account")
+        {
+            return true;
+        }
+    }
+
     return false;
 }

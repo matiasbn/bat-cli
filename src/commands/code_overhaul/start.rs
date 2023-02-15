@@ -23,7 +23,7 @@ use crate::batbelt::templates::code_overhaul::{
 
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 
-use crate::batbelt::entrypoint::Entrypoint;
+use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::metadata::functions::get_function_parameters;
 use std::string::String;
 
@@ -58,7 +58,7 @@ pub fn start_co_file() -> Result<(), String> {
     );
 
     let instruction_file_path =
-        Entrypoint::get_instruction_file_path_with_prompts(&to_start_file_name)?;
+        EntrypointParser::get_instruction_file_path_with_prompts(&to_start_file_name)?;
 
     let program_lib_path = bat_config.required.program_lib_path;
 

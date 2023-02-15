@@ -1,5 +1,7 @@
 use crate::batbelt;
+use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::path::FolderPathType;
+use crate::config::BatConfig;
 use colored::{ColoredString, Colorize};
 use strum::IntoEnumIterator;
 
@@ -67,7 +69,7 @@ impl FunctionMetadata {
     }
 
     pub fn get_functions_metadata_section() -> MarkdownSection {
-        let mut metadata_markdown = get_metadata_markdown();
+        let metadata_markdown = get_metadata_markdown();
         let functions_section = metadata_markdown
             .get_section(&MetadataSection::Functions.to_string())
             .unwrap();
@@ -75,7 +77,7 @@ impl FunctionMetadata {
     }
 
     pub fn functions_metadata_is_initialized() -> bool {
-        let mut metadata_markdown = get_metadata_markdown();
+        let metadata_markdown = get_metadata_markdown();
         let functions_section = metadata_markdown
             .get_section(&MetadataSection::Structs.to_string())
             .unwrap();
@@ -218,10 +220,8 @@ impl FunctionMetadata {
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 pub enum FunctionMetadataType {
-    Handler,
     EntryPoint,
-    Helper,
-    Validator,
+    Handler,
     Other,
 }
 
@@ -254,8 +254,6 @@ impl FunctionMetadataType {
             .map(|function_type| match function_type {
                 FunctionMetadataType::Handler => function_type.to_sentence_case().red(),
                 FunctionMetadataType::EntryPoint => function_type.to_sentence_case().yellow(),
-                FunctionMetadataType::Helper => function_type.to_sentence_case().green(),
-                FunctionMetadataType::Validator => function_type.to_sentence_case().blue(),
                 FunctionMetadataType::Other => function_type.to_sentence_case().magenta(),
                 _ => unimplemented!("color no implemented for given type"),
             })
@@ -269,6 +267,7 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
     let function_signature = get_function_signature(&function_content);
     //Function parameters
     // single line function
+    // info!("function content: \n {}", function_content);
     if content_lines.clone().next().unwrap().contains("{") {
         let function_signature_tokenized = function_signature
             .trim_start_matches("pub (crate) fn ")
@@ -279,6 +278,9 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
             .trim_end_matches(")")
             .split(" ")
             .collect::<Vec<_>>();
+        if function_signature_tokenized.is_empty() || function_signature_tokenized[0].is_empty() {
+            return vec![];
+        }
         let mut parameters: Vec<String> = vec![];
         function_signature_tokenized
             .iter()
@@ -351,9 +353,12 @@ pub fn get_function_metadata_from_file_info(
         function_file_info.path.clone().blue()
     );
     let file_info_content = function_file_info.read_content().unwrap();
-    let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
+    // let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
     let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
+    let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
+    let context_names = EntrypointParser::get_all_contexts_names();
     for result in bat_sonar.results {
+        let function_signature = get_function_signature(&result.content);
         println!(
             "Function found at {}\n{}",
             format!(
@@ -362,12 +367,65 @@ pub fn get_function_metadata_from_file_info(
                 result.start_line_index + 1,
             )
             .magenta(),
-            result.content.clone().green()
+            function_signature.green()
         );
-        let prompt_text = "Select the function type:";
-        let selection =
-            batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
-        let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
+        if function_file_info.path
+            == BatConfig::get_validated_config()
+                .unwrap()
+                .required
+                .program_lib_path
+        {
+            if entrypoints_names
+                .clone()
+                .into_iter()
+                .any(|ep_name| ep_name == result.name)
+            {
+                println!("{}", "Function found is Entrypoint type!".yellow());
+                let function_type = FunctionMetadataType::EntryPoint;
+                let function_metadata = FunctionMetadata::new(
+                    function_file_info.path.clone(),
+                    result.name.to_string(),
+                    function_type,
+                    result.start_line_index + 1,
+                    result.end_line_index + 1,
+                );
+                function_metadata_vec.push(function_metadata);
+                continue;
+            }
+        }
+        let result_source_code = SourceCodeMetadata::new(
+            result.name.clone(),
+            function_file_info.path.clone(),
+            result.start_line_index.clone() + 1,
+            result.end_line_index.clone() + 1,
+        );
+        let result_content = result_source_code.get_source_code_content();
+        let result_parameters = get_function_parameters(result_content.clone());
+        if !result_parameters.is_empty() {
+            let first_parameter = result_parameters[0].clone();
+            if first_parameter.contains("Context")
+                && context_names
+                    .clone()
+                    .into_iter()
+                    .any(|cx_name| first_parameter.contains(&cx_name))
+            {
+                println!("{}", "Function found is Handler type!".yellow());
+                let function_type = FunctionMetadataType::Handler;
+                let function_metadata = FunctionMetadata::new(
+                    function_file_info.path.clone(),
+                    result.name.to_string(),
+                    function_type,
+                    result.start_line_index + 1,
+                    result.end_line_index + 1,
+                );
+                function_metadata_vec.push(function_metadata);
+                continue;
+            }
+        }
+        // let prompt_text = "Select the function type:";
+        // let selection =
+        //     batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
+        let function_type = FunctionMetadataType::Other;
         let function_metadata = FunctionMetadata::new(
             function_file_info.path.clone(),
             result.name.to_string(),
@@ -387,10 +445,7 @@ pub fn get_function_metadata_from_file_info(
 #[test]
 
 fn test_function_parse() {
-    let test_function = "pub(crate) fn get_function_metadata_from_file_info(
-    function_file_info: FileInfo,
-    function_file_info2: FileInfo2,
-) -> Result<Vec<FunctionMetadata>, String> {
+    let test_function = "pub(crate) fn get_function_metadata_from_file_info() -> Result<Vec<FunctionMetadata>, String> {
     let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
     let file_info_content = function_file_info.read_content().unwrap();
     let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();

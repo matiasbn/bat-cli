@@ -13,14 +13,14 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
-pub struct Entrypoint {
+pub struct EntrypointParser {
     pub name: String,
     pub handler: Option<FunctionMetadata>,
     pub context_accounts: StructMetadata,
     pub entrypoint_function: FunctionMetadata,
 }
 
-impl Entrypoint {
+impl EntrypointParser {
     pub fn new(
         name: String,
         handler: Option<FunctionMetadata>,
@@ -64,7 +64,6 @@ impl Entrypoint {
         let handler = handlers.into_iter().find(|function_metadata| {
             let function_source_code = function_metadata.to_source_code();
             let function_content = function_source_code.get_source_code_content();
-            // info!("handler content: \n{:#?}", function_content);
             let function_parameters = get_function_parameters(function_content.clone());
             !function_parameters.is_empty()
                 && function_parameters[0].contains("Context<")
@@ -110,6 +109,15 @@ impl Entrypoint {
             entrypoints_names.sort();
         }
         Ok(entrypoints_names)
+    }
+
+    pub fn get_all_contexts_names() -> Vec<String> {
+        let entrypoints_names = Self::get_entrypoints_names(false).unwrap();
+        let context_accounts_names = entrypoints_names
+            .into_iter()
+            .map(|ep_name| Self::get_context_name(&ep_name).unwrap())
+            .collect::<Vec<_>>();
+        context_accounts_names
     }
 
     pub fn get_instruction_file_path_with_prompts(entrypoint_name: &str) -> Result<String, String> {

@@ -6,7 +6,9 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::MiroItemType;
+use crate::batbelt::path::FilePathType;
 use crate::batbelt::silicon;
+use crate::batbelt::sonar::BatSonar;
 use crate::batbelt::{self, path::FolderPathType};
 
 use super::MetadataSection;
@@ -85,6 +87,24 @@ impl SourceCodeMetadata {
             .to_vec()
             .join("\n");
         content_lines
+    }
+
+    pub fn get_entrypoints_sourcecode() -> Vec<Self> {
+        let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false);
+        let entrypoints = BatSonar::get_entrypoints_results();
+        let sourcecodes = entrypoints
+            .results
+            .into_iter()
+            .map(|res| {
+                SourceCodeMetadata::new(
+                    res.name,
+                    lib_file_path.clone(),
+                    res.start_line_index,
+                    res.end_line_index,
+                )
+            })
+            .collect();
+        sourcecodes
     }
 
     // pub fn new_from_metadata_data(name: &str, section: &str, subsection: &str) -> Self {

@@ -1,3 +1,5 @@
+use crate::batbelt;
+use crate::batbelt::path::FilePathType;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fmt::Debug;
@@ -63,6 +65,15 @@ impl BatSonar {
         }
         new_sonar.scan_content_to_get_results();
         new_sonar
+    }
+    pub fn get_entrypoints_results() -> Self {
+        let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false);
+        let entrypoints = BatSonar::new_from_path(
+            &lib_file_path,
+            Some("#[program]"),
+            SonarResultType::Function,
+        );
+        entrypoints
     }
 
     pub fn scan_content_to_get_results(&mut self) {

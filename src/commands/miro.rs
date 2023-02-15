@@ -11,7 +11,7 @@ use toml::map::Entry;
 
 use crate::batbelt::markdown::MarkdownFile;
 
-use crate::batbelt::entrypoint::Entrypoint;
+use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::helpers::get::get_only_files_from_folder;
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::{FunctionMetadata, FunctionMetadataType};
@@ -456,7 +456,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
     sorted: bool,
 ) -> Result<(), String> {
     // get entrypoints name
-    let entrypoints_names = Entrypoint::get_entrypoints_names(sorted)?;
+    let entrypoints_names = EntrypointParser::get_entrypoints_names(sorted)?;
 
     // prompt the user to select an entrypoint
     let prompt_text = "Please select the entrypoints to deploy";
@@ -510,7 +510,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
     for (index, selected_ep_index) in selected_entrypoints_index.iter().enumerate() {
         let selected_entrypoint = &entrypoints_names[selected_ep_index.clone()];
         // get context_accounts name
-        let entrypoint = Entrypoint::new_from_name(selected_entrypoint.as_str());
+        let entrypoint = EntrypointParser::new_from_name(selected_entrypoint.as_str());
         let ep_source_code = entrypoint.entrypoint_function.to_source_code();
         let ca_source_code = entrypoint.context_accounts.to_source_code_metadata();
         let grid_amount = 24;

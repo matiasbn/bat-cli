@@ -11,6 +11,11 @@ use colored::Colorize;
 use std::io;
 
 pub fn functions() -> Result<(), String> {
+    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
+    let functions_section = metadata_markdown
+        .get_section(&MetadataSection::Functions.to_string())
+        .unwrap();
     let is_initialized = FunctionMetadata::functions_metadata_is_initialized();
     if is_initialized {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
@@ -25,8 +30,6 @@ pub fn functions() -> Result<(), String> {
             panic!("User decided not to continue with the update process for functions metadata")
         }
     }
-    let mut metadata_markdown = get_metadata_markdown();
-    let functions_section = FunctionMetadata::get_functions_metadata_section();
     let functions_metadata = get_functions_metadata_from_program().unwrap();
     let functions_metadata_sections_vec = functions_metadata
         .iter()
