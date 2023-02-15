@@ -1,6 +1,7 @@
 use crate::batbelt;
-use crate::batbelt::helpers::get::get_instruction_files;
+use crate::batbelt::helpers::get::get_all_rust_files_from_program_path;
 use crate::batbelt::metadata::functions::{FunctionMetadata, FunctionMetadataType};
+use crate::batbelt::metadata::metadata_is_initialized;
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::sonar::{get_function_parameters, BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
@@ -35,10 +36,26 @@ impl Entrypoint {
     }
 
     pub fn new_from_name(entrypoint_name: &str) -> Self {
+        assert!(
+            StructMetadata::structs_metadata_is_initialized(),
+            "Can't run without initializing structs metadata"
+        );
+        assert!(
+            StructMetadata::structs_metadata_is_initialized(),
+            "Can't run without initializing structs metadata"
+        );
+        let functions_metadata = FunctionMetadata::get_functions_metadata_from_metadata_file();
+        let entrypoint_function = functions_metadata
+            .iter()
+            .find(|function_metadata| {
+                function_metadata.function_type == FunctionMetadataType::EntryPoint
+                    && function_metadata.name == entrypoint_name
+            })
+            .unwrap();
         let instruction_file_path =
             Self::get_instruction_file_path_with_prompts(entrypoint_name).unwrap();
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
-        let functions_metadata = FunctionMetadata::get_functions_metadata_from_metadata_file();
+
         let handler = functions_metadata
             .iter()
             .find(|function_metadata| {
@@ -52,13 +69,6 @@ impl Entrypoint {
             .find(|struct_metadata| {
                 struct_metadata.struct_type == StructMetadataType::ContextAccounts
                     && struct_metadata.name == context_name
-            })
-            .unwrap();
-        let entrypoint_function = functions_metadata
-            .iter()
-            .find(|function_metadata| {
-                function_metadata.function_type == FunctionMetadataType::EntryPoint
-                    && function_metadata.name == entrypoint_name
             })
             .unwrap();
         Self {
@@ -93,7 +103,7 @@ impl Entrypoint {
     }
 
     pub fn get_instruction_file_path_with_prompts(entrypoint_name: &str) -> Result<String, String> {
-        let instruction_files_info = get_instruction_files()?;
+        let instruction_files_info = get_all_rust_files_from_program_path()?;
 
         let instruction_match = instruction_files_info
             .iter()
@@ -129,6 +139,8 @@ impl Entrypoint {
         };
         Ok(instruction_file_path.clone())
     }
+
+    // fn assert_file_match_entrypoint_name()
 
     pub fn get_context_name(entrypoint_name: &str) -> Result<String, String> {
         let BatConfig { required, .. } = BatConfig::get_validated_config()?;

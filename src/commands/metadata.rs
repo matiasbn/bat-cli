@@ -80,7 +80,7 @@ pub fn structs() -> Result<(), io::Error> {
         .iter()
         .map(|struct_metadata| {
             struct_metadata
-                .get_markdown_section(&structs_section.section_header.section_hash.clone())
+                .to_markdown_section(&structs_section.section_header.section_hash.clone())
         })
         .collect::<Vec<_>>();
     metadata_markdown

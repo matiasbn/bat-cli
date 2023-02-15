@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
-use crate::batbelt::metadata::MetadataSection;
+use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use inflector::Inflector;
@@ -64,6 +64,45 @@ impl FunctionMetadata {
             self.start_line_index,
             self.end_line_index
         )
+    }
+
+    pub fn functions_metadata_is_initialized() -> bool {
+        let mut metadata_markdown = get_metadata_markdown();
+        let functions_section = metadata_markdown
+            .get_section(&MetadataSection::Structs.to_string())
+            .unwrap();
+        // // check if empty
+        let functions_subsections =
+            metadata_markdown.get_section_subsections(functions_section.clone());
+        let is_initialized =
+            !functions_section.content.is_empty() || functions_subsections.len() > 0;
+        is_initialized
+    }
+
+    pub fn get_functions_metadata_by_type(
+        function_type: FunctionMetadataType,
+    ) -> Vec<FunctionMetadata> {
+        let functions_metadata = Self::get_functions_metadata_from_metadata_file();
+        functions_metadata
+            .into_iter()
+            .filter(|function_metadata| function_metadata.function_type == function_type)
+            .collect::<Vec<_>>()
+    }
+
+    pub fn get_functions_metadata_names_by_type(
+        function_type: FunctionMetadataType,
+    ) -> Vec<String> {
+        let functions_metadata = Self::get_functions_metadata_from_metadata_file();
+        functions_metadata
+            .into_iter()
+            .filter_map(|function_metadata| {
+                if function_metadata.function_type == function_type {
+                    Some(function_metadata.name)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
     }
 
     pub fn get_functions_markdown_sections_from_metadata_file() -> Vec<MarkdownSection> {

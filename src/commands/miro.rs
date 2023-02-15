@@ -12,14 +12,12 @@ use toml::map::Entry;
 use crate::batbelt::markdown::MarkdownFile;
 
 use crate::batbelt::entrypoint::Entrypoint;
-use crate::batbelt::helpers::get::{get_context_name, get_only_files_from_folder};
+use crate::batbelt::helpers::get::get_only_files_from_folder;
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::{FunctionMetadata, FunctionMetadataType};
 use crate::batbelt::metadata::MetadataSection;
+use crate::batbelt::path::FilePathType;
 use crate::batbelt::structs::{SignerInfo, SignerType};
-use crate::{
-    batbelt::path::FilePathType, commands::entrypoints::entrypoints::get_entrypoints_names,
-};
 
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
 use crate::batbelt::metadata::source_code::SourceCodeScreenshotOptions;
@@ -416,35 +414,35 @@ fn prompt_select_started_co_folder() -> Result<(String, String), String> {
     ))
 }
 
-pub fn create_co_snapshots() -> Result<(), String> {
-    assert!(self::helpers::check_silicon_installed());
-    let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
-    let co_file_string = fs::read_to_string(selected_co_started_path.clone()).expect(
-        format!(
-            "Error opening code-overhaul file at: {}",
-            selected_co_started_path.clone()
-        )
-        .as_str(),
-    );
-    for figure in CO_FIGURES {
-        println!("creating {} image for {}", figure, selected_folder);
-        let (file_lines, snapshot_image_path, snapshot_markdown_path, index) =
-            self::helpers::get_data_for_snapshots(
-                co_file_string.clone(),
-                selected_co_started_path.clone(),
-                selected_folder.clone(),
-                figure.to_string(),
-            )?;
-        self::helpers::create_co_figure(
-            file_lines,
-            snapshot_image_path,
-            snapshot_markdown_path,
-            index,
-        );
-    }
-    //
-    Ok(())
-}
+// pub fn create_co_snapshots() -> Result<(), String> {
+//     assert!(self::helpers::check_silicon_installed());
+//     let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
+//     let co_file_string = fs::read_to_string(selected_co_started_path.clone()).expect(
+//         format!(
+//             "Error opening code-overhaul file at: {}",
+//             selected_co_started_path.clone()
+//         )
+//         .as_str(),
+//     );
+//     for figure in CO_FIGURES {
+//         println!("creating {} image for {}", figure, selected_folder);
+//         let (file_lines, snapshot_image_path, snapshot_markdown_path, index) =
+//             self::helpers::get_data_for_snapshots(
+//                 co_file_string.clone(),
+//                 selected_co_started_path.clone(),
+//                 selected_folder.clone(),
+//                 figure.to_string(),
+//             )?;
+//         self::helpers::create_co_figure(
+//             file_lines,
+//             snapshot_image_path,
+//             snapshot_markdown_path,
+//             index,
+//         );
+//     }
+//     //
+//     Ok(())
+// }
 
 pub async fn deploy_accounts() -> Result<(), String> {
     let accounts_frame_id = self::helpers::get_accounts_frame_id().await?;
@@ -474,7 +472,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
     // prompt to select the frame
     let mut miro_frames = MiroFrame::get_frames_from_miro().await;
     miro_frames.sort_by(|frame_a, frame_b| frame_a.title.cmp(&frame_b.title));
-    let mut miro_frames_names = miro_frames
+    let miro_frames_names = miro_frames
         .iter()
         .map(|frame| frame.title.to_string())
         .collect::<Vec<_>>();
@@ -508,50 +506,85 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
         filters: None,
         show_line_number: true,
     };
+    let selected_entrypoints_amount = selected_entrypoints_index.len();
     for (index, selected_ep_index) in selected_entrypoints_index.iter().enumerate() {
         let selected_entrypoint = &entrypoints_names[selected_ep_index.clone()];
         // get context_accounts name
         let entrypoint = Entrypoint::new_from_name(selected_entrypoint.as_str());
         let ep_source_code = entrypoint.entrypoint_function.get_source_code();
-        let ca_source_code = entrypoint.context_accounts.get_source_code();
+        let ca_source_code = entrypoint.context_accounts.to_source_code_metadata();
         let handler_source_code = entrypoint.handler.get_source_code();
-        let ep_id = ep_source_code
-            .deploy_screenshot_to_miro_frame(
-                selected_frame.clone(),
-                (selected_frame.clone().width / 2) as i64,
-                (selected_frame.clone().height * 2 / 6) as i64,
-                // 0,
-                entrypoint_sc_options.clone(),
-            )
-            .await;
-        let ca_id = ca_source_code
-            .deploy_screenshot_to_miro_frame(
-                selected_frame.clone(),
-                (selected_frame.clone().width / 2) as i64,
-                (selected_frame.clone().height * 3 / 6) as i64,
-                // 0,
-                context_accounts_sc_options.clone(),
-            )
-            .await;
-        let handler_id = handler_source_code
-            .deploy_screenshot_to_miro_frame(
-                selected_frame.clone(),
-                (selected_frame.clone().width / 2) as i64,
-                (selected_frame.clone().height * 4 / 6) as i64,
-                // 0,
-                handler_sc_options.clone(),
-            )
-            .await;
-        create_connector(&ep_id, &ca_id, None).await;
-        create_connector(&ca_id, &handler_id, None).await;
-        if index < selected_entrypoints_index.len() - 1 {
-            let user_decided_to_continue =
-                batbelt::cli_inputs::select_yes_or_no("Do you want to continue deploying?")
-                    .unwrap();
-            if !user_decided_to_continue {
-                break;
-            }
+        let grid_amount = 24;
+        let height_grid = selected_frame.height as i64 / grid_amount;
+        // deploy the first half to the top of the frame, and the second to the bottom
+        if index < selected_entrypoints_amount / 2 {
+            let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
+                * (2 * index as i64 + 1);
+            let ep_id = ep_source_code
+                .deploy_screenshot_to_miro_frame(
+                    selected_frame.clone(),
+                    x_position,
+                    1 * height_grid,
+                    entrypoint_sc_options.clone(),
+                )
+                .await;
+            let ca_id = ca_source_code
+                .deploy_screenshot_to_miro_frame(
+                    selected_frame.clone(),
+                    x_position,
+                    5 * height_grid,
+                    context_accounts_sc_options.clone(),
+                )
+                .await;
+            let handler_id = handler_source_code
+                .deploy_screenshot_to_miro_frame(
+                    selected_frame.clone(),
+                    x_position,
+                    9 * height_grid,
+                    handler_sc_options.clone(),
+                )
+                .await;
+            create_connector(&ep_id, &ca_id, None).await;
+            create_connector(&ca_id, &handler_id, None).await;
+        } else {
+            let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
+                * (index as i64 + 1 - selected_entrypoints_amount as i64 / 2);
+
+            let ep_id = ep_source_code
+                .deploy_screenshot_to_miro_frame(
+                    selected_frame.clone(),
+                    x_position,
+                    (grid_amount - 1) * height_grid,
+                    entrypoint_sc_options.clone(),
+                )
+                .await;
+            let ca_id = ca_source_code
+                .deploy_screenshot_to_miro_frame(
+                    selected_frame.clone(),
+                    x_position,
+                    (grid_amount - 5) * height_grid,
+                    context_accounts_sc_options.clone(),
+                )
+                .await;
+            let handler_id = handler_source_code
+                .deploy_screenshot_to_miro_frame(
+                    selected_frame.clone(),
+                    x_position,
+                    (grid_amount - 9) * height_grid,
+                    handler_sc_options.clone(),
+                )
+                .await;
+            create_connector(&ep_id, &ca_id, None).await;
+            create_connector(&ca_id, &handler_id, None).await;
         }
+        // if index < selected_entrypoints_index.len() - 1 {
+        //     let user_decided_to_continue =
+        //         batbelt::cli_inputs::select_yes_or_no("Do you want to continue deploying?")
+        //             .unwrap();
+        //     if !user_decided_to_continue {
+        //         break;
+        //     }
+        // }
     }
     // // get entrypoint miro frame url
     // let prompt_text = format!("Please enter the {}", "entrypoints frame url".green());

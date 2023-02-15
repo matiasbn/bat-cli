@@ -6,7 +6,9 @@ use crate::batbelt;
 use crate::batbelt::path::{FilePathType, FolderPathType};
 use colored::{ColoredString, Colorize};
 
-use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
+use crate::batbelt::markdown::{
+    MarkdownFile, MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel,
+};
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
 use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
@@ -69,7 +71,41 @@ impl StructMetadata {
         )
     }
 
-    pub fn get_structs_markdown_sections_from_metadata_file() -> Vec<MarkdownSection> {
+    pub fn structs_metadata_is_initialized() -> bool {
+        let mut metadata_markdown = get_metadata_markdown();
+        let structs_section = metadata_markdown
+            .get_section(&MetadataSection::Structs.to_string())
+            .unwrap();
+        // // check if empty
+        let structs_subsections =
+            metadata_markdown.get_section_subsections(structs_section.clone());
+        let is_initialized = !structs_section.content.is_empty() || structs_subsections.len() > 0;
+        is_initialized
+    }
+
+    pub fn get_structs_metadata_by_type(struct_type: StructMetadataType) -> Vec<StructMetadata> {
+        let structs_metadata = Self::get_structs_metadata_from_metadata_file();
+        structs_metadata
+            .into_iter()
+            .filter(|struct_metadata| struct_metadata.struct_type == struct_type)
+            .collect::<Vec<_>>()
+    }
+
+    pub fn get_structs_metadata_names_by_type(struct_type: StructMetadataType) -> Vec<String> {
+        let structs_metadata = Self::get_structs_metadata_from_metadata_file();
+        structs_metadata
+            .into_iter()
+            .filter_map(|struct_metadata| {
+                if struct_metadata.struct_type == struct_type {
+                    Some(struct_metadata.name)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
+    pub fn get_structs_markdown_subsections_from_metadata_file() -> Vec<MarkdownSection> {
         let metadata_markdown = get_metadata_markdown();
         let structs_section = metadata_markdown
             .get_section(&MetadataSection::Structs.to_sentence_case())
@@ -79,7 +115,7 @@ impl StructMetadata {
     }
 
     pub fn get_structs_metadata_from_metadata_file() -> Vec<StructMetadata> {
-        let structs_subsections = Self::get_structs_markdown_sections_from_metadata_file();
+        let structs_subsections = Self::get_structs_markdown_subsections_from_metadata_file();
         let structs_sourcecodes = structs_subsections
             .into_iter()
             .map(|subsection| StructMetadata::from_markdown_section(subsection))
@@ -88,7 +124,7 @@ impl StructMetadata {
     }
 
     pub fn get_structs_sourcecodes() -> Vec<SourceCodeMetadata> {
-        let structs_subsections = Self::get_structs_markdown_sections_from_metadata_file();
+        let structs_subsections = Self::get_structs_markdown_subsections_from_metadata_file();
         let structs_sourcecodes = structs_subsections
             .into_iter()
             .map(|subsection| StructMetadata::from_markdown_section(subsection))
@@ -104,7 +140,7 @@ impl StructMetadata {
         structs_sourcecodes
     }
 
-    pub fn get_markdown_section(&self, section_hash: &str) -> MarkdownSection {
+    pub fn to_markdown_section(&self, section_hash: &str) -> MarkdownSection {
         let section_level_header = MarkdownSectionLevel::H2.get_header(&self.name);
         let section_header = MarkdownSectionHeader::new_from_header_and_hash(
             section_level_header,
@@ -120,7 +156,7 @@ impl StructMetadata {
         md_section
     }
 
-    pub fn get_source_code(&self) -> SourceCodeMetadata {
+    pub fn to_source_code_metadata(&self) -> SourceCodeMetadata {
         SourceCodeMetadata::new(
             self.name.clone(),
             self.path.clone(),

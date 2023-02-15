@@ -47,9 +47,9 @@ enum Commands {
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
-    /// Updates the audit_result.md file in the root of the audit
-    #[command(subcommand)]
-    Result(ResultActions),
+    // /// Updates the audit_result.md file in the root of the audit
+    // #[command(subcommand)]
+    // Result(ResultActions),
     /// Updates the metadata.md file
     #[command(subcommand)]
     Metadata(MetadataActions),
@@ -58,25 +58,23 @@ enum Commands {
     Package(PackageActions),
 }
 
-#[derive(Subcommand, Debug)]
-enum ResultActions {
-    /// Updates the Code Overhaul section of the audit_result.md file
-    CodeOverhaul,
-    /// Updates the Findings section of the audit_result.md file
-    Findings {
-        /// updates the result, formatting with html structure
-        #[arg(long)]
-        html: bool,
-    },
-    /// Creates the commit for the results files
-    Commit,
-}
+// #[derive(Subcommand, Debug)]
+// enum ResultActions {
+//     /// Updates the Code Overhaul section of the audit_result.md file
+//     CodeOverhaul,
+//     /// Updates the Findings section of the audit_result.md file
+//     Findings {
+//         /// updates the result, formatting with html structure
+//         #[arg(long)]
+//         html: bool,
+//     },
+//     /// Creates the commit for the results files
+//     Commit,
+// }
 #[derive(Subcommand, Debug)]
 enum MetadataActions {
     /// Updates the Structs section of the metadata.md file
     Structs,
-    /// Updates the Miro section of the metadata.md file
-    Miro,
     /// Updates the Functions section of the metadata.md file
     Functions,
 }
@@ -203,7 +201,6 @@ async fn main() {
             .await
             .unwrap(),
         Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
-        Commands::Metadata(MetadataActions::Miro) => commands::metadata::miro().await.unwrap(),
         Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions().unwrap(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
@@ -212,10 +209,10 @@ async fn main() {
         Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
         Commands::Update => commands::update::update_repository().unwrap(),
         Commands::Notes => batbelt::git::create_git_commit(GitCommit::Notes, None).unwrap(),
-        Commands::Result(ResultActions::Findings { html }) => {
-            commands::result::findings_result(html).unwrap()
-        }
-        Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
+        // Commands::Result(ResultActions::Findings { html }) => {
+        //     commands::result::findings_result(html).unwrap()
+        // }
+        // Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageActions::Format) => package::format().unwrap(),

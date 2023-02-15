@@ -11,10 +11,10 @@ use crate::batbelt::constants::CODE_OVERHAUL_NOTES_PLACEHOLDER;
 use crate::config::BatConfig;
 
 use crate::batbelt::git::{create_git_commit, GitCommit};
-use crate::batbelt::helpers::get::{
-    get_finished_co_files, get_finished_co_files_info_for_results,
-    get_table_of_contents_for_results,
-};
+// use crate::batbelt::helpers::get::{
+//     get_finished_co_files, get_finished_co_files_info_for_results,
+//     get_table_of_contents_for_results,
+// };
 use crate::batbelt::path::{FilePathType, FolderPathType};
 use crate::{batbelt, commands};
 
@@ -103,40 +103,40 @@ pub fn update_co_templates() -> Result<(), String> {
     Ok(())
 }
 
-pub fn update_audit_results() -> Result<(), String> {
-    let audit_file_path = batbelt::path::get_file_path(FilePathType::AuditResult, true);
-    let finished_co_files = get_finished_co_files()?;
-    let finished_co_audit_information = get_finished_co_files_info_for_results(finished_co_files)?;
-    let mut final_result: Vec<String> = vec!["\n# Code overhaul\n".to_string()];
-    let mut table_of_contents: Vec<String> = vec![
-        "# Table of contents\n".to_string(),
-        "- [Table of contents](#table-of-contents)".to_string(),
-        "- [Code overhaul](#code-overhaul)".to_string(),
-    ];
-    for (idx, result) in finished_co_audit_information.iter().enumerate() {
-        // Table of contents
-        let insert_contents = get_table_of_contents_for_results(result.clone(), idx)?;
-        table_of_contents.push(insert_contents);
-
-        // Result
-        let title = format!("## {}\n\n", result.file_name);
-        let what_it_does_text = format!(
-            "### What it does:\n\n{}\n\n",
-            result.what_it_does_content.trim()
-        );
-        let notes_text = format!("### Notes:\n\n{}\n\n", result.notes_content.trim());
-        let miro_frame_text = format!("### Miro frame url:\n\n{}\n", result.miro_frame_url.trim());
-        final_result.push([title, what_it_does_text, notes_text, miro_frame_text].join(""));
-    }
-    table_of_contents.append(&mut final_result);
-    fs::write(
-        audit_file_path,
-        table_of_contents
-            .join("\n")
-            .replace(CODE_OVERHAUL_NOTES_PLACEHOLDER, "No notes")
-            .as_str(),
-    )
-    .unwrap();
-    create_git_commit(GitCommit::AuditResult, None)?;
-    Ok(())
-}
+// pub fn update_audit_results() -> Result<(), String> {
+//     let audit_file_path = batbelt::path::get_file_path(FilePathType::AuditResult, true);
+//     let finished_co_files = get_finished_co_files()?;
+//     let finished_co_audit_information = get_finished_co_files_info_for_results(finished_co_files)?;
+//     let mut final_result: Vec<String> = vec!["\n# Code overhaul\n".to_string()];
+//     let mut table_of_contents: Vec<String> = vec![
+//         "# Table of contents\n".to_string(),
+//         "- [Table of contents](#table-of-contents)".to_string(),
+//         "- [Code overhaul](#code-overhaul)".to_string(),
+//     ];
+//     for (idx, result) in finished_co_audit_information.iter().enumerate() {
+//         // Table of contents
+//         let insert_contents = get_table_of_contents_for_results(result.clone(), idx)?;
+//         table_of_contents.push(insert_contents);
+//
+//         // Result
+//         let title = format!("## {}\n\n", result.file_name);
+//         let what_it_does_text = format!(
+//             "### What it does:\n\n{}\n\n",
+//             result.what_it_does_content.trim()
+//         );
+//         let notes_text = format!("### Notes:\n\n{}\n\n", result.notes_content.trim());
+//         let miro_frame_text = format!("### Miro frame url:\n\n{}\n", result.miro_frame_url.trim());
+//         final_result.push([title, what_it_does_text, notes_text, miro_frame_text].join(""));
+//     }
+//     table_of_contents.append(&mut final_result);
+//     fs::write(
+//         audit_file_path,
+//         table_of_contents
+//             .join("\n")
+//             .replace(CODE_OVERHAUL_NOTES_PLACEHOLDER, "No notes")
+//             .as_str(),
+//     )
+//     .unwrap();
+//     create_git_commit(GitCommit::AuditResult, None)?;
+//     Ok(())
+// }
