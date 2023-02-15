@@ -817,7 +817,6 @@ pub async fn deploy_metadata_screenshot_to_frame(
         );
         continue_selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
     }
-    batbelt::git::create_git_commit(GitCommit::Figures, None).unwrap();
     Ok(())
 }
 
