@@ -47,6 +47,8 @@ enum Commands {
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
+    /// Initializes the metadata and deploy the Initial Miro frames
+    Sonar,
     // /// Updates the audit_result.md file in the root of the audit
     // #[command(subcommand)]
     // Result(ResultActions),
@@ -159,6 +161,7 @@ async fn main() {
     }
     match cli.command {
         Commands::Create => commands::create::create_project().unwrap(),
+        Commands::Sonar => commands::sonar::start_sonar(),
         Commands::Init {
             skip_initial_commit,
         } => commands::init::initialize_bat_project(skip_initial_commit)
