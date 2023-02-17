@@ -5,6 +5,7 @@ pub mod init;
 pub mod metadata;
 pub mod miro;
 // pub mod result;
+pub mod sonar;
 pub mod update;
 
 use std::{error::Error, fmt, fs};

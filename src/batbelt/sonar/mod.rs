@@ -4,6 +4,7 @@ use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::error::Error;
 use std::fmt::{self, Debug};
+use inflector::Inflector;
 use std::time::Duration;
 use std::{fs, thread};
 
@@ -141,7 +142,7 @@ impl BatSonar {
         }
     }
 
-    pub fn display_looking_for_loader(&self) {
+    pub fn display_looking_for_loader(result_type: SonarResultType) {
         let pb = ProgressBar::new_spinner();
         pb.enable_steady_tick(Duration::from_millis(200));
         pb.set_style(
@@ -172,8 +173,8 @@ impl BatSonar {
         );
         pb.set_message(format!(
             "Looking for {} with {}...",
+            result_type.to_string().to_plural().green(),
             "BatSonar".red(),
-            self.result_type.to_string()
         ));
         thread::sleep(Duration::from_millis(3400));
         pb.finish_with_message("Done");
