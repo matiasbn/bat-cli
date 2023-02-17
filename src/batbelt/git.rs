@@ -11,7 +11,7 @@ use crate::{
     batbelt::{self, path::FilePathType},
     config::BatConfig,
 };
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 #[derive(Debug)]
 pub struct GitOperationError;
@@ -364,10 +364,11 @@ pub fn create_git_commit(
 pub fn check_correct_branch() -> Result<(), GitOperationError> {
     let expected_auditor_branch = get_expected_current_branch()?;
     if get_branch_name()? != expected_auditor_branch {
-        panic!(
+        let message = format!(
             "You are in an incorrect branch, please run \"git checkout {:?}\"",
             expected_auditor_branch
         );
+        return Err(Report::new(GitOperationError).attach_printable(message));
     }
     Ok(())
 }

@@ -1,4 +1,4 @@
-use error_stack::{Report, Result};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::{error::Error, fmt, process::Command};
 
 #[derive(Debug)]
@@ -13,19 +13,26 @@ impl fmt::Display for BashError {
 impl Error for BashError {}
 
 pub fn execute_command(command: &str, args: &[&str]) -> Result<(), BashError> {
-    let mut output = Command::new(command).args(args).spawn().or_else(|err| {
-        let message = format!(
-            "Error spawning a child process for paramenters: \n command: {} \n args: {:#?}",
-            command, args
-        );
-        Err(Report::new(BashError).attach_printable(message))
-    })?;
-    output.wait().or_else(|err| {
-        let message = format!(
-            "Error waiting a child process for paramenters: \n command: {} \n args: {:#?}",
-            command, args
-        );
-        Err(Report::new(BashError).attach_printable(message))
-    })?;
+    let message = format!(
+        "Error spawning a child process for paramenters: \n command: {} \n args: {:#?}",
+        command, args
+    );
+    let mut output = Command::new(command)
+        .args(args)
+        .spawn()
+        .into_report()
+        .change_context(BashError)
+        .attach_printable(message)?;
+
+    let message = format!(
+        "Error waiting a child process for paramenters: \n command: {} \n args: {:#?}",
+        command, args
+    );
+
+    output
+        .wait()
+        .into_report()
+        .change_context(BashError)
+        .attach_printable(message)?;
     Ok(())
 }
