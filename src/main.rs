@@ -11,6 +11,7 @@ use clap::{Parser, Subcommand};
 mod batbelt;
 mod commands;
 mod config;
+mod errors;
 mod package;
 
 use std::{error, result};

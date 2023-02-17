@@ -2,6 +2,7 @@ use std::fs;
 
 use colored::Colorize;
 
+use super::{MetadataError, MetadataSection};
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
@@ -10,8 +11,7 @@ use crate::batbelt::path::FilePathType;
 use crate::batbelt::silicon;
 use crate::batbelt::sonar::BatSonar;
 use crate::batbelt::{self, path::FolderPathType};
-
-use super::MetadataSection;
+use error_stack::{Result, ResultExt};
 
 #[derive(Debug, Clone)]
 pub struct SourceCodeScreenshotOptions {
@@ -89,9 +89,10 @@ impl SourceCodeMetadata {
         content_lines
     }
 
-    pub fn get_entrypoints_sourcecode() -> Vec<Self> {
-        let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false);
-        let entrypoints = BatSonar::get_entrypoints_results();
+    pub fn get_entrypoints_sourcecode() -> Result<Vec<Self>, MetadataError> {
+        let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false)
+            .change_context(MetadataError)?;
+        let entrypoints = BatSonar::get_entrypoints_results().change_context(MetadataError)?;
         let sourcecodes = entrypoints
             .results
             .into_iter()
@@ -103,8 +104,8 @@ impl SourceCodeMetadata {
                     res.end_line_index,
                 )
             })
-            .collect();
-        sourcecodes
+            .collect::<Vec<_>>();
+        Ok(sourcecodes)
     }
 
     // pub fn new_from_metadata_data(name: &str, section: &str, subsection: &str) -> Self {
@@ -132,8 +133,12 @@ impl SourceCodeMetadata {
     //     SourceCodeMetadata::new(name.to_string(), path, start_line_index, end_line_index)
     // }
 
-    pub fn create_screenshot(&self, options: SourceCodeScreenshotOptions) -> String {
-        let dest_path = batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true);
+    pub fn create_screenshot(
+        &self,
+        options: SourceCodeScreenshotOptions,
+    ) -> Result<String, MetadataError> {
+        let dest_path = batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true)
+            .change_context(MetadataError)?;
         let mut offset = if options.offset_to_start_line {
             self.start_line_index
         } else {
@@ -170,7 +175,8 @@ impl SourceCodeMetadata {
             .to_vec();
         let mut content = content_vec.join("\n");
         if options.include_path {
-            let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
+            let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false)
+                .change_context(MetadataError)?;
             let path_to_include = if self.path.contains(&program_path) {
                 let path = self.path.replace(&program_path, "");
                 path.strip_prefix("/").unwrap().to_string()
@@ -193,7 +199,7 @@ impl SourceCodeMetadata {
             options.font_size,
             options.show_line_number,
         );
-        png_screenshot_path
+        Ok(png_screenshot_path)
     }
 
     pub fn prompt_screenshot_options() -> SourceCodeScreenshotOptions {
@@ -261,8 +267,8 @@ impl SourceCodeMetadata {
         x_position: i64,
         y_position: i64,
         options: SourceCodeScreenshotOptions,
-    ) -> String {
-        let png_path = self.create_screenshot(options.clone());
+    ) -> Result<String, MetadataError> {
+        let png_path = self.create_screenshot(options.clone())?;
         let miro_frame_id = miro_frame.item_id.clone();
         println!(
             "\nCreating {}{} in {} frame",
@@ -287,7 +293,7 @@ impl SourceCodeMetadata {
         );
         fs::remove_file(png_path).unwrap();
         miro_item.update_item_parent_and_position().await;
-        screenshot_image.item_id
+        Ok(screenshot_image.item_id)
     }
 
     fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {

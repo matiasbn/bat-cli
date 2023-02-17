@@ -2,6 +2,7 @@ use crate::batbelt::miro::helpers::get_id_from_response;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
 
+use error_stack::Result;
 use reqwest;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{
@@ -9,9 +10,9 @@ use reqwest::{
     multipart::{self, Form},
 };
 use serde_json::*;
-use std::result::Result;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
+
 #[derive(Debug)]
 pub enum MiroImageType {
     FromUrl,
@@ -120,8 +121,12 @@ impl MiroImage {
 }
 
 mod api {
+    use error_stack::IntoReport;
+
+    use crate::batbelt::miro::MiroError;
+
     use super::*;
-    pub async fn create_image_from_device(file_path: &str) -> Result<String, String> {
+    pub async fn create_image_from_device(file_path: &str) -> Result<String, MiroError> {
         let MiroConfig {
             access_token,
             board_id,
@@ -146,7 +151,8 @@ mod api {
             .multipart(form)
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await;
+            .await
+            .into_report();
         let id = get_id_from_response(response).await?;
         Ok(id)
     }
@@ -156,7 +162,7 @@ mod api {
         x_position: i64,
         y_position: i64,
         height: u64,
-    ) -> Result<String, String> {
+    ) -> Result<String, MiroError> {
         let MiroConfig {
             access_token,
             board_id,
@@ -187,7 +193,8 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await;
+            .await
+            .into_report();
         let id = get_id_from_response(response).await?;
         Ok(id)
     }
@@ -227,7 +234,7 @@ mod api {
     // pub async fn create_image_from_device_and_update_position(
     //     file_path: String,
     //     entrypoint_name: &str,
-    // ) -> Result<String, String> {
+    // ) -> Result<String, MiroError> {
     //     let MiroConfig {
     //         access_token,
     //         board_id,

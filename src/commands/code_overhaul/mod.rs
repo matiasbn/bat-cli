@@ -8,19 +8,20 @@ use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 
 use crate::config::BatConfig;
 
-// use crate::batbelt::helpers::get::{
-//     get_finished_co_files, get_finished_co_files_info_for_results,
-//     get_table_of_contents_for_results,
-// };
 use crate::batbelt::path::{FilePathType, FolderPathType};
 use crate::{batbelt, commands};
 
 use crate::batbelt::bash::execute_command;
 
-use std::string::String;
+use error_stack::{IntoReport, Report, Result, ResultExt};
+use std::error::Error;
+use std::fmt;
 
-pub fn count_co_files() -> Result<(), String> {
-    let (to_review_count, started_count, finished_count) = batbelt::helpers::count::co_counter()?;
+use super::CommandError;
+
+pub fn count_co_files() -> Result<(), CommandError> {
+    let (to_review_count, started_count, finished_count) =
+        batbelt::helpers::count::co_counter().change_context(CommandError)?;
     println!("to-review co files: {}", format!("{to_review_count}").red());
     println!("started co files: {}", format!("{started_count}").yellow());
     println!("finished co files: {}", format!("{finished_count}").green());
@@ -31,10 +32,10 @@ pub fn count_co_files() -> Result<(), String> {
     Ok(())
 }
 
-pub fn open_co() -> Result<(), String> {
+pub fn open_co() -> Result<(), CommandError> {
     let BatConfig {
         auditor, required, ..
-    } = BatConfig::get_validated_config()?;
+    } = BatConfig::get_validated_config().change_context(CommandError)?;
     // list to start
     if auditor.vs_code_integration {
         let options = vec!["started".green(), "finished".yellow()];
@@ -42,14 +43,18 @@ pub fn open_co() -> Result<(), String> {
             "Do you want to open a {} or a {} file?",
             options[0], options[1]
         );
-        let selection = batbelt::cli_inputs::select(&prompt_text, options.clone(), None)?;
+        let selection = batbelt::cli_inputs::select(&prompt_text, options.clone(), None)
+            .change_context(CommandError)?;
         let open_started = selection == 0;
         let folder_path = if open_started {
             batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true)
+                .change_context(CommandError)?
         } else {
             batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true)
+                .change_context(CommandError)?
         };
-        let co_files = batbelt::helpers::get::get_only_files_from_folder(folder_path)?;
+        let co_files = batbelt::helpers::get::get_only_files_from_folder(folder_path)
+            .change_context(CommandError)?;
         let co_files = co_files
             .iter()
             .filter(|f| f.name != ".gitkeep")
@@ -57,7 +62,8 @@ pub fn open_co() -> Result<(), String> {
             .collect::<Vec<_>>();
         if !co_files.is_empty() {
             let prompt_text = "Select the code-overhaul file to open:";
-            let selection = batbelt::cli_inputs::select(prompt_text, co_files.clone(), None)?;
+            let selection = batbelt::cli_inputs::select(prompt_text, co_files.clone(), None)
+                .change_context(CommandError)?;
             let file_name = &co_files[selection].clone();
             let co_file_path = if open_started {
                 batbelt::path::get_file_path(
@@ -66,6 +72,7 @@ pub fn open_co() -> Result<(), String> {
                     },
                     true,
                 )
+                .change_context(CommandError)?
             } else {
                 batbelt::path::get_file_path(
                     FilePathType::CodeOverhaulFinished {
@@ -73,27 +80,32 @@ pub fn open_co() -> Result<(), String> {
                     },
                     true,
                 )
+                .change_context(CommandError)?
             };
             let instruction_file_path =
-                batbelt::path::get_instruction_file_path_from_co_file_path(co_file_path.clone())?;
+                batbelt::path::get_instruction_file_path_from_co_file_path(co_file_path.clone())
+                    .change_context(CommandError)?;
 
-            vs_code_open_file_in_current_window(&co_file_path)?;
-            vs_code_open_file_in_current_window(&instruction_file_path)?;
+            vs_code_open_file_in_current_window(&co_file_path).change_context(CommandError)?;
+            vs_code_open_file_in_current_window(&instruction_file_path)
+                .change_context(CommandError)?;
         } else {
             println!("Empty {} folder", options[selection].clone());
         }
-        vs_code_open_file_in_current_window(&required.program_lib_path)?;
+        vs_code_open_file_in_current_window(&required.program_lib_path)
+            .change_context(CommandError)?;
     } else {
         print!("VSCode integration not enabled");
     }
     Ok(())
 }
 
-pub fn update_co_templates() -> Result<(), String> {
+pub fn update_co_templates() -> Result<(), CommandError> {
     let co_to_review_path =
-        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true);
-    execute_command("rm", &["-rf", &co_to_review_path]).unwrap();
-    execute_command("mkdir", &[&co_to_review_path]).unwrap();
+        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true)
+            .change_context(CommandError)?;
+    execute_command("rm", &["-rf", &co_to_review_path]).change_context(CommandError)?;
+    execute_command("mkdir", &[&co_to_review_path]).change_context(CommandError)?;
     commands::init::initialize_code_overhaul_files().unwrap();
     Ok(())
 }

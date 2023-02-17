@@ -10,8 +10,11 @@ use crate::batbelt::metadata::source_code::SourceCodeMetadata;
 use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
+use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 use std::vec;
+
+use super::MetadataError;
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 enum FunctionMetadataInfoSection {
@@ -68,42 +71,42 @@ impl FunctionMetadata {
         )
     }
 
-    pub fn get_functions_metadata_section() -> MarkdownSection {
-        let metadata_markdown = get_metadata_markdown();
+    pub fn get_functions_metadata_section() -> Result<MarkdownSection, MetadataError> {
+        let metadata_markdown = get_metadata_markdown()?;
         let functions_section = metadata_markdown
             .get_section(&MetadataSection::Functions.to_string())
-            .unwrap();
-        functions_section
+            .change_context(MetadataError)?;
+        Ok(functions_section)
     }
 
-    pub fn functions_metadata_is_initialized() -> bool {
-        let metadata_markdown = get_metadata_markdown();
+    pub fn functions_metadata_is_initialized() -> Result<bool, MetadataError> {
+        let metadata_markdown = get_metadata_markdown()?;
         let functions_section = metadata_markdown
             .get_section(&MetadataSection::Structs.to_string())
-            .unwrap();
+            .change_context(MetadataError)?;
         // // check if empty
         let functions_subsections =
             metadata_markdown.get_section_subsections(functions_section.clone());
         let is_initialized =
             !functions_section.content.is_empty() || functions_subsections.len() > 0;
-        is_initialized
+        Ok(is_initialized)
     }
 
     pub fn get_functions_metadata_by_type(
         function_type: FunctionMetadataType,
-    ) -> Vec<FunctionMetadata> {
-        let functions_metadata = Self::get_functions_metadata_from_metadata_file();
-        functions_metadata
+    ) -> Result<Vec<FunctionMetadata>, MetadataError> {
+        let functions_metadata = Self::get_functions_metadata_from_metadata_file()?;
+        Ok(functions_metadata
             .into_iter()
             .filter(|function_metadata| function_metadata.function_type == function_type)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>())
     }
 
     pub fn get_functions_metadata_names_by_type(
         function_type: FunctionMetadataType,
-    ) -> Vec<String> {
-        let functions_metadata = Self::get_functions_metadata_from_metadata_file();
-        functions_metadata
+    ) -> Result<Vec<String>, MetadataError> {
+        let functions_metadata = Self::get_functions_metadata_from_metadata_file()?;
+        Ok(functions_metadata
             .into_iter()
             .filter_map(|function_metadata| {
                 if function_metadata.function_type == function_type {
@@ -112,29 +115,32 @@ impl FunctionMetadata {
                     None
                 }
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>())
     }
 
-    pub fn get_functions_markdown_sections_from_metadata_file() -> Vec<MarkdownSection> {
-        let metadata_markdown = batbelt::metadata::get_metadata_markdown();
+    pub fn get_functions_markdown_sections_from_metadata_file(
+    ) -> Result<Vec<MarkdownSection>, MetadataError> {
+        let metadata_markdown = batbelt::metadata::get_metadata_markdown()?;
         let functions_section = metadata_markdown
             .get_section(&MetadataSection::Functions.to_sentence_case())
-            .unwrap();
+            .change_context(MetadataError)?;
         let functions_subsections = metadata_markdown.get_section_subsections(functions_section);
-        functions_subsections
+        Ok(functions_subsections)
     }
 
-    pub fn get_functions_metadata_from_metadata_file() -> Vec<FunctionMetadata> {
-        let functions_subsections = Self::get_functions_markdown_sections_from_metadata_file();
+    pub fn get_functions_metadata_from_metadata_file(
+    ) -> Result<Vec<FunctionMetadata>, MetadataError> {
+        let functions_subsections = Self::get_functions_markdown_sections_from_metadata_file()?;
         let functions_sourcecodes = functions_subsections
             .into_iter()
             .map(|subsection| FunctionMetadata::from_markdown_section(subsection))
             .collect::<Vec<FunctionMetadata>>();
-        functions_sourcecodes
+        Ok(functions_sourcecodes)
     }
 
-    pub fn get_functions_sourcecodes_from_metadata_file() -> Vec<SourceCodeMetadata> {
-        let functions_subsections = Self::get_functions_markdown_sections_from_metadata_file();
+    pub fn get_functions_sourcecodes_from_metadata_file(
+    ) -> Result<Vec<SourceCodeMetadata>, MetadataError> {
+        let functions_subsections = Self::get_functions_markdown_sections_from_metadata_file()?;
         let functions_sourcecodes = functions_subsections
             .into_iter()
             .map(|subsection| FunctionMetadata::from_markdown_section(subsection))
@@ -147,7 +153,7 @@ impl FunctionMetadata {
                 )
             })
             .collect::<Vec<SourceCodeMetadata>>();
-        functions_sourcecodes
+        Ok(functions_sourcecodes)
     }
 
     pub fn to_source_code(&self) -> SourceCodeMetadata {
@@ -331,10 +337,11 @@ pub fn get_function_body(function_content: &str) -> String {
     body.trim_end_matches("}").trim().to_string()
 }
 
-pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, String> {
-    let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
-    let program_folder_files_info =
-        batbelt::helpers::get::get_only_files_from_folder(program_path)?;
+pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, MetadataError> {
+    let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false)
+        .change_context(MetadataError)?;
+    let program_folder_files_info = batbelt::helpers::get::get_only_files_from_folder(program_path)
+        .change_context(MetadataError)?;
     let mut functions_metadata: Vec<FunctionMetadata> = vec![];
     for file_info in program_folder_files_info {
         let mut function_metadata_result = get_function_metadata_from_file_info(file_info)?;
@@ -346,7 +353,7 @@ pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, St
 
 pub fn get_function_metadata_from_file_info(
     function_file_info: FileInfo,
-) -> Result<Vec<FunctionMetadata>, String> {
+) -> Result<Vec<FunctionMetadata>, MetadataError> {
     let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
     println!(
         "starting the review of the {} file",
