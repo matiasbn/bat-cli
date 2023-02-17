@@ -13,9 +13,7 @@ use crate::{batbelt, commands};
 
 use crate::batbelt::bash::execute_command;
 
-use error_stack::{IntoReport, Report, Result, ResultExt};
-use std::error::Error;
-use std::fmt;
+use error_stack::{Result, ResultExt};
 
 use super::CommandError;
 

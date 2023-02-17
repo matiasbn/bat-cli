@@ -1,5 +1,3 @@
-use std::error::Error;
-use std::fmt;
 use std::fs::{self};
 
 use std::path::{Path, PathBuf};
@@ -29,7 +27,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::{FilePathType, FolderPathType};
 
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
     let bat_config: BatConfig = BatConfig::get_init_config().change_context(CommandError)?;

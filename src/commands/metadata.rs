@@ -8,10 +8,7 @@ use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
 
-use error_stack::{Report, Result, ResultExt};
-
-use std::error::Error;
-use std::{fmt, io};
+use error_stack::{Result, ResultExt};
 
 use super::CommandError;
 

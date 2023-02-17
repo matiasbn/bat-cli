@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use error_stack::{Report, Result};
+use error_stack::Report;
 
 #[derive(Debug)]
 pub struct BatError;

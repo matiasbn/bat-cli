@@ -16,8 +16,6 @@ mod config;
 mod errors;
 mod package;
 
-use std::{error, result};
-
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
 struct Cli {

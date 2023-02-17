@@ -13,7 +13,7 @@ use error_stack::{Result, ResultExt};
 use std::fs;
 use std::path::Path;
 
-use std::{error::Error, fmt, process::Termination};
+use std::{error::Error, fmt};
 
 #[derive(Debug)]
 pub struct EntryPointError;

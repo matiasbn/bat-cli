@@ -1,4 +1,4 @@
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{IntoReport, Result, ResultExt};
 use std::{error::Error, fmt, process::Command};
 
 #[derive(Debug)]
