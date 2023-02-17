@@ -19,6 +19,7 @@ use crate::batbelt::constants::{
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
 use crate::batbelt::entrypoint::EntrypointParser;
+use crate::commands::CommandError;
 use crate::config::{BatConfig, RequiredConfig};
 
 use crate::batbelt::git::GitCommit;
@@ -26,15 +27,17 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::{FilePathType, FolderPathType};
 
-pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), String> {
-    let bat_config: BatConfig = BatConfig::get_init_config()?;
+use error_stack::{Result, ResultExt};
+
+pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
+    let bat_config: BatConfig = BatConfig::get_init_config().change_context(CommandError)?;
     let BatConfig {
         required, auditor, ..
     } = bat_config.clone();
     if !Path::new("BatAuditor.toml").is_file() || auditor.auditor_name.is_empty() {
         prompt_auditor_options(required.clone())?;
     }
-    let bat_config: BatConfig = BatConfig::get_validated_config()?;
+    let bat_config: BatConfig = BatConfig::get_validated_config().change_context(CommandError)?;
     // if !Path::new(&bat_auditor_path).is_dir() {}
     // if auditor.auditor is empty, prompt name
     println!("creating project for the next config: ");
@@ -51,7 +54,8 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Str
         println!("Project repository successfully initialized");
     }
 
-    let readme_path = batbelt::path::get_file_path(FilePathType::Readme, true);
+    let readme_path =
+        batbelt::path::get_file_path(FilePathType::Readme, true).change_context(CommandError)?;
     let readme_string = fs::read_to_string(readme_path.clone()).unwrap();
 
     if readme_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
@@ -67,7 +71,8 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Str
     for auditor_name in required.auditor_names {
         let auditor_project_branch_name = format!("{}-{}", auditor_name, required.project_name);
         let auditor_project_branch_exists =
-            batbelt::git::check_if_branch_exists(&auditor_project_branch_name)?;
+            batbelt::git::check_if_branch_exists(&auditor_project_branch_name)
+                .change_context(CommandError)?;
         if !auditor_project_branch_exists {
             println!("Creating branch {:?}", auditor_project_branch_name);
             // checkout develop to create auditor project branch from there
@@ -81,7 +86,8 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Str
                 .unwrap();
         }
     }
-    let auditor_project_branch_name = batbelt::git::get_expected_current_branch()?;
+    let auditor_project_branch_name =
+        batbelt::git::get_expected_current_branch().change_context(CommandError)?;
     println!("Checking out {:?} branch", auditor_project_branch_name);
     // checkout auditor branch
     Command::new("git")
@@ -91,11 +97,13 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Str
 
     // validate_init_config()?;
     // let auditor_notes_folder = utils::path::get_auditor_notes_path()?;
-    let auditor_notes_folder = batbelt::path::get_folder_path(FolderPathType::AuditorNotes, false);
+    let auditor_notes_folder = batbelt::path::get_folder_path(FolderPathType::AuditorNotes, false)
+        .change_context(CommandError)?;
     let auditor_notes_folder_exists = Path::new(&auditor_notes_folder).is_dir();
     if auditor_notes_folder_exists {
         let auditor_notes_files =
-            batbelt::helpers::get::get_only_files_from_folder(auditor_notes_folder.clone())?;
+            batbelt::helpers::get::get_only_files_from_folder(auditor_notes_folder.clone())
+                .change_context(CommandError)?;
         if auditor_notes_files.is_empty() {
             create_auditor_notes_folder()?;
             // create overhaul files
@@ -113,38 +121,43 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Str
 
     println!("Project successfully initialized");
     if !skip_initial_commit {
-        batbelt::git::create_git_commit(GitCommit::InitAuditor, None)?;
+        batbelt::git::create_git_commit(GitCommit::InitAuditor, None)
+            .change_context(CommandError)?;
     }
     // let lib_file_path = utils::path::get_program_lib_path()?;
-    let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, true);
+    let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, true)
+        .change_context(CommandError)?;
     // Open lib.rs file in vscode
-    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())?;
+    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())
+        .change_context(CommandError)?;
     Ok(())
 }
 
-fn prompt_auditor_options(required: RequiredConfig) -> Result<(), String> {
+fn prompt_auditor_options(required: RequiredConfig) -> Result<(), CommandError> {
     let auditor_name = get_auditor_name(required.auditor_names);
     println!(
         "Is great to have you here {}!",
         format!("{}", auditor_name).green()
     );
     let prompt_text = "Do you want to use the Miro integration?";
-    let include_miro = batbelt::cli_inputs::select_yes_or_no(prompt_text)?;
+    let include_miro =
+        batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
     let token: String;
     let moat: Option<&str> = if include_miro {
         let prompt_text = "Miro OAuth access token";
-        token = batbelt::cli_inputs::input(&prompt_text)?;
+        token = batbelt::cli_inputs::input(&prompt_text).change_context(CommandError)?;
         Some(token.as_str())
     } else {
         None
     };
     let prompt_text = "Do you want to use the VS Code integration?";
-    let include_vs_code = batbelt::cli_inputs::select_yes_or_no(prompt_text)?;
+    let include_vs_code =
+        batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
     update_auditor_toml(auditor_name, moat, include_vs_code);
     Ok(())
 }
 
-fn update_readme_file() -> Result<(), String> {
+fn update_readme_file() -> Result<(), CommandError> {
     let RequiredConfig {
         project_name,
         client_name,
@@ -152,8 +165,11 @@ fn update_readme_file() -> Result<(), String> {
         starting_date,
         miro_board_url,
         ..
-    } = BatConfig::get_init_config()?.required;
-    let readme_path = batbelt::path::get_file_path(FilePathType::Readme, true);
+    } = BatConfig::get_init_config()
+        .change_context(CommandError)?
+        .required;
+    let readme_path =
+        batbelt::path::get_file_path(FilePathType::Readme, true).change_context(CommandError)?;
     let data = fs::read_to_string(readme_path.clone()).unwrap();
     let updated_readme = data
         .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
@@ -199,8 +215,9 @@ fn update_auditor_toml(
     fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
 }
 
-fn initialize_project_repository() -> Result<(), String> {
-    let BatConfig { required, .. } = BatConfig::get_validated_config()?;
+fn initialize_project_repository() -> Result<(), CommandError> {
+    let BatConfig { required, .. } =
+        BatConfig::get_validated_config().change_context(CommandError)?;
     let RequiredConfig {
         project_repository_url,
         ..
@@ -257,8 +274,8 @@ fn initialize_project_repository() -> Result<(), String> {
     Ok(())
 }
 
-fn create_auditor_notes_folder() -> Result<(), String> {
-    let bat_config = BatConfig::get_validated_config()?;
+fn create_auditor_notes_folder() -> Result<(), CommandError> {
+    let bat_config = BatConfig::get_validated_config().change_context(CommandError)?;
     println!(
         "creating auditor notes folder for {}",
         bat_config.auditor.auditor_name.red()
@@ -267,8 +284,12 @@ fn create_auditor_notes_folder() -> Result<(), String> {
     let output = Command::new("cp")
         .args([
             "-r",
-            batbelt::path::get_folder_path(FolderPathType::NotesTemplate, false).as_str(),
-            batbelt::path::get_folder_path(FolderPathType::AuditorNotes, false).as_str(),
+            batbelt::path::get_folder_path(FolderPathType::NotesTemplate, false)
+                .change_context(CommandError)?
+                .as_str(),
+            batbelt::path::get_folder_path(FolderPathType::AuditorNotes, false)
+                .change_context(CommandError)?
+                .as_str(),
         ])
         .output()
         .unwrap();
@@ -282,7 +303,7 @@ fn create_auditor_notes_folder() -> Result<(), String> {
     Ok(())
 }
 
-pub fn initialize_code_overhaul_files() -> Result<(), String> {
+pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {
     let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
 
     for entrypoint_name in entrypoints_names {
@@ -290,14 +311,15 @@ pub fn initialize_code_overhaul_files() -> Result<(), String> {
     }
     Ok(())
 }
-pub async fn create_miro_frames_for_entrypoints() -> Result<(), String> {
+pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
     let miro_config = MiroConfig::new();
     if !miro_config.miro_enabled() {
         return Ok(());
     }
     let miro_board_frames = MiroFrame::get_frames_from_miro().await;
 
-    let entrypoints_names = EntrypointParser::get_entrypoints_names(false)?;
+    let entrypoints_names =
+        EntrypointParser::get_entrypoints_names(false).change_context(CommandError)?;
 
     for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
         let frame_already_deployed = miro_board_frames
@@ -307,25 +329,29 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), String> {
             println!("Creating frame in Miro for {}", entrypoint_name.green());
             let mut miro_frame =
                 MiroFrame::new(&entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
-            miro_frame.deploy().await?;
+            miro_frame.deploy().await.change_context(CommandError)?;
             let x_modifier = entrypoint_index as i64 % MIRO_BOARD_COLUMNS;
             let y_modifier = entrypoint_index as i64 / MIRO_BOARD_COLUMNS;
             let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
             let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
-            miro_frame.update_position(x_position, y_position).await?;
+            miro_frame
+                .update_position(x_position, y_position)
+                .await
+                .change_context(CommandError)?;
         }
     }
 
     Ok(())
 }
 
-pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
+pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
     let code_overhaul_auditor_file_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulToReview {
             file_name: entrypoint_name.clone(),
         },
         false,
-    );
+    )
+    .change_context(CommandError)?;
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
         panic!("code overhaul file already exists for: {entrypoint_name:?}");
     }
@@ -333,7 +359,7 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), String> {
         batbelt::templates::code_overhaul::CodeOverhaulTemplate::template_to_markdown_file(
             &code_overhaul_auditor_file_path,
         );
-    co_template.save()?;
+    co_template.save().change_context(CommandError)?;
     println!(
         "code-overhaul file created: {}{}",
         entrypoint_name.green(),

@@ -1,31 +1,18 @@
+use error_stack::{Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use std::fs;
+use std::{error::Error, fmt, fs};
 
-#[derive(thiserror::Error, Debug)]
-pub enum MarkdownError {
-    #[error("{sections_amount:?} H1 sections detected with name {section_name:?}")]
-    DuplicatedH1Sections {
-        sections_amount: usize,
-        section_name: String,
-    },
-    #[error("no H1 sections detected with name {section_name:?}")]
-    NoH1SectionFound { section_name: String },
-    #[error("Sections hash dont match \n new_header: \n{section_header_new:#?} old_header: \n{section_header_old:#?} ")]
-    ReplaceSectionHashMismatch {
-        section_header_new: MarkdownSectionHeader,
-        section_header_old: MarkdownSectionHeader,
-    },
-    #[error("Can only replace header with H1 level, section_header: \n{section_header:#?} ")]
-    OnlyH1CanBeReplaced {
-        section_header: MarkdownSectionHeader,
-    },
-    #[error("New section can only include subsections with level lower than parent section, \n parent_section: \n{parent_section_header:#?} \n target_section: \n{target_section_header:#?}")]
-    ReplaceSectionSubsectionsLevel {
-        parent_section_header: MarkdownSectionHeader,
-        target_section_header: MarkdownSectionHeader,
-    },
+#[derive(Debug)]
+pub struct MarkdownError;
+
+impl fmt::Display for MarkdownError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Markdown error")
+    }
 }
+
+impl Error for MarkdownError {}
 
 fn get_section_hash() -> String {
     let s: String = rand::thread_rng()
@@ -109,7 +96,7 @@ impl MarkdownFile {
         md_file
     }
 
-    pub fn save(&mut self) -> Result<(), String> {
+    pub fn save(&mut self) -> Result<(), MarkdownError> {
         fs::write(&self.path, &self.content).unwrap();
         Ok(())
     }
@@ -123,15 +110,17 @@ impl MarkdownFile {
             .filter(|section| section.section_header.title == title);
         let section_count = section.clone().count();
         if section_count > 1 {
-            return Err(MarkdownError::DuplicatedH1Sections {
-                sections_amount: section_count,
-                section_name: title.to_string(),
-            });
+            return Err(Report::new(MarkdownError).attach_printable(format!(
+                "{:?} H1 sections detected with name {:?}",
+                section_count,
+                title.to_string(),
+            )));
         }
         if section_count == 0 {
-            return Err(MarkdownError::NoH1SectionFound {
-                section_name: title.to_string(),
-            });
+            return Err(Report::new(MarkdownError).attach_printable(format!(
+                "no H1 sections detected with name {}",
+                title.to_string()
+            )));
         }
         Ok(section.next().unwrap())
     }
@@ -176,26 +165,29 @@ impl MarkdownFile {
         if new_parent_section.section_header.section_hash
             != old_parent_section.section_header.section_hash
         {
-            return Err(MarkdownError::ReplaceSectionHashMismatch {
-                section_header_new: new_parent_section.section_header,
-                section_header_old: old_parent_section.section_header,
-            });
+            return Err(Report::new(MarkdownError).attach_printable(format!(
+                "Sections hash dont match \n new_header: \n{:#?} old_header: \n{:#?} ",
+                new_parent_section.section_header, old_parent_section.section_header,
+            )));
         }
 
         if new_parent_section.section_header.section_level != MarkdownSectionLevel::H1 {
-            return Err(MarkdownError::OnlyH1CanBeReplaced {
-                section_header: new_parent_section.section_header,
-            });
+            return Err(Report::new(MarkdownError).attach_printable(format!(
+                "Can only replace header with H1 level, section_header: \n{:#?} ",
+                new_parent_section.section_header
+            )));
         }
 
         for new_section in new_sections.clone() {
             if new_section.section_header.section_level
                 <= new_parent_section.section_header.section_level
             {
-                return Err(MarkdownError::ReplaceSectionSubsectionsLevel {
-                    parent_section_header: new_parent_section.section_header,
-                    target_section_header: new_section.section_header,
-                });
+                return Err(Report::new(MarkdownError).attach_printable(format!(
+                    "New section can only include subsections with level lower than parent section, \n parent_section: \n{:#?} \n target_section: \n{:#?}",
+                    new_parent_section.section_header,
+                    
+                    new_section.section_header,
+                )));
             }
         }
 

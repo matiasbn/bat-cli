@@ -9,17 +9,22 @@ use crate::batbelt::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
 };
 use crate::batbelt::git::clone_base_repository;
+use crate::batbelt::helpers::fs_read_dir;
 use crate::batbelt::structs::FileInfo;
 use crate::batbelt::{cli_inputs, helpers};
 use crate::config::RequiredConfig;
+
+use error_stack::ResultExt;
+
+use super::CommandError;
 
 pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
 
 pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
 
-pub fn create_project() -> Result<(), String> {
+pub fn create_project() -> error_stack::Result<(), CommandError> {
     // get project config
-    let required_config = get_required_config()?;
+    let required_config = get_required_config().change_context(CommandError)?;
     println!("Creating {:#?} project", required_config);
     // clone repository
     clone_base_repository();
@@ -49,9 +54,9 @@ pub fn create_project() -> Result<(), String> {
     Ok(())
 }
 
-fn get_required_config() -> Result<RequiredConfig, String> {
-    let local_folders = fs::read_dir(".")
-        .unwrap()
+fn get_required_config() -> error_stack::Result<RequiredConfig, CommandError> {
+    let local_folders = fs_read_dir(".")
+        .change_context(CommandError)?
         .map(|f| f.unwrap())
         .filter(|f| {
             f.file_type().unwrap().is_dir()
@@ -72,7 +77,8 @@ fn get_required_config() -> Result<RequiredConfig, String> {
         .collect::<Vec<_>>();
     // Folder with the program to audit selection
     let prompt_text = "Select the folder with the program to audit";
-    let selection = cli_inputs::select(prompt_text, local_folders.clone(), None)?;
+    let selection = cli_inputs::select(prompt_text, local_folders.clone(), None)
+        .change_context(CommandError)?;
     let selected_folder = &local_folders[selection];
     let cargo_programs_files_info = WalkDir::new(format!("./{}", selected_folder))
         .into_iter()
@@ -106,7 +112,8 @@ fn get_required_config() -> Result<RequiredConfig, String> {
         .iter()
         .map(|f| f.path.clone())
         .collect::<Vec<_>>();
-    let selection = cli_inputs::select(prompt_text, cargo_programs_paths, None)?;
+    let selection =
+        cli_inputs::select(prompt_text, cargo_programs_paths, None).change_context(CommandError)?;
     let selected_program = &cargo_programs_files_info[selection];
     let program_name = selected_program
         .path
@@ -129,9 +136,10 @@ fn get_required_config() -> Result<RequiredConfig, String> {
         format!("{project_name}").yellow()
     );
     let options = vec!["yes", "no"];
-    let selection = cli_inputs::select(prompt_text.as_str(), options, None)?;
+    let selection =
+        cli_inputs::select(prompt_text.as_str(), options, None).change_context(CommandError)?;
     if selection == 1 {
-        project_name = cli_inputs::input("Project name:")?;
+        project_name = cli_inputs::input("Project name:").change_context(CommandError)?;
     }
     let project_path = format!("./{project_name}");
 
@@ -140,20 +148,27 @@ fn get_required_config() -> Result<RequiredConfig, String> {
     }
 
     let auditor_names_prompt: String =
-        cli_inputs::input("Auditor names (comma separated, example: alice,bob):")?;
+        cli_inputs::input("Auditor names (comma separated, example: alice,bob):")
+            .change_context(CommandError)?;
     let auditor_names: Vec<String> = auditor_names_prompt
         .split(',')
         .map(|l| l.to_string())
         .collect();
-    let client_name: String = cli_inputs::input("Client name:")?;
-    let commit_hash_url: String = cli_inputs::input("Commit hash url:")?;
-    let starting_date: String = cli_inputs::input("Starting date, example: (01/01/2023):")?;
-    let mut miro_board_url: String = cli_inputs::input("Miro board url:")?;
-    miro_board_url = helpers::normalize_url(&miro_board_url)?;
+    let client_name: String = cli_inputs::input("Client name:").change_context(CommandError)?;
+    let commit_hash_url: String =
+        cli_inputs::input("Commit hash url:").change_context(CommandError)?;
+    let starting_date: String =
+        cli_inputs::input("Starting date, example: (01/01/2023):").change_context(CommandError)?;
+    let mut miro_board_url: String =
+        cli_inputs::input("Miro board url:").change_context(CommandError)?;
+    miro_board_url = helpers::normalize_url(&miro_board_url)
+        .change_context(CommandError)
+        .change_context(CommandError)?;
 
     // let miro_board_id = "https://miro.com/app/board/".to_string() + &miro_board_id;
     let project_repository_url: String =
-        cli_inputs::input("Project repo url, where this audit folder would be pushed:")?;
+        cli_inputs::input("Project repo url, where this audit folder would be pushed:")
+            .change_context(CommandError)?;
 
     Ok(RequiredConfig {
         auditor_names,
@@ -224,7 +239,7 @@ fn create_bat_toml(required_config: RequiredConfig) {
     fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");
 }
 
-pub fn create_auditor_toml() {
+pub fn create_auditor_toml() -> error_stack::Result<(), CommandError> {
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
 
     if auditor_toml_path.exists() {
@@ -233,6 +248,7 @@ pub fn create_auditor_toml() {
 
     fs::write(auditor_toml_path, AUDITOR_TOML_INITIAL_CONFIG_STR)
         .expect("Could not write to file!");
+    Ok(())
 }
 
 fn move_config_files(project_name: String) {

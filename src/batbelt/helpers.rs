@@ -1,6 +1,7 @@
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
+use error_stack::{IntoReport, ResultExt};
 use normalize_url::normalizer;
 
 use walkdir::WalkDir;
@@ -11,9 +12,10 @@ use crate::batbelt::constants::{
 };
 
 use crate::batbelt;
+use crate::errors::BatError;
+use error_stack::Result;
 use std::fs;
 use std::fs::ReadDir;
-
 use std::string::String;
 
 pub mod get {
@@ -25,8 +27,9 @@ pub mod get {
 
     use super::*;
 
-    pub fn get_all_rust_files_from_program_path() -> Result<Vec<FileInfo>, String> {
-        let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
+    pub fn get_all_rust_files_from_program_path() -> Result<Vec<FileInfo>, BatError> {
+        let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false)
+            .change_context(BatError)?;
         let mut lib_files_info = get_only_files_from_folder(program_path)
             .unwrap()
             .into_iter()
@@ -37,12 +40,13 @@ pub mod get {
     }
 
     // returns a list of folder and files names
-    pub fn get_started_entrypoints() -> Result<Vec<String>, String> {
+    pub fn get_started_entrypoints() -> Result<Vec<String>, BatError> {
         // let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_path = batbelt::path::get_folder_path(
             batbelt::path::FolderPathType::CodeOverhaulStarted,
             true,
-        );
+        )
+        .change_context(BatError)?;
         let started_files = fs::read_dir(started_path)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
@@ -54,12 +58,13 @@ pub mod get {
         Ok(started_files)
     }
 
-    pub fn get_finished_co_files() -> Result<Vec<(String, String)>, String> {
+    pub fn get_finished_co_files() -> Result<Vec<(String, String)>, BatError> {
         // let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
         let finished_path = batbelt::path::get_folder_path(
             batbelt::path::FolderPathType::CodeOverhaulFinished,
             true,
-        );
+        )
+        .change_context(BatError)?;
         let mut finished_folder = fs::read_dir(&finished_path)
             .unwrap()
             .map(|file| file.unwrap())
@@ -160,7 +165,7 @@ pub mod get {
     //     Ok(insert_contents)
     // }
 
-    pub fn get_only_files_from_folder(folder_path: String) -> Result<Vec<FileInfo>, String> {
+    pub fn get_only_files_from_folder(folder_path: String) -> Result<Vec<FileInfo>, BatError> {
         let state_folder_files_info = WalkDir::new(folder_path)
             .into_iter()
             .filter(|f| {
@@ -232,6 +237,8 @@ pub mod check {
 }
 
 pub mod count {
+    use crate::errors::BatError;
+
     use super::*;
     pub fn count_filtering_gitkeep(dir_to_count: ReadDir) -> usize {
         dir_to_count
@@ -247,29 +254,47 @@ pub mod count {
             .collect::<Vec<_>>()
             .len()
     }
-    pub fn co_counter() -> Result<(usize, usize, usize), String> {
+    pub fn co_counter() -> error_stack::Result<(usize, usize, usize), BatError> {
         // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
         let to_review_path = batbelt::path::get_folder_path(
             batbelt::path::FolderPathType::CodeOverhaulToReview,
             true,
-        );
-        let to_review_folder = fs::read_dir(to_review_path).unwrap();
+        )
+        .change_context(BatError)?;
+        let to_review_folder = fs_read_dir(&to_review_path).change_context(BatError)?;
         let to_review_count = count_filtering_gitkeep(to_review_folder);
         let started_path = batbelt::path::get_folder_path(
             batbelt::path::FolderPathType::CodeOverhaulStarted,
             true,
-        );
-        let started_folder = fs::read_dir(started_path).unwrap();
+        )
+        .change_context(BatError)?;
+        let started_folder = fs_read_dir(&started_path)?;
         let started_count = count_filtering_gitkeep(started_folder);
         let finished_path = batbelt::path::get_folder_path(
             batbelt::path::FolderPathType::CodeOverhaulFinished,
             true,
-        );
-        let finished_folder = fs::read_dir(finished_path).unwrap();
+        )
+        .change_context(BatError)?;
+        let finished_folder = fs_read_dir(&finished_path)?;
         let finished_count = count_filtering_gitkeep(finished_folder);
         Ok((to_review_count, started_count, finished_count))
     }
 }
+
+// pub fn read_to_string(path: &str) -> error_stack::Result<String, BatError> {}
+pub fn fs_read_dir(path: &str) -> error_stack::Result<ReadDir, BatError> {
+    let dir = fs::read_dir(path)
+        .into_report()
+        .change_context(BatError)
+        .attach_printable_lazy(|| format!("Error reading dir: \n path: {} ", path))?;
+    // let dir = fs::read_dir(path).map_err(|_| BatErrorType::ReadDir { path }.parse_error())?;
+    Ok(dir)
+}
+
+// pub fn fs_write(path: &str, content: &str) -> error_stack::Result<(), BatError> {
+//     fs::write(path, content).map_err(|_| BatErrorType::Write { path }.parse_error())?;
+//     Ok(())
+// }
 
 pub fn normalize_url(url_to_normalize: &str) -> Result<String, String> {
     let url = normalizer::UrlNormalizer::new(url_to_normalize)

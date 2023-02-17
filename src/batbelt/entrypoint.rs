@@ -9,9 +9,22 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use crate::config::{BatConfig, RequiredConfig};
 use colored::Colorize;
+use error_stack::{Result, ResultExt};
 use std::fs;
 use std::path::Path;
 
+use std::{error::Error, fmt};
+
+#[derive(Debug)]
+pub struct EntryPointError;
+
+impl fmt::Display for EntryPointError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Command line error")
+    }
+}
+
+impl Error for EntryPointError {}
 pub struct EntrypointParser {
     pub name: String,
     pub handler: Option<FunctionMetadata>,
@@ -34,16 +47,18 @@ impl EntrypointParser {
         }
     }
 
-    pub fn new_from_name(entrypoint_name: &str) -> Self {
+    pub fn new_from_name(entrypoint_name: &str) -> Result<Self, EntryPointError> {
         assert!(
-            StructMetadata::structs_metadata_is_initialized(),
+            StructMetadata::structs_metadata_is_initialized().change_context(EntryPointError)?,
             "Can't run without initializing Structs metadata"
         );
         assert!(
-            FunctionMetadata::functions_metadata_is_initialized(),
+            FunctionMetadata::functions_metadata_is_initialized()
+                .change_context(EntryPointError)?,
             "Can't run without initializing Functions metadata"
         );
-        let functions_metadata = FunctionMetadata::get_functions_metadata_from_metadata_file();
+        let functions_metadata = FunctionMetadata::get_functions_metadata_from_metadata_file()
+            .change_context(EntryPointError)?;
         let entrypoint_function = functions_metadata
             .iter()
             .find(|function_metadata| {
@@ -56,7 +71,8 @@ impl EntrypointParser {
             .get_source_code_content();
         let entrypoint_function_body = get_function_body(&entrypoint_content);
         let handlers =
-            FunctionMetadata::get_functions_metadata_by_type(FunctionMetadataType::Handler);
+            FunctionMetadata::get_functions_metadata_by_type(FunctionMetadataType::Handler)
+                .change_context(EntryPointError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
         let handler = handlers.into_iter().find(|function_metadata| {
             let function_source_code = function_metadata.to_source_code();
@@ -67,7 +83,8 @@ impl EntrypointParser {
                 && function_parameters[0].contains(&context_name)
                 && (entrypoint_function_body.contains(&function_metadata.name))
         });
-        let structs_metadata = StructMetadata::get_structs_metadata_from_metadata_file();
+        let structs_metadata = StructMetadata::get_structs_metadata_from_metadata_file()
+            .change_context(EntryPointError)?;
         let context_accounts = structs_metadata
             .iter()
             .find(|struct_metadata| {
@@ -75,16 +92,17 @@ impl EntrypointParser {
                     && struct_metadata.name == context_name
             })
             .unwrap();
-        Self {
+        Ok(Self {
             name: entrypoint_name.to_string(),
             handler: handler.clone(),
             context_accounts: context_accounts.clone(),
             entrypoint_function: entrypoint_function.clone(),
-        }
+        })
     }
 
-    pub fn get_entrypoints_names(sorted: bool) -> Result<Vec<String>, String> {
-        let BatConfig { required, .. } = BatConfig::get_validated_config()?;
+    pub fn get_entrypoints_names(sorted: bool) -> Result<Vec<String>, EntryPointError> {
+        let BatConfig { required, .. } =
+            BatConfig::get_validated_config().change_context(EntryPointError)?;
 
         let RequiredConfig {
             program_lib_path, ..
@@ -114,8 +132,11 @@ impl EntrypointParser {
         context_accounts_names
     }
 
-    pub fn get_instruction_file_path_with_prompts(entrypoint_name: &str) -> Result<String, String> {
-        let instruction_files_info = get_all_rust_files_from_program_path()?;
+    pub fn get_instruction_file_path_with_prompts(
+        entrypoint_name: &str,
+    ) -> Result<String, EntryPointError> {
+        let instruction_files_info =
+            get_all_rust_files_from_program_path().change_context(EntryPointError)?;
 
         let instruction_match = instruction_files_info
             .iter()
@@ -154,8 +175,9 @@ impl EntrypointParser {
 
     // fn assert_file_match_entrypoint_name()
 
-    pub fn get_context_name(entrypoint_name: &str) -> Result<String, String> {
-        let BatConfig { required, .. } = BatConfig::get_validated_config()?;
+    pub fn get_context_name(entrypoint_name: &str) -> Result<String, EntryPointError> {
+        let BatConfig { required, .. } =
+            BatConfig::get_validated_config().change_context(EntryPointError)?;
         let RequiredConfig {
             program_lib_path, ..
         } = required;

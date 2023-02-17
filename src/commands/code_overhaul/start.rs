@@ -2,6 +2,7 @@ use colored::Colorize;
 
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 
+use crate::commands::CommandError;
 use crate::config::BatConfig;
 
 use crate::batbelt;
@@ -21,17 +22,18 @@ use crate::batbelt::templates::code_overhaul::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
 };
 
-use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
-
 use crate::batbelt::entrypoint::EntrypointParser;
+use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::get_function_parameters;
+use error_stack::{Report, Result, ResultExt};
 use std::string::String;
 
-pub fn start_co_file() -> Result<(), String> {
-    check_correct_branch()?;
+pub fn start_co_file() -> Result<(), CommandError> {
+    check_correct_branch().change_context(CommandError)?;
     let bat_config = BatConfig::get_validated_config().unwrap();
     let to_review_path =
-        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false);
+        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false)
+            .change_context(CommandError)?;
 
     // get to-review files
     let mut review_files = fs::read_dir(to_review_path)
@@ -45,7 +47,8 @@ pub fn start_co_file() -> Result<(), String> {
         panic!("no to-review files in code-overhaul folder");
     }
     let prompt_text = "Select the code-overhaul file to start:";
-    let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)?;
+    let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)
+        .change_context(CommandError)?;
 
     // user select file
     let to_start_file_name = &review_files[selection].clone();
@@ -55,10 +58,12 @@ pub fn start_co_file() -> Result<(), String> {
             file_name: to_start_file_name.clone(),
         },
         false,
-    );
+    )
+    .change_context(CommandError)?;
 
     let instruction_file_path =
-        EntrypointParser::get_instruction_file_path_with_prompts(&to_start_file_name)?;
+        EntrypointParser::get_instruction_file_path_with_prompts(&to_start_file_name)
+            .change_context(CommandError)?;
 
     let program_lib_path = bat_config.required.program_lib_path;
 
@@ -99,7 +104,8 @@ pub fn start_co_file() -> Result<(), String> {
         })
         .unwrap();
 
-    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
+    let metadata_path =
+        batbelt::path::get_file_path(FilePathType::Metadata, true).change_context(CommandError)?;
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_sentence_case())
@@ -109,16 +115,24 @@ pub fn start_co_file() -> Result<(), String> {
         .iter()
         .filter(|subsection| subsection.section_header.title == context_name)
         .map(|section| StructMetadata::from_markdown_section(section.clone()))
-        .find(|struct_metadata| struct_metadata.struct_type == StructMetadataType::ContextAccounts)
-        .unwrap()
-        .to_source_code_metadata();
+        .find(|struct_metadata| struct_metadata.struct_type == StructMetadataType::ContextAccounts);
+
+    let context_source_code = match context_source_code {
+        Some(sc) => sc.to_source_code_metadata(),
+        None => {
+            let message = "Context accounts metadatata not found";
+            log::error!("structs_subsections:\n{:#?}", structs_subsections);
+            return Err(Report::new(CommandError).attach_printable(message));
+        }
+    };
 
     let started_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulStarted {
             file_name: to_start_file_name.clone(),
         },
         false,
-    );
+    )
+    .change_context(CommandError)?;
 
     let mut started_markdown_file = MarkdownFile::new(&to_review_file_path);
 
@@ -382,12 +396,13 @@ pub fn start_co_file() -> Result<(), String> {
     create_git_commit(
         GitCommit::StartCO,
         Some(vec![to_start_file_name.to_string()]),
-    )?;
+    )
+    .change_context(CommandError)?;
 
     // open co file in VSCode
-    vs_code_open_file_in_current_window(started_path.as_str())?;
+    vs_code_open_file_in_current_window(started_path.as_str()).change_context(CommandError)?;
     // open instruction file in VSCode
-    vs_code_open_file_in_current_window(&instruction_file_path)?;
+    vs_code_open_file_in_current_window(&instruction_file_path).change_context(CommandError)?;
 
     Ok(())
 }
