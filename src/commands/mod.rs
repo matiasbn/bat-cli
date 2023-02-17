@@ -8,7 +8,7 @@ pub mod miro;
 pub mod sonar;
 pub mod update;
 
-use std::{error::Error, fmt, fs};
+use std::{error::Error, fmt};
 
 #[derive(Debug)]
 pub struct CommandError;

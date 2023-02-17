@@ -2,9 +2,9 @@ use crate::batbelt;
 use crate::batbelt::path::FilePathType;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
+use inflector::Inflector;
 use std::error::Error;
 use std::fmt::{self, Debug};
-use inflector::Inflector;
 use std::time::Duration;
 use std::{fs, thread};
 

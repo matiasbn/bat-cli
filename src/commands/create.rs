@@ -13,8 +13,8 @@ use crate::batbelt::helpers::fs_read_dir;
 use crate::batbelt::structs::FileInfo;
 use crate::batbelt::{cli_inputs, helpers};
 use crate::config::RequiredConfig;
-use crate::errors::BatError;
-use error_stack::{Result, ResultExt};
+
+use error_stack::ResultExt;
 
 use super::CommandError;
 

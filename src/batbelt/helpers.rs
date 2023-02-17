@@ -12,7 +12,7 @@ use crate::batbelt::constants::{
 };
 
 use crate::batbelt;
-use crate::errors::{BatError, BatErrorType};
+use crate::errors::BatError;
 use error_stack::Result;
 use std::fs;
 use std::fs::ReadDir;

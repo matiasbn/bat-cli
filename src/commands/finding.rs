@@ -270,7 +270,7 @@ fn validate_config_create_finding_file(finding_name: String) -> Result<(), Comma
 
 fn copy_template_to_findings_to_review(finding_name: String) -> Result<(), CommandError> {
     let prompt_text = "is the finding an informational?";
-    let selection =
+    let _selection =
         batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
     let options = vec!["yes", "no"];
     let selection = Select::with_theme(&ColorfulTheme::default())

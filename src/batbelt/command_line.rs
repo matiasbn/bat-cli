@@ -2,7 +2,7 @@ use error_stack::{Result, ResultExt};
 
 // VSCode
 use crate::{batbelt::bash::execute_command, config::BatConfig};
-use std::{error::Error, fmt, process::Termination};
+use std::{error::Error, fmt};
 
 #[derive(Debug)]
 pub struct CommandLineError;
