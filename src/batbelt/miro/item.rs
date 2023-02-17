@@ -2,6 +2,8 @@ use crate::batbelt::miro::{MiroConfig, MiroItemType};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
+use super::MiroError;
+
 pub struct MiroItem {
     pub item_id: String,
     pub item_type: MiroItemType,
@@ -51,7 +53,7 @@ impl MiroItem {
 
     pub async fn get_items_on_board(
         miro_item_type: Option<MiroItemType>,
-    ) -> Result<reqwest::Response, String> {
+    ) -> Result<reqwest::Response, MiroError> {
         api::get_items_on_board(miro_item_type).await
     }
 
@@ -107,7 +109,7 @@ mod api {
 
     pub async fn get_items_on_board(
         miro_item_type: Option<MiroItemType>,
-    ) -> Result<reqwest::Response, String> {
+    ) -> Result<reqwest::Response, MiroError> {
         let MiroConfig {
             access_token,
             board_id,

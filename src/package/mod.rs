@@ -1,8 +1,22 @@
+use crate::batbelt::bash::execute_command;
+use crate::batbelt::{self, git::check_files_not_commited};
+use error_stack::{Result, ResultExt};
 use std::{fs, io, process::Command};
 
-use crate::batbelt::{self, git::check_files_not_commited};
+use std::{error::Error, fmt};
 
-pub fn release() -> io::Result<()> {
+#[derive(Debug)]
+pub struct PackageError;
+
+impl fmt::Display for PackageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Packager error")
+    }
+}
+
+impl Error for PackageError {}
+
+pub fn release() -> Result<(), PackageError> {
     assert!(check_files_not_commited().unwrap());
     println!("Starting the release process");
     let version = bump()?;
@@ -14,46 +28,40 @@ pub fn release() -> io::Result<()> {
     Ok(())
 }
 
-pub fn format() -> io::Result<()> {
+pub fn format() -> Result<(), PackageError> {
     println!("Executing cargo clippy --fix");
-    execute_package_fn("cargo", &["clippy", "--fix"])?;
+    execute_command("cargo", &["clippy", "--fix"]).change_context(PackageError)?;
     println!("Executing cargo fix");
-    execute_package_fn("cargo", &["fix", "--all"])?;
+    execute_command("cargo", &["fix", "--all"]).change_context(PackageError)?;
     println!("Executing cargo fmt --all");
-    execute_package_fn("cargo", &["fmt", "--all"])?;
+    execute_command("cargo", &["fmt", "--all"]).change_context(PackageError)?;
     println!("Commiting format changes");
     create_commit(PackageCommit::Format, None)?;
     Ok(())
 }
 
-fn execute_package_fn(command: &str, args: &[&str]) -> io::Result<()> {
-    let mut output = Command::new(command).args(args).spawn()?;
-    output.wait()?;
-    Ok(())
-}
-
-fn release_start(version: &str) -> io::Result<()> {
+fn release_start(version: &str) -> Result<(), PackageError> {
     assert!(check_files_not_commited().unwrap());
     println!("Starting release for version {}", version);
-    execute_package_fn("git", &["flow", "release", "start", version])?;
+    execute_command("git", &["flow", "release", "start", version]).change_context(PackageError)?;
     Ok(())
 }
 
-fn release_finish(version: &str) -> io::Result<()> {
+fn release_finish(version: &str) -> Result<(), PackageError> {
     assert!(check_files_not_commited().unwrap());
     println!("Finishing release for version {}", version);
-    execute_package_fn("git", &["flow", "release", "finish"])?;
+    execute_command("git", &["flow", "release", "finish"]).change_context(PackageError)?;
     Ok(())
 }
 
-fn tag(version: &str) -> io::Result<()> {
+fn tag(version: &str) -> Result<(), PackageError> {
     assert!(check_files_not_commited().unwrap());
     println!("Creating tag for version {}", version);
-    execute_package_fn("git", &["tag", version])?;
+    execute_command("git", &["tag", version]).change_context(PackageError)?;
     Ok(())
 }
 
-fn bump() -> io::Result<String> {
+fn bump() -> Result<String, PackageError> {
     let prompt_text = "select the version bump:".to_string();
     let cargo_toml = fs::read_to_string("Cargo.toml").unwrap();
     let version_line_index = cargo_toml
@@ -108,9 +116,9 @@ fn bump() -> io::Result<String> {
     Ok(new_version)
 }
 
-fn push_origin_all() -> io::Result<()> {
-    execute_package_fn("git", &["push", "origin", "--all"])?;
-    execute_package_fn("git", &["push", "origin", "--tags"])?;
+fn push_origin_all() -> Result<(), PackageError> {
+    execute_command("git", &["push", "origin", "--all"]).change_context(PackageError)?;
+    execute_command("git", &["push", "origin", "--tags"]).change_context(PackageError)?;
     Ok(())
 }
 
@@ -119,27 +127,32 @@ enum PackageCommit {
     Format,
 }
 
-fn create_commit(commit_type: PackageCommit, commit_options: Option<Vec<&str>>) -> io::Result<()> {
+fn create_commit(
+    commit_type: PackageCommit,
+    commit_options: Option<Vec<&str>>,
+) -> Result<(), PackageError> {
     match commit_type {
         PackageCommit::CommitCargo => {
             let version = commit_options.unwrap()[0];
             // git add Cargo.toml
-            execute_package_fn("git", &["add", "Cargo.toml"])?;
+            execute_command("git", &["add", "Cargo.toml"]).change_context(PackageError)?;
 
-            execute_package_fn(
+            execute_command(
                 "git",
                 &[
                     "commit",
                     "-m",
                     format!("package: version bump {version}").as_str(),
                 ],
-            )?;
+            )
+            .change_context(PackageError)?;
             Ok(())
         }
         PackageCommit::Format => {
             // commit all files
-            execute_package_fn("git", &["add", "--all"])?;
-            execute_package_fn("git", &["commit", "-m", "package: format commit"])?;
+            execute_command("git", &["add", "--all"]).change_context(PackageError)?;
+            execute_command("git", &["commit", "-m", "package: format commit"])
+                .change_context(PackageError)?;
             Ok(())
         }
     }

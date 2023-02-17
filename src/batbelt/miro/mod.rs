@@ -1,11 +1,12 @@
+use std::error::Error;
+use std::fmt;
+
 use crate::config::*;
 use normalize_url::normalizer;
 use reqwest;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
-use serde_json::*;
-
-use std::result::Result;
+use serde_json::{self, Value};
 
 pub mod connector;
 pub mod frame;
@@ -15,6 +16,18 @@ pub mod shape;
 pub mod sticky_note;
 
 use crate::batbelt::constants::*;
+use error_stack::{Result, ResultExt};
+
+#[derive(Debug)]
+pub struct MiroError;
+
+impl fmt::Display for MiroError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("General Bat error")
+    }
+}
+
+impl Error for MiroError {}
 
 pub struct MiroConfig {
     access_token: String,
@@ -271,10 +284,12 @@ use self::item::MiroItem;
 
 pub mod helpers {
 
+    use error_stack::Report;
+
     use crate::batbelt::miro::MiroItemType;
 
     use super::*;
-    pub async fn get_accounts_frame_id() -> Result<String, String> {
+    pub async fn get_accounts_frame_id() -> Result<String, MiroError> {
         let response = MiroItem::get_items_on_board(Some(MiroItemType::Frame)).await?;
         let response = response.text().await.unwrap();
         let value: serde_json::Value =
@@ -490,14 +505,16 @@ pub mod helpers {
 
     pub async fn get_id_from_response(
         response: Result<reqwest::Response, reqwest::Error>,
-    ) -> Result<String, String> {
+    ) -> Result<String, MiroError> {
         match response {
             Ok(response) => {
                 let response_string = response.text().await.unwrap();
                 let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
                 Ok(response["id"].to_string().replace("\"", ""))
             }
-            Err(err_message) => Err(err_message.to_string()),
+            Err(err_message) => {
+                Err(Report::new(MiroError).attach_printable(err_message.to_string()))
+            }
         }
     }
 

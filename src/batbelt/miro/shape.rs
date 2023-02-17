@@ -1,7 +1,9 @@
 use crate::batbelt::miro::{helpers::get_id_from_response, MiroConfig};
+use error_stack::Result;
 use reqwest;
 use serde_json::*;
-use std::result::Result;
+
+use super::MiroError;
 
 pub struct MiroShapeStyle {
     fill_color: String,
@@ -85,21 +87,23 @@ impl MiroShape {
         &self,
         miro_shape_style: MiroShapeStyle,
         frame_id: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), MiroError> {
         api::create_shape(self.clone(), miro_shape_style, frame_id).await?;
         Ok(())
     }
 }
 
 mod api {
+
     use super::*;
+    use error_stack::IntoReport;
     use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
     pub async fn create_shape(
         miro_shape: MiroShape,
         miro_shape_style: MiroShapeStyle,
         miro_frame_id: &str,
-    ) -> Result<String, String> {
+    ) -> Result<String, MiroError> {
         let MiroConfig {
             access_token,
             board_id,
@@ -145,7 +149,8 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await;
+            .await
+            .into_report();
         let id = get_id_from_response(response).await?;
         Ok(id)
     }

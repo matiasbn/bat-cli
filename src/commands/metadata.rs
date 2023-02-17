@@ -8,15 +8,22 @@ use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
 
-use std::io;
+use error_stack::{Report, Result, ResultExt};
 
-pub fn functions() -> Result<(), String> {
-    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+use std::error::Error;
+use std::{fmt, io};
+
+use super::CommandError;
+
+pub fn functions() -> Result<(), CommandError> {
+    let metadata_path =
+        batbelt::path::get_file_path(FilePathType::Metadata, false).change_context(CommandError)?;
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let functions_section = metadata_markdown
         .get_section(&MetadataSection::Functions.to_string())
         .unwrap();
-    let is_initialized = FunctionMetadata::functions_metadata_is_initialized();
+    let is_initialized =
+        FunctionMetadata::functions_metadata_is_initialized().change_context(CommandError)?;
     if is_initialized {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
             format!(
@@ -50,14 +57,16 @@ pub fn functions() -> Result<(), String> {
     Ok(())
 }
 
-pub fn structs() -> Result<(), io::Error> {
-    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+pub fn structs() -> Result<(), CommandError> {
+    let metadata_path =
+        batbelt::path::get_file_path(FilePathType::Metadata, false).change_context(CommandError)?;
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_string())
         .unwrap();
     // // check if empty
-    let is_initialized = StructMetadata::structs_metadata_is_initialized();
+    let is_initialized =
+        StructMetadata::structs_metadata_is_initialized().change_context(CommandError)?;
     if is_initialized {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
             format!(

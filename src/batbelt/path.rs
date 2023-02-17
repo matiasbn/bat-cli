@@ -1,6 +1,17 @@
-use std::{fs, path::Path};
-
 use crate::config::BatConfig;
+use error_stack::{IntoReport, Report, Result, ResultExt};
+use std::{error::Error, fmt, fs, path::Path};
+
+#[derive(Debug)]
+pub struct BatPathError;
+
+impl fmt::Display for BatPathError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Bat Path error")
+    }
+}
+
+impl Error for BatPathError {}
 
 pub enum FilePathType {
     Metadata,
@@ -24,8 +35,8 @@ pub enum FilePathType {
     FindingRejected { file_name: String },
 }
 
-pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
-    let bat_config = BatConfig::get_validated_config().unwrap();
+pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> Result<String, BatPathError> {
+    let bat_config = BatConfig::get_validated_config().change_context(BatPathError)?;
 
     let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
     let findings_path = format!("{}/findings", auditor_notes_folder_path);
@@ -98,7 +109,7 @@ pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> String {
         return canonicalize_path(path);
     }
 
-    path
+    Ok(path)
 }
 
 pub enum FolderPathType {
@@ -119,8 +130,11 @@ pub enum FolderPathType {
     AuditResultTemp,
 }
 
-pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> String {
-    let bat_config = BatConfig::get_validated_config().unwrap();
+pub fn get_folder_path(
+    folder_type: FolderPathType,
+    canonicalize: bool,
+) -> Result<String, BatPathError> {
+    let bat_config = BatConfig::get_validated_config().change_context(BatPathError)?;
 
     let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
     let findings_path = format!("{}/findings", auditor_notes_folder_path);
@@ -169,30 +183,33 @@ pub fn get_folder_path(folder_type: FolderPathType, canonicalize: bool) -> Strin
         return canonicalize_path(path);
     }
 
-    path
+    Ok(path)
 }
 
-pub fn canonicalize_path(path_to_canonicalize: String) -> String {
+pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, BatPathError> {
     let error_message = format!("Error canonicalizing path: {}", path_to_canonicalize);
     let canonicalized_path = Path::new(&(path_to_canonicalize))
         .canonicalize()
-        .expect(&error_message)
+        .into_report()
+        .change_context(BatPathError)
+        .attach_printable(error_message)?
         .into_os_string()
         .into_string()
-        .expect(&error_message);
-    canonicalized_path
+        .unwrap();
+    Ok(canonicalized_path)
 }
 
 pub fn get_instruction_file_path_from_started_co_file(
     entrypoint_name: String,
-) -> Result<String, String> {
+) -> Result<String, BatPathError> {
     let co_file_path = get_file_path(
         FilePathType::CodeOverhaulStarted {
             file_name: entrypoint_name.clone(),
         },
         false,
-    );
-    let program_path = BatConfig::get_validated_config()?
+    )?;
+    let program_path = BatConfig::get_validated_config()
+        .change_context(BatPathError)?
         .required
         .program_lib_path
         .replace("/lib.rs", "")
@@ -209,8 +226,12 @@ pub fn get_instruction_file_path_from_started_co_file(
         .to_string();
     Ok(instruction_file_path)
 }
-pub fn get_instruction_file_path_from_co_file_path(co_file_path: String) -> Result<String, String> {
-    let program_path = BatConfig::get_validated_config()?
+
+pub fn get_instruction_file_path_from_co_file_path(
+    co_file_path: String,
+) -> Result<String, BatPathError> {
+    let program_path = BatConfig::get_validated_config()
+        .change_context(BatPathError)?
         .required
         .program_lib_path
         .replace("/lib.rs", "")

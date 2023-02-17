@@ -1,6 +1,7 @@
 use super::*;
 use crate::batbelt::miro::helpers::get_id_from_response;
 use crate::batbelt::miro::MiroItemType;
+use error_stack::Result;
 
 #[derive(Debug, Clone)]
 pub struct MiroFrame {
@@ -49,7 +50,7 @@ impl MiroFrame {
         }
     }
 
-    pub async fn deploy(&mut self) -> Result<(), String> {
+    pub async fn deploy(&mut self) -> Result<(), MiroError> {
         let id = api::create_frame(
             &self.title,
             self.x_position,
@@ -102,7 +103,7 @@ impl MiroFrame {
         &mut self,
         x_position: i64,
         y_position: i64,
-    ) -> Result<(), String> {
+    ) -> Result<(), MiroError> {
         api::update_frame_position(&self.item_id, x_position, y_position).await?;
         self.x_position = x_position;
         self.y_position = y_position;
@@ -111,6 +112,9 @@ impl MiroFrame {
 }
 
 mod api {
+    use error_stack::IntoReport;
+    use serde_json::json;
+
     use super::*;
 
     // returns the frame url
@@ -120,7 +124,7 @@ mod api {
         y_position: i64,
         width: u64,
         height: u64,
-    ) -> Result<String, String> {
+    ) -> Result<String, MiroError> {
         let MiroConfig {
             access_token,
             board_id,
@@ -152,13 +156,14 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await;
+            .await
+            .into_report();
         let id = get_id_from_response(response).await?;
         Ok(id)
     }
 
     // returns the frame url
-    pub async fn create_frame_for_entrypoint(entrypoint_name: &str) -> Result<String, String> {
+    pub async fn create_frame_for_entrypoint(entrypoint_name: &str) -> Result<String, MiroError> {
         let MiroConfig {
             access_token,
             board_id,
@@ -190,7 +195,8 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await;
+            .await
+            .into_report();
         let id = get_id_from_response(board_response).await?;
         Ok(id)
     }
@@ -227,7 +233,7 @@ mod api {
         frame_id: &str,
         x_position: i64,
         y_position: i64,
-    ) -> Result<(), String> {
+    ) -> Result<(), MiroError> {
         let MiroConfig {
             access_token,
             board_id,
