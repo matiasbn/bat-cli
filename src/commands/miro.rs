@@ -2,8 +2,8 @@ use crate::batbelt;
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionLevel};
 
-use std::fs;
-use std::result::Result;
+use std::error::Error;
+use std::{fmt, fs};
 
 use colored::Colorize;
 
@@ -31,16 +31,23 @@ use crate::batbelt::templates::code_overhaul::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
 };
 
-pub async fn deploy_co() -> Result<(), String> {
+use error_stack::{Result, ResultExt};
+
+use super::CommandError;
+
+pub async fn deploy_co() -> Result<(), CommandError> {
     assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
-    let started_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false);
-    let started_files_file_info = get_only_files_from_folder(started_path).unwrap();
+    let started_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false)
+        .change_context(CommandError)?;
+    let started_files_file_info =
+        get_only_files_from_folder(started_path).change_context(CommandError)?;
     let file_names = started_files_file_info
         .iter()
         .map(|file_info| file_info.name.clone())
         .collect::<Vec<_>>();
     let prompt_text = "Select the co file to deploy to Miro";
-    let selection = batbelt::cli_inputs::select(&prompt_text, file_names, None).unwrap();
+    let selection =
+        batbelt::cli_inputs::select(&prompt_text, file_names, None).change_context(CommandError)?;
     let selected_file_info = &started_files_file_info[selection];
     let entrypoint_name = selected_file_info.name.trim_end_matches(".md");
     let selected_co_started_path = selected_file_info.path.clone();
@@ -64,7 +71,8 @@ pub async fn deploy_co() -> Result<(), String> {
         ) {
             panic!("Please complete the signers description before deploying to Miro");
         }
-        let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false);
+        let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false)
+            .change_context(CommandError)?;
         let metadata_markdown = MarkdownFile::new(&metadata_path);
         let entrypoints_section = metadata_markdown
             .get_section(&MetadataSection::Entrypoints.to_sentence_case())
@@ -89,7 +97,8 @@ pub async fn deploy_co() -> Result<(), String> {
                     "is the signer {} a validated signer?",
                     format!("{signer_name}").red()
                 );
-                let selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text)?;
+                let selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text)
+                    .change_context(CommandError)?;
                 let signer_type = if selection {
                     SignerType::Validated
                 } else {
@@ -235,11 +244,18 @@ pub async fn deploy_co() -> Result<(), String> {
             filters: None,
             show_line_number: false,
         };
-        let handler_screenshot_path = handler_source_code.create_screenshot(options.clone());
-        let entrypoint_screenshot_path = entrypoint_source_code.create_screenshot(options.clone());
-        let co_screenshot_path = context_accounts_source_code.create_screenshot(co_options.clone());
-        let validations_screenshot_path =
-            validations_accounts_source_code.create_screenshot(co_options.clone());
+        let handler_screenshot_path = handler_source_code
+            .create_screenshot(options.clone())
+            .change_context(CommandError)?;
+        let entrypoint_screenshot_path = entrypoint_source_code
+            .create_screenshot(options.clone())
+            .change_context(CommandError)?;
+        let co_screenshot_path = context_accounts_source_code
+            .create_screenshot(co_options.clone())
+            .change_context(CommandError)?;
+        let validations_screenshot_path = validations_accounts_source_code
+            .create_screenshot(co_options.clone())
+            .change_context(CommandError)?;
 
         // Miro Images&
         let mut handler_miro_image =
@@ -383,8 +399,9 @@ pub async fn deploy_co() -> Result<(), String> {
     }
 }
 
-fn prompt_select_started_co_folder() -> Result<(String, String), String> {
-    let started_folders: Vec<String> = batbelt::helpers::get::get_started_entrypoints()?
+fn prompt_select_started_co_folder() -> Result<(String, String), CommandError> {
+    let started_folders: Vec<String> = batbelt::helpers::get::get_started_entrypoints()
+        .change_context(CommandError)?
         .iter()
         .filter(|file| !file.contains(".md"))
         .map(|file| file.to_string())
@@ -393,21 +410,23 @@ fn prompt_select_started_co_folder() -> Result<(String, String), String> {
         panic!("No folders found in started folder for the auditor")
     }
     let prompt_text = "select the folder:".to_string();
-    let selection = batbelt::cli_inputs::select(&prompt_text, started_folders.clone(), None)?;
+    let selection = batbelt::cli_inputs::select(&prompt_text, started_folders.clone(), None)
+        .change_context(CommandError)?;
     let selected_folder = &started_folders[selection];
     let selected_co_started_file_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulStarted {
             file_name: selected_folder.clone(),
         },
         true,
-    );
+    )
+    .change_context(CommandError)?;
     Ok((
         selected_folder.clone(),
         selected_co_started_file_path.clone(),
     ))
 }
 
-// pub fn create_co_snapshots() -> Result<(), String> {
+// pub fn create_co_snapshots() -> Result<(), CommandError> {
 //     assert!(self::helpers::check_silicon_installed());
 //     let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
 //     let co_file_string = fs::read_to_string(selected_co_started_path.clone()).expect(
@@ -437,8 +456,10 @@ fn prompt_select_started_co_folder() -> Result<(String, String), String> {
 //     Ok(())
 // }
 
-pub async fn deploy_accounts() -> Result<(), String> {
-    let accounts_frame_id = self::helpers::get_accounts_frame_id().await?;
+pub async fn deploy_accounts() -> Result<(), CommandError> {
+    let accounts_frame_id = self::helpers::get_accounts_frame_id()
+        .await
+        .change_context(CommandError)?;
     println!("{}", accounts_frame_id);
     Ok(())
 }
@@ -446,9 +467,10 @@ pub async fn deploy_accounts() -> Result<(), String> {
 pub async fn deploy_entrypoint_screenshots_to_frame(
     select_all: bool,
     sorted: bool,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     // get entrypoints name
-    let entrypoints_names = EntrypointParser::get_entrypoints_names(sorted)?;
+    let entrypoints_names =
+        EntrypointParser::get_entrypoints_names(sorted).change_context(CommandError)?;
 
     // prompt the user to select an entrypoint
     let prompt_text = "Please select the entrypoints to deploy";
@@ -503,7 +525,8 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
     for (index, selected_ep_index) in selected_entrypoints_index.iter().enumerate() {
         let selected_entrypoint = &entrypoints_names[selected_ep_index.clone()];
         // get context_accounts name
-        let entrypoint = EntrypointParser::new_from_name(selected_entrypoint.as_str());
+        let entrypoint = EntrypointParser::new_from_name(selected_entrypoint.as_str())
+            .change_context(CommandError)?;
         let ep_source_code = entrypoint.entrypoint_function.to_source_code();
         let ca_source_code = entrypoint.context_accounts.to_source_code_metadata();
         let grid_amount = 24;
@@ -519,7 +542,8 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     1 * height_grid,
                     entrypoint_sc_options.clone(),
                 )
-                .await;
+                .await
+                .change_context(CommandError)?;
             let ca_id = ca_source_code
                 .deploy_screenshot_to_miro_frame(
                     selected_frame.clone(),
@@ -527,7 +551,8 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     2 * height_grid,
                     context_accounts_sc_options.clone(),
                 )
-                .await;
+                .await
+                .change_context(CommandError)?;
             create_connector(&ep_id, &ca_id, None).await;
             if let Some(entrypoint_handler) = entrypoint.handler {
                 let handler_source_code = entrypoint_handler.to_source_code();
@@ -538,7 +563,8 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                         4 * height_grid,
                         handler_sc_options.clone(),
                     )
-                    .await;
+                    .await
+                    .change_context(CommandError)?;
                 create_connector(&ca_id, &handler_id, None).await;
             }
         } else {
@@ -552,7 +578,8 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     (grid_amount - 1) * height_grid,
                     entrypoint_sc_options.clone(),
                 )
-                .await;
+                .await
+                .change_context(CommandError)?;
             let ca_id = ca_source_code
                 .deploy_screenshot_to_miro_frame(
                     selected_frame.clone(),
@@ -560,7 +587,8 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     (grid_amount - 2) * height_grid,
                     context_accounts_sc_options.clone(),
                 )
-                .await;
+                .await
+                .change_context(CommandError)?;
             create_connector(&ep_id, &ca_id, None).await;
             if let Some(entrypoint_handler) = entrypoint.handler {
                 let handler_source_code = entrypoint_handler.to_source_code();
@@ -571,7 +599,8 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                         (grid_amount - 4) * height_grid,
                         handler_sc_options.clone(),
                     )
-                    .await;
+                    .await
+                    .change_context(CommandError)?;
                 create_connector(&ca_id, &handler_id, None).await;
             }
         }
@@ -582,7 +611,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
 pub async fn deploy_metadata_screenshot_to_frame(
     _default: bool,
     select_all: bool,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     MiroConfig::check_miro_enabled();
 
     println!(
@@ -601,7 +630,8 @@ pub async fn deploy_metadata_screenshot_to_frame(
     let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
     let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
     let selected_miro_frame: &MiroFrame = &miro_frames[selection];
-    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
+    let metadata_path =
+        batbelt::path::get_file_path(FilePathType::Metadata, true).change_context(CommandError)?;
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut continue_selection = true;
     while continue_selection {

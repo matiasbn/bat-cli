@@ -2,13 +2,27 @@ use crate::batbelt;
 use crate::batbelt::path::FilePathType;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::error::Error;
+use std::fmt::{self, Debug};
 use inflector::Inflector;
-use std::fmt::Debug;
 use std::time::Duration;
 use std::{fs, thread};
 
 pub mod functions;
 pub mod structs;
+
+use error_stack::{Result, ResultExt};
+
+#[derive(Debug)]
+pub struct BatSonarError;
+
+impl fmt::Display for BatSonarError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Sonar error")
+    }
+}
+
+impl Error for BatSonarError {}
 
 #[derive(Clone, Debug)]
 pub struct BatSonar {
@@ -67,14 +81,15 @@ impl BatSonar {
         new_sonar.scan_content_to_get_results();
         new_sonar
     }
-    pub fn get_entrypoints_results() -> Self {
-        let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false);
+    pub fn get_entrypoints_results() -> Result<Self, BatSonarError> {
+        let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false)
+            .change_context(BatSonarError)?;
         let entrypoints = BatSonar::new_from_path(
             &lib_file_path,
             Some("#[program]"),
             SonarResultType::Function,
         );
-        entrypoints
+        Ok(entrypoints)
     }
 
     pub fn scan_content_to_get_results(&mut self) {

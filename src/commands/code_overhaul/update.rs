@@ -7,15 +7,17 @@ use crate::batbelt;
 use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 
 use crate::batbelt::path::FolderPathType;
+use crate::commands::CommandError;
 
+use error_stack::{Result, ResultExt};
 use std::fs;
-
 use std::string::String;
 
-pub fn update_co_file() -> Result<(), String> {
+pub fn update_co_file() -> Result<(), CommandError> {
     println!("Select the code-overhaul file to finish:");
     // let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
-    let finished_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true);
+    let finished_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true)
+        .change_context(CommandError)?;
     // get to-review files
     let finished_files = fs::read_dir(finished_path)
         .unwrap()
@@ -39,8 +41,9 @@ pub fn update_co_file() -> Result<(), String> {
         // move selected file to finished
         Some(index) => {
             let finished_file_name = finished_files[index].clone();
-            check_correct_branch()?;
-            create_git_commit(GitCommit::UpdateCO, Some(vec![finished_file_name]))?;
+            check_correct_branch().change_context(CommandError)?;
+            create_git_commit(GitCommit::UpdateCO, Some(vec![finished_file_name]))
+                .change_context(CommandError)?;
             Ok(())
         }
         None => panic!("User did not select anything"),

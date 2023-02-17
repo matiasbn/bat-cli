@@ -7,19 +7,22 @@ extern crate log;
 
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
+use commands::CommandError;
+use error_stack::{Result, ResultExt};
 
 mod batbelt;
 mod commands;
 mod config;
+mod errors;
 mod package;
 
 use std::{error, result};
 
-type Result<T> = result::Result<T, Box<dyn error::Error>>;
-
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
 struct Cli {
+    #[clap(flatten)]
+    verbose: clap_verbosity_flag::Verbosity,
     #[command(subcommand)]
     command: Commands,
 }
@@ -147,77 +150,77 @@ enum PackageActions {
     Release,
 }
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), CommandError> {
     env_logger::init();
     let cli: Cli = Cli::parse();
-    match cli.command {
+    let branch_checked = match cli.command {
         Commands::Init { .. }
         | Commands::Create
         | Commands::Package(PackageActions::Format)
-        | Commands::Package(PackageActions::Release) => {}
-        _ => {
-            check_correct_branch().unwrap();
-        }
+        | Commands::Package(PackageActions::Release) => Ok(()),
+        _ => check_correct_branch(),
+    };
+    if let Err(check) = branch_checked {
+        eprintln!("Incorrect branch!");
+        log::error!("error obtained :\n {}", check);
+        return Err(check.change_context(CommandError));
     }
     match cli.command {
-        Commands::Create => commands::create::create_project().unwrap(),
         Commands::Sonar => commands::sonar::start_sonar(),
+        Commands::Create => commands::create::create_project()?,
         Commands::Init {
             skip_initial_commit,
-        } => commands::init::initialize_bat_project(skip_initial_commit)
-            .await
-            .unwrap(),
+        } => commands::init::initialize_bat_project(skip_initial_commit).await?,
         Commands::CO(CodeOverhaulActions::Start) => {
-            commands::code_overhaul::start::start_co_file().unwrap()
+            commands::code_overhaul::start::start_co_file()?
         }
         Commands::CO(CodeOverhaulActions::Finish) => {
-            commands::code_overhaul::finish::finish_co_file()
-                .await
-                .unwrap()
+            commands::code_overhaul::finish::finish_co_file().await?
         }
         Commands::CO(CodeOverhaulActions::Update) => {
-            commands::code_overhaul::update::update_co_file().unwrap()
+            commands::code_overhaul::update::update_co_file()?
         }
-        Commands::CO(CodeOverhaulActions::Count) => {
-            commands::code_overhaul::count_co_files().unwrap()
-        }
-        Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co().unwrap(),
+        Commands::CO(CodeOverhaulActions::Count) => commands::code_overhaul::count_co_files()?,
+        Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co()?,
         Commands::CO(CodeOverhaulActions::Templates) => {
-            commands::code_overhaul::update_co_templates().unwrap()
+            commands::code_overhaul::update_co_templates()?
         }
-        Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_co().await.unwrap(),
-        Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await.unwrap(),
+        Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_co().await?,
+        Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await?,
         Commands::Miro(MiroActions::Entrypoint { select_all, sorted }) => {
-            commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted)
-                .await
-                .unwrap()
+            commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted).await?
         }
         Commands::Miro(MiroActions::Metadata {
             default,
             select_all,
-        }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all)
-            .await
-            .unwrap(),
-        Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs().unwrap(),
-        Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions().unwrap(),
-        Commands::Finding(FindingActions::Create) => commands::finding::create_finding().unwrap(),
-        Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding().unwrap(),
-        Commands::Finding(FindingActions::Update) => commands::finding::update_finding().unwrap(),
-        Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all().unwrap(),
-        Commands::Finding(FindingActions::Reject) => commands::finding::reject().unwrap(),
-        Commands::Update => commands::update::update_repository().unwrap(),
-        Commands::Notes => batbelt::git::create_git_commit(GitCommit::Notes, None).unwrap(),
+        }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all).await?,
+        Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs()?,
+        Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions()?,
+        Commands::Finding(FindingActions::Create) => commands::finding::create_finding()?,
+        Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding()?,
+        Commands::Finding(FindingActions::Update) => commands::finding::update_finding()?,
+        Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all()?,
+        Commands::Finding(FindingActions::Reject) => commands::finding::reject()?,
+        Commands::Update => commands::update::update_repository().change_context(CommandError)?,
+        Commands::Notes => {
+            batbelt::git::create_git_commit(GitCommit::Notes, None).change_context(CommandError)?
+        }
         // Commands::Result(ResultActions::Findings { html }) => {
-        //     commands::result::findings_result(html).unwrap()
+        //     commands::result::findings_result(html)?
         // }
-        // Commands::Result(ResultActions::Commit) => commands::result::results_commit().unwrap(),
+        // Commands::Result(ResultActions::Commit) => commands::result::results_commit().change_context(CommandError)?,
         // only for dev
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Format) => package::format().unwrap(),
+        Commands::Package(PackageActions::Format) => {
+            package::format().change_context(CommandError)?
+        }
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Release) => package::release().unwrap(),
+        Commands::Package(PackageActions::Release) => {
+            package::release().change_context(CommandError)?
+        }
         _ => unimplemented!("Command only implemented for dev operations"),
     }
+    Ok(())
 }
 
 // mod test {

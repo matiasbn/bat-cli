@@ -10,9 +10,12 @@ use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownS
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
 use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 use std::vec;
 use strum::IntoEnumIterator;
+
+use super::MetadataError;
 
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
@@ -69,29 +72,33 @@ impl StructMetadata {
         )
     }
 
-    pub fn structs_metadata_is_initialized() -> bool {
-        let metadata_markdown = get_metadata_markdown();
+    pub fn structs_metadata_is_initialized() -> Result<bool, MetadataError> {
+        let metadata_markdown = get_metadata_markdown()?;
         let structs_section = metadata_markdown
             .get_section(&MetadataSection::Structs.to_string())
-            .unwrap();
+            .change_context(MetadataError)?;
         // // check if empty
         let structs_subsections =
             metadata_markdown.get_section_subsections(structs_section.clone());
         let is_initialized = !structs_section.content.is_empty() || structs_subsections.len() > 0;
-        is_initialized
+        Ok(is_initialized)
     }
 
-    pub fn get_structs_metadata_by_type(struct_type: StructMetadataType) -> Vec<StructMetadata> {
-        let structs_metadata = Self::get_structs_metadata_from_metadata_file();
-        structs_metadata
+    pub fn get_structs_metadata_by_type(
+        struct_type: StructMetadataType,
+    ) -> Result<Vec<StructMetadata>, MetadataError> {
+        let structs_metadata = Self::get_structs_metadata_from_metadata_file()?;
+        Ok(structs_metadata
             .into_iter()
             .filter(|struct_metadata| struct_metadata.struct_type == struct_type)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>())
     }
 
-    pub fn get_structs_metadata_names_by_type(struct_type: StructMetadataType) -> Vec<String> {
-        let structs_metadata = Self::get_structs_metadata_from_metadata_file();
-        structs_metadata
+    pub fn get_structs_metadata_names_by_type(
+        struct_type: StructMetadataType,
+    ) -> Result<Vec<String>, MetadataError> {
+        let structs_metadata = Self::get_structs_metadata_from_metadata_file()?;
+        Ok(structs_metadata
             .into_iter()
             .filter_map(|struct_metadata| {
                 if struct_metadata.struct_type == struct_type {
@@ -100,29 +107,30 @@ impl StructMetadata {
                     None
                 }
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>())
     }
 
-    pub fn get_structs_markdown_subsections_from_metadata_file() -> Vec<MarkdownSection> {
-        let metadata_markdown = get_metadata_markdown();
+    pub fn get_structs_markdown_subsections_from_metadata_file(
+    ) -> Result<Vec<MarkdownSection>, MetadataError> {
+        let metadata_markdown = get_metadata_markdown()?;
         let structs_section = metadata_markdown
             .get_section(&MetadataSection::Structs.to_sentence_case())
-            .unwrap();
+            .change_context(MetadataError)?;
         let structs_subsections = metadata_markdown.get_section_subsections(structs_section);
-        structs_subsections
+        Ok(structs_subsections)
     }
 
-    pub fn get_structs_metadata_from_metadata_file() -> Vec<StructMetadata> {
-        let structs_subsections = Self::get_structs_markdown_subsections_from_metadata_file();
+    pub fn get_structs_metadata_from_metadata_file() -> Result<Vec<StructMetadata>, MetadataError> {
+        let structs_subsections = Self::get_structs_markdown_subsections_from_metadata_file()?;
         let structs_sourcecodes = structs_subsections
             .into_iter()
             .map(|subsection| StructMetadata::from_markdown_section(subsection))
             .collect::<Vec<StructMetadata>>();
-        structs_sourcecodes
+        Ok(structs_sourcecodes)
     }
 
-    pub fn get_structs_sourcecodes() -> Vec<SourceCodeMetadata> {
-        let structs_subsections = Self::get_structs_markdown_subsections_from_metadata_file();
+    pub fn get_structs_sourcecodes() -> Result<Vec<SourceCodeMetadata>, MetadataError> {
+        let structs_subsections = Self::get_structs_markdown_subsections_from_metadata_file()?;
         let structs_sourcecodes = structs_subsections
             .into_iter()
             .map(|subsection| StructMetadata::from_markdown_section(subsection))
@@ -135,7 +143,7 @@ impl StructMetadata {
                 )
             })
             .collect::<Vec<SourceCodeMetadata>>();
-        structs_sourcecodes
+        Ok(structs_sourcecodes)
     }
 
     pub fn to_markdown_section(&self, section_hash: &str) -> MarkdownSection {
@@ -246,13 +254,15 @@ impl StructMetadataType {
     }
 }
 
-pub fn get_structs_metadata_from_program() -> Result<Vec<StructMetadata>, String> {
-    let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false);
-    let program_folder_files_info =
-        batbelt::helpers::get::get_only_files_from_folder(program_path)?;
+pub fn get_structs_metadata_from_program() -> Result<Vec<StructMetadata>, MetadataError> {
+    let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false)
+        .change_context(MetadataError)?;
+    let program_folder_files_info = batbelt::helpers::get::get_only_files_from_folder(program_path)
+        .change_context(MetadataError)?;
     let mut structs_metadata: Vec<StructMetadata> = vec![];
     for file_info in program_folder_files_info {
-        let mut struct_metadata_result = get_struct_metadata_from_file_info(file_info)?;
+        let mut struct_metadata_result =
+            get_struct_metadata_from_file_info(file_info).change_context(MetadataError)?;
         structs_metadata.append(&mut struct_metadata_result);
     }
     structs_metadata.sort_by(|struct_a, struct_b| struct_a.name.cmp(&struct_b.name));
@@ -261,7 +271,7 @@ pub fn get_structs_metadata_from_program() -> Result<Vec<StructMetadata>, String
 
 pub fn get_struct_metadata_from_file_info(
     struct_file_info: FileInfo,
-) -> Result<Vec<StructMetadata>, String> {
+) -> Result<Vec<StructMetadata>, MetadataError> {
     let mut struct_metadata_vec: Vec<StructMetadata> = vec![];
     println!(
         "starting the review of the {} file",
@@ -281,7 +291,7 @@ pub fn get_struct_metadata_from_file_info(
             .magenta(),
             result.content.clone().green()
         );
-        if assert_struct_is_context_accounts(&file_info_content, result.clone()) {
+        if assert_struct_is_context_accounts(&file_info_content, result.clone())? {
             println!("{}", "Struct found is ContextAccounts type!".yellow());
             let struct_type = StructMetadataType::ContextAccounts;
             let struct_metadata = StructMetadata::new(
@@ -327,7 +337,10 @@ pub fn get_struct_metadata_from_file_info(
     Ok(struct_metadata_vec)
 }
 
-fn assert_struct_is_context_accounts(file_info_content: &str, sonar_result: SonarResult) -> bool {
+fn assert_struct_is_context_accounts(
+    file_info_content: &str,
+    sonar_result: SonarResult,
+) -> Result<bool, MetadataError> {
     if sonar_result.start_line_index > 0 {
         let previous_line =
             file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 1];
@@ -337,7 +350,7 @@ fn assert_struct_is_context_accounts(file_info_content: &str, sonar_result: Sona
             .trim_start_matches("#[derive(");
         let mut tokenized = filtered_previous_line.split(", ");
         if tokenized.any(|token| token == "Acccounts") {
-            return true;
+            return Ok(true);
         }
     }
     let context_accounts_content = vec![
@@ -350,9 +363,10 @@ fn assert_struct_is_context_accounts(file_info_content: &str, sonar_result: Sona
         .iter()
         .any(|content| sonar_result.content.contains(content))
     {
-        return true;
+        return Ok(true);
     }
-    let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false);
+    let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false)
+        .change_context(MetadataError)?;
     let entrypoints = BatSonar::new_from_path(
         &lib_file_path,
         Some("#[program]"),
@@ -363,9 +377,9 @@ fn assert_struct_is_context_accounts(file_info_content: &str, sonar_result: Sona
         .iter()
         .map(|result| EntrypointParser::get_context_name(&result.name).unwrap());
     if entrypoints_context_accounts_names.any(|name| name == sonar_result.name) {
-        return true;
+        return Ok(true);
     }
-    return false;
+    return Ok(false);
 }
 
 fn assert_struct_is_solana_account(file_info_content: &str, sonar_result: SonarResult) -> bool {
