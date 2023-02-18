@@ -5,6 +5,8 @@ extern crate core;
 #[macro_use]
 extern crate log;
 
+extern crate confy;
+
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 use commands::CommandError;

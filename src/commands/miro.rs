@@ -13,7 +13,7 @@ use crate::batbelt::helpers::get::get_only_files_from_folder;
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::{FunctionMetadata, FunctionMetadataType};
 use crate::batbelt::metadata::MetadataSection;
-use crate::batbelt::path::FilePathType;
+use crate::batbelt::path::BatFile;
 use crate::batbelt::structs::{SignerInfo, SignerType};
 
 use crate::batbelt::metadata::source_code::SourceCodeMetadata;
@@ -25,7 +25,7 @@ use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::{helpers, MiroConfig};
-use crate::batbelt::path::FolderPathType;
+use crate::batbelt::path::BatFolder;
 use crate::batbelt::templates::code_overhaul::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
 };
@@ -36,7 +36,7 @@ use super::CommandError;
 
 pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandError> {
     MiroConfig::check_miro_enabled();
-    let started_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false)
+    let started_path = batbelt::path::get_folder_path(BatFolder::CodeOverhaulStarted, false)
         .change_context(CommandError)?;
     let started_files_file_info =
         get_only_files_from_folder(started_path).change_context(CommandError)?;
@@ -76,8 +76,8 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
                 "Please complete the signers description before deploying to Miro"
             )));
         }
-        let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false)
-            .change_context(CommandError)?;
+        let metadata_path =
+            batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
         let metadata_markdown = MarkdownFile::new(&metadata_path);
         let entrypoints_section = metadata_markdown
             .get_section(&MetadataSection::Entrypoints.to_sentence_case())
@@ -616,7 +616,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
     let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
     let selected_miro_frame: MiroFrame = miro_frames[selection].clone();
     let metadata_path =
-        batbelt::path::get_file_path(FilePathType::Metadata, true).change_context(CommandError)?;
+        batbelt::path::get_file_path(BatFile::Metadata, true).change_context(CommandError)?;
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let mut continue_selection = true;
     while continue_selection {

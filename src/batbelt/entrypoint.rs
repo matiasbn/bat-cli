@@ -7,7 +7,7 @@ use crate::batbelt::metadata::functions::{
 use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
-use crate::config::{BatConfig, RequiredConfig};
+use crate::config::BatConfig;
 use colored::Colorize;
 use error_stack::{Result, ResultExt};
 use std::fs;
@@ -101,12 +101,10 @@ impl EntrypointParser {
     }
 
     pub fn get_entrypoints_names(sorted: bool) -> Result<Vec<String>, EntryPointError> {
-        let BatConfig { required, .. } =
-            BatConfig::get_validated_config().change_context(EntryPointError)?;
-
-        let RequiredConfig {
+        let BatConfig {
             program_lib_path, ..
-        } = required;
+        } = BatConfig::get_config().change_context(EntryPointError)?;
+
         let bat_sonar = BatSonar::new_from_path(
             &program_lib_path,
             Some("#[program"),
@@ -176,11 +174,9 @@ impl EntrypointParser {
     // fn assert_file_match_entrypoint_name()
 
     pub fn get_context_name(entrypoint_name: &str) -> Result<String, EntryPointError> {
-        let BatConfig { required, .. } =
-            BatConfig::get_validated_config().change_context(EntryPointError)?;
-        let RequiredConfig {
+        let BatConfig {
             program_lib_path, ..
-        } = required;
+        } = BatConfig::get_config().change_context(EntryPointError)?;
         let lib_file = fs::read_to_string(program_lib_path).unwrap();
         let lib_file_lines: Vec<&str> = lib_file.lines().collect();
         let entrypoint_index = lib_file

@@ -3,7 +3,7 @@ use crate::batbelt::structs::FileInfo;
 use std::fmt::Debug;
 
 use crate::batbelt;
-use crate::batbelt::path::{FilePathType, FolderPathType};
+use crate::batbelt::path::{BatFile, BatFolder};
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
@@ -259,7 +259,7 @@ impl StructMetadataType {
 }
 
 pub fn get_structs_metadata_from_program() -> Result<Vec<StructMetadata>, MetadataError> {
-    let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false)
+    let program_path = batbelt::path::get_folder_path(BatFolder::ProgramPath, false)
         .change_context(MetadataError)?;
     let program_folder_files_info = batbelt::helpers::get::get_only_files_from_folder(program_path)
         .change_context(MetadataError)?;
@@ -369,8 +369,8 @@ fn assert_struct_is_context_accounts(
     {
         return Ok(true);
     }
-    let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false)
-        .change_context(MetadataError)?;
+    let lib_file_path =
+        batbelt::path::get_file_path(BatFile::ProgramLib, false).change_context(MetadataError)?;
     let entrypoints = BatSonar::new_from_path(
         &lib_file_path,
         Some("#[program]"),

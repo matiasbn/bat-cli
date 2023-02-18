@@ -3,7 +3,7 @@ use crate::batbelt::constants::BASE_REPOSTORY_NAME;
 use crate::batbelt::{
     self,
     git::{clone_base_repository, create_git_commit, GitCommit},
-    path::{FilePathType, FolderPathType},
+    path::{BatFile, BatFolder},
 };
 use error_stack::{Result, ResultExt};
 use std::error::Error;
@@ -29,7 +29,7 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
     // delete templates folder
     println!("Updating templates folder");
     // let templates_path = utils::path::get_templates_path()?;
-    let templates_path = batbelt::path::get_folder_path(FolderPathType::Templates, true)
+    let templates_path = batbelt::path::get_folder_path(BatFolder::Templates, true)
         .change_context(UpdateTemplateError)?;
     execute_command("rm", &["-rf", templates_path.as_str()]).change_context(UpdateTemplateError)?;
 
@@ -46,7 +46,7 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
     println!("Updating to-review files in code-overhaul folder");
     // move new templates to to-review in the auditor notes folder
     // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
-    let to_review_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true)
+    let to_review_path = batbelt::path::get_folder_path(BatFolder::CodeOverhaulToReview, true)
         .change_context(UpdateTemplateError)?;
     // if the auditor to-review code overhaul folder exists
     if fs::read_dir(to_review_path.clone()).is_ok() {
@@ -55,13 +55,13 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
             let file_name = file.unwrap().file_name().into_string().unwrap();
             if file_name != ".gitkeep" {
                 let file_path = batbelt::path::get_file_path(
-                    FilePathType::CodeOverhaulToReview {
+                    BatFile::CodeOverhaulToReview {
                         file_name: file_name.clone(),
                     },
                     true,
                 )
                 .change_context(UpdateTemplateError)?;
-                let template_path = batbelt::path::get_folder_path(FolderPathType::Templates, true)
+                let template_path = batbelt::path::get_folder_path(BatFolder::Templates, true)
                     .change_context(UpdateTemplateError)?;
                 execute_command("cp", &[&template_path, &file_path])
                     .change_context(UpdateTemplateError)?;

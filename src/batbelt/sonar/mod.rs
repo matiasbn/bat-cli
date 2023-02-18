@@ -1,5 +1,5 @@
 use crate::batbelt;
-use crate::batbelt::path::FilePathType;
+use crate::batbelt::path::BatFile;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use inflector::Inflector;
@@ -82,7 +82,7 @@ impl BatSonar {
         new_sonar
     }
     pub fn get_entrypoints_results() -> Result<Self, BatSonarError> {
-        let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false)
+        let lib_file_path = batbelt::path::get_file_path(BatFile::ProgramLib, false)
             .change_context(BatSonarError)?;
         let entrypoints = BatSonar::new_from_path(
             &lib_file_path,

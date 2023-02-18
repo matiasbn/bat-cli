@@ -38,11 +38,11 @@ pub type MiroApiResult = Result<reqwest::Response, MiroError>;
 
 impl MiroConfig {
     pub fn new() -> Result<Self, MiroError> {
-        let BatConfig {
-            required, auditor, ..
-        } = BatConfig::get_validated_config().change_context(MiroError)?;
-        let access_token = auditor.miro_oauth_access_token;
-        let board_url = required.miro_board_url;
+        Self::check_miro_enabled();
+        let bat_config = BatConfig::get_config().change_context(MiroError)?;
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(MiroError)?;
+        let access_token = bat_auditor_config.miro_oauth_access_token;
+        let board_url = bat_config.miro_board_url;
         let board_id = Self::get_miro_board_id(board_url.clone())?;
         Ok(MiroConfig {
             access_token,
@@ -69,10 +69,9 @@ impl MiroConfig {
     }
 
     pub fn check_miro_enabled() {
-        let BatConfig { auditor, .. } = BatConfig::get_validated_config().unwrap();
-        let access_token = auditor.miro_oauth_access_token;
+        let bat_auditor_config = BatAuditorConfig::get_config().unwrap();
         assert!(
-            !access_token.is_empty(),
+            !bat_auditor_config.miro_oauth_access_token.is_empty(),
             "miro_oauth_access_token is empty in BatAuditor.toml"
         );
     }

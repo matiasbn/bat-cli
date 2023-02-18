@@ -1,21 +1,14 @@
 pub mod finish;
 pub mod start;
 pub mod update;
-
-use colored::Colorize;
-
-use crate::batbelt::command_line::vs_code_open_file_in_current_window;
-
-use crate::config::BatConfig;
-
-use crate::batbelt::path::{FilePathType, FolderPathType};
-use crate::{batbelt, commands};
-
-use crate::batbelt::bash::execute_command;
-
-use error_stack::{Result, ResultExt};
-
 use super::CommandError;
+use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::vs_code_open_file_in_current_window;
+use crate::batbelt::path::{BatFile, BatFolder};
+use crate::config::{BatAuditorConfig, BatConfig};
+use crate::{batbelt, commands};
+use colored::Colorize;
+use error_stack::{Result, ResultExt};
 
 pub fn count_co_files() -> Result<(), CommandError> {
     let (to_review_count, started_count, finished_count) =
@@ -31,11 +24,10 @@ pub fn count_co_files() -> Result<(), CommandError> {
 }
 
 pub fn open_co() -> Result<(), CommandError> {
-    let BatConfig {
-        auditor, required, ..
-    } = BatConfig::get_validated_config().change_context(CommandError)?;
+    let bat_config = BatConfig::get_config().change_context(CommandError)?;
+    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     // list to start
-    if auditor.vs_code_integration {
+    if bat_auditor_config.vs_code_integration {
         let options = vec!["started".green(), "finished".yellow()];
         let prompt_text = format!(
             "Do you want to open a {} or a {} file?",
@@ -45,10 +37,10 @@ pub fn open_co() -> Result<(), CommandError> {
             .change_context(CommandError)?;
         let open_started = selection == 0;
         let folder_path = if open_started {
-            batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, true)
+            batbelt::path::get_folder_path(BatFolder::CodeOverhaulStarted, true)
                 .change_context(CommandError)?
         } else {
-            batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true)
+            batbelt::path::get_folder_path(BatFolder::CodeOverhaulFinished, true)
                 .change_context(CommandError)?
         };
         let co_files = batbelt::helpers::get::get_only_files_from_folder(folder_path)
@@ -65,7 +57,7 @@ pub fn open_co() -> Result<(), CommandError> {
             let file_name = &co_files[selection].clone();
             let co_file_path = if open_started {
                 batbelt::path::get_file_path(
-                    FilePathType::CodeOverhaulStarted {
+                    BatFile::CodeOverhaulStarted {
                         file_name: file_name.clone(),
                     },
                     true,
@@ -73,7 +65,7 @@ pub fn open_co() -> Result<(), CommandError> {
                 .change_context(CommandError)?
             } else {
                 batbelt::path::get_file_path(
-                    FilePathType::CodeOverhaulFinished {
+                    BatFile::CodeOverhaulFinished {
                         file_name: file_name.clone(),
                     },
                     true,
@@ -90,7 +82,7 @@ pub fn open_co() -> Result<(), CommandError> {
         } else {
             println!("Empty {} folder", options[selection].clone());
         }
-        vs_code_open_file_in_current_window(&required.program_lib_path)
+        vs_code_open_file_in_current_window(&bat_config.program_lib_path)
             .change_context(CommandError)?;
     } else {
         print!("VSCode integration not enabled");
@@ -99,9 +91,8 @@ pub fn open_co() -> Result<(), CommandError> {
 }
 
 pub fn update_co_templates() -> Result<(), CommandError> {
-    let co_to_review_path =
-        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, true)
-            .change_context(CommandError)?;
+    let co_to_review_path = batbelt::path::get_folder_path(BatFolder::CodeOverhaulToReview, true)
+        .change_context(CommandError)?;
     execute_command("rm", &["-rf", &co_to_review_path]).change_context(CommandError)?;
     execute_command("mkdir", &[&co_to_review_path]).change_context(CommandError)?;
     commands::init::initialize_code_overhaul_files().unwrap();

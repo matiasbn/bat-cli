@@ -9,38 +9,33 @@ use colored::Colorize;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 
-use super::create::AUDITOR_TOML_INITIAL_PATH;
 use crate::batbelt;
 use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::constants::{
-    AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
-    AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER,
-    AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER,
-    MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
+    AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER,
+    AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER,
+    AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT,
+    MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
 use crate::batbelt::entrypoint::EntrypointParser;
 use crate::commands::CommandError;
-use crate::config::{BatConfig, RequiredConfig};
+use crate::config::{BatAuditorConfig, BatConfig};
 
 use crate::batbelt::git::GitCommit;
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
-use crate::batbelt::path::{FilePathType, FolderPathType};
+use crate::batbelt::path::{BatFile, BatFolder};
 
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
-    let bat_config: BatConfig = BatConfig::get_init_config().change_context(CommandError)?;
-    let BatConfig {
-        required, auditor, ..
-    } = bat_config.clone();
-    if !Path::new("BatAuditor.toml").is_file() || auditor.auditor_name.is_empty() {
-        prompt_auditor_options(required.clone())?;
+    let bat_config = BatConfig::get_config().change_context(CommandError)?;
+    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+    if !Path::new("BatAuditor.toml").is_file() || !bat_auditor_config.initialized {
+        prompt_auditor_options()?;
     }
-    let bat_config: BatConfig = BatConfig::get_validated_config().change_context(CommandError)?;
-    // if !Path::new(&bat_auditor_path).is_dir() {}
-    // if auditor.auditor is empty, prompt name
+    let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
     println!("creating project for the next config: ");
     println!("{:#?}", bat_config);
     let output = Command::new("git")
@@ -56,7 +51,7 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
     }
 
     let readme_path =
-        batbelt::path::get_file_path(FilePathType::Readme, true).change_context(CommandError)?;
+        batbelt::path::get_file_path(BatFile::Readme, true).change_context(CommandError)?;
     let readme_string = fs::read_to_string(readme_path.clone()).unwrap();
 
     if readme_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
@@ -69,8 +64,8 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
         .unwrap();
 
     // create auditors branches from develop
-    for auditor_name in required.auditor_names {
-        let auditor_project_branch_name = format!("{}-{}", auditor_name, required.project_name);
+    for auditor_name in bat_config.auditor_names {
+        let auditor_project_branch_name = format!("{}-{}", auditor_name, bat_config.project_name);
         let auditor_project_branch_exists =
             batbelt::git::check_if_branch_exists(&auditor_project_branch_name)
                 .change_context(CommandError)?;
@@ -98,7 +93,7 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
 
     // validate_init_config()?;
     // let auditor_notes_folder = utils::path::get_auditor_notes_path()?;
-    let auditor_notes_folder = batbelt::path::get_folder_path(FolderPathType::AuditorNotes, false)
+    let auditor_notes_folder = batbelt::path::get_folder_path(BatFolder::AuditorNotes, false)
         .change_context(CommandError)?;
     let auditor_notes_folder_exists = Path::new(&auditor_notes_folder).is_dir();
     if auditor_notes_folder_exists {
@@ -126,16 +121,20 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
             .change_context(CommandError)?;
     }
     // let lib_file_path = utils::path::get_program_lib_path()?;
-    let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, true)
-        .change_context(CommandError)?;
+    let lib_file_path =
+        batbelt::path::get_file_path(BatFile::ProgramLib, true).change_context(CommandError)?;
     // Open lib.rs file in vscode
     vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())
         .change_context(CommandError)?;
     Ok(())
 }
 
-fn prompt_auditor_options(required: RequiredConfig) -> Result<(), CommandError> {
-    let auditor_name = get_auditor_name(required.auditor_names);
+fn prompt_auditor_options() -> Result<(), CommandError> {
+    let bat_config = BatConfig::get_config().change_context(CommandError)?;
+    let auditor_names = bat_config.auditor_names;
+    let prompt_text = format!("Select your name:");
+    let selection = batbelt::cli_inputs::select(&prompt_text, auditor_names.clone(), None)?;
+    let auditor_name = auditor_names.get(selection).unwrap().clone();
     println!(
         "Is great to have you here {}!",
         format!("{}", auditor_name).green()
@@ -143,34 +142,35 @@ fn prompt_auditor_options(required: RequiredConfig) -> Result<(), CommandError> 
     let prompt_text = "Do you want to use the Miro integration?";
     let include_miro =
         batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
-    let token: String;
-    let moat: Option<&str> = if include_miro {
+    let moat = if include_miro {
         let prompt_text = "Miro OAuth access token";
-        token = batbelt::cli_inputs::input(&prompt_text).change_context(CommandError)?;
-        Some(token.as_str())
+        batbelt::cli_inputs::input(&prompt_text).change_context(CommandError)?
     } else {
-        None
+        "".to_string()
     };
     let prompt_text = "Do you want to use the VS Code integration?";
     let include_vs_code =
         batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
-    update_auditor_toml(auditor_name, moat, include_vs_code);
+    let mut bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+    bat_auditor_config.initialized = true;
+    bat_auditor_config.auditor_name = auditor_name.to_string();
+    bat_auditor_config.vs_code_integration = include_vs_code;
+    bat_auditor_config.miro_oauth_access_token = moat;
+    bat_auditor_config.save().change_context(CommandError)?;
     Ok(())
 }
 
 fn update_readme_file() -> Result<(), CommandError> {
-    let RequiredConfig {
+    let BatConfig {
         project_name,
         client_name,
         commit_hash_url,
         starting_date,
         miro_board_url,
         ..
-    } = BatConfig::get_init_config()
-        .change_context(CommandError)?
-        .required;
+    } = BatConfig::get_config().change_context(CommandError)?;
     let readme_path =
-        batbelt::path::get_file_path(FilePathType::Readme, true).change_context(CommandError)?;
+        batbelt::path::get_file_path(BatFile::Readme, true).change_context(CommandError)?;
     let data = fs::read_to_string(readme_path.clone()).unwrap();
     let updated_readme = data
         .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
@@ -182,54 +182,21 @@ fn update_readme_file() -> Result<(), CommandError> {
     Ok(())
 }
 
-fn get_auditor_name(auditor_names: Vec<String>) -> String {
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select your name")
-        .default(0)
-        .items(&auditor_names[..])
-        .interact()
-        .unwrap();
-
-    auditor_names[selection].clone()
-}
-
-fn update_auditor_toml(
-    auditor_name: String,
-    miro_oauth_access_token: Option<&str>,
-    vs_code_integration: bool,
-) {
-    let mut new_auditor_file_content = AUDITOR_TOML_INITIAL_CONFIG_STR.replace(
-        "auditor_name = \"",
-        ("auditor_name = \"".to_string() + &auditor_name).as_str(),
-    );
-    if let Some(moat) = miro_oauth_access_token {
-        new_auditor_file_content = new_auditor_file_content.replace(
-            "miro_oauth_access_token = \"",
-            ("miro_oauth_access_token = \"".to_string() + moat).as_str(),
-        )
-    }
-    if vs_code_integration {
-        new_auditor_file_content = new_auditor_file_content
-            .replace("vs_code_integration = false", "vs_code_integration = true")
-    }
-    let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
-    fs::write(auditor_toml_path, new_auditor_file_content).expect("Could not write to file!");
-}
-
 fn initialize_project_repository() -> Result<(), CommandError> {
-    let BatConfig { required, .. } =
-        BatConfig::get_validated_config().change_context(CommandError)?;
-    let RequiredConfig {
-        project_repository_url,
-        ..
-    } = required;
+    let bat_config = BatConfig::get_config().change_context(CommandError)?;
+    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     // git init
     execute_command("git", &["init"]).change_context(CommandError)?;
 
     println!("Adding project repository as remote");
     execute_command(
         "git",
-        &["remote", "add", "origin", project_repository_url.as_str()],
+        &[
+            "remote",
+            "add",
+            "origin",
+            bat_config.project_repository_url.as_str(),
+        ],
     )
     .change_context(CommandError)?;
 
@@ -244,19 +211,19 @@ fn initialize_project_repository() -> Result<(), CommandError> {
 }
 
 fn create_auditor_notes_folder() -> Result<(), CommandError> {
-    let bat_config = BatConfig::get_validated_config().change_context(CommandError)?;
+    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     println!(
         "creating auditor notes folder for {}",
-        bat_config.auditor.auditor_name.red()
+        bat_auditor_config.auditor_name.red()
     );
     execute_command(
         "git",
         &[
             "-r",
-            batbelt::path::get_folder_path(FolderPathType::NotesTemplate, false)
+            batbelt::path::get_folder_path(BatFolder::NotesTemplate, false)
                 .change_context(CommandError)?
                 .as_str(),
-            batbelt::path::get_folder_path(FolderPathType::AuditorNotes, false)
+            batbelt::path::get_folder_path(BatFolder::AuditorNotes, false)
                 .change_context(CommandError)?
                 .as_str(),
         ],
@@ -274,6 +241,7 @@ pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {
     }
     Ok(())
 }
+
 pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
     let miro_config = MiroConfig::new().change_context(CommandError)?;
     if !miro_config.miro_enabled() {
@@ -322,7 +290,7 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
     let code_overhaul_auditor_file_path = batbelt::path::get_file_path(
-        FilePathType::CodeOverhaulToReview {
+        BatFile::CodeOverhaulToReview {
             file_name: entrypoint_name.clone(),
         },
         false,
