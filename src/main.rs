@@ -13,7 +13,6 @@ use error_stack::{Result, ResultExt};
 mod batbelt;
 mod commands;
 mod config;
-mod errors;
 mod package;
 
 #[derive(Parser, Debug)]

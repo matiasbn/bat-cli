@@ -54,22 +54,10 @@ impl MiroFrame {
         self.item_id = value["id"].to_string().replace("\"", "");
         self.frame_url = Some(miro_config.get_frame_url(&self.item_id));
         self.title = value["data"]["title"].to_string().replace("\"", "");
-        self.height = value["geometry"]["height"]
-            .as_f64()
-            .ok_or(MiroError)
-            .into_report()? as u64;
-        self.width = value["geometry"]["width"]
-            .as_f64()
-            .ok_or(MiroError)
-            .into_report()? as u64;
-        self.x_position = value["position"]["x"]
-            .as_f64()
-            .ok_or(MiroError)
-            .into_report()? as i64;
-        self.y_position = value["position"]["y"]
-            .as_f64()
-            .ok_or(MiroError)
-            .into_report()? as i64;
+        self.height = value["geometry"]["height"].as_f64().ok_or(MiroError)? as u64;
+        self.width = value["geometry"]["width"].as_f64().ok_or(MiroError)? as u64;
+        self.x_position = value["position"]["x"].as_f64().ok_or(MiroError)? as i64;
+        self.y_position = value["position"]["y"].as_f64().ok_or(MiroError)? as i64;
         Ok(())
     }
 
@@ -112,7 +100,11 @@ impl MiroFrame {
             .into_iter()
             .map(|data_response| {
                 let mut new_frame = Self::new_empty();
-                new_frame.parse_value(data_response);
+                new_frame
+                    .parse_value(data_response)
+                    .ok()
+                    .ok_or(MiroError)
+                    .unwrap();
                 new_frame
             })
             .collect();

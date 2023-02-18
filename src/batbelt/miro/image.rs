@@ -125,9 +125,10 @@ impl MiroImage {
         Ok(())
     }
 
-    pub async fn update_from_path(&mut self, new_path: &str) {
-        api::update_image_from_device(new_path, &self.item_id).await;
+    pub async fn update_from_path(&mut self, new_path: &str) -> Result<(), MiroError> {
+        api::update_image_from_device(new_path, &self.item_id).await?;
         self.source = new_path.to_string();
+        Ok(())
     }
 
     pub async fn update_position(&mut self, x_position: i64, y_position: i64) {

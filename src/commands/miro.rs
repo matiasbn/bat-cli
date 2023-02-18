@@ -151,7 +151,10 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
                 width,
                 0,
             );
-            signer_sticky_note.deploy().await;
+            signer_sticky_note
+                .deploy()
+                .await
+                .change_context(CommandError)?;
 
             let user_figure_url = "https://mirostatic.com/app/static/12079327f83ff492.svg";
             let y_position = (150 + signer_index * 270) as i64;
@@ -299,7 +302,8 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
                 &signer_miro_ids.sticky_note_id,
                 None,
             )
-            .await;
+            .await
+            .change_context(CommandError)?;
             batbelt::miro::connector::create_connector(
                 &signer_miro_ids.sticky_note_id,
                 &entrypoint_miro_image.item_id,
@@ -310,7 +314,8 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
                     end_y_position: "50%".to_string(),
                 }),
             )
-            .await;
+            .await
+            .change_context(CommandError)?;
         }
 
         println!("Connecting snapshots in Miro");
@@ -319,19 +324,22 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
             &co_miro_image.item_id,
             None,
         )
-        .await;
+        .await
+        .change_context(CommandError)?;
         batbelt::miro::connector::create_connector(
             &co_miro_image.item_id,
             &validations_miro_image.item_id,
             None,
         )
-        .await;
+        .await
+        .change_context(CommandError)?;
         batbelt::miro::connector::create_connector(
             &validations_miro_image.item_id,
             &handler_miro_image.item_id,
             None,
         )
-        .await;
+        .await
+        .change_context(CommandError)?;
 
         // // Deploy mut_accounts
         // if mut_accounts.len() > 0 {
@@ -511,7 +519,9 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 )
                 .await
                 .change_context(CommandError)?;
-            create_connector(&ep_image.item_id, &ca_image.item_id, None).await;
+            create_connector(&ep_image.item_id, &ca_image.item_id, None)
+                .await
+                .change_context(CommandError)?;
             if let Some(entrypoint_handler) = entrypoint.handler {
                 let handler_source_code = entrypoint_handler.to_source_code(Some(format!(
                     "{}-{}",
@@ -526,7 +536,9 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     )
                     .await
                     .change_context(CommandError)?;
-                create_connector(&ca_image.item_id, &handler_image.item_id, None).await;
+                create_connector(&ca_image.item_id, &handler_image.item_id, None)
+                    .await
+                    .change_context(CommandError)?;
             }
         } else {
             let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
@@ -550,7 +562,9 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 )
                 .await
                 .change_context(CommandError)?;
-            create_connector(&ep_image.item_id, &ca_image.item_id, None).await;
+            create_connector(&ep_image.item_id, &ca_image.item_id, None)
+                .await
+                .change_context(CommandError)?;
             if let Some(entrypoint_handler) = entrypoint.handler {
                 let handler_source_code = entrypoint_handler.to_source_code(Some(format!(
                     "{}-{}",
