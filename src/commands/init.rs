@@ -217,7 +217,7 @@ fn create_auditor_notes_folder() -> Result<(), CommandError> {
         bat_auditor_config.auditor_name.red()
     );
     execute_command(
-        "git",
+        "cp",
         &[
             "-r",
             batbelt::path::get_folder_path(BatFolder::NotesTemplate, false)

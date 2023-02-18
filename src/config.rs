@@ -35,7 +35,7 @@ impl BatAuditorConfig {
     }
 
     pub fn save(&self) -> Result<(), BatConfigError> {
-        Ok(confy::store("BatAuditor.toml", None, &self)
+        Ok(confy::store_path("BatAuditor.toml", self)
             .into_report()
             .change_context(BatConfigError)?)
     }
@@ -63,118 +63,10 @@ impl BatConfig {
     }
 
     pub fn save(&self) -> Result<(), BatConfigError> {
-        Ok(confy::store("Bat.toml", None, &self)
+        Ok(confy::store_path("Bat.toml", self)
             .into_report()
             .change_context(BatConfigError)?)
     }
-
-    // pub fn get_validated_config() -> Result<BatConfig, BatConfigError> {
-    //     let bat_config = Self::get_bat_config()?;
-    //     // Self::validate_bat_config(bat_config.clone(), true)?;
-    //     Ok(bat_config)
-    // }
-    //
-    // pub fn get_init_config() -> Result<BatConfig, BatConfigError> {
-    //     let bat_config: BatConfig = Self::get_bat_config()?;
-    //     // Self::validate_bat_config(bat_config.clone(), false)?;
-    //     Ok(bat_config)
-    // }
-    //
-    // fn get_bat_config() -> Result<BatConfig, BatConfigError> {
-    //     // Bat.toml
-    //     let bat_toml_path = Path::new("Bat.toml");
-    //     if !bat_toml_path.is_file() {
-    //         let message = format!("Bat.toml file not found at {bat_toml_path:?}");
-    //         return Err(Report::new(BatConfigError).attach_printable(message));
-    //     }
-    //
-    //     // BatAuditor.toml
-    //     let auditor_toml_path = Path::new("BatAuditor.toml");
-    //     if !auditor_toml_path.is_file() {
-    //         // if BatAuditor does not exist, create it
-    //         create_auditor_toml().change_context(BatConfigError)?;
-    //         println!("BatAuditor.toml file not detected, creating")
-    //     }
-    //     let config: BatConfig = confy::load_path("Bat.toml")
-    //         .into_report()
-    //         .change_context(BatConfigError)
-    //         .attach_printable("Error parsing BatAuditor.toml".to_string())?;
-    //     Ok(config)
-    // }
-
-    // fn validate_bat_config(
-    //     bat_config: BatConfig,
-    //     validate_auditor: bool,
-    // ) -> Result<(), BatConfigError> {
-    //     let BatConfig {
-    //         required, auditor, ..
-    //     } = bat_config;
-    //     // Validate required
-    //     if required.project_name.is_empty() {
-    //         return Err(
-    //             Report::new(BatConfigError).attach(BatConfigParameterNotFound(
-    //                 "required parameter project_name is empty at Bat.toml",
-    //             )),
-    //         );
-    //     }
-    //     if required.client_name.is_empty() {
-    //         return Err(
-    //             Report::new(BatConfigError).attach(BatConfigParameterNotFound(
-    //                 "required parameter client_name is empty at Bat.toml",
-    //             )),
-    //         );
-    //     }
-    //     if required.commit_hash_url.is_empty() {
-    //         return Err(
-    //             Report::new(BatConfigError).attach(BatConfigParameterNotFound(
-    //                 "required parameter commit_hash_url is empty at Bat.toml",
-    //             )),
-    //         );
-    //     }
-    //     if required.starting_date.is_empty() {
-    //         return Err(
-    //             Report::new(BatConfigError).attach(BatConfigParameterNotFound(
-    //                 "required parameter starting_date is empty at Bat.toml",
-    //             )),
-    //         );
-    //     }
-    //     if required.miro_board_url.is_empty() {
-    //         return Err(
-    //             Report::new(BatConfigError).attach(BatConfigParameterNotFound(
-    //                 "required parameter miro_board_url is empty at Bat.toml",
-    //             )),
-    //         );
-    //     }
-    //     if required.program_lib_path.is_empty() {
-    //         return Err(
-    //             Report::new(BatConfigError).attach(BatConfigParameterNotFound(
-    //                 "required parameter program_lib_path is empty at Bat.toml",
-    //             )),
-    //         );
-    //     }
-    //     if required.auditor_names.is_empty() {
-    //         return Err(
-    //             Report::new(BatConfigError).attach(BatConfigParameterNotFound(
-    //                 "required parameter auditor_names is empty at Bat.toml",
-    //             )),
-    //         );
-    //     }
-    //     if required.project_repository_url.is_empty() {
-    //         return Err(Report::new(BatConfigError).attach_printable(
-    //             "required parameter project_repository_url is empty at Bat.toml",
-    //         ));
-    //     }
-    //
-    //     // Validate auditor
-    //     if validate_auditor && auditor.auditor_name.is_empty() {
-    //         return Err(
-    //             Report::new(BatConfigError).attach(BatAuditorConfigParameterNotFound(
-    //                 "required parameter auditor_name is empty at BatAuditor.toml",
-    //             )),
-    //         );
-    //     }
-    //     Ok(())
-    // }
 }
 
 #[cfg(test)]
@@ -186,19 +78,31 @@ mod bat_test {
 
     #[test]
     fn test_confy() -> Result<(), BatConfigError> {
-        env::set_current_dir("../sage-audit").unwrap();
-        execute_command("ls", &[]).unwrap();
-        let bat_toml_path = BatFile::BatToml
-            .get_path(false)
-            .change_context(BatConfigError)?;
-        // println!("{:#?}", &BatFile::BatToml.get_path(false)?);
-        let bat_config: BatConfig = confy::load_path("Bat.toml")
-            .into_report()
-            .change_context(BatConfigError)?;
-        let bat_auditor_config: BatAuditorConfig = confy::load_path("BatAuditor.toml")
-            .into_report()
-            .change_context(BatConfigError)?;
-
+        // env::set_current_dir("../sage-audit").unwrap();
+        // execute_command("ls", &[]).unwrap();
+        // let bat_toml_path = BatFile::BatToml
+        //     .get_path(false)
+        //     .change_context(BatConfigError)?;
+        // // println!("{:#?}", &BatFile::BatToml.get_path(false)?);
+        // let bat_config: BatConfig = confy::load_path("Bat.toml")
+        //     .into_report()
+        //     .change_context(BatConfigError)?;
+        // let bat_auditor_config = BatConfig::get_config()?;
+        // bat_auditor_config.project_name = "hola".to_string();
+        // let bat_config = BatConfig {
+        //     initialized: false,
+        //     project_name: "chai".to_string(),
+        //     client_name: "hola".to_string(),
+        //     commit_hash_url: "askjdhajkdhakjhdakjhskjh".to_string(),
+        //     starting_date: "asdljhaskdjhalkhdlka".to_string(),
+        //     miro_board_url: "222".to_string(),
+        //     auditor_names: vec![],
+        //     program_lib_path: "".to_string(),
+        //     project_repository_url: "".to_string(),
+        // };
+        // bat_config.save().unwrap();
+        // confy::store_path("Bat.toml", bat_config).unwrap();
+        // bat_auditor_config.save()?;
         Ok(())
     }
 }

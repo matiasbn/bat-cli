@@ -7,7 +7,7 @@ use crate::batbelt::structs::FileInfo;
 use crate::batbelt::{cli_inputs, helpers};
 use crate::config::BatConfig;
 use colored::Colorize;
-use error_stack::{IntoReport, Report, ResultExt};
+use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use std::path::Path;
 use std::{fs, process::Command};
 use walkdir::WalkDir;
@@ -146,6 +146,7 @@ fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
     let project_repository_url: String =
         cli_inputs::input("Project repo url, where this audit folder would be pushed:")
             .change_context(CommandError)?;
+
     let bat_config = BatConfig {
         initialized: true,
         auditor_names,
