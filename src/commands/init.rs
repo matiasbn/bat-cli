@@ -11,6 +11,7 @@ use dialoguer::Select;
 
 use super::create::AUDITOR_TOML_INITIAL_PATH;
 use crate::batbelt;
+use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::constants::{
     AUDITOR_TOML_INITIAL_CONFIG_STR, AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER,
@@ -27,7 +28,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::{FilePathType, FolderPathType};
 
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
     let bat_config: BatConfig = BatConfig::get_init_config().change_context(CommandError)?;
@@ -223,53 +224,21 @@ fn initialize_project_repository() -> Result<(), CommandError> {
         ..
     } = required;
     // git init
-    let mut output = Command::new("git").args(["init"]).output().unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "initialize project repository failed with error: {:#?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command("git", &["init"]).change_context(CommandError)?;
 
     println!("Adding project repository as remote");
-    // git remote add origin project_repository
-    output = Command::new("git")
-        .args(["remote", "add", "origin", project_repository_url.as_str()])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "initialize project repository failed with error: {:#?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command(
+        "git",
+        &["remote", "add", "origin", project_repository_url.as_str()],
+    )
+    .change_context(CommandError)?;
 
     println!("Commit all to main");
-    output = Command::new("git").args(["add", "-A"]).output().unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "initialize project repository failed with error: {:#?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
-
-    output = Command::new("git")
-        .args(["commit", "-m", "initial commit"])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "initialize project repository failed with error: {:#?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command("git", &["add", "-A"]).change_context(CommandError)?;
+    execute_command("git", &["commit", "-m", "initial commit"]).change_context(CommandError)?;
 
     println!("Creating develop branch");
-    // create develop
-    Command::new("git")
-        .args(["checkout", "-b", "develop"])
-        .output()
-        .unwrap();
+    execute_command("git", &["checkout", "-b", "develop"]).change_context(CommandError)?;
 
     Ok(())
 }
@@ -280,9 +249,9 @@ fn create_auditor_notes_folder() -> Result<(), CommandError> {
         "creating auditor notes folder for {}",
         bat_config.auditor.auditor_name.red()
     );
-
-    let output = Command::new("cp")
-        .args([
+    execute_command(
+        "git",
+        &[
             "-r",
             batbelt::path::get_folder_path(FolderPathType::NotesTemplate, false)
                 .change_context(CommandError)?
@@ -290,15 +259,9 @@ fn create_auditor_notes_folder() -> Result<(), CommandError> {
             batbelt::path::get_folder_path(FolderPathType::AuditorNotes, false)
                 .change_context(CommandError)?
                 .as_str(),
-        ])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "initialize project repository failed with error: {:#?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+        ],
+    )
+    .change_context(CommandError)?;
 
     Ok(())
 }
@@ -366,7 +329,9 @@ pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError>
     )
     .change_context(CommandError)?;
     if Path::new(&code_overhaul_auditor_file_path).is_file() {
-        panic!("code overhaul file already exists for: {entrypoint_name:?}");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "code overhaul file already exists for: {entrypoint_name:?}"
+        )));
     }
     let mut co_template =
         batbelt::templates::code_overhaul::CodeOverhaulTemplate::template_to_markdown_file(

@@ -31,31 +31,17 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
     // let templates_path = utils::path::get_templates_path()?;
     let templates_path = batbelt::path::get_folder_path(FolderPathType::Templates, true)
         .change_context(UpdateTemplateError)?;
-    let output = Command::new("rm")
-        .args(["-rf", templates_path.as_str()])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "update repository failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command("rm", &["-rf", templates_path.as_str()]).change_context(UpdateTemplateError)?;
 
     // move template to now location
-    let output = Command::new("mv")
-        .args([
-            BASE_REPOSTORY_NAME.to_string() + "/templates",
-            templates_path,
-        ])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "update repository failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command(
+        "mv",
+        &[
+            &(BASE_REPOSTORY_NAME.to_string() + "/templates"),
+            &templates_path,
+        ],
+    )
+    .change_context(UpdateTemplateError)?;
 
     println!("Updating to-review files in code-overhaul folder");
     // move new templates to to-review in the auditor notes folder
@@ -79,53 +65,20 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
                     .change_context(UpdateTemplateError)?;
                 execute_command("cp", &[&template_path, &file_path])
                     .change_context(UpdateTemplateError)?;
-                // let output = Command::new("cp")
-                //     .args([template_path, file_path])
-                //     .output()
-                //     .unwrap();
-                // if !output.stderr.is_empty() {
-                //     panic!(
-                //         "templates update failed with error: {:?}",
-                //         std::str::from_utf8(output.stderr.as_slice()).unwrap()
-                //     )
-                // };
             }
         }
     };
 
     // replace package.json
     println!("Updating package.json");
-    let output = Command::new("mv")
-        .args([
-            BASE_REPOSTORY_NAME.to_string() + "/package.json",
-            ".".to_string(),
-        ])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "update repository failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command(
+        "mv",
+        &[&(BASE_REPOSTORY_NAME.to_string() + "/package.json"), "."],
+    )
+    .change_context(UpdateTemplateError)?;
 
     // delete base_repository cloned
-    let output = Command::new("rm")
-        .args(["-rf", BASE_REPOSTORY_NAME])
-        .output()
-        .unwrap();
-    if !output.stderr.is_empty() {
-        panic!(
-            "update repository failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
-    if !output.stderr.is_empty() {
-        panic!(
-            "update repository failed with error: {:?}",
-            std::str::from_utf8(output.stderr.as_slice()).unwrap()
-        )
-    };
+    execute_command("rm", &[&"-rf", BASE_REPOSTORY_NAME]).change_context(UpdateTemplateError)?;
     create_git_commit(GitCommit::UpdateRepo, None).change_context(UpdateTemplateError)?;
     println!("Repository successfully updated");
     Ok(())

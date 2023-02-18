@@ -25,7 +25,7 @@ use crate::batbelt::templates::code_overhaul::{
 use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::get_function_parameters;
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), CommandError> {
@@ -44,7 +44,8 @@ pub fn start_co_file() -> Result<(), CommandError> {
     review_files.sort();
 
     if review_files.is_empty() {
-        panic!("no to-review files in code-overhaul folder");
+        return Err(Report::new(CommandError)
+            .attach_printable("no to-review files in code-overhaul folder"));
     }
     let prompt_text = "Select the code-overhaul file to start:";
     let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)
