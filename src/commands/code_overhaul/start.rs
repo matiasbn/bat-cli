@@ -109,22 +109,23 @@ pub fn start_co_file() -> Result<(), CommandError> {
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_sentence_case())
-        .unwrap();
+        .change_context(CommandError)?;
     let structs_subsections = metadata_markdown.get_section_subsections(structs_section);
     let context_source_code = structs_subsections
         .iter()
         .filter(|subsection| subsection.section_header.title == context_name)
         .map(|section| StructMetadata::from_markdown_section(section.clone()))
-        .find(|struct_metadata| struct_metadata.struct_type == StructMetadataType::ContextAccounts);
+        .find(|struct_metadata| struct_metadata.struct_type == StructMetadataType::ContextAccounts)
+        .ok_or(CommandError)?;
 
-    let context_source_code = match context_source_code {
-        Some(sc) => sc.to_source_code(None),
-        None => {
-            let message = "Context accounts metadatata not found";
-            log::error!("structs_subsections:\n{:#?}", structs_subsections);
-            return Err(Report::new(CommandError).attach_printable(message));
-        }
-    };
+    // let context_source_code = match context_source_code {
+    //     Some(sc) => sc.to_source_code(None),
+    //     None => {
+    //         let message = "Context accounts metadatata not found";
+    //         log::error!("structs_subsections:\n{:#?}", structs_subsections);
+    //         return Err(Report::new(CommandError).attach_printable(message));
+    //     }
+    // };
 
     let started_path = batbelt::path::get_file_path(
         FilePathType::CodeOverhaulStarted {
@@ -140,8 +141,12 @@ pub fn start_co_file() -> Result<(), CommandError> {
     let signers_section = started_markdown_file
         .get_section(&CodeOverhaulSection::Signers.to_title())
         .unwrap();
-    let signers_section_content =
-        get_signers_section_content(&context_source_code.clone().get_source_code_content());
+    let signers_section_content = get_signers_section_content(
+        &context_source_code
+            .clone()
+            .to_source_code(None)
+            .get_source_code_content(),
+    );
     let mut new_signers_section = signers_section.clone();
     new_signers_section.content = signers_section_content.clone();
     started_markdown_file
@@ -188,8 +193,12 @@ pub fn start_co_file() -> Result<(), CommandError> {
         .get_section(&CodeOverhaulSection::ContextAccounts.to_title())
         .unwrap();
 
-    let context_accounts_content =
-        get_context_account_section_content(&context_source_code.clone().get_source_code_content());
+    let context_accounts_content = get_context_account_section_content(
+        &context_source_code
+            .clone()
+            .to_source_code(None)
+            .get_source_code_content(),
+    );
     let mut new_context_accounts_section = context_accounts_section.clone();
     new_context_accounts_section.content = context_accounts_content.clone();
     started_markdown_file
@@ -266,7 +275,10 @@ pub fn start_co_file() -> Result<(), CommandError> {
     };
 
     let ca_accounts_only_validations = BatSonar::new_scanned(
-        &context_source_code.clone().get_source_code_content(),
+        &context_source_code
+            .clone()
+            .to_source_code(None)
+            .get_source_code_content(),
         SonarResultType::ContextAccountsOnlyValidation,
     );
 
@@ -334,7 +346,9 @@ pub fn start_co_file() -> Result<(), CommandError> {
         })
         .collect::<Vec<_>>();
     let context_accounts = BatSonar::new_scanned(
-        &context_source_code.get_source_code_content(),
+        &context_source_code
+            .to_source_code(None)
+            .get_source_code_content(),
         SonarResultType::ContextAccountsAll,
     );
     let mut_accounts = get_mut_accounts(context_accounts.results.clone());

@@ -38,18 +38,18 @@ pub struct MiroConfig {
 pub type MiroApiResult = Result<reqwest::Response, MiroError>;
 
 impl MiroConfig {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, MiroError> {
         let BatConfig {
             required, auditor, ..
-        } = BatConfig::get_validated_config().unwrap();
+        } = BatConfig::get_validated_config().change_context(MiroError)?;
         let access_token = auditor.miro_oauth_access_token;
         let board_url = required.miro_board_url;
-        let board_id = Self::get_miro_board_id(board_url.clone());
-        MiroConfig {
+        let board_id = Self::get_miro_board_id(board_url.clone())?;
+        Ok(MiroConfig {
             access_token,
             board_id,
             board_url,
-        }
+        })
     }
 
     pub fn parse_response_from_miro(
@@ -88,7 +88,7 @@ impl MiroConfig {
         url
     }
 
-    pub fn get_miro_board_id(miro_board_url: String) -> String {
+    pub fn get_miro_board_id(miro_board_url: String) -> Result<String, MiroError> {
         let error_msg = format!(
             "Error obtaining the miro board id for the url: {}",
             miro_board_url
@@ -96,12 +96,12 @@ impl MiroConfig {
         let miro_board_id = miro_board_url
             .split("board/")
             .last()
-            .expect(&error_msg)
+            .ok_or(MiroError)?
             .split("/")
             .next()
-            .expect(&error_msg)
+            .ok_or(MiroError)?
             .to_string();
-        miro_board_id
+        Ok(miro_board_id)
     }
 }
 

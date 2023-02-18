@@ -35,7 +35,7 @@ use error_stack::{Result, ResultExt};
 use super::CommandError;
 
 pub async fn deploy_co() -> Result<(), CommandError> {
-    assert!(MiroConfig::new().miro_enabled(), "To enable the Miro integration, fill the miro_oauth_access_token in the BatAuditor.toml file");
+    MiroConfig::check_miro_enabled();
     let started_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false)
         .change_context(CommandError)?;
     let started_files_file_info =
@@ -147,6 +147,7 @@ pub async fn deploy_co() -> Result<(), CommandError> {
                 x_position,
                 y_position,
                 width,
+                0,
             );
             signer_sticky_note.deploy().await;
 

@@ -1,7 +1,6 @@
 use super::*;
-use crate::batbelt::miro::helpers::get_id_from_response;
 use crate::batbelt::miro::MiroItemType;
-use error_stack::Result;
+use error_stack::{IntoReport, Result, ResultExt};
 use serde_json::json;
 
 #[derive(Debug, Clone)]
@@ -51,16 +50,34 @@ impl MiroFrame {
     }
 
     fn parse_value(&mut self, value: Value) -> Result<(), MiroError> {
-        let miro_config = MiroConfig::new();
+        let miro_config = MiroConfig::new()?;
         self.item_id = value["id"].to_string().replace("\"", "");
-        self.title = value["data"]["title"].to_string().replace("\"", "");
-        self.height = value["geometry"]["height"].as_f64().unwrap() as u64;
-        self.width = value["geometry"]["width"].as_f64().unwrap() as u64;
-        self.x_position = value["position"]["x"].as_f64().unwrap() as i64;
-        self.y_position = value["position"]["y"].as_f64().unwrap() as i64;
         self.frame_url = Some(miro_config.get_frame_url(&self.item_id));
+        self.title = value["data"]["title"].to_string().replace("\"", "");
+        self.height = value["geometry"]["height"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as u64;
+        self.width = value["geometry"]["width"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as u64;
+        self.x_position = value["position"]["x"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as i64;
+        self.y_position = value["position"]["y"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as i64;
         Ok(())
     }
+
+    // let message = format!(
+    //     "Error getting geometry.height for frame: \n title:{} \n item_id:{}\n frame_url:{}",
+    //     self.title, self.item_id, self.frame_url.unwrap()
+    //     );
+    // return Err(Report::new(MiroError).attach_printable(message));
 
     pub async fn new_from_item_id(item_id: &str) -> Result<Self, MiroError> {
         let api_response = MiroItem::get_specific_item_on_board(item_id).await.unwrap();
@@ -134,7 +151,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
 
         let response = client
@@ -239,7 +256,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let response = client
             .patch(format!(
@@ -267,7 +284,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let response = client
             .get(format!(

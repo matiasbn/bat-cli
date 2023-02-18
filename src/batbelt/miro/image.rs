@@ -156,7 +156,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let file_name = file_path.split('/').last().unwrap().to_string();
         let file = File::open(file_path).await.unwrap();
         // read file body stream
@@ -190,7 +190,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let response = client
             .post(format!("https://api.miro.com/v2/boards/{board_id}/images"))
@@ -225,7 +225,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let file_name = file_path.clone().split('/').last().unwrap().to_string();
         let file = File::open(file_path.clone()).await.unwrap();
         // read file body stream
@@ -297,14 +297,14 @@ mod api {
         parent_id: &str,
         x_position: i64,
         y_position: i64,
-    ) {
+    ) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
-        let _response = client
+        let response = client
             .patch(format!(
                 "https://api.miro.com/v2/boards/{board_id}/images/{item_id}",
             ))
@@ -324,7 +324,7 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .unwrap();
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
 }

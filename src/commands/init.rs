@@ -312,7 +312,7 @@ pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {
     Ok(())
 }
 pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
-    let miro_config = MiroConfig::new();
+    let miro_config = MiroConfig::new().change_context(CommandError)?;
     if !miro_config.miro_enabled() {
         return Ok(());
     }

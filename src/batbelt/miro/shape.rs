@@ -108,7 +108,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let response = client
             .post(format!("https://api.miro.com/v2/boards/{board_id}/shapes",))

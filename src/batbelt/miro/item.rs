@@ -78,7 +78,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         // let started_file_path
         // let x_position = x + x_move;
         let client = reqwest::Client::new();
@@ -111,7 +111,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let url = if let Some(item_type) = miro_item_type {
             let item_type_string = item_type.to_string();
@@ -136,7 +136,7 @@ mod api {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let response = client
             .get(format!(
