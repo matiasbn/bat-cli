@@ -67,7 +67,7 @@ impl EntrypointParser {
             })
             .unwrap();
         let entrypoint_content = entrypoint_function
-            .to_source_code()
+            .to_source_code(None)
             .get_source_code_content();
         let entrypoint_function_body = get_function_body(&entrypoint_content);
         let handlers =
@@ -75,7 +75,7 @@ impl EntrypointParser {
                 .change_context(EntryPointError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
         let handler = handlers.into_iter().find(|function_metadata| {
-            let function_source_code = function_metadata.to_source_code();
+            let function_source_code = function_metadata.to_source_code(None);
             let function_content = function_source_code.get_source_code_content();
             let function_parameters = get_function_parameters(function_content.clone());
             !function_parameters.is_empty()

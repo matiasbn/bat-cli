@@ -16,7 +16,7 @@ pub mod shape;
 pub mod sticky_note;
 
 use crate::batbelt::constants::*;
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 #[derive(Debug)]
 pub struct MiroError;
@@ -35,6 +35,8 @@ pub struct MiroConfig {
     board_url: String,
 }
 
+pub type MiroApiResult = Result<reqwest::Response, MiroError>;
+
 impl MiroConfig {
     pub fn new() -> Self {
         let BatConfig {
@@ -47,6 +49,19 @@ impl MiroConfig {
             access_token,
             board_id,
             board_url,
+        }
+    }
+
+    pub fn parse_response_from_miro(
+        response: std::result::Result<reqwest::Response, reqwest::Error>,
+    ) -> Result<reqwest::Response, MiroError> {
+        match response {
+            Ok(resp) => Ok(resp),
+            Err(error) => {
+                let message = "Bad response from Miro";
+                log::error!("Miro response: \n {:#?}", error);
+                return Err(Report::new(MiroError).attach_printable(message));
+            }
         }
     }
 
@@ -122,7 +137,9 @@ impl MiroObject {
         }
     }
 
-    pub async fn multiple_from_response(response: reqwest::Response) -> Vec<Self> {
+    pub async fn multiple_from_response(
+        response: reqwest::Response,
+    ) -> Result<Vec<Self>, MiroError> {
         let response_string = response.text().await.unwrap();
         let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
         let data = response["data"].as_array().unwrap();
@@ -148,7 +165,7 @@ impl MiroObject {
                 )
             })
             .collect();
-        objects
+        Ok(objects)
     }
 }
 

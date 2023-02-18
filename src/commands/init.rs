@@ -316,7 +316,9 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
     if !miro_config.miro_enabled() {
         return Ok(());
     }
-    let miro_board_frames = MiroFrame::get_frames_from_miro().await;
+    let miro_board_frames = MiroFrame::get_frames_from_miro()
+        .await
+        .change_context(CommandError)?;
 
     let entrypoints_names =
         EntrypointParser::get_entrypoints_names(false).change_context(CommandError)?;

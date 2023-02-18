@@ -50,7 +50,9 @@ pub async fn deploy_co() -> Result<(), CommandError> {
     let selected_file_info = &started_files_file_info[selection];
     let entrypoint_name = selected_file_info.name.trim_end_matches(".md");
     let selected_co_started_path = selected_file_info.path.clone();
-    let miro_frames = MiroFrame::get_frames_from_miro().await;
+    let miro_frames = MiroFrame::get_frames_from_miro()
+        .await
+        .change_context(CommandError)?;
     let entrypoint_frame = miro_frames
         .iter()
         .find(|frame| frame.title == entrypoint_name);
@@ -61,7 +63,9 @@ pub async fn deploy_co() -> Result<(), CommandError> {
     };
     let entrypoint_frame_objects = entrypoint_frame.get_items_within_frame().await;
 
-    let is_deploying = entrypoint_frame_objects.is_empty();
+    let is_deploying = entrypoint_frame_objects
+        .change_context(CommandError)?
+        .is_empty();
     if is_deploying {
         // check that the signers are finished
         let current_content = fs::read_to_string(selected_co_started_path.clone()).unwrap();
@@ -155,7 +159,7 @@ pub async fn deploy_co() -> Result<(), CommandError> {
                 y_position,
                 200,
             );
-            user_figure.deploy().await;
+            user_figure.deploy().await.change_context(CommandError)?;
 
             *signer = SignerInfo {
                 signer_text: signer.signer_text.clone(),
@@ -266,10 +270,19 @@ pub async fn deploy_co() -> Result<(), CommandError> {
         let mut validations_miro_image =
             MiroImage::new_from_file_path(&validations_screenshot_path, &entrypoint_frame.item_id);
 
-        handler_miro_image.deploy().await;
-        entrypoint_miro_image.deploy().await;
-        co_miro_image.deploy().await;
-        validations_miro_image.deploy().await;
+        handler_miro_image
+            .deploy()
+            .await
+            .change_context(CommandError)?;
+        entrypoint_miro_image
+            .deploy()
+            .await
+            .change_context(CommandError)?;
+        co_miro_image.deploy().await.change_context(CommandError)?;
+        validations_miro_image
+            .deploy()
+            .await
+            .change_context(CommandError)?;
 
         entrypoint_miro_image.update_position(1300, 250).await;
         co_miro_image.update_position(2200, 350).await;
@@ -480,7 +493,9 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
     )
     .unwrap();
     // prompt to select the frame
-    let mut miro_frames = MiroFrame::get_frames_from_miro().await;
+    let mut miro_frames = MiroFrame::get_frames_from_miro()
+        .await
+        .change_context(CommandError)?;
     miro_frames.sort_by(|frame_a, frame_b| frame_a.title.cmp(&frame_b.title));
     let miro_frames_names = miro_frames
         .iter()
@@ -526,15 +541,21 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
         // get context_accounts name
         let entrypoint = EntrypointParser::new_from_name(selected_entrypoint.as_str())
             .change_context(CommandError)?;
-        let ep_source_code = entrypoint.entrypoint_function.to_source_code();
-        let ca_source_code = entrypoint.context_accounts.to_source_code_metadata();
+        let ep_source_code = entrypoint.entrypoint_function.to_source_code(Some(format!(
+            "{}-{}",
+            entrypoint.entrypoint_function.name, selected_frame.title
+        )));
+        let ca_source_code = entrypoint.context_accounts.to_source_code(Some(format!(
+            "{}-{}",
+            entrypoint.context_accounts.name, selected_frame.title
+        )));
         let grid_amount = 24;
         let height_grid = selected_frame.height as i64 / grid_amount;
         // deploy the first half to the top of the frame, and the second to the bottom
         if index < selected_entrypoints_amount / 2 {
             let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
                 * (2 * index as i64 + 1);
-            let ep_id = ep_source_code
+            let ep_image = ep_source_code
                 .deploy_screenshot_to_miro_frame(
                     selected_frame.clone(),
                     x_position,
@@ -543,7 +564,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 )
                 .await
                 .change_context(CommandError)?;
-            let ca_id = ca_source_code
+            let ca_image = ca_source_code
                 .deploy_screenshot_to_miro_frame(
                     selected_frame.clone(),
                     x_position,
@@ -552,10 +573,13 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 )
                 .await
                 .change_context(CommandError)?;
-            create_connector(&ep_id, &ca_id, None).await;
+            create_connector(&ep_image.item_id, &ca_image.item_id, None).await;
             if let Some(entrypoint_handler) = entrypoint.handler {
-                let handler_source_code = entrypoint_handler.to_source_code();
-                let handler_id = handler_source_code
+                let handler_source_code = entrypoint_handler.to_source_code(Some(format!(
+                    "{}-{}",
+                    entrypoint_handler.name, selected_frame.title
+                )));
+                let handler_image = handler_source_code
                     .deploy_screenshot_to_miro_frame(
                         selected_frame.clone(),
                         x_position,
@@ -564,13 +588,13 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     )
                     .await
                     .change_context(CommandError)?;
-                create_connector(&ca_id, &handler_id, None).await;
+                create_connector(&ca_image.item_id, &handler_image.item_id, None).await;
             }
         } else {
             let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
                 * (2 * (index as i64 - (selected_entrypoints_amount as i64 / 2)) + 1);
 
-            let ep_id = ep_source_code
+            let ep_image = ep_source_code
                 .deploy_screenshot_to_miro_frame(
                     selected_frame.clone(),
                     x_position,
@@ -579,7 +603,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 )
                 .await
                 .change_context(CommandError)?;
-            let ca_id = ca_source_code
+            let ca_image = ca_source_code
                 .deploy_screenshot_to_miro_frame(
                     selected_frame.clone(),
                     x_position,
@@ -588,10 +612,13 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                 )
                 .await
                 .change_context(CommandError)?;
-            create_connector(&ep_id, &ca_id, None).await;
+            create_connector(&ep_image.item_id, &ca_image.item_id, None).await;
             if let Some(entrypoint_handler) = entrypoint.handler {
-                let handler_source_code = entrypoint_handler.to_source_code();
-                let handler_id = handler_source_code
+                let handler_source_code = entrypoint_handler.to_source_code(Some(format!(
+                    "{}-{}",
+                    entrypoint_handler.name, selected_frame.title
+                )));
+                let handler_image = handler_source_code
                     .deploy_screenshot_to_miro_frame(
                         selected_frame.clone(),
                         x_position,
@@ -600,7 +627,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     )
                     .await
                     .change_context(CommandError)?;
-                create_connector(&ca_id, &handler_id, None).await;
+                create_connector(&ca_image.item_id, &handler_image.item_id, None).await;
             }
         }
     }
@@ -618,7 +645,9 @@ pub async fn deploy_metadata_screenshot_to_frame(
         "frames".yellow(),
         "Miro board".yellow()
     );
-    let mut miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await;
+    let mut miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro()
+        .await
+        .change_context(CommandError)?;
     miro_frames.sort_by(|a, b| a.title.cmp(&b.title));
     let miro_frame_titles: Vec<&str> = miro_frames
         .iter()
@@ -715,7 +744,8 @@ pub async fn deploy_metadata_screenshot_to_frame(
                             selected_miro_frame.height as i64 - 300,
                             screenshot_options.clone(),
                         )
-                        .await;
+                        .await
+                        .change_context(CommandError)?;
                 }
             }
             _ if selected_section_title == functions_title => {
@@ -795,7 +825,8 @@ pub async fn deploy_metadata_screenshot_to_frame(
                             selected_miro_frame.height as i64 - 300,
                             screenshot_options.clone(),
                         )
-                        .await;
+                        .await
+                        .change_context(CommandError)?;
                 }
             }
             _ => unimplemented!(),

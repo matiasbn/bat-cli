@@ -118,7 +118,7 @@ pub fn start_co_file() -> Result<(), CommandError> {
         .find(|struct_metadata| struct_metadata.struct_type == StructMetadataType::ContextAccounts);
 
     let context_source_code = match context_source_code {
-        Some(sc) => sc.to_source_code_metadata(),
+        Some(sc) => sc.to_source_code(None),
         None => {
             let message = "Context accounts metadatata not found";
             log::error!("structs_subsections:\n{:#?}", structs_subsections);
