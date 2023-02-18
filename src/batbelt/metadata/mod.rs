@@ -13,7 +13,7 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions::FunctionMetadata;
 use crate::batbelt::metadata::structs::StructMetadata;
 use crate::batbelt::path::BatFile;
-use colored::Colorize;
+
 use inflector::Inflector;
 
 use error_stack::{Result, ResultExt};

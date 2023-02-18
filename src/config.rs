@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt, fs, path::Path, str};
+use std::{error::Error, fmt, str};
 
-use crate::batbelt::path::BatFile;
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{IntoReport, Result, ResultExt};
 
 #[derive(Debug)]
 pub struct BatConfigError;
@@ -72,9 +71,6 @@ impl BatConfig {
 #[cfg(test)]
 mod bat_test {
     use super::*;
-    use crate::batbelt::bash::execute_command;
-
-    use std::env;
 
     #[test]
     fn test_confy() -> Result<(), BatConfigError> {

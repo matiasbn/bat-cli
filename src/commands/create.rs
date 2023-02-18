@@ -7,9 +7,9 @@ use crate::batbelt::structs::FileInfo;
 use crate::batbelt::{cli_inputs, helpers};
 use crate::config::BatConfig;
 use colored::Colorize;
-use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use error_stack::{FutureExt, Report, ResultExt};
+use std::fs;
 use std::path::Path;
-use std::{fs, process::Command};
 use walkdir::WalkDir;
 
 pub fn create_project() -> error_stack::Result<(), CommandError> {
