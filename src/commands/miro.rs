@@ -648,16 +648,18 @@ pub async fn deploy_metadata_screenshot_to_frame(
     let mut miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro()
         .await
         .change_context(CommandError)?;
+
+    log::info!("miro_frames:\n{:#?}", miro_frames);
+
     miro_frames.sort_by(|a, b| a.title.cmp(&b.title));
-    let miro_frame_titles: Vec<&str> = miro_frames
+    let miro_frame_titles: Vec<String> = miro_frames
         .iter()
-        .map(|frame| frame.title.as_str())
-        .map(|frame| frame.clone())
+        .map(|frame| frame.title.clone())
         .collect();
 
     let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
     let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
-    let selected_miro_frame: &MiroFrame = &miro_frames[selection];
+    let selected_miro_frame: MiroFrame = miro_frames[selection].clone();
     let metadata_path =
         batbelt::path::get_file_path(FilePathType::Metadata, true).change_context(CommandError)?;
     let metadata_markdown = MarkdownFile::new(&metadata_path);
@@ -679,7 +681,10 @@ pub async fn deploy_metadata_screenshot_to_frame(
         let selected_section_title = section.section_header.title.clone();
         let structs_title = MetadataSection::Structs.to_string();
         let functions_title = MetadataSection::Functions.to_string();
-        match true {
+        let (sourcecode_metadata_vec, screenshot_options): (
+            Vec<SourceCodeMetadata>,
+            SourceCodeScreenshotOptions,
+        ) = match true {
             _ if selected_section_title == structs_title => {
                 // Choose metadata subsection selection
                 let prompt_text = format!("Please enter the {}", "struct type to deploy".green());
@@ -728,25 +733,18 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 } else {
                     SourceCodeMetadata::prompt_screenshot_options()
                 };
-
-                for selection in selections {
-                    let selected_struct_metadata = &struct_metadata_vec[selection];
-                    let source_code_metadata = SourceCodeMetadata::new(
-                        selected_struct_metadata.name.clone(),
-                        selected_struct_metadata.path.clone(),
-                        selected_struct_metadata.start_line_index,
-                        selected_struct_metadata.end_line_index,
-                    );
-                    source_code_metadata
-                        .deploy_screenshot_to_miro_frame(
-                            selected_miro_frame.clone(),
-                            300,
-                            selected_miro_frame.height as i64 - 300,
-                            screenshot_options.clone(),
-                        )
-                        .await
-                        .change_context(CommandError)?;
-                }
+                let sc_vec = struct_metadata_vec
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(sc_index, sc_metadata)| {
+                        if selections.iter().any(|selection| &sc_index == selection) {
+                            Some(sc_metadata.to_source_code(None))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                (sc_vec, screenshot_options)
             }
             _ if selected_section_title == functions_title => {
                 // Choose metadata subsection selection
@@ -810,29 +808,33 @@ pub async fn deploy_metadata_screenshot_to_frame(
                     SourceCodeMetadata::prompt_screenshot_options()
                 };
 
-                for selection in selections {
-                    let selected_function_metadata = &function_metadata_vec[selection];
-                    let source_code_metadata = SourceCodeMetadata::new(
-                        selected_function_metadata.name.clone(),
-                        selected_function_metadata.path.clone(),
-                        selected_function_metadata.start_line_index,
-                        selected_function_metadata.end_line_index,
-                    );
-                    source_code_metadata
-                        .deploy_screenshot_to_miro_frame(
-                            selected_miro_frame.clone(),
-                            300,
-                            selected_miro_frame.height as i64 - 300,
-                            screenshot_options.clone(),
-                        )
-                        .await
-                        .change_context(CommandError)?;
-                }
+                let sc_vec = function_metadata_vec
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(sc_index, sc_metadata)| {
+                        if selections.iter().any(|selection| &sc_index == selection) {
+                            Some(sc_metadata.to_source_code(None))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                (sc_vec, screenshot_options)
             }
             _ => unimplemented!(),
         };
         // promp if continue
-
+        for sc_metadata in sourcecode_metadata_vec {
+            sc_metadata
+                .deploy_screenshot_to_miro_frame(
+                    selected_miro_frame.clone(),
+                    0,
+                    selected_miro_frame.height as i64,
+                    screenshot_options.clone(),
+                )
+                .await
+                .change_context(CommandError)?;
+        }
         let prompt_text = format!(
             "Do you want to {} in the {} frame?",
             "continue creating screenshots".yellow(),

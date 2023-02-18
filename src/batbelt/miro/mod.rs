@@ -23,7 +23,7 @@ pub struct MiroError;
 
 impl fmt::Display for MiroError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("General Bat error")
+        f.write_str("Miro error")
     }
 }
 

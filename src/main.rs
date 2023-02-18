@@ -149,8 +149,12 @@ enum PackageActions {
 }
 #[tokio::main]
 async fn main() -> Result<(), CommandError> {
-    env_logger::init();
     let cli: Cli = Cli::parse();
+
+    env_logger::Builder::new()
+        .filter_level(cli.verbose.log_level_filter())
+        .init();
+
     let branch_checked = match cli.command {
         Commands::Init { .. }
         | Commands::Create

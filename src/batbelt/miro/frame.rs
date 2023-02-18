@@ -53,6 +53,7 @@ impl MiroFrame {
     fn parse_value(&mut self, value: Value) -> Result<(), MiroError> {
         let miro_config = MiroConfig::new();
         self.item_id = value["id"].to_string().replace("\"", "");
+        self.title = value["data"]["title"].to_string().replace("\"", "");
         self.height = value["geometry"]["height"].as_f64().unwrap() as u64;
         self.width = value["geometry"]["width"].as_f64().unwrap() as u64;
         self.x_position = value["position"]["x"].as_f64().unwrap() as i64;
