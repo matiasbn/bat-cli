@@ -24,7 +24,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
-use crate::batbelt::miro::{helpers, MiroConfig};
+use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::templates::code_overhaul::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,

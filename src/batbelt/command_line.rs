@@ -1,10 +1,9 @@
 use error_stack::{Result, ResultExt};
 
 // VSCode
+use crate::batbelt::bash::execute_command;
 use crate::commands::CommandError;
 use crate::config::BatAuditorConfig;
-use crate::{batbelt::bash::execute_command, config::BatConfig};
-use std::{error::Error, fmt};
 
 pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), CommandError> {
     let vs_code_integration = BatAuditorConfig::get_config()

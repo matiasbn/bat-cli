@@ -6,8 +6,6 @@ use std::str::from_utf8;
 use std::string::String;
 
 use colored::Colorize;
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::Select;
 
 use crate::batbelt;
 use crate::batbelt::bash::execute_command;
@@ -30,7 +28,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
-    let bat_config = BatConfig::get_config().change_context(CommandError)?;
+    let _bat_config = BatConfig::get_config().change_context(CommandError)?;
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     if !Path::new("BatAuditor.toml").is_file() || !bat_auditor_config.initialized {
         prompt_auditor_options()?;
@@ -184,7 +182,7 @@ fn update_readme_file() -> Result<(), CommandError> {
 
 fn initialize_project_repository() -> Result<(), CommandError> {
     let bat_config = BatConfig::get_config().change_context(CommandError)?;
-    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+    let _bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     // git init
     execute_command("git", &["init"]).change_context(CommandError)?;
 

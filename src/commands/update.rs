@@ -8,7 +8,7 @@ use crate::batbelt::{
 use error_stack::{Result, ResultExt};
 use std::error::Error;
 use std::fmt;
-use std::{fs, process::Command};
+use std::fs;
 
 #[derive(Debug)]
 pub struct UpdateTemplateError;
