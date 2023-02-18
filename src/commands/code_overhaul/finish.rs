@@ -4,7 +4,7 @@ use std::fs;
 use crate::batbelt;
 use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 
-use crate::batbelt::path::{FilePathType, FolderPathType};
+use crate::batbelt::path::{BatFile, BatFolder};
 use crate::commands::CommandError;
 
 use crate::batbelt::bash::execute_command;
@@ -26,10 +26,10 @@ pub async fn finish_co_file() -> Result<(), CommandError> {
 
     let finished_endpoint = &started_endpoints[selection].clone();
     let finished_co_folder_path =
-        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulFinished, true)
+        batbelt::path::get_folder_path(BatFolder::CodeOverhaulFinished, true)
             .change_context(CommandError)?;
     let started_co_file_path = batbelt::path::get_file_path(
-        FilePathType::CodeOverhaulStarted {
+        BatFile::CodeOverhaulStarted {
             file_name: finished_endpoint.clone(),
         },
         true,

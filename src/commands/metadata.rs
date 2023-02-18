@@ -4,7 +4,7 @@ use crate::batbelt::metadata::functions::{get_functions_metadata_from_program, F
 use crate::batbelt::metadata::structs::{get_structs_metadata_from_program, StructMetadata};
 use crate::batbelt::metadata::MetadataSection;
 
-use crate::batbelt::path::FilePathType;
+use crate::batbelt::path::BatFile;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
 
@@ -14,7 +14,7 @@ use super::CommandError;
 
 pub fn functions() -> Result<(), CommandError> {
     let metadata_path =
-        batbelt::path::get_file_path(FilePathType::Metadata, false).change_context(CommandError)?;
+        batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let functions_section = metadata_markdown
         .get_section(&MetadataSection::Functions.to_string())
@@ -58,7 +58,7 @@ pub fn functions() -> Result<(), CommandError> {
 
 pub fn structs() -> Result<(), CommandError> {
     let metadata_path =
-        batbelt::path::get_file_path(FilePathType::Metadata, false).change_context(CommandError)?;
+        batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_string())

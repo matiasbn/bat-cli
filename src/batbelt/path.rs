@@ -1,5 +1,6 @@
-use crate::config::BatConfig;
+use crate::config::{BatAuditorConfig, BatConfig};
 use error_stack::{IntoReport, Result, ResultExt};
+use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, fs, path::Path};
 
 #[derive(Debug)]
@@ -13,7 +14,9 @@ impl fmt::Display for BatPathError {
 
 impl Error for BatPathError {}
 
-pub enum FilePathType {
+pub enum BatFile {
+    BatToml,
+    BatAuditorToml,
     Metadata,
     ThreatModeling,
     AuditResult,
@@ -35,84 +38,90 @@ pub enum FilePathType {
     FindingRejected { file_name: String },
 }
 
-pub fn get_file_path(file_type: FilePathType, canonicalize: bool) -> Result<String, BatPathError> {
-    let bat_config = BatConfig::get_validated_config().change_context(BatPathError)?;
+impl BatFile {
+    pub fn get_path(&self, canonicalize: bool) -> Result<String, BatPathError> {
+        let bat_config = BatConfig::get_config().change_context(BatPathError)?;
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(BatPathError)?;
+        let auditor_notes_folder_path =
+            format!("./notes/{}-notes", bat_auditor_config.auditor_name);
+        let findings_path = format!("{}/findings", auditor_notes_folder_path);
+        let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
+        let path = match self {
+            //File
+            BatFile::ProgramLib => bat_config.program_lib_path,
+            BatFile::FindingCandidates => {
+                format!("{}/finding_candidates.md", auditor_notes_folder_path)
+            }
+            BatFile::OpenQuestions => {
+                format!("{}/open_questions.md", auditor_notes_folder_path)
+            }
+            BatFile::Metadata => {
+                format!("{}/metadata.md", auditor_notes_folder_path)
+            }
+            BatFile::ThreatModeling => {
+                format!("{}/threat_modeling.md", auditor_notes_folder_path)
+            }
+            BatFile::AuditResult => {
+                format!("./audit_result.md")
+            }
+            BatFile::FindingsResult => {
+                format!("./audit_result/findings_result.md")
+            }
+            BatFile::FindingsRobotResult => {
+                format!("./audit_result/02_findings_result.md")
+            }
+            BatFile::CodeOverhaulResult => {
+                format!("./audit_result/co_result.md")
+            }
+            BatFile::TemplateFinding => {
+                format!("./templates/finding.md")
+            }
+            BatFile::TemplateInformational => {
+                format!("./templates/informational.md")
+            }
+            BatFile::TemplateCodeOverhaul => {
+                format!("./templates/code-overhaul.md")
+            }
+            BatFile::Readme => {
+                format!("./README.md")
+            }
+            BatFile::CodeOverhaulToReview { file_name } => {
+                let entrypoint_name = file_name.replace(".md", "");
+                format!("{code_overhaul_path}/to-review/{entrypoint_name}.md")
+            }
+            BatFile::CodeOverhaulStarted { file_name } => {
+                let entrypoint_name = file_name.replace(".md", "");
+                format!("{code_overhaul_path}/started/{entrypoint_name}.md")
+            }
+            BatFile::CodeOverhaulFinished { file_name } => {
+                let entrypoint_name = file_name.replace(".md", "");
+                format!("{code_overhaul_path}/finished/{entrypoint_name}.md")
+            }
+            BatFile::FindingToReview { file_name } => {
+                let entrypoint_name = file_name.replace(".md", "");
+                format!("{findings_path}/to-review/{entrypoint_name}.md",)
+            }
+            BatFile::FindingAccepted { file_name } => {
+                let entrypoint_name = file_name.replace(".md", "");
+                format!("{findings_path}/accepted/{entrypoint_name}.md",)
+            }
+            BatFile::FindingRejected { file_name } => {
+                let entrypoint_name = file_name.replace(".md", "");
+                format!("{findings_path}/rejected/{entrypoint_name}.md",)
+            }
+            BatFile::BatToml => "Bat.toml".to_string(),
+            BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
+        };
+        if canonicalize {
+            return canonicalize_path(path);
+        }
 
-    let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
-    let findings_path = format!("{}/findings", auditor_notes_folder_path);
-    let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
-
-    let path = match file_type {
-        //File
-        FilePathType::ProgramLib => bat_config.required.program_lib_path,
-        FilePathType::FindingCandidates => {
-            format!("{}/finding_candidates.md", auditor_notes_folder_path)
-        }
-        FilePathType::OpenQuestions => format!("{}/open_questions.md", auditor_notes_folder_path),
-        FilePathType::Metadata => {
-            format!("{}/metadata.md", auditor_notes_folder_path)
-        }
-        FilePathType::ThreatModeling => {
-            format!("{}/threat_modeling.md", auditor_notes_folder_path)
-        }
-        FilePathType::AuditResult => {
-            format!("./audit_result.md")
-        }
-        FilePathType::FindingsResult => {
-            format!("./audit_result/findings_result.md")
-        }
-        FilePathType::FindingsRobotResult => {
-            format!("./audit_result/02_findings_result.md")
-        }
-        FilePathType::CodeOverhaulResult => {
-            format!("./audit_result/co_result.md")
-        }
-        FilePathType::TemplateFinding => {
-            format!("./templates/finding.md")
-        }
-        FilePathType::TemplateInformational => {
-            format!("./templates/informational.md")
-        }
-        FilePathType::TemplateCodeOverhaul => {
-            format!("./templates/code-overhaul.md")
-        }
-        FilePathType::Readme => {
-            format!("./README.md")
-        }
-        FilePathType::CodeOverhaulToReview { file_name } => {
-            let entrypoint_name = file_name.replace(".md", "");
-            format!("{code_overhaul_path}/to-review/{entrypoint_name}.md")
-        }
-        FilePathType::CodeOverhaulStarted { file_name } => {
-            let entrypoint_name = file_name.replace(".md", "");
-            format!("{code_overhaul_path}/started/{entrypoint_name}.md")
-        }
-        FilePathType::CodeOverhaulFinished { file_name } => {
-            let entrypoint_name = file_name.replace(".md", "");
-            format!("{code_overhaul_path}/finished/{entrypoint_name}.md")
-        }
-        FilePathType::FindingToReview { file_name } => {
-            let entrypoint_name = file_name.replace(".md", "");
-            format!("{findings_path}/to-review/{entrypoint_name}.md",)
-        }
-        FilePathType::FindingAccepted { file_name } => {
-            let entrypoint_name = file_name.replace(".md", "");
-            format!("{findings_path}/accepted/{entrypoint_name}.md",)
-        }
-        FilePathType::FindingRejected { file_name } => {
-            let entrypoint_name = file_name.replace(".md", "");
-            format!("{findings_path}/rejected/{entrypoint_name}.md",)
-        }
-    };
-
-    if canonicalize {
-        return canonicalize_path(path);
+        Ok(path)
     }
-
-    Ok(path)
 }
 
-pub enum FolderPathType {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum BatFolder {
     ProgramPath,
     Templates,
     NotesTemplate,
@@ -130,51 +139,184 @@ pub enum FolderPathType {
     AuditResultTemp,
 }
 
-pub fn get_folder_path(
-    folder_type: FolderPathType,
-    canonicalize: bool,
-) -> Result<String, BatPathError> {
-    let bat_config = BatConfig::get_validated_config().change_context(BatPathError)?;
+impl BatFolder {
+    pub fn get_folder_path(&self, canonicalize: bool) -> Result<String, BatPathError> {
+        let bat_config = BatConfig::get_config().change_context(BatPathError)?;
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(BatPathError)?;
 
-    let auditor_notes_folder_path = format!("./notes/{}-notes", bat_config.auditor.auditor_name);
+        let auditor_notes_folder_path =
+            format!("./notes/{}-notes", bat_auditor_config.auditor_name);
+        let findings_path = format!("{}/findings", auditor_notes_folder_path);
+        let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
+
+        let path = match self {
+            //File
+            BatFolder::Notes => "./notes".to_string(),
+            BatFolder::AuditResult => "./audit_result".to_string(),
+            BatFolder::AuditResultFigures => "./audit_result/figures".to_string(),
+            BatFolder::AuditResultTemp => "./audit_result/temp".to_string(),
+            BatFolder::AuditorNotes => auditor_notes_folder_path,
+            BatFolder::AuditorFigures => format!("{auditor_notes_folder_path}/figures"),
+            BatFolder::ProgramPath => bat_config
+                .program_lib_path
+                .trim_end_matches("/lib.rs")
+                .to_string(),
+            BatFolder::Templates => {
+                format!("./templates")
+            }
+            BatFolder::NotesTemplate => {
+                format!("./templates/notes-folder-template")
+            }
+            BatFolder::FindingsToReview => {
+                format!("{}/to-review", findings_path)
+            }
+            BatFolder::FindingsAccepted => {
+                format!("{}/accepted", findings_path)
+            }
+            BatFolder::FindingsRejected => {
+                format!("{}/rejected", findings_path)
+            }
+            BatFolder::CodeOverhaulToReview => {
+                format!("{}/to-review", code_overhaul_path)
+            }
+            BatFolder::CodeOverhaulStarted => {
+                format!("{}/started", code_overhaul_path)
+            }
+            BatFolder::CodeOverhaulFinished => {
+                format!("{}/finished", code_overhaul_path)
+            }
+        };
+
+        if canonicalize {
+            return canonicalize_path(path);
+        }
+
+        Ok(path)
+    }
+}
+
+pub fn get_file_path(file_type: BatFile, canonicalize: bool) -> Result<String, BatPathError> {
+    let bat_config = BatConfig::get_config().change_context(BatPathError)?;
+    let bat_auditor_config = BatAuditorConfig::get_config().change_context(BatPathError)?;
+
+    let auditor_notes_folder_path = format!("./notes/{}-notes", bat_auditor_config.auditor_name);
+    let findings_path = format!("{}/findings", auditor_notes_folder_path);
+    let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
+
+    let path = match file_type {
+        //File
+        BatFile::ProgramLib => bat_config.program_lib_path,
+        BatFile::FindingCandidates => {
+            format!("{}/finding_candidates.md", auditor_notes_folder_path)
+        }
+        BatFile::OpenQuestions => format!("{}/open_questions.md", auditor_notes_folder_path),
+        BatFile::Metadata => {
+            format!("{}/metadata.md", auditor_notes_folder_path)
+        }
+        BatFile::ThreatModeling => {
+            format!("{}/threat_modeling.md", auditor_notes_folder_path)
+        }
+        BatFile::AuditResult => {
+            format!("./audit_result.md")
+        }
+        BatFile::FindingsResult => {
+            format!("./audit_result/findings_result.md")
+        }
+        BatFile::FindingsRobotResult => {
+            format!("./audit_result/02_findings_result.md")
+        }
+        BatFile::CodeOverhaulResult => {
+            format!("./audit_result/co_result.md")
+        }
+        BatFile::TemplateFinding => {
+            format!("./templates/finding.md")
+        }
+        BatFile::TemplateInformational => {
+            format!("./templates/informational.md")
+        }
+        BatFile::TemplateCodeOverhaul => {
+            format!("./templates/code-overhaul.md")
+        }
+        BatFile::Readme => {
+            format!("./README.md")
+        }
+        BatFile::CodeOverhaulToReview { file_name } => {
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{code_overhaul_path}/to-review/{entrypoint_name}.md")
+        }
+        BatFile::CodeOverhaulStarted { file_name } => {
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{code_overhaul_path}/started/{entrypoint_name}.md")
+        }
+        BatFile::CodeOverhaulFinished { file_name } => {
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{code_overhaul_path}/finished/{entrypoint_name}.md")
+        }
+        BatFile::FindingToReview { file_name } => {
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{findings_path}/to-review/{entrypoint_name}.md",)
+        }
+        BatFile::FindingAccepted { file_name } => {
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{findings_path}/accepted/{entrypoint_name}.md",)
+        }
+        BatFile::FindingRejected { file_name } => {
+            let entrypoint_name = file_name.replace(".md", "");
+            format!("{findings_path}/rejected/{entrypoint_name}.md",)
+        }
+        BatFile::BatToml => "Bat.toml".to_string(),
+        BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
+    };
+
+    if canonicalize {
+        return canonicalize_path(path);
+    }
+
+    Ok(path)
+}
+
+pub fn get_folder_path(folder_type: BatFolder, canonicalize: bool) -> Result<String, BatPathError> {
+    let bat_config = BatConfig::get_config().change_context(BatPathError)?;
+    let bat_auditor_config = BatAuditorConfig::get_config().change_context(BatPathError)?;
+
+    let auditor_notes_folder_path = format!("./notes/{}-notes", bat_auditor_config.auditor_name);
     let findings_path = format!("{}/findings", auditor_notes_folder_path);
     let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
 
     let path = match folder_type {
         //File
-        FolderPathType::Notes => "./notes".to_string(),
-        FolderPathType::AuditResult => "./audit_result".to_string(),
-        FolderPathType::AuditResultFigures => "./audit_result/figures".to_string(),
-        FolderPathType::AuditResultTemp => "./audit_result/temp".to_string(),
-        FolderPathType::AuditorNotes => auditor_notes_folder_path,
-        FolderPathType::AuditorFigures => format!("{auditor_notes_folder_path}/figures"),
-        FolderPathType::ProgramPath => bat_config
-            .required
+        BatFolder::Notes => "./notes".to_string(),
+        BatFolder::AuditResult => "./audit_result".to_string(),
+        BatFolder::AuditResultFigures => "./audit_result/figures".to_string(),
+        BatFolder::AuditResultTemp => "./audit_result/temp".to_string(),
+        BatFolder::AuditorNotes => auditor_notes_folder_path,
+        BatFolder::AuditorFigures => format!("{auditor_notes_folder_path}/figures"),
+        BatFolder::ProgramPath => bat_config
             .program_lib_path
             .trim_end_matches("/lib.rs")
             .to_string(),
-        FolderPathType::Templates => {
+        BatFolder::Templates => {
             format!("./templates")
         }
-        FolderPathType::NotesTemplate => {
+        BatFolder::NotesTemplate => {
             format!("./templates/notes-folder-template")
         }
-        FolderPathType::FindingsToReview => {
+        BatFolder::FindingsToReview => {
             format!("{}/to-review", findings_path)
         }
-        FolderPathType::FindingsAccepted => {
+        BatFolder::FindingsAccepted => {
             format!("{}/accepted", findings_path)
         }
-        FolderPathType::FindingsRejected => {
+        BatFolder::FindingsRejected => {
             format!("{}/rejected", findings_path)
         }
-        FolderPathType::CodeOverhaulToReview => {
+        BatFolder::CodeOverhaulToReview => {
             format!("{}/to-review", code_overhaul_path)
         }
-        FolderPathType::CodeOverhaulStarted => {
+        BatFolder::CodeOverhaulStarted => {
             format!("{}/started", code_overhaul_path)
         }
-        FolderPathType::CodeOverhaulFinished => {
+        BatFolder::CodeOverhaulFinished => {
             format!("{}/finished", code_overhaul_path)
         }
     };
@@ -203,14 +345,13 @@ pub fn get_instruction_file_path_from_started_co_file(
     entrypoint_name: String,
 ) -> Result<String, BatPathError> {
     let co_file_path = get_file_path(
-        FilePathType::CodeOverhaulStarted {
+        BatFile::CodeOverhaulStarted {
             file_name: entrypoint_name.clone(),
         },
         false,
     )?;
-    let program_path = BatConfig::get_validated_config()
+    let program_path = BatConfig::get_config()
         .change_context(BatPathError)?
-        .required
         .program_lib_path
         .replace("/lib.rs", "")
         .replace("../", "");
@@ -230,9 +371,8 @@ pub fn get_instruction_file_path_from_started_co_file(
 pub fn get_instruction_file_path_from_co_file_path(
     co_file_path: String,
 ) -> Result<String, BatPathError> {
-    let program_path = BatConfig::get_validated_config()
+    let program_path = BatConfig::get_config()
         .change_context(BatPathError)?
-        .required
         .program_lib_path
         .replace("/lib.rs", "")
         .replace("../", "");

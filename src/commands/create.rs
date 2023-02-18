@@ -1,60 +1,34 @@
-use std::path::Path;
-use std::{fs, process::Command};
-
-use colored::Colorize;
-
-use walkdir::WalkDir;
-
-use crate::batbelt::constants::{
-    AUDITOR_TOML_INITIAL_CONFIG_STR, BASE_REPOSTORY_NAME, BAT_TOML_INITIAL_CONFIG_STR,
-};
+use super::CommandError;
+use crate::batbelt::bash::execute_command;
+use crate::batbelt::constants::BASE_REPOSTORY_NAME;
 use crate::batbelt::git::clone_base_repository;
 use crate::batbelt::helpers::fs_read_dir;
 use crate::batbelt::structs::FileInfo;
 use crate::batbelt::{cli_inputs, helpers};
-use crate::config::RequiredConfig;
-
+use crate::config::BatConfig;
+use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
-
-use super::CommandError;
-
-pub const BAT_TOML_INITIAL_PATH: &str = "Bat.toml";
-
-pub const AUDITOR_TOML_INITIAL_PATH: &str = "BatAuditor.toml";
+use std::path::Path;
+use std::{fs, process::Command};
+use walkdir::WalkDir;
 
 pub fn create_project() -> error_stack::Result<(), CommandError> {
     // get project config
-    let required_config = get_required_config().change_context(CommandError)?;
-    println!("Creating {:#?} project", required_config);
+    let bat_config = create_bat_config_file().change_context(CommandError)?;
+    println!("Creating {:#?} project", bat_config);
     // clone repository
     clone_base_repository();
     // change folder name
-    Command::new("mv")
-        .args([BASE_REPOSTORY_NAME, required_config.project_name.as_str()])
-        .output()
-        .unwrap();
+    execute_command("mv", &[BASE_REPOSTORY_NAME, &bat_config.project_name])?;
     // Remove .git folder
-    Command::new("rm")
-        .args([
-            "-rf",
-            (required_config.project_name.clone() + "/.git").as_str(),
-        ])
-        .output()
-        .unwrap();
-    // create config files
-    create_bat_toml(required_config.clone())?;
-    create_auditor_toml()?;
-    // move config files to repo
-    move_config_files(required_config.project_name.clone());
+    execute_command("rm", &["-rf", &format!("{}/.git", bat_config.project_name)])?;
+    execute_command("mv", &["Bat.toml", &bat_config.project_name])?;
 
-    println!(
-        "Project {} succesfully created",
-        required_config.project_name
-    );
+    println!("Project {} succesfully created", bat_config.project_name);
     Ok(())
 }
 
-fn get_required_config() -> error_stack::Result<RequiredConfig, CommandError> {
+fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
     let local_folders = fs_read_dir(".")
         .change_context(CommandError)?
         .map(|f| f.unwrap())
@@ -172,8 +146,8 @@ fn get_required_config() -> error_stack::Result<RequiredConfig, CommandError> {
     let project_repository_url: String =
         cli_inputs::input("Project repo url, where this audit folder would be pushed:")
             .change_context(CommandError)?;
-
-    Ok(RequiredConfig {
+    let bat_config = BatConfig {
+        initialized: true,
         auditor_names,
         project_name,
         client_name,
@@ -182,91 +156,7 @@ fn get_required_config() -> error_stack::Result<RequiredConfig, CommandError> {
         commit_hash_url,
         project_repository_url,
         program_lib_path: normalized_to_audit_program_lib_path,
-    })
-}
-
-fn create_bat_toml(required_config: RequiredConfig) -> Result<(), Report<CommandError>> {
-    let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
-    let RequiredConfig {
-        project_name,
-        client_name,
-        commit_hash_url,
-        starting_date,
-        auditor_names,
-        program_lib_path,
-        project_repository_url,
-        miro_board_url,
-        ..
-    } = required_config;
-
-    if bat_toml_path.exists() {
-        return Err(Report::new(CommandError)
-            .attach_printable("Bat.toml file already exist in {bat_toml_path:?}, aborting"));
     };
-
-    // set project name
-    let bat_toml_updated = BAT_TOML_INITIAL_CONFIG_STR
-        .to_string()
-        .replace(
-            &String::from("project_name = \""),
-            &("project_name = \"".to_string() + &project_name),
-        )
-        .replace(
-            &String::from("client_name = \""),
-            &("client_name = \"".to_string() + &client_name),
-        )
-        .replace(
-            &String::from("commit_hash_url = \""),
-            &("commit_hash_url = \"".to_string() + &commit_hash_url),
-        )
-        .replace(
-            &String::from("starting_date = \""),
-            &("starting_date = \"".to_string() + &starting_date),
-        )
-        .replace(
-            &String::from("program_lib_path = \""),
-            &("program_lib_path = \"".to_string() + &program_lib_path),
-        )
-        .replace(
-            &String::from("project_repository_url = \""),
-            &("project_repository_url = \"".to_string() + &project_repository_url),
-        )
-        .replace(
-            &String::from("miro_board_url = \""),
-            &("miro_board_url = \"".to_string() + &miro_board_url),
-        )
-        .replace(
-            &String::from("auditor_names = [\""),
-            &("auditor_names = [\"".to_string() + &auditor_names.join("\",\"")),
-        );
-
-    fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");
-    Ok(())
-}
-
-pub fn create_auditor_toml() -> error_stack::Result<(), CommandError> {
-    let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
-
-    if auditor_toml_path.exists() {
-        return Err(Report::new(CommandError).attach_printable(
-            "BatAudit.toml file already exist in {auditor_toml_path:?}, aborting",
-        ));
-    };
-
-    fs::write(auditor_toml_path, AUDITOR_TOML_INITIAL_CONFIG_STR)
-        .into_report()
-        .ok()
-        .ok_or(CommandError)?;
-    Ok(())
-}
-
-fn move_config_files(project_name: String) {
-    Command::new("mv")
-        .args(["Bat.toml", &project_name])
-        .output()
-        .unwrap();
-    Command::new("mv")
-        .args(["BatAuditor.toml", &project_name])
-        .output()
-        .unwrap();
+    bat_config.save().change_context(CommandError)?;
+    Ok(bat_config)
 }

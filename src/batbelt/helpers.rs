@@ -14,13 +14,13 @@ pub mod get {
 
     use error_stack::Report;
 
-    use crate::batbelt::path::FolderPathType;
+    use crate::batbelt::path::BatFolder;
     use crate::batbelt::structs::FileInfo;
 
     use super::*;
 
     pub fn get_all_rust_files_from_program_path() -> Result<Vec<FileInfo>, CommandError> {
-        let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false)
+        let program_path = batbelt::path::get_folder_path(BatFolder::ProgramPath, false)
             .change_context(CommandError)?;
         let mut lib_files_info = get_only_files_from_folder(program_path)
             .unwrap()
@@ -35,7 +35,7 @@ pub mod get {
     pub fn get_started_entrypoints() -> Result<Vec<String>, CommandError> {
         // let started_path = utils::path::get_auditor_code_overhaul_started_file_path(None)?;
         let started_path = batbelt::path::get_folder_path(
-            batbelt::path::FolderPathType::CodeOverhaulStarted,
+            batbelt::path::BatFolder::CodeOverhaulStarted,
             true,
         )
         .change_context(CommandError)?;
@@ -202,21 +202,21 @@ pub mod count {
     pub fn co_counter() -> error_stack::Result<(usize, usize, usize), CommandError> {
         // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
         let to_review_path = batbelt::path::get_folder_path(
-            batbelt::path::FolderPathType::CodeOverhaulToReview,
+            batbelt::path::BatFolder::CodeOverhaulToReview,
             true,
         )
         .change_context(CommandError)?;
         let to_review_folder = fs_read_dir(&to_review_path).change_context(CommandError)?;
         let to_review_count = count_filtering_gitkeep(to_review_folder);
         let started_path = batbelt::path::get_folder_path(
-            batbelt::path::FolderPathType::CodeOverhaulStarted,
+            batbelt::path::BatFolder::CodeOverhaulStarted,
             true,
         )
         .change_context(CommandError)?;
         let started_folder = fs_read_dir(&started_path)?;
         let started_count = count_filtering_gitkeep(started_folder);
         let finished_path = batbelt::path::get_folder_path(
-            batbelt::path::FolderPathType::CodeOverhaulFinished,
+            batbelt::path::BatFolder::CodeOverhaulFinished,
             true,
         )
         .change_context(CommandError)?;

@@ -12,7 +12,7 @@ use crate::batbelt::{self};
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions::FunctionMetadata;
 use crate::batbelt::metadata::structs::StructMetadata;
-use crate::batbelt::path::FilePathType;
+use crate::batbelt::path::BatFile;
 use colored::Colorize;
 use inflector::Inflector;
 
@@ -48,8 +48,8 @@ impl MetadataSection {
 }
 
 pub fn get_metadata_markdown() -> Result<MarkdownFile, MetadataError> {
-    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false)
-        .change_context(MetadataError)?;
+    let metadata_path =
+        batbelt::path::get_file_path(BatFile::Metadata, false).change_context(MetadataError)?;
     Ok(MarkdownFile::new(&metadata_path))
 }
 

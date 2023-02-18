@@ -1,6 +1,6 @@
 use crate::batbelt;
 use crate::batbelt::entrypoint::EntrypointParser;
-use crate::batbelt::path::FolderPathType;
+use crate::batbelt::path::BatFolder;
 use crate::config::BatConfig;
 use colored::{ColoredString, Colorize};
 use strum::IntoEnumIterator;
@@ -342,7 +342,7 @@ pub fn get_function_body(function_content: &str) -> String {
 }
 
 pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, MetadataError> {
-    let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false)
+    let program_path = batbelt::path::get_folder_path(BatFolder::ProgramPath, false)
         .change_context(MetadataError)?;
     let program_folder_files_info = batbelt::helpers::get::get_only_files_from_folder(program_path)
         .change_context(MetadataError)?;
@@ -380,12 +380,7 @@ pub fn get_function_metadata_from_file_info(
             .magenta(),
             function_signature.green()
         );
-        if function_file_info.path
-            == BatConfig::get_validated_config()
-                .unwrap()
-                .required
-                .program_lib_path
-        {
+        if function_file_info.path == BatConfig::get_config().unwrap().program_lib_path {
             if entrypoints_names
                 .clone()
                 .into_iter()
@@ -454,7 +449,6 @@ pub fn get_function_metadata_from_file_info(
 }
 
 #[test]
-
 fn test_function_parse() {
     let test_function = "pub(crate) fn get_function_metadata_from_file_info() -> Result<Vec<FunctionMetadata>, String> {
     let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];

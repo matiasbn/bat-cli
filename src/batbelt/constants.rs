@@ -20,24 +20,6 @@ pub const AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER: &str =
 pub const BASE_REPOSTORY_URL: &str = "git@github.com:matiasbn/bat-base-repository.git";
 pub const BASE_REPOSTORY_NAME: &str = "bat-base-repository";
 
-pub const BAT_TOML_INITIAL_CONFIG_STR: &str = r#"
-[required]
-auditor_names = [""]
-project_name = ""
-client_name = ""
-commit_hash_url = ""
-starting_date = ""
-program_lib_path = ""
-project_repository_url = ""
-miro_board_url = ""
-"#;
-pub const AUDITOR_TOML_INITIAL_CONFIG_STR: &str = r#"
-[auditor]
-auditor_name = ""
-miro_oauth_access_token = ""
-vs_code_integration = false
-"#;
-
 // miro config
 
 pub const MIRO_FRAME_WIDTH: u64 = 3392;
