@@ -21,9 +21,10 @@ use std::string::String;
 pub mod get {
     use std::fs::DirEntry;
 
+    use error_stack::Report;
+
     use crate::batbelt::path::FolderPathType;
     use crate::batbelt::structs::FileInfo;
-    use crate::batbelt::{self};
 
     use super::*;
 
@@ -53,37 +54,39 @@ pub mod get {
             .filter(|file| file != ".gitkeep")
             .collect::<Vec<String>>();
         if started_files.is_empty() {
-            panic!("no started files in code-overhaul folder");
+            return Err(
+                Report::new(BatError).attach_printable("no started files in code-overhaul folder")
+            );
         }
         Ok(started_files)
     }
 
-    pub fn get_finished_co_files() -> Result<Vec<(String, String)>, BatError> {
-        // let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
-        let finished_path = batbelt::path::get_folder_path(
-            batbelt::path::FolderPathType::CodeOverhaulFinished,
-            true,
-        )
-        .change_context(BatError)?;
-        let mut finished_folder = fs::read_dir(&finished_path)
-            .unwrap()
-            .map(|file| file.unwrap())
-            .collect::<Vec<DirEntry>>();
-        finished_folder.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
-        let mut finished_files_content: Vec<(String, String)> = vec![];
+    // pub fn get_finished_co_files() -> Result<Vec<(String, String)>, BatError> {
+    //     // let finished_path = utils::path::get_auditor_code_overhaul_finished_path(None)?;
+    //     let finished_path = batbelt::path::get_folder_path(
+    //         batbelt::path::FolderPathType::CodeOverhaulFinished,
+    //         true,
+    //     )
+    //     .change_context(BatError)?;
+    //     let mut finished_folder = fs::read_dir(&finished_path)
+    //         .unwrap()
+    //         .map(|file| file.unwrap())
+    //         .collect::<Vec<DirEntry>>();
+    //     finished_folder.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    //     let mut finished_files_content: Vec<(String, String)> = vec![];
 
-        for co_file in finished_folder {
-            let file_content = fs::read_to_string(co_file.path()).unwrap();
-            let file_name = co_file.file_name();
-            if file_name != ".gitkeep" {
-                finished_files_content.push((
-                    co_file.file_name().to_str().unwrap().to_string(),
-                    file_content,
-                ));
-            }
-        }
-        Ok(finished_files_content)
-    }
+    //     for co_file in finished_folder {
+    //         let file_content = fs::read_to_string(co_file.path()).unwrap();
+    //         let file_name = co_file.file_name();
+    //         if file_name != ".gitkeep" {
+    //             finished_files_content.push((
+    //                 co_file.file_name().to_str().unwrap().to_string(),
+    //                 file_content,
+    //             ));
+    //         }
+    //     }
+    //     Ok(finished_files_content)
+    // }
 
     // #[derive(Debug, Clone)]
     // pub struct FinishedCoFileContent {
@@ -186,53 +189,6 @@ pub mod get {
             })
             .collect::<Vec<FileInfo>>();
         Ok(state_folder_files_info)
-    }
-}
-
-pub mod check {
-    use super::*;
-    use crate::batbelt::constants::CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER;
-    pub fn code_overhaul_file_completed(file_path: String, file_name: String) {
-        let file_data = fs::read_to_string(file_path).unwrap();
-        if file_data.contains(CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER) {
-            panic!("Please complete the \"What it does?\" section of the {file_name} file");
-        }
-
-        if file_data.contains(CODE_OVERHAUL_NOTES_PLACEHOLDER) {
-            let options = vec!["yes", "no"];
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt("Notes section not completed, do you want to proceed anyway?")
-                .items(&options)
-                .default(0)
-                .interact_on_opt(&Term::stderr())
-                .unwrap()
-                .unwrap();
-            if options[selection] == "no" {
-                panic!("Aborted by the user");
-            }
-        }
-
-        if file_data.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
-            panic!("Please complete the \"Signers\" section of the {file_name} file");
-        }
-
-        if file_data.contains(CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER) {
-            let options = vec!["yes", "no"];
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt("Validations section not completed, do you want to proceed anyway?")
-                .items(&options)
-                .default(0)
-                .interact_on_opt(&Term::stderr())
-                .unwrap()
-                .unwrap();
-            if options[selection] == "no" {
-                panic!("Aborted by the user");
-            }
-        }
-
-        if file_data.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER) {
-            panic!("Please complete the \"Miro board frame\" section of the {file_name} file");
-        }
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::{
     self,
@@ -8,7 +9,7 @@ use crate::batbelt::{
 use colored::Colorize;
 use console::Term;
 use dialoguer::{console, theme::ColorfulTheme, Input, Select};
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -126,7 +127,7 @@ pub fn finish_finding() -> Result<(), CommandError> {
         false,
     )
     .change_context(CommandError)?;
-    validate_finished_finding_file(finding_file_path, finding_name.clone());
+    validate_finished_finding_file(finding_file_path, finding_name.clone())?;
     let to_review_finding_file_path = batbelt::path::get_file_path(
         FilePathType::FindingToReview {
             file_name: finding_name.clone(),
@@ -221,11 +222,13 @@ fn prepare_all(create_commit: bool) -> Result<(), CommandError> {
                     "medium" => "2",
                     "low" => "3",
                     "informational" => "4",
-                    &_ => panic!(
-                        "severity: {:?} not recongnized in file {:?}",
-                        file_severity,
-                        file.path()
-                    ),
+                    &_ => {
+                        return Err(Report::new(CommandError).attach_printable(format!(
+                            "severity: {:?} not recongnized in file {:?}",
+                            file_severity,
+                            file.path()
+                        )));
+                    }
                 };
                 let finding_file_name = format!(
                     "{}-{}",
@@ -263,7 +266,9 @@ fn validate_config_create_finding_file(finding_name: String) -> Result<(), Comma
     )
     .change_context(CommandError)?;
     if Path::new(&finding_file_path).is_file() {
-        panic!("Finding file already exists: {finding_file_path:#?}");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Finding file already exists: {finding_file_path:#?}"
+        )));
     }
     Ok(())
 }
@@ -296,31 +301,35 @@ fn copy_template_to_findings_to_review(finding_name: String) -> Result<(), Comma
         false,
     )
     .change_context(CommandError)?;
-    let output = Command::new("cp")
-        .args([template_path, new_file_path.clone()])
-        .output()
-        .unwrap()
-        .status
-        .exit_ok();
-    if let Err(output) = output {
-        panic!("Finding creation failed with reason: {output:#?}")
-    };
+    execute_command("co", &[&template_path, &new_file_path]).change_context(CommandError)?;
     println!("Finding file successfully created at: {new_file_path:?}");
     Ok(())
 }
 
-fn validate_finished_finding_file(file_path: String, file_name: String) {
+fn validate_finished_finding_file(
+    file_path: String,
+    file_name: String,
+) -> Result<(), CommandError> {
     let file_data = fs::read_to_string(file_path).unwrap();
     if file_data.contains("## Finding name") {
-        panic!("Please update the Finding name of the {file_name} file");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Please update the Finding name of the {file_name} file"
+        )));
     }
     if file_data.contains("Fill the description") {
-        panic!("Please complete the Description section of the {file_name} file");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Please complete the Description section of the {file_name} file"
+        )));
     }
     if file_data.contains("Fill the impact") {
-        panic!("Please complete the Impact section of the {file_name} file");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Please complete the Impact section of the {file_name} file"
+        )));
     }
     if file_data.contains("Add recommendations") {
-        panic!("Please complete the Recommendations section of the {file_name} file");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Please complete the Recommendations section of the {file_name} file"
+        )));
     }
+    Ok(())
 }

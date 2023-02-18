@@ -30,11 +30,11 @@ use crate::batbelt::templates::code_overhaul::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
 };
 
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 use super::CommandError;
 
-pub async fn deploy_co() -> Result<(), CommandError> {
+pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandError> {
     MiroConfig::check_miro_enabled();
     let started_path = batbelt::path::get_folder_path(FolderPathType::CodeOverhaulStarted, false)
         .change_context(CommandError)?;
@@ -72,7 +72,9 @@ pub async fn deploy_co() -> Result<(), CommandError> {
         if current_content.contains(
             &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
         ) {
-            panic!("Please complete the signers description before deploying to Miro");
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "Please complete the signers description before deploying to Miro"
+            )));
         }
         let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false)
             .change_context(CommandError)?;
@@ -410,71 +412,6 @@ pub async fn deploy_co() -> Result<(), CommandError> {
         // }
         Ok(())
     }
-}
-
-fn prompt_select_started_co_folder() -> Result<(String, String), CommandError> {
-    let started_folders: Vec<String> = batbelt::helpers::get::get_started_entrypoints()
-        .change_context(CommandError)?
-        .iter()
-        .filter(|file| !file.contains(".md"))
-        .map(|file| file.to_string())
-        .collect();
-    if started_folders.is_empty() {
-        panic!("No folders found in started folder for the auditor")
-    }
-    let prompt_text = "select the folder:".to_string();
-    let selection = batbelt::cli_inputs::select(&prompt_text, started_folders.clone(), None)
-        .change_context(CommandError)?;
-    let selected_folder = &started_folders[selection];
-    let selected_co_started_file_path = batbelt::path::get_file_path(
-        FilePathType::CodeOverhaulStarted {
-            file_name: selected_folder.clone(),
-        },
-        true,
-    )
-    .change_context(CommandError)?;
-    Ok((
-        selected_folder.clone(),
-        selected_co_started_file_path.clone(),
-    ))
-}
-
-// pub fn create_co_snapshots() -> Result<(), CommandError> {
-//     assert!(self::helpers::check_silicon_installed());
-//     let (selected_folder, selected_co_started_path) = prompt_select_started_co_folder()?;
-//     let co_file_string = fs::read_to_string(selected_co_started_path.clone()).expect(
-//         format!(
-//             "Error opening code-overhaul file at: {}",
-//             selected_co_started_path.clone()
-//         )
-//         .as_str(),
-//     );
-//     for figure in CO_FIGURES {
-//         println!("creating {} image for {}", figure, selected_folder);
-//         let (file_lines, snapshot_image_path, snapshot_markdown_path, index) =
-//             self::helpers::get_data_for_snapshots(
-//                 co_file_string.clone(),
-//                 selected_co_started_path.clone(),
-//                 selected_folder.clone(),
-//                 figure.to_string(),
-//             )?;
-//         self::helpers::create_co_figure(
-//             file_lines,
-//             snapshot_image_path,
-//             snapshot_markdown_path,
-//             index,
-//         );
-//     }
-//     //
-//     Ok(())
-// }
-
-pub async fn deploy_accounts() -> Result<(), CommandError> {
-    let accounts_frame_id = self::helpers::get_accounts_frame_id()
-        .await
-        .change_context(CommandError)?;
-    println!("{}", accounts_frame_id);
-    Ok(())
 }
 
 pub async fn deploy_entrypoint_screenshots_to_frame(

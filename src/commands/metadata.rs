@@ -8,7 +8,7 @@ use crate::batbelt::path::FilePathType;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
 
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 use super::CommandError;
 
@@ -31,7 +31,9 @@ pub fn functions() -> Result<(), CommandError> {
         )
         .unwrap();
         if !user_decided_to_continue {
-            panic!("User decided not to continue with the update process for functions metadata")
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "User decided not to continue with the update process for functions metadata"
+            )));
         }
     }
     let functions_metadata = get_functions_metadata_from_program().unwrap();
@@ -74,7 +76,9 @@ pub fn structs() -> Result<(), CommandError> {
         )
         .unwrap();
         if !user_decided_to_continue {
-            panic!("User decided not to continue with the update process for structs metadata")
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "User decided not to continue with the update process for structs metadata"
+            )));
         }
     }
     let structs_metadata = get_structs_metadata_from_program().unwrap();

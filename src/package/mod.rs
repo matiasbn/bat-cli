@@ -95,7 +95,7 @@ fn bump() -> Result<String, PackageError> {
         2 => {
             version_vec[2] += 1;
         }
-        _ => panic!("Bad selection"),
+        _ => unimplemented!(),
     };
     let new_version = version_vec
         .iter()

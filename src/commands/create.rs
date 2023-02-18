@@ -14,7 +14,7 @@ use crate::batbelt::structs::FileInfo;
 use crate::batbelt::{cli_inputs, helpers};
 use crate::config::RequiredConfig;
 
-use error_stack::ResultExt;
+use error_stack::{IntoReport, Report, ResultExt};
 
 use super::CommandError;
 
@@ -42,8 +42,8 @@ pub fn create_project() -> error_stack::Result<(), CommandError> {
         .output()
         .unwrap();
     // create config files
-    create_bat_toml(required_config.clone());
-    create_auditor_toml();
+    create_bat_toml(required_config.clone())?;
+    create_auditor_toml()?;
     // move config files to repo
     move_config_files(required_config.project_name.clone());
 
@@ -126,7 +126,9 @@ fn get_required_config() -> error_stack::Result<RequiredConfig, CommandError> {
     let normalized_to_audit_program_lib_path = program_lib_path.replace("./", "../");
 
     if !Path::new(&program_lib_path).is_file() {
-        panic!("lib.rs file not found in selected folder");
+        return Err(
+            Report::new(CommandError).attach_printable("lib.rs file not found in selected folder")
+        );
     }
 
     // Project name selection
@@ -144,7 +146,8 @@ fn get_required_config() -> error_stack::Result<RequiredConfig, CommandError> {
     let project_path = format!("./{project_name}");
 
     if Path::new(&project_path).is_dir() {
-        panic!("Folder {} already exists", project_name);
+        return Err(Report::new(CommandError)
+            .attach_printable(format!("Folder {} already exists", project_name)));
     }
 
     let auditor_names_prompt: String =
@@ -182,7 +185,7 @@ fn get_required_config() -> error_stack::Result<RequiredConfig, CommandError> {
     })
 }
 
-fn create_bat_toml(required_config: RequiredConfig) {
+fn create_bat_toml(required_config: RequiredConfig) -> Result<(), Report<CommandError>> {
     let bat_toml_path = Path::new(&BAT_TOML_INITIAL_PATH);
     let RequiredConfig {
         project_name,
@@ -197,7 +200,8 @@ fn create_bat_toml(required_config: RequiredConfig) {
     } = required_config;
 
     if bat_toml_path.exists() {
-        panic!("Bat.toml file already exist in {bat_toml_path:?}, aborting")
+        return Err(Report::new(CommandError)
+            .attach_printable("Bat.toml file already exist in {bat_toml_path:?}, aborting"));
     };
 
     // set project name
@@ -237,17 +241,22 @@ fn create_bat_toml(required_config: RequiredConfig) {
         );
 
     fs::write(bat_toml_path, bat_toml_updated).expect("Could not write to file!");
+    Ok(())
 }
 
 pub fn create_auditor_toml() -> error_stack::Result<(), CommandError> {
     let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
 
     if auditor_toml_path.exists() {
-        panic!("BatAudit.toml file already exist in {auditor_toml_path:?}, aborting")
+        return Err(Report::new(CommandError).attach_printable(
+            "BatAudit.toml file already exist in {auditor_toml_path:?}, aborting",
+        ));
     };
 
     fs::write(auditor_toml_path, AUDITOR_TOML_INITIAL_CONFIG_STR)
-        .expect("Could not write to file!");
+        .into_report()
+        .ok()
+        .ok_or(CommandError)?;
     Ok(())
 }
 

@@ -1,4 +1,5 @@
 use colored::Colorize;
+use std::fs;
 
 use crate::batbelt;
 use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
@@ -6,8 +7,13 @@ use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::batbelt::path::{FilePathType, FolderPathType};
 use crate::commands::CommandError;
 
-use error_stack::{Result, ResultExt};
-use std::process::Command;
+use crate::batbelt::bash::execute_command;
+use crate::batbelt::constants::{
+    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
+    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER,
+    CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
+};
+use error_stack::{Report, Result, ResultExt};
 
 pub async fn finish_co_file() -> Result<(), CommandError> {
     check_correct_branch().change_context(CommandError)?;
@@ -29,15 +35,9 @@ pub async fn finish_co_file() -> Result<(), CommandError> {
         true,
     )
     .change_context(CommandError)?;
-    batbelt::helpers::check::code_overhaul_file_completed(
-        started_co_file_path.clone(),
-        finished_endpoint.clone(),
-    );
-
-    Command::new("mv")
-        .args([started_co_file_path, finished_co_folder_path])
-        .output()
-        .unwrap();
+    code_overhaul_file_completed(started_co_file_path.clone())?;
+    execute_command("mv", &[&started_co_file_path, &finished_co_folder_path])
+        .change_context(CommandError)?;
 
     create_git_commit(
         GitCommit::FinishCO,
@@ -46,5 +46,45 @@ pub async fn finish_co_file() -> Result<(), CommandError> {
     .change_context(CommandError)?;
 
     println!("{} moved to finished", finished_endpoint.green());
+    Ok(())
+}
+pub fn code_overhaul_file_completed(file_path: String) -> Result<(), CommandError> {
+    let file_data = fs::read_to_string(file_path).unwrap();
+    if file_data.contains(CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER) {
+        return Err(Report::new(CommandError).attach_printable(
+            "Please complete the \"What it does?\" section of the {file_name} file",
+        ));
+    }
+
+    if file_data.contains(CODE_OVERHAUL_NOTES_PLACEHOLDER) {
+        let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
+            "Notes section not completed, do you want to proceed anyway?",
+        )
+        .change_context(CommandError)?;
+        if !user_decided_to_continue {
+            return Err(Report::new(CommandError).attach_printable("Aborted by the user"));
+        }
+    }
+
+    if file_data.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
+        return Err(Report::new(CommandError)
+            .attach_printable("Please complete the \"Signers\" section of the {file_name} file"));
+    }
+
+    if file_data.contains(CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER) {
+        let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
+            "Validations section not completed, do you want to proceed anyway?",
+        )
+        .change_context(CommandError)?;
+        if !user_decided_to_continue {
+            return Err(Report::new(CommandError).attach_printable("Aborted by the user"));
+        }
+    }
+
+    if file_data.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER) {
+        return Err(Report::new(CommandError).attach_printable(
+            "Please complete the \"Miro board frame\" section of the {file_name} file",
+        ));
+    }
     Ok(())
 }
