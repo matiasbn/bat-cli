@@ -365,7 +365,7 @@ pub fn check_correct_branch() -> Result<(), GitOperationError> {
     let expected_auditor_branch = get_expected_current_branch()?;
     if get_branch_name()? != expected_auditor_branch {
         let message = format!(
-            "You are in an incorrect branch, please run \"git checkout {:?}\"",
+            "You are in an incorrect branch, please run \"git checkout {}\"",
             expected_auditor_branch
         );
         return Err(Report::new(GitOperationError).attach_printable(message));

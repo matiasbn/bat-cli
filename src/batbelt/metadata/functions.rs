@@ -156,9 +156,13 @@ impl FunctionMetadata {
         Ok(functions_sourcecodes)
     }
 
-    pub fn to_source_code(&self) -> SourceCodeMetadata {
+    pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeMetadata {
         SourceCodeMetadata::new(
-            self.name.clone(),
+            if let Some(function_name) = optional_name {
+                function_name
+            } else {
+                self.name.clone()
+            },
             self.path.clone(),
             self.start_line_index,
             self.end_line_index,

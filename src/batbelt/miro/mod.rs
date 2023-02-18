@@ -15,15 +15,14 @@ pub mod item;
 pub mod shape;
 pub mod sticky_note;
 
-use crate::batbelt::constants::*;
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 #[derive(Debug)]
 pub struct MiroError;
 
 impl fmt::Display for MiroError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("General Bat error")
+        f.write_str("Miro error")
     }
 }
 
@@ -35,18 +34,33 @@ pub struct MiroConfig {
     board_url: String,
 }
 
+pub type MiroApiResult = Result<reqwest::Response, MiroError>;
+
 impl MiroConfig {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, MiroError> {
         let BatConfig {
             required, auditor, ..
-        } = BatConfig::get_validated_config().unwrap();
+        } = BatConfig::get_validated_config().change_context(MiroError)?;
         let access_token = auditor.miro_oauth_access_token;
         let board_url = required.miro_board_url;
-        let board_id = Self::get_miro_board_id(board_url.clone());
-        MiroConfig {
+        let board_id = Self::get_miro_board_id(board_url.clone())?;
+        Ok(MiroConfig {
             access_token,
             board_id,
             board_url,
+        })
+    }
+
+    pub fn parse_response_from_miro(
+        response: std::result::Result<reqwest::Response, reqwest::Error>,
+    ) -> Result<reqwest::Response, MiroError> {
+        match response {
+            Ok(resp) => Ok(resp),
+            Err(error) => {
+                let message = "Bad response from Miro";
+                log::error!("Miro response: \n {:#?}", error);
+                return Err(Report::new(MiroError).attach_printable(message));
+            }
         }
     }
 
@@ -73,20 +87,20 @@ impl MiroConfig {
         url
     }
 
-    pub fn get_miro_board_id(miro_board_url: String) -> String {
-        let error_msg = format!(
+    pub fn get_miro_board_id(miro_board_url: String) -> Result<String, MiroError> {
+        let _error_msg = format!(
             "Error obtaining the miro board id for the url: {}",
             miro_board_url
         );
         let miro_board_id = miro_board_url
             .split("board/")
             .last()
-            .expect(&error_msg)
+            .ok_or(MiroError)?
             .split("/")
             .next()
-            .expect(&error_msg)
+            .ok_or(MiroError)?
             .to_string();
-        miro_board_id
+        Ok(miro_board_id)
     }
 }
 
@@ -122,7 +136,9 @@ impl MiroObject {
         }
     }
 
-    pub async fn multiple_from_response(response: reqwest::Response) -> Vec<Self> {
+    pub async fn multiple_from_response(
+        response: reqwest::Response,
+    ) -> Result<Vec<Self>, MiroError> {
         let response_string = response.text().await.unwrap();
         let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
         let data = response["data"].as_array().unwrap();
@@ -148,7 +164,7 @@ impl MiroObject {
                 )
             })
             .collect();
-        objects
+        Ok(objects)
     }
 }
 

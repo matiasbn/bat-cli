@@ -149,8 +149,12 @@ enum PackageActions {
 }
 #[tokio::main]
 async fn main() -> Result<(), CommandError> {
-    env_logger::init();
     let cli: Cli = Cli::parse();
+
+    env_logger::Builder::new()
+        .filter_level(cli.verbose.log_level_filter())
+        .init();
+
     let branch_checked = match cli.command {
         Commands::Init { .. }
         | Commands::Create
@@ -164,7 +168,7 @@ async fn main() -> Result<(), CommandError> {
         return Err(check.change_context(CommandError));
     }
     match cli.command {
-        Commands::Sonar => commands::sonar::start_sonar(),
+        Commands::Sonar => commands::sonar::start_sonar()?,
         Commands::Create => commands::create::create_project()?,
         Commands::Init {
             skip_initial_commit,
@@ -220,45 +224,3 @@ async fn main() -> Result<(), CommandError> {
     }
     Ok(())
 }
-
-// mod test {
-//     use std::{thread, time::Duration};
-
-//     use colored::Colorize;
-//     use indicatif::{ProgressBar, ProgressStyle};
-
-//     #[test]
-//     fn test_bat_cli_loader() {
-//         let pb = ProgressBar::new_spinner();
-//         pb.enable_steady_tick(Duration::from_millis(200));
-//         pb.set_style(
-//             ProgressStyle::with_template("{spinner:.blue} {msg}")
-//                 .unwrap()
-//                 .tick_strings(&[
-//                     "📂                  〰️🦇",
-//                     "📂                  〰️🦇",
-//                     "📂                〰️  🦇",
-//                     "📂              〰️    🦇",
-//                     "📂            〰️      🦇",
-//                     "📂          〰️        🦇",
-//                     "📂        〰️          🦇",
-//                     "📂      〰️            🦇",
-//                     "📂    〰️              🦇",
-//                     "📂  〰️                🦇",
-//                     "📂〰️                  🦇",
-//                     "📂  〰️                🦇",
-//                     "📂    〰️              🦇",
-//                     "📂      〰️            🦇",
-//                     "📂        〰️          🦇",
-//                     "📂          〰️        🦇",
-//                     "📂            〰️      🦇",
-//                     "📂              〰️    🦇",
-//                     "📂                〰️  🦇",
-//                     "📂                  〰️🦇",
-//                 ]),
-//         );
-//         pb.set_message(format!("Looking for Structs with {}...", "BatSonar".red()));
-//         thread::sleep(Duration::from_millis(3400));
-//         pb.finish_with_message("Done");
-//     }
-// }

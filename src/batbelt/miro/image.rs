@@ -1,4 +1,3 @@
-use crate::batbelt::miro::helpers::get_id_from_response;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
 
@@ -12,6 +11,8 @@ use reqwest::{
 use serde_json::*;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
+
+use super::MiroError;
 
 #[derive(Debug)]
 pub enum MiroImageType {
@@ -29,9 +30,24 @@ pub struct MiroImage {
     pub x_position: i64,
     pub y_position: i64,
     pub height: u64,
+    pub width: u64,
 }
 
 impl MiroImage {
+    fn new_empty() -> Self {
+        Self {
+            source: "".to_string(),
+            image_type: MiroImageType::FromPath,
+            item_type: MiroItemType::Image,
+            item_id: "".to_string(),
+            parent_id: "".to_string(),
+            x_position: 0,
+            y_position: 0,
+            height: 0,
+            width: 0,
+        }
+    }
+
     pub fn new_from_file_path(file_path: &str, parent_id: &str) -> Self {
         MiroImage {
             source: file_path.to_string(),
@@ -42,27 +58,7 @@ impl MiroImage {
             x_position: 0,
             y_position: 0,
             height: 0,
-        }
-    }
-
-    pub async fn new_from_item_id(item_id: &str, image_type: MiroImageType) -> Self {
-        let response = MiroItem::get_specific_item_on_board(item_id).await.unwrap();
-        let response_string = response.text().await.unwrap();
-        let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
-        let item_id = response["id"].to_string().replace("\"", "");
-        let parent_id = response["parent"]["id"].to_string().replace("\"", "");
-        let height = response["geometry"]["height"].as_f64().unwrap() as u64;
-        let x_position = response["position"]["x"].as_f64().unwrap() as i64;
-        let y_position = response["position"]["y"].as_f64().unwrap() as i64;
-        MiroImage {
-            source: "".to_string(),
-            image_type,
-            item_type: MiroItemType::Image,
-            item_id,
-            parent_id,
-            x_position,
-            y_position,
-            height,
+            width: 0,
         }
     }
 
@@ -82,11 +78,38 @@ impl MiroImage {
             x_position,
             y_position,
             height,
+            width: 0,
         }
     }
 
-    pub async fn deploy(&mut self) {
-        let id = match self.image_type {
+    async fn parse_api_response(
+        &mut self,
+        api_response: reqwest::Response,
+    ) -> Result<(), MiroError> {
+        let response_string = api_response.text().await.unwrap();
+        let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
+        self.item_id = response["id"].to_string().replace("\"", "");
+        self.parent_id = response["parent"]["id"].to_string().replace("\"", "");
+        self.height = response["geometry"]["height"].as_f64().unwrap() as u64;
+        self.width = response["geometry"]["width"].as_f64().unwrap() as u64;
+        self.x_position = response["position"]["x"].as_f64().unwrap() as i64;
+        self.y_position = response["position"]["y"].as_f64().unwrap() as i64;
+        Ok(())
+    }
+
+    pub async fn new_from_item_id(
+        item_id: &str,
+        image_type: MiroImageType,
+    ) -> Result<Self, MiroError> {
+        let response = MiroItem::get_specific_item_on_board(item_id).await.unwrap();
+        let mut new_image = Self::new_empty();
+        new_image.parse_api_response(response).await?;
+        new_image.image_type = image_type;
+        Ok(new_image)
+    }
+
+    pub async fn deploy(&mut self) -> Result<(), MiroError> {
+        let api_response = match self.image_type {
             MiroImageType::FromPath => api::create_image_from_device(&self.source).await.unwrap(),
             MiroImageType::FromUrl => api::create_image_item_using_url(
                 &self.source,
@@ -98,7 +121,8 @@ impl MiroImage {
             .await
             .unwrap(),
         };
-        self.item_id = id;
+        self.parse_api_response(api_response).await?;
+        Ok(())
     }
 
     pub async fn update_from_path(&mut self, new_path: &str) {
@@ -121,17 +145,16 @@ impl MiroImage {
 }
 
 mod api {
-    use error_stack::IntoReport;
 
-    use crate::batbelt::miro::MiroError;
+    use crate::batbelt::miro::MiroApiResult;
 
     use super::*;
-    pub async fn create_image_from_device(file_path: &str) -> Result<String, MiroError> {
+    pub async fn create_image_from_device(file_path: &str) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let file_name = file_path.split('/').last().unwrap().to_string();
         let file = File::open(file_path).await.unwrap();
         // read file body stream
@@ -151,10 +174,8 @@ mod api {
             .multipart(form)
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .into_report();
-        let id = get_id_from_response(response).await?;
-        Ok(id)
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
     pub async fn create_image_item_using_url(
         source_url: &str,
@@ -162,12 +183,12 @@ mod api {
         x_position: i64,
         y_position: i64,
         height: u64,
-    ) -> Result<String, MiroError> {
+    ) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let response = client
             .post(format!("https://api.miro.com/v2/boards/{board_id}/images"))
@@ -193,18 +214,16 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .into_report();
-        let id = get_id_from_response(response).await?;
-        Ok(id)
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
 
-    pub async fn update_image_from_device(file_path: &str, item_id: &str) {
+    pub async fn update_image_from_device(file_path: &str, item_id: &str) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let file_name = file_path.clone().split('/').last().unwrap().to_string();
         let file = File::open(file_path.clone()).await.unwrap();
         // read file body stream
@@ -219,15 +238,15 @@ mod api {
         //create the multipart form
         let form = Form::new().part("resource", some_file);
         let client = reqwest::Client::new();
-        let _response = client
+        let response = client
             .patch(format!(
                 "https://api.miro.com/v2/boards/{board_id}/images/{item_id}"
             ))
             .multipart(form)
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .unwrap();
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
 
     // // uploads the image in file_path to the board
@@ -276,14 +295,14 @@ mod api {
         parent_id: &str,
         x_position: i64,
         y_position: i64,
-    ) {
+    ) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
-        let _response = client
+        let response = client
             .patch(format!(
                 "https://api.miro.com/v2/boards/{board_id}/images/{item_id}",
             ))
@@ -303,7 +322,7 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .unwrap();
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
 }

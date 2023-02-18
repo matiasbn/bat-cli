@@ -162,9 +162,13 @@ impl StructMetadata {
         md_section
     }
 
-    pub fn to_source_code_metadata(&self) -> SourceCodeMetadata {
+    pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeMetadata {
         SourceCodeMetadata::new(
-            self.name.clone(),
+            if let Some(struct_name) = optional_name {
+                struct_name
+            } else {
+                self.name.clone()
+            },
             self.path.clone(),
             self.start_line_index,
             self.end_line_index,

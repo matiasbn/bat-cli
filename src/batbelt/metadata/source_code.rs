@@ -267,7 +267,7 @@ impl SourceCodeMetadata {
         x_position: i64,
         y_position: i64,
         options: SourceCodeScreenshotOptions,
-    ) -> Result<String, MetadataError> {
+    ) -> Result<MiroImage, MetadataError> {
         let png_path = self.create_screenshot(options.clone())?;
         let miro_frame_id = miro_frame.item_id.clone();
         println!(
@@ -278,7 +278,10 @@ impl SourceCodeMetadata {
         );
         let mut screenshot_image =
             MiroImage::new_from_file_path(&png_path, &miro_frame.item_id.clone());
-        screenshot_image.deploy().await;
+        screenshot_image
+            .deploy()
+            .await
+            .change_context(MetadataError)?;
         let miro_item = MiroItem::new(
             &screenshot_image.item_id,
             &miro_frame_id,
@@ -293,7 +296,7 @@ impl SourceCodeMetadata {
         );
         fs::remove_file(png_path).unwrap();
         miro_item.update_item_parent_and_position().await;
-        Ok(screenshot_image.item_id)
+        Ok(screenshot_image)
     }
 
     fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {

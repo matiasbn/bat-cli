@@ -1,6 +1,8 @@
 use crate::batbelt::miro::MiroConfig;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
+
+use super::MiroApiResult;
 #[derive(Debug)]
 pub struct ConnectorOptions {
     pub start_x_position: String,
@@ -13,12 +15,12 @@ pub async fn create_connector(
     start_item_id: &str,
     end_item_id: &str,
     connect_options: Option<ConnectorOptions>,
-) {
+) -> MiroApiResult {
     let MiroConfig {
         access_token,
         board_id,
         ..
-    } = MiroConfig::new();
+    } = MiroConfig::new()?;
     let body = if let Some(options) = connect_options {
         let ConnectorOptions {
             start_x_position,
@@ -63,7 +65,7 @@ pub async fn create_connector(
         .to_string()
     };
     let client = reqwest::Client::new();
-    let _response = client
+    let response = client
         .post(format!(
             "https://api.miro.com/v2/boards/{board_id}/connectors",
         ))
@@ -71,10 +73,6 @@ pub async fn create_connector(
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, format!("Bearer {access_token}"))
         .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
-    // println!("connector response {response}");
+        .await;
+    MiroConfig::parse_response_from_miro(response)
 }

@@ -1,7 +1,10 @@
 use crate::batbelt::miro::{MiroColor, MiroConfig, MiroItemType};
 
+use error_stack::{IntoReport, Result};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{json, Value};
+
+use super::MiroError;
 
 #[derive(Clone)]
 pub struct MiroStickyNote {
@@ -13,6 +16,7 @@ pub struct MiroStickyNote {
     pub x_position: i64,
     pub y_position: i64,
     pub width: u64,
+    pub height: u64,
 }
 
 impl MiroStickyNote {
@@ -23,6 +27,7 @@ impl MiroStickyNote {
         x_position: i64,
         y_position: i64,
         width: u64,
+        height: u64,
     ) -> Self {
         MiroStickyNote {
             content: content.to_string(),
@@ -33,11 +38,12 @@ impl MiroStickyNote {
             x_position,
             y_position,
             width,
+            height,
         }
     }
 
-    pub async fn deploy(&mut self) {
-        let id = api::create_sticky_note(
+    pub async fn deploy(&mut self) -> Result<(), MiroError> {
+        let api_response = api::create_sticky_note(
             &self.content,
             self.color.clone().to_str(),
             &self.parent_id,
@@ -45,12 +51,59 @@ impl MiroStickyNote {
             self.y_position,
             self.width,
         )
-        .await;
-        self.item_id = id;
+        .await?;
+
+        self.parse_api_response(api_response).await?;
+        Ok(())
+    }
+
+    pub fn new_empty() -> Self {
+        MiroStickyNote {
+            content: "".to_string(),
+            color: MiroColor::Black,
+            parent_id: "".to_string(),
+            item_type: MiroItemType::StickyNote,
+            item_id: "".to_string(),
+            x_position: 0,
+            y_position: 0,
+            width: 0,
+            height: 0,
+        }
+    }
+
+    async fn parse_api_response(
+        &mut self,
+        api_response: reqwest::Response,
+    ) -> Result<(), MiroError> {
+        let response_string = api_response.text().await.unwrap();
+        let value: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
+        self.parse_value(value)?;
+        Ok(())
+    }
+
+    fn parse_value(&mut self, value: Value) -> Result<(), MiroError> {
+        self.item_id = value["id"].to_string().replace("\"", "");
+        self.content = value["data"]["content"].to_string().replace("\"", "");
+        let _height = value["geometry"]["height"].as_f64().ok_or(MiroError)? as u64;
+        self.width = value["geometry"]["width"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as u64;
+        self.x_position = value["position"]["x"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as i64;
+        self.y_position = value["position"]["y"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as i64;
+        Ok(())
     }
 }
 
 mod api {
+    use crate::batbelt::miro::MiroApiResult;
+
     use super::*;
     pub async fn create_sticky_note(
         content: &str,
@@ -59,12 +112,12 @@ mod api {
         x_position: i64,
         y_position: i64,
         width: u64,
-    ) -> String {
+    ) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         // let x_position = x + x_move;
         let client = reqwest::Client::new();
         let response = client
@@ -97,15 +150,8 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap();
-        // println!("sticky not response {response}");
-        let response: Value = serde_json::from_str(&response.as_str()).unwrap();
-        let id = response["id"].to_string().replace("\"", "");
-        id
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
 
     //     pub async fn create_signer_sticky_note(

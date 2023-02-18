@@ -1,8 +1,10 @@
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
+use error_stack::Result;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
 use super::MiroError;
+use crate::batbelt::miro::MiroApiResult;
 
 pub struct MiroItem {
     pub item_id: String,
@@ -57,28 +59,29 @@ impl MiroItem {
         api::get_items_on_board(miro_item_type).await
     }
 
-    pub async fn get_specific_item_on_board(item_id: &str) -> Result<reqwest::Response, String> {
+    pub async fn get_specific_item_on_board(item_id: &str) -> Result<reqwest::Response, MiroError> {
         api::get_specific_item_on_board(item_id).await
     }
 }
 
 mod api {
+
     use super::*;
     pub async fn update_item_position(
         item_id: &str,
         parent_id: &str,
         x_position: i64,
         y_position: i64,
-    ) -> Result<(), String> {
+    ) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         // let started_file_path
         // let x_position = x + x_move;
         let client = reqwest::Client::new();
-        let _response = client
+        let response = client
             .patch(format!(
                 "https://api.miro.com/v2/boards/{board_id}/items/{item_id}",
             ))
@@ -98,23 +101,16 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap();
-        // println!("response {}", _response);
-        Ok(())
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
 
-    pub async fn get_items_on_board(
-        miro_item_type: Option<MiroItemType>,
-    ) -> Result<reqwest::Response, MiroError> {
+    pub async fn get_items_on_board(miro_item_type: Option<MiroItemType>) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let url = if let Some(item_type) = miro_item_type {
             let item_type_string = item_type.to_string();
@@ -130,17 +126,16 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .unwrap();
-        Ok(response)
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
 
-    pub async fn get_specific_item_on_board(item_id: &str) -> Result<reqwest::Response, String> {
+    pub async fn get_specific_item_on_board(item_id: &str) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
             ..
-        } = MiroConfig::new();
+        } = MiroConfig::new()?;
         let client = reqwest::Client::new();
         let response = client
             .get(format!(
@@ -149,8 +144,7 @@ mod api {
             .header(CONTENT_TYPE, "application/json")
             .header(AUTHORIZATION, format!("Bearer {access_token}"))
             .send()
-            .await
-            .unwrap();
-        Ok(response)
+            .await;
+        MiroConfig::parse_response_from_miro(response)
     }
 }
