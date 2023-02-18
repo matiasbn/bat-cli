@@ -15,7 +15,6 @@ pub mod item;
 pub mod shape;
 pub mod sticky_note;
 
-use crate::batbelt::constants::*;
 use error_stack::{Report, Result, ResultExt};
 
 #[derive(Debug)]
@@ -89,7 +88,7 @@ impl MiroConfig {
     }
 
     pub fn get_miro_board_id(miro_board_url: String) -> Result<String, MiroError> {
-        let error_msg = format!(
+        let _error_msg = format!(
             "Error obtaining the miro board id for the url: {}",
             miro_board_url
         );

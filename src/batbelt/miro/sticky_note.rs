@@ -84,7 +84,7 @@ impl MiroStickyNote {
     fn parse_value(&mut self, value: Value) -> Result<(), MiroError> {
         self.item_id = value["id"].to_string().replace("\"", "");
         self.content = value["data"]["content"].to_string().replace("\"", "");
-        let height = value["geometry"]["height"].as_f64().ok_or(MiroError)? as u64;
+        let _height = value["geometry"]["height"].as_f64().ok_or(MiroError)? as u64;
         self.width = value["geometry"]["width"]
             .as_f64()
             .ok_or(MiroError)

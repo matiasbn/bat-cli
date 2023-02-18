@@ -1,6 +1,6 @@
 use super::*;
 use crate::batbelt::miro::MiroItemType;
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{IntoReport, Result};
 use serde_json::json;
 
 #[derive(Debug, Clone)]

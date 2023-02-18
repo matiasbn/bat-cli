@@ -1,4 +1,3 @@
-use crate::batbelt::miro::helpers::get_id_from_response;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
 
@@ -146,9 +145,8 @@ impl MiroImage {
 }
 
 mod api {
-    use error_stack::IntoReport;
 
-    use crate::batbelt::miro::{MiroApiResult, MiroError};
+    use crate::batbelt::miro::MiroApiResult;
 
     use super::*;
     pub async fn create_image_from_device(file_path: &str) -> MiroApiResult {

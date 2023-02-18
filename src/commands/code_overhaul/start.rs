@@ -25,7 +25,7 @@ use crate::batbelt::templates::code_overhaul::{
 use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::get_function_parameters;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), CommandError> {

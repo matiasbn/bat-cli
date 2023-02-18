@@ -5,7 +5,6 @@ use serde_json::json;
 
 use super::MiroError;
 use crate::batbelt::miro::MiroApiResult;
-use error_stack::Report;
 
 pub struct MiroItem {
     pub item_id: String,
