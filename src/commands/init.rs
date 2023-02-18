@@ -316,6 +316,17 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
     if !miro_config.miro_enabled() {
         return Ok(());
     }
+
+    let user_want_to_deploy = batbelt::cli_inputs::select_yes_or_no(
+        "Do you want to deploy the Miro frames for code overhaul?",
+    )
+    .change_context(CommandError)?;
+
+    if !user_want_to_deploy {
+        println!("Ok, skipping code-overhaul Miro frames deployment....");
+        return Ok(());
+    }
+
     let miro_board_frames = MiroFrame::get_frames_from_miro()
         .await
         .change_context(CommandError)?;
