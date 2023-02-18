@@ -8,7 +8,7 @@ use crate::config::BatConfig;
 use crate::batbelt;
 use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 
-use crate::batbelt::path::{FilePathType, FolderPathType};
+use crate::batbelt::path::{BatFile, BatFolder};
 
 use std::fs;
 
@@ -25,15 +25,14 @@ use crate::batbelt::templates::code_overhaul::{
 use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::get_function_parameters;
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), CommandError> {
     check_correct_branch().change_context(CommandError)?;
-    let bat_config = BatConfig::get_validated_config().unwrap();
-    let to_review_path =
-        batbelt::path::get_folder_path(FolderPathType::CodeOverhaulToReview, false)
-            .change_context(CommandError)?;
+    let bat_config = BatConfig::get_config().unwrap();
+    let to_review_path = batbelt::path::get_folder_path(BatFolder::CodeOverhaulToReview, false)
+        .change_context(CommandError)?;
 
     // get to-review files
     let mut review_files = fs::read_dir(to_review_path)
@@ -44,7 +43,8 @@ pub fn start_co_file() -> Result<(), CommandError> {
     review_files.sort();
 
     if review_files.is_empty() {
-        panic!("no to-review files in code-overhaul folder");
+        return Err(Report::new(CommandError)
+            .attach_printable("no to-review files in code-overhaul folder"));
     }
     let prompt_text = "Select the code-overhaul file to start:";
     let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)
@@ -54,7 +54,7 @@ pub fn start_co_file() -> Result<(), CommandError> {
     let to_start_file_name = &review_files[selection].clone();
     let entrypoint_name = to_start_file_name.replace(".md", "");
     let to_review_file_path = batbelt::path::get_file_path(
-        FilePathType::CodeOverhaulToReview {
+        BatFile::CodeOverhaulToReview {
             file_name: to_start_file_name.clone(),
         },
         false,
@@ -65,7 +65,7 @@ pub fn start_co_file() -> Result<(), CommandError> {
         EntrypointParser::get_instruction_file_path_with_prompts(&to_start_file_name)
             .change_context(CommandError)?;
 
-    let program_lib_path = bat_config.required.program_lib_path;
+    let program_lib_path = bat_config.program_lib_path;
 
     let entrypoint_functions = BatSonar::new_from_path(
         &program_lib_path,
@@ -105,7 +105,7 @@ pub fn start_co_file() -> Result<(), CommandError> {
         .unwrap();
 
     let metadata_path =
-        batbelt::path::get_file_path(FilePathType::Metadata, true).change_context(CommandError)?;
+        batbelt::path::get_file_path(BatFile::Metadata, true).change_context(CommandError)?;
     let metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_sentence_case())
@@ -128,7 +128,7 @@ pub fn start_co_file() -> Result<(), CommandError> {
     // };
 
     let started_path = batbelt::path::get_file_path(
-        FilePathType::CodeOverhaulStarted {
+        BatFile::CodeOverhaulStarted {
             file_name: to_start_file_name.clone(),
         },
         false,

@@ -1,14 +1,15 @@
+use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::{
     self,
     git::{create_git_commit, GitCommit},
     helpers::get::get_only_files_from_folder,
-    path::{FilePathType, FolderPathType},
+    path::{BatFile, BatFolder},
 };
 use colored::Colorize;
 use console::Term;
 use dialoguer::{console, theme::ColorfulTheme, Input, Select};
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -22,7 +23,7 @@ use super::CommandError;
 pub fn reject() -> Result<(), CommandError> {
     prepare_all(true).change_context(CommandError)?;
     println!("Select the finding file to reject:");
-    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true)
+    let to_review_path = batbelt::path::get_folder_path(BatFolder::FindingsToReview, true)
         .change_context(CommandError)?;
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
@@ -41,12 +42,10 @@ pub fn reject() -> Result<(), CommandError> {
         // move selected file to rejected
         Some(index) => {
             let rejected_file_name = review_files[index].clone();
-            let rejected_path =
-                batbelt::path::get_folder_path(FolderPathType::FindingsRejected, true)
-                    .change_context(CommandError)?;
-            let to_review_path =
-                batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true)
-                    .change_context(CommandError)?;
+            let rejected_path = batbelt::path::get_folder_path(BatFolder::FindingsRejected, true)
+                .change_context(CommandError)?;
+            let to_review_path = batbelt::path::get_folder_path(BatFolder::FindingsToReview, true)
+                .change_context(CommandError)?;
             Command::new("mv")
                 .args([to_review_path, rejected_path])
                 .output()
@@ -61,10 +60,10 @@ pub fn reject() -> Result<(), CommandError> {
 pub fn accept_all() -> Result<(), CommandError> {
     prepare_all(false)?;
     // let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
-    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true)
+    let to_review_path = batbelt::path::get_folder_path(BatFolder::FindingsToReview, true)
         .change_context(CommandError)?;
     // let accepted_path = utils::path::get_auditor_findings_accepted_path(None)?;
-    let accepted_path = batbelt::path::get_folder_path(FolderPathType::FindingsAccepted, true)
+    let accepted_path = batbelt::path::get_folder_path(BatFolder::FindingsAccepted, true)
         .change_context(CommandError)?;
     let findings_to_review_files_info =
         get_only_files_from_folder(to_review_path).change_context(CommandError)?;
@@ -95,7 +94,7 @@ pub fn create_finding() -> Result<(), CommandError> {
         .change_context(CommandError)?;
     // let finding_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
     let finding_file_path = batbelt::path::get_file_path(
-        FilePathType::FindingToReview {
+        BatFile::FindingToReview {
             file_name: finding_name,
         },
         false,
@@ -106,7 +105,7 @@ pub fn create_finding() -> Result<(), CommandError> {
 }
 
 pub fn finish_finding() -> Result<(), CommandError> {
-    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true)
+    let to_review_path = batbelt::path::get_folder_path(BatFolder::FindingsToReview, true)
         .change_context(CommandError)?;
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
@@ -120,22 +119,22 @@ pub fn finish_finding() -> Result<(), CommandError> {
 
     let finding_name = &review_files[selection].clone();
     let finding_file_path = batbelt::path::get_file_path(
-        FilePathType::FindingToReview {
+        BatFile::FindingToReview {
             file_name: finding_name.clone(),
         },
         false,
     )
     .change_context(CommandError)?;
-    validate_finished_finding_file(finding_file_path, finding_name.clone());
+    validate_finished_finding_file(finding_file_path, finding_name.clone())?;
     let to_review_finding_file_path = batbelt::path::get_file_path(
-        FilePathType::FindingToReview {
+        BatFile::FindingToReview {
             file_name: finding_name.clone(),
         },
         true,
     )
     .change_context(CommandError)?;
     let auditor_figures_folder_path =
-        batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true)
+        batbelt::path::get_folder_path(BatFolder::AuditorFigures, true)
             .change_context(CommandError)?;
     create_git_commit(
         GitCommit::FinishFinding {
@@ -149,7 +148,7 @@ pub fn finish_finding() -> Result<(), CommandError> {
     Ok(())
 }
 pub fn update_finding() -> Result<(), CommandError> {
-    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true)
+    let to_review_path = batbelt::path::get_folder_path(BatFolder::FindingsToReview, true)
         .change_context(CommandError)?;
     // get to-review files
     let review_files = fs::read_dir(to_review_path)
@@ -164,14 +163,14 @@ pub fn update_finding() -> Result<(), CommandError> {
 
     let finding_name = &review_files[selection].clone();
     let to_review_finding_file_path = batbelt::path::get_file_path(
-        FilePathType::FindingToReview {
+        BatFile::FindingToReview {
             file_name: finding_name.clone(),
         },
         true,
     )
     .change_context(CommandError)?;
     let auditor_figures_folder_path =
-        batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true)
+        batbelt::path::get_folder_path(BatFolder::AuditorFigures, true)
             .change_context(CommandError)?;
     create_git_commit(
         GitCommit::UpdateFinding {
@@ -186,7 +185,7 @@ pub fn update_finding() -> Result<(), CommandError> {
 }
 
 fn prepare_all(create_commit: bool) -> Result<(), CommandError> {
-    let to_review_path = batbelt::path::get_folder_path(FolderPathType::FindingsToReview, true)
+    let to_review_path = batbelt::path::get_folder_path(BatFolder::FindingsToReview, true)
         .change_context(CommandError)?;
     for to_review_file in fs::read_dir(to_review_path).unwrap() {
         let file = to_review_file.unwrap();
@@ -221,11 +220,13 @@ fn prepare_all(create_commit: bool) -> Result<(), CommandError> {
                     "medium" => "2",
                     "low" => "3",
                     "informational" => "4",
-                    &_ => panic!(
-                        "severity: {:?} not recongnized in file {:?}",
-                        file_severity,
-                        file.path()
-                    ),
+                    &_ => {
+                        return Err(Report::new(CommandError).attach_printable(format!(
+                            "severity: {:?} not recongnized in file {:?}",
+                            file_severity,
+                            file.path()
+                        )));
+                    }
                 };
                 let finding_file_name = format!(
                     "{}-{}",
@@ -234,7 +235,7 @@ fn prepare_all(create_commit: bool) -> Result<(), CommandError> {
                 );
                 // let to_path = utils::path::get_auditor_findings_to_review_path(Some())?;
                 let to_path = batbelt::path::get_file_path(
-                    FilePathType::FindingToReview {
+                    BatFile::FindingToReview {
                         file_name: finding_file_name,
                     },
                     false,
@@ -256,14 +257,16 @@ fn prepare_all(create_commit: bool) -> Result<(), CommandError> {
 
 fn validate_config_create_finding_file(finding_name: String) -> Result<(), CommandError> {
     let finding_file_path = batbelt::path::get_file_path(
-        FilePathType::FindingToReview {
+        BatFile::FindingToReview {
             file_name: finding_name,
         },
         false,
     )
     .change_context(CommandError)?;
     if Path::new(&finding_file_path).is_file() {
-        panic!("Finding file already exists: {finding_file_path:#?}");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Finding file already exists: {finding_file_path:#?}"
+        )));
     }
     Ok(())
 }
@@ -282,45 +285,48 @@ fn copy_template_to_findings_to_review(finding_name: String) -> Result<(), Comma
 
     let template_path = if selection.unwrap() == 0 {
         // utils::path::get_informational_template_path()?
-        batbelt::path::get_file_path(FilePathType::TemplateInformational, true)
+        batbelt::path::get_file_path(BatFile::TemplateInformational, true)
             .change_context(CommandError)?
     } else {
-        batbelt::path::get_file_path(FilePathType::TemplateFinding, true)
-            .change_context(CommandError)?
+        batbelt::path::get_file_path(BatFile::TemplateFinding, true).change_context(CommandError)?
     };
     // let new_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
     let new_file_path = batbelt::path::get_file_path(
-        FilePathType::FindingToReview {
+        BatFile::FindingToReview {
             file_name: finding_name,
         },
         false,
     )
     .change_context(CommandError)?;
-    let output = Command::new("cp")
-        .args([template_path, new_file_path.clone()])
-        .output()
-        .unwrap()
-        .status
-        .exit_ok();
-    if let Err(output) = output {
-        panic!("Finding creation failed with reason: {output:#?}")
-    };
+    execute_command("co", &[&template_path, &new_file_path]).change_context(CommandError)?;
     println!("Finding file successfully created at: {new_file_path:?}");
     Ok(())
 }
 
-fn validate_finished_finding_file(file_path: String, file_name: String) {
+fn validate_finished_finding_file(
+    file_path: String,
+    file_name: String,
+) -> Result<(), CommandError> {
     let file_data = fs::read_to_string(file_path).unwrap();
     if file_data.contains("## Finding name") {
-        panic!("Please update the Finding name of the {file_name} file");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Please update the Finding name of the {file_name} file"
+        )));
     }
     if file_data.contains("Fill the description") {
-        panic!("Please complete the Description section of the {file_name} file");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Please complete the Description section of the {file_name} file"
+        )));
     }
     if file_data.contains("Fill the impact") {
-        panic!("Please complete the Impact section of the {file_name} file");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Please complete the Impact section of the {file_name} file"
+        )));
     }
     if file_data.contains("Add recommendations") {
-        panic!("Please complete the Recommendations section of the {file_name} file");
+        return Err(Report::new(CommandError).attach_printable(format!(
+            "Please complete the Recommendations section of the {file_name} file"
+        )));
     }
+    Ok(())
 }

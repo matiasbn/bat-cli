@@ -12,8 +12,8 @@ use crate::batbelt::{self};
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions::FunctionMetadata;
 use crate::batbelt::metadata::structs::StructMetadata;
-use crate::batbelt::path::FilePathType;
-use colored::Colorize;
+use crate::batbelt::path::BatFile;
+
 use inflector::Inflector;
 
 use error_stack::{Result, ResultExt};
@@ -48,35 +48,12 @@ impl MetadataSection {
 }
 
 pub fn get_metadata_markdown() -> Result<MarkdownFile, MetadataError> {
-    let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, false)
-        .change_context(MetadataError)?;
+    let metadata_path =
+        batbelt::path::get_file_path(BatFile::Metadata, false).change_context(MetadataError)?;
     Ok(MarkdownFile::new(&metadata_path))
 }
 
 pub fn metadata_is_initialized() -> Result<bool, MetadataError> {
     Ok(StructMetadata::structs_metadata_is_initialized()?
         && FunctionMetadata::functions_metadata_is_initialized()?)
-}
-
-pub mod metadata_helpers {
-    #[allow(unused_imports)]
-    use super::*;
-
-    pub fn prompt_user_update_section(section_name: &str) -> Result<(), MetadataError> {
-        let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
-            format!(
-                "{}, are you sure you want to continue?",
-                format!("{} in metadata.md is already initialized", section_name).bright_red()
-            )
-            .as_str(),
-        )
-        .change_context(MetadataError)?;
-        if !user_decided_to_continue {
-            panic!(
-                "User decided not to continue with the update process for {} metada",
-                section_name.red()
-            )
-        }
-        Ok(())
-    }
 }

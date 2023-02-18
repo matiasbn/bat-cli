@@ -5,6 +5,8 @@ extern crate core;
 #[macro_use]
 extern crate log;
 
+extern crate confy;
+
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 use commands::CommandError;
@@ -13,7 +15,6 @@ use error_stack::{Result, ResultExt};
 mod batbelt;
 mod commands;
 mod config;
-mod errors;
 mod package;
 
 #[derive(Parser, Debug)]
@@ -85,9 +86,7 @@ enum MetadataActions {
 #[derive(Subcommand, Debug)]
 enum MiroActions {
     /// Deploy or updates a code-overhaul frame
-    Deploy,
-    /// Creates or updates the Accounts frame
-    Accounts,
+    CodeOverhaul,
     /// Deploys the entrypoint, context accounts and handler to a Miro frame
     Entrypoint {
         /// select all options as true
@@ -163,7 +162,6 @@ async fn main() -> Result<(), CommandError> {
         _ => check_correct_branch(),
     };
     if let Err(check) = branch_checked {
-        eprintln!("Incorrect branch!");
         log::error!("error obtained :\n {}", check);
         return Err(check.change_context(CommandError));
     }
@@ -187,8 +185,9 @@ async fn main() -> Result<(), CommandError> {
         Commands::CO(CodeOverhaulActions::Templates) => {
             commands::code_overhaul::update_co_templates()?
         }
-        Commands::Miro(MiroActions::Deploy) => commands::miro::deploy_co().await?,
-        Commands::Miro(MiroActions::Accounts) => commands::miro::deploy_accounts().await?,
+        Commands::Miro(MiroActions::CodeOverhaul) => {
+            commands::miro::deploy_code_overhaul_screenshots_to_frame().await?
+        }
         Commands::Miro(MiroActions::Entrypoint { select_all, sorted }) => {
             commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted).await?
         }

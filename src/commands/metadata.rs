@@ -4,17 +4,17 @@ use crate::batbelt::metadata::functions::{get_functions_metadata_from_program, F
 use crate::batbelt::metadata::structs::{get_structs_metadata_from_program, StructMetadata};
 use crate::batbelt::metadata::MetadataSection;
 
-use crate::batbelt::path::FilePathType;
+use crate::batbelt::path::BatFile;
 use crate::{batbelt, GitCommit};
 use colored::Colorize;
 
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 use super::CommandError;
 
 pub fn functions() -> Result<(), CommandError> {
     let metadata_path =
-        batbelt::path::get_file_path(FilePathType::Metadata, false).change_context(CommandError)?;
+        batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let functions_section = metadata_markdown
         .get_section(&MetadataSection::Functions.to_string())
@@ -31,7 +31,9 @@ pub fn functions() -> Result<(), CommandError> {
         )
         .unwrap();
         if !user_decided_to_continue {
-            panic!("User decided not to continue with the update process for functions metadata")
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "User decided not to continue with the update process for functions metadata"
+            )));
         }
     }
     let functions_metadata = get_functions_metadata_from_program().unwrap();
@@ -56,7 +58,7 @@ pub fn functions() -> Result<(), CommandError> {
 
 pub fn structs() -> Result<(), CommandError> {
     let metadata_path =
-        batbelt::path::get_file_path(FilePathType::Metadata, false).change_context(CommandError)?;
+        batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
         .get_section(&MetadataSection::Structs.to_string())
@@ -74,7 +76,9 @@ pub fn structs() -> Result<(), CommandError> {
         )
         .unwrap();
         if !user_decided_to_continue {
-            panic!("User decided not to continue with the update process for structs metadata")
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "User decided not to continue with the update process for structs metadata"
+            )));
         }
     }
     let structs_metadata = get_structs_metadata_from_program().unwrap();

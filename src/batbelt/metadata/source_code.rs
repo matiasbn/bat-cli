@@ -7,10 +7,10 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::MiroItemType;
-use crate::batbelt::path::FilePathType;
+use crate::batbelt::path::BatFile;
 use crate::batbelt::silicon;
 use crate::batbelt::sonar::BatSonar;
-use crate::batbelt::{self, path::FolderPathType};
+use crate::batbelt::{self, path::BatFolder};
 use error_stack::{Result, ResultExt};
 
 #[derive(Debug, Clone)]
@@ -90,7 +90,7 @@ impl SourceCodeMetadata {
     }
 
     pub fn get_entrypoints_sourcecode() -> Result<Vec<Self>, MetadataError> {
-        let lib_file_path = batbelt::path::get_file_path(FilePathType::ProgramLib, false)
+        let lib_file_path = batbelt::path::get_file_path(BatFile::ProgramLib, false)
             .change_context(MetadataError)?;
         let entrypoints = BatSonar::get_entrypoints_results().change_context(MetadataError)?;
         let sourcecodes = entrypoints
@@ -137,7 +137,7 @@ impl SourceCodeMetadata {
         &self,
         options: SourceCodeScreenshotOptions,
     ) -> Result<String, MetadataError> {
-        let dest_path = batbelt::path::get_folder_path(FolderPathType::AuditorFigures, true)
+        let dest_path = batbelt::path::get_folder_path(BatFolder::AuditorFigures, true)
             .change_context(MetadataError)?;
         let mut offset = if options.offset_to_start_line {
             self.start_line_index
@@ -175,7 +175,7 @@ impl SourceCodeMetadata {
             .to_vec();
         let mut content = content_vec.join("\n");
         if options.include_path {
-            let program_path = batbelt::path::get_folder_path(FolderPathType::ProgramPath, false)
+            let program_path = batbelt::path::get_folder_path(BatFolder::ProgramPath, false)
                 .change_context(MetadataError)?;
             let path_to_include = if self.path.contains(&program_path) {
                 let path = self.path.replace(&program_path, "");
