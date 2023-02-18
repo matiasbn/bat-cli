@@ -1,18 +1,8 @@
+use crate::commands::CommandError;
 use error_stack::{IntoReport, Result, ResultExt};
-use std::{error::Error, fmt, process::Command};
+use std::process::Command;
 
-#[derive(Debug)]
-pub struct BashError;
-
-impl fmt::Display for BashError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Command line error")
-    }
-}
-
-impl Error for BashError {}
-
-pub fn execute_command(command: &str, args: &[&str]) -> Result<(), BashError> {
+pub fn execute_command(command: &str, args: &[&str]) -> Result<(), CommandError> {
     let message = format!(
         "Error spawning a child process for paramenters: \n command: {} \n args: {:#?}",
         command, args
@@ -21,7 +11,7 @@ pub fn execute_command(command: &str, args: &[&str]) -> Result<(), BashError> {
         .args(args)
         .spawn()
         .into_report()
-        .change_context(BashError)
+        .change_context(CommandError)
         .attach_printable(message)?;
 
     let message = format!(
@@ -32,7 +22,7 @@ pub fn execute_command(command: &str, args: &[&str]) -> Result<(), BashError> {
     output
         .wait()
         .into_report()
-        .change_context(BashError)
+        .change_context(CommandError)
         .attach_printable(message)?;
     Ok(())
 }

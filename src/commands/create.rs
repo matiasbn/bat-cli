@@ -14,31 +14,17 @@ use walkdir::WalkDir;
 
 pub fn create_project() -> error_stack::Result<(), CommandError> {
     // get project config
-    let required_config = create_bat_config_file().change_context(CommandError)?;
-    println!("Creating {:#?} project", required_config);
+    let bat_config = create_bat_config_file().change_context(CommandError)?;
+    println!("Creating {:#?} project", bat_config);
     // clone repository
     clone_base_repository();
     // change folder name
-    Command::new("mv")
-        .args([BASE_REPOSTORY_NAME, required_config.project_name.as_str()])
-        .output()
-        .unwrap();
+    execute_command("mv", &[BASE_REPOSTORY_NAME, &bat_config.project_name])?;
     // Remove .git folder
-    Command::new("rm")
-        .args([
-            "-rf",
-            (required_config.project_name.clone() + "/.git").as_str(),
-        ])
-        .output()
-        .unwrap();
-    // move config files to repo
-    execute_command("mv", &["Bat.toml", &required_config.project_name])
-        .change_context(CommandError)?;
+    execute_command("rm", &["-rf", &format!("{}/.git", bat_config.project_name)])?;
+    execute_command("mv", &["Bat.toml", &bat_config.project_name])?;
 
-    println!(
-        "Project {} succesfully created",
-        required_config.project_name
-    );
+    println!("Project {} succesfully created", bat_config.project_name);
     Ok(())
 }
 

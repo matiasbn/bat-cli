@@ -185,12 +185,20 @@ mod bat_test {
     use std::env;
 
     #[test]
-    fn test_confy() {
+    fn test_confy() -> Result<(), BatConfigError> {
         env::set_current_dir("../sage-audit").unwrap();
         execute_command("ls", &[]).unwrap();
-        // let bat_toml_path = FilePathType::BatToml.get_path(false).unwrap();
-        // println!("{:#?}", &FilePathType::BatToml.get_path(false).unwrap());
-        let bat_config: BatConfig = confy::load_path("Bat.toml").unwrap();
-        println!("hola")
+        let bat_toml_path = BatFile::BatToml
+            .get_path(false)
+            .change_context(BatConfigError)?;
+        // println!("{:#?}", &BatFile::BatToml.get_path(false)?);
+        let bat_config: BatConfig = confy::load_path("Bat.toml")
+            .into_report()
+            .change_context(BatConfigError)?;
+        let bat_auditor_config: BatAuditorConfig = confy::load_path("BatAuditor.toml")
+            .into_report()
+            .change_context(BatConfigError)?;
+
+        Ok(())
     }
 }
