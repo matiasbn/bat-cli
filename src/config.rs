@@ -80,7 +80,7 @@ impl BatConfig {
         let auditor_toml_path = Path::new(&AUDITOR_TOML_INITIAL_PATH);
         if !auditor_toml_path.is_file() {
             // if BatAuditor does not exist, create it
-            create_auditor_toml();
+            create_auditor_toml()?;
             println!("BatAuditor.toml file not detected, creating")
         }
         let auditor_toml_file = fs::read(auditor_toml_path)

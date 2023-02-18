@@ -628,7 +628,10 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
                     )
                     .await
                     .change_context(CommandError)?;
-                create_connector(&ca_image.item_id, &handler_image.item_id, None).await;
+                create_connector(&ca_image.item_id, &handler_image.item_id, None)
+                    .await
+                    .ok()
+                    .ok_or(CommandError)?;
             }
         }
     }
