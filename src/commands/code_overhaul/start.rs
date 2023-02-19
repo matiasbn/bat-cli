@@ -25,7 +25,7 @@ use crate::batbelt::templates::code_overhaul::{
 use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
 use crate::batbelt::metadata::functions::get_function_parameters;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::string::String;
 
 pub fn start_co_file() -> Result<(), CommandError> {
@@ -116,16 +116,13 @@ pub fn start_co_file() -> Result<(), CommandError> {
         .filter(|subsection| subsection.section_header.title == context_name)
         .map(|section| StructMetadata::from_markdown_section(section.clone()))
         .find(|struct_metadata| struct_metadata.struct_type == StructMetadataType::ContextAccounts)
-        .ok_or(CommandError)?;
-
-    // let context_source_code = match context_source_code {
-    //     Some(sc) => sc.to_source_code(None),
-    //     None => {
-    //         let message = "Context accounts metadatata not found";
-    //         log::error!("structs_subsections:\n{:#?}", structs_subsections);
-    //         return Err(Report::new(CommandError).attach_printable(message));
-    //     }
-    // };
+        .ok_or(CommandError)
+        .into_report()
+        .attach_printable(format!(
+            "Metadata not found for {} entrypoint function, which context name is {}",
+            entrypoint_name.red(),
+            context_name.red(),
+        ))?;
 
     let started_path = batbelt::path::get_file_path(
         BatFile::CodeOverhaulStarted {

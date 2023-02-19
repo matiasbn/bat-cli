@@ -31,6 +31,7 @@ use crate::batbelt::templates::code_overhaul::{
 };
 
 use error_stack::{Report, Result, ResultExt};
+use inflector::Inflector;
 
 use super::CommandError;
 
@@ -482,111 +483,101 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
     } else {
         selected_entrypoints_index.len() + 1
     };
+    let grid_amount = 24;
+    let height_grid = selected_frame.height as i64 / grid_amount;
+    // this number indicates the distance between screenshot relate to the grid amount
+    let (ep_multiplier, ca_multiplier, handler_multiplier) = (1, 2, 4);
     for (index, selected_ep_index) in selected_entrypoints_index.iter().enumerate() {
+        // this number indicates the distance between screenshot relate to the grid amount
+        let (x_position, ep_y_position, ca_y_position, handler_y_position) =
+            if index < selected_entrypoints_amount / 2 {
+                let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
+                    * (2 * index as i64 + 1);
+                (
+                    x_position,
+                    ep_multiplier * height_grid,
+                    ca_multiplier * height_grid,
+                    handler_multiplier * height_grid,
+                )
+            } else {
+                let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
+                    * (2 * (index as i64 - (selected_entrypoints_amount as i64 / 2)) + 1);
+                (
+                    x_position,
+                    (grid_amount - ep_multiplier) * height_grid,
+                    (grid_amount - ca_multiplier) * height_grid,
+                    (grid_amount - handler_multiplier) * height_grid,
+                )
+            };
         let selected_entrypoint = &entrypoints_names[selected_ep_index.clone()];
         // get context_accounts name
         let entrypoint = EntrypointParser::new_from_name(selected_entrypoint.as_str())
             .change_context(CommandError)?;
-        let ep_source_code = entrypoint.entrypoint_function.to_source_code(Some(format!(
-            "{}-{}",
-            entrypoint.entrypoint_function.name, selected_frame.title
-        )));
-        let ca_source_code = entrypoint.context_accounts.to_source_code(Some(format!(
-            "{}-{}",
-            entrypoint.context_accounts.name, selected_frame.title
-        )));
-        let grid_amount = 24;
-        let height_grid = selected_frame.height as i64 / grid_amount;
-        // deploy the first half to the top of the frame, and the second to the bottom
-        if index < selected_entrypoints_amount / 2 {
-            let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
-                * (2 * index as i64 + 1);
-            let ep_image = ep_source_code
-                .deploy_screenshot_to_miro_frame(
-                    selected_frame.clone(),
-                    x_position,
-                    1 * height_grid,
-                    entrypoint_sc_options.clone(),
-                )
-                .await
-                .change_context(CommandError)?;
-            let ca_image = ca_source_code
-                .deploy_screenshot_to_miro_frame(
-                    selected_frame.clone(),
-                    x_position,
-                    2 * height_grid,
-                    context_accounts_sc_options.clone(),
-                )
-                .await
-                .change_context(CommandError)?;
-            create_connector(&ep_image.item_id, &ca_image.item_id, None)
-                .await
-                .change_context(CommandError)?;
-            if let Some(entrypoint_handler) = entrypoint.handler {
-                let handler_source_code = entrypoint_handler.to_source_code(Some(format!(
-                    "{}-{}",
-                    entrypoint_handler.name, selected_frame.title
+        let ep_source_code =
+            entrypoint
+                .entrypoint_function
+                .to_source_code(Some(parse_entrypoint_screenshot_name(
+                    &entrypoint.entrypoint_function.name,
+                    &selected_frame.title,
                 )));
-                let handler_image = handler_source_code
-                    .deploy_screenshot_to_miro_frame(
-                        selected_frame.clone(),
-                        x_position,
-                        4 * height_grid,
-                        handler_sc_options.clone(),
-                    )
-                    .await
-                    .change_context(CommandError)?;
-                create_connector(&ca_image.item_id, &handler_image.item_id, None)
-                    .await
-                    .change_context(CommandError)?;
-            }
-        } else {
-            let x_position = (selected_frame.width as i64 / selected_entrypoints_amount as i64)
-                * (2 * (index as i64 - (selected_entrypoints_amount as i64 / 2)) + 1);
-
-            let ep_image = ep_source_code
-                .deploy_screenshot_to_miro_frame(
-                    selected_frame.clone(),
-                    x_position,
-                    (grid_amount - 1) * height_grid,
-                    entrypoint_sc_options.clone(),
-                )
-                .await
-                .change_context(CommandError)?;
-            let ca_image = ca_source_code
-                .deploy_screenshot_to_miro_frame(
-                    selected_frame.clone(),
-                    x_position,
-                    (grid_amount - 2) * height_grid,
-                    context_accounts_sc_options.clone(),
-                )
-                .await
-                .change_context(CommandError)?;
-            create_connector(&ep_image.item_id, &ca_image.item_id, None)
-                .await
-                .change_context(CommandError)?;
-            if let Some(entrypoint_handler) = entrypoint.handler {
-                let handler_source_code = entrypoint_handler.to_source_code(Some(format!(
-                    "{}-{}",
-                    entrypoint_handler.name, selected_frame.title
+        let ca_source_code =
+            entrypoint
+                .context_accounts
+                .to_source_code(Some(parse_entrypoint_screenshot_name(
+                    &entrypoint.context_accounts.name,
+                    &selected_frame.title,
                 )));
-                let handler_image = handler_source_code
-                    .deploy_screenshot_to_miro_frame(
-                        selected_frame.clone(),
-                        x_position,
-                        (grid_amount - 4) * height_grid,
-                        handler_sc_options.clone(),
-                    )
-                    .await
-                    .change_context(CommandError)?;
-                create_connector(&ca_image.item_id, &handler_image.item_id, None)
-                    .await
-                    .ok()
-                    .ok_or(CommandError)?;
-            }
+        let ep_image = ep_source_code
+            .deploy_screenshot_to_miro_frame(
+                selected_frame.clone(),
+                x_position,
+                ep_y_position,
+                entrypoint_sc_options.clone(),
+            )
+            .await
+            .change_context(CommandError)?;
+        let ca_image = ca_source_code
+            .deploy_screenshot_to_miro_frame(
+                selected_frame.clone(),
+                x_position,
+                ca_y_position,
+                context_accounts_sc_options.clone(),
+            )
+            .await
+            .change_context(CommandError)?;
+        create_connector(&ep_image.item_id, &ca_image.item_id, None)
+            .await
+            .change_context(CommandError)?;
+        if let Some(entrypoint_handler) = entrypoint.handler {
+            let handler_source_code = entrypoint_handler.to_source_code(Some(
+                parse_entrypoint_screenshot_name(&entrypoint_handler.name, &selected_frame.title),
+            ));
+            let handler_image = handler_source_code
+                .deploy_screenshot_to_miro_frame(
+                    selected_frame.clone(),
+                    x_position,
+                    handler_y_position,
+                    handler_sc_options.clone(),
+                )
+                .await
+                .change_context(CommandError)?;
+            create_connector(&ca_image.item_id, &handler_image.item_id, None)
+                .await
+                .change_context(CommandError)?;
         }
     }
     Ok(())
+}
+
+fn parse_entrypoint_screenshot_name(function_name: &str, frame_title: &str) -> String {
+    format!(
+        "{}-frame:{}",
+        function_name,
+        frame_title
+            .replace(" ", "_")
+            .replace("-", "_")
+            .to_screaming_snake_case()
+    )
 }
 
 pub async fn deploy_metadata_screenshot_to_frame(
@@ -800,11 +791,18 @@ pub async fn deploy_metadata_screenshot_to_frame(
     Ok(())
 }
 
-// #[test]
-// fn test_get_miro_item_id_from_url() {
-//     let miro_url =
-//         "https://miro.com/app/board/uXjVPvhKFIg=/?moveToWidget=3458764544363318703&cot=14";
-//     let item_id = batbelt::miro::helpers::get_item_id_from_miro_url(miro_url);
-//     println!("item id: {}", item_id);
-//     assert_eq!(item_id, "3458764541840480526".to_string())
-// }
+#[test]
+fn test_screaming_snake_case() {
+    let function_name = "handle_thing";
+    let frame_name = "points-store actors";
+    let expected_output = "handle_thing-frame:POINTS_STORE_ACTORS";
+    println!(
+        "{}",
+        parse_entrypoint_screenshot_name(function_name, frame_name)
+    );
+    assert_eq!(
+        parse_entrypoint_screenshot_name(function_name, frame_name),
+        expected_output,
+        "incorrect output"
+    )
+}
