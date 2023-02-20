@@ -8,11 +8,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::commands::CommandError;
 
 use crate::batbelt::bash::execute_command;
-use crate::batbelt::constants::{
-    CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER, CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER,
-    CODE_OVERHAUL_NOTES_PLACEHOLDER, CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER,
-    CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER,
-};
+use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn finish_co_file() -> Result<(), CommandError> {
@@ -50,13 +46,15 @@ pub async fn finish_co_file() -> Result<(), CommandError> {
 }
 pub fn code_overhaul_file_completed(file_path: String) -> Result<(), CommandError> {
     let file_data = fs::read_to_string(file_path).unwrap();
-    if file_data.contains(CODE_OVERHAUL_WHAT_IT_DOES_PLACEHOLDER) {
+    if file_data
+        .contains(&CoderOverhaulTemplatePlaceholders::CompleteWithStateChanges.to_placeholder())
+    {
         return Err(Report::new(CommandError).attach_printable(
             "Please complete the \"What it does?\" section of the {file_name} file",
         ));
     }
 
-    if file_data.contains(CODE_OVERHAUL_NOTES_PLACEHOLDER) {
+    if file_data.contains(&CoderOverhaulTemplatePlaceholders::CompleteWithNotes.to_placeholder()) {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
             "Notes section not completed, do you want to proceed anyway?",
         )
@@ -66,12 +64,16 @@ pub fn code_overhaul_file_completed(file_path: String) -> Result<(), CommandErro
         }
     }
 
-    if file_data.contains(CODE_OVERHAUL_EMPTY_SIGNER_PLACEHOLDER) {
+    if file_data.contains(
+        &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
+    ) {
         return Err(Report::new(CommandError)
             .attach_printable("Please complete the \"Signers\" section of the {file_name} file"));
     }
 
-    if file_data.contains(CODE_OVERHAUL_NO_VALIDATION_FOUND_PLACEHOLDER) {
+    if file_data
+        .contains(&CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder())
+    {
         let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
             "Validations section not completed, do you want to proceed anyway?",
         )
@@ -81,7 +83,9 @@ pub fn code_overhaul_file_completed(file_path: String) -> Result<(), CommandErro
         }
     }
 
-    if file_data.contains(CODE_OVERHAUL_MIRO_FRAME_LINK_PLACEHOLDER) {
+    if file_data
+        .contains(&CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder())
+    {
         return Err(Report::new(CommandError).attach_printable(
             "Please complete the \"Miro board frame\" section of the {file_name} file",
         ));

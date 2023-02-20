@@ -10,13 +10,10 @@ use colored::Colorize;
 use crate::batbelt;
 use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
-use crate::batbelt::constants::{
-    AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER,
-    AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER,
-    AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT,
-    MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
+use crate::batbelt::miro::frame::{
+    MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
-use crate::batbelt::entrypoint::EntrypointParser;
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::commands::CommandError;
 use crate::config::{BatAuditorConfig, BatConfig};
 
@@ -25,12 +22,12 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::{BatFile, BatFolder};
 
+use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
+use crate::batbelt::templates::TemplateGenerator;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
-    let _bat_config = BatConfig::get_config().change_context(CommandError)?;
-    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
-    if !Path::new("BatAuditor.toml").is_file() || !bat_auditor_config.initialized {
+    if !Path::new("BatAuditor.toml").is_file() {
         prompt_auditor_options()?;
     }
     let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
@@ -51,15 +48,6 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
     let readme_path =
         batbelt::path::get_file_path(BatFile::Readme, true).change_context(CommandError)?;
     let readme_string = fs::read_to_string(readme_path.clone()).unwrap();
-
-    if readme_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
-        println!("Updating README.md");
-        update_readme_file()?;
-    }
-    Command::new("git")
-        .args(["add", &readme_path])
-        .output()
-        .unwrap();
 
     // create auditors branches from develop
     for auditor_name in bat_config.auditor_names {
@@ -150,7 +138,6 @@ fn prompt_auditor_options() -> Result<(), CommandError> {
     let include_vs_code =
         batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
     let mut bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
-    bat_auditor_config.initialized = true;
     bat_auditor_config.auditor_name = auditor_name.to_string();
     bat_auditor_config.vs_code_integration = include_vs_code;
     bat_auditor_config.miro_oauth_access_token = moat;
@@ -158,31 +145,8 @@ fn prompt_auditor_options() -> Result<(), CommandError> {
     Ok(())
 }
 
-fn update_readme_file() -> Result<(), CommandError> {
-    let BatConfig {
-        project_name,
-        client_name,
-        commit_hash_url,
-        starting_date,
-        miro_board_url,
-        ..
-    } = BatConfig::get_config().change_context(CommandError)?;
-    let readme_path =
-        batbelt::path::get_file_path(BatFile::Readme, true).change_context(CommandError)?;
-    let data = fs::read_to_string(readme_path.clone()).unwrap();
-    let updated_readme = data
-        .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
-        .replace(AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, &client_name)
-        .replace(AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, &commit_hash_url)
-        .replace(AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, &miro_board_url)
-        .replace(AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, &starting_date);
-    fs::write(readme_path, updated_readme).expect("Could not write to file README.md");
-    Ok(())
-}
-
 fn initialize_project_repository() -> Result<(), CommandError> {
     let bat_config = BatConfig::get_config().change_context(CommandError)?;
-    let _bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     // git init
     execute_command("git", &["init"]).change_context(CommandError)?;
 
@@ -214,19 +178,7 @@ fn create_auditor_notes_folder() -> Result<(), CommandError> {
         "creating auditor notes folder for {}",
         bat_auditor_config.auditor_name.red()
     );
-    execute_command(
-        "cp",
-        &[
-            "-r",
-            batbelt::path::get_folder_path(BatFolder::NotesTemplate, false)
-                .change_context(CommandError)?
-                .as_str(),
-            batbelt::path::get_folder_path(BatFolder::AuditorNotes, false)
-                .change_context(CommandError)?
-                .as_str(),
-        ],
-    )
-    .change_context(CommandError)?;
+    TemplateGenerator::create_auditor_folders().change_context(CommandError)?;
 
     Ok(())
 }
@@ -287,27 +239,30 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
 }
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
-    let code_overhaul_auditor_file_path = batbelt::path::get_file_path(
-        BatFile::CodeOverhaulToReview {
-            file_name: entrypoint_name.clone(),
-        },
-        false,
-    )
+    let code_overhaul_file_path = BatFile::CodeOverhaulToReview {
+        file_name: entrypoint_name.clone(),
+    }
+    .get_path(false)
     .change_context(CommandError)?;
-    if Path::new(&code_overhaul_auditor_file_path).is_file() {
+
+    if Path::new(&code_overhaul_file_path).is_file() {
         return Err(Report::new(CommandError).attach_printable(format!(
             "code overhaul file already exists for: {entrypoint_name:?}"
         )));
     }
-    let mut co_template =
-        batbelt::templates::code_overhaul::CodeOverhaulTemplate::template_to_markdown_file(
-            &code_overhaul_auditor_file_path,
-        );
-    co_template.save().change_context(CommandError)?;
+    let co_template =
+        CodeOverhaulTemplate::new(&entrypoint_name, false).change_context(CommandError)?;
+    let mut co_markdown = co_template
+        .to_markdown_file(&code_overhaul_file_path)
+        .change_context(CommandError)?;
+
+    co_markdown.save().change_context(CommandError)?;
+
     println!(
         "code-overhaul file created: {}{}",
         entrypoint_name.green(),
         ".md".green()
     );
+
     Ok(())
 }

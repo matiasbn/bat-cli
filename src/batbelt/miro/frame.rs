@@ -3,6 +3,12 @@ use crate::batbelt::miro::MiroItemType;
 use error_stack::Result;
 use serde_json::json;
 
+pub const MIRO_FRAME_WIDTH: u64 = 3392;
+pub const MIRO_FRAME_HEIGHT: u64 = 1908;
+pub const MIRO_BOARD_COLUMNS: i64 = 5;
+pub const MIRO_INITIAL_X: i64 = 4800;
+pub const MIRO_INITIAL_Y: i64 = 0;
+
 #[derive(Debug, Clone)]
 pub struct MiroFrame {
     pub title: String,
