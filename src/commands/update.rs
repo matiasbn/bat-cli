@@ -1,6 +1,7 @@
 use crate::batbelt::bash::execute_command;
 use crate::batbelt::constants::BASE_REPOSTORY_NAME;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
+use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::batbelt::{
     self,
     git::{clone_base_repository, create_git_commit, GitCommit},
@@ -74,11 +75,7 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
 
     // replace package.json
     println!("Updating package.json");
-    execute_command(
-        "mv",
-        &[&(BASE_REPOSTORY_NAME.to_string() + "/package.json"), "."],
-    )
-    .change_context(UpdateTemplateError)?;
+    PackageJsonTemplate::update_package_json().change_context(UpdateTemplateError)?;
 
     // delete base_repository cloned
     execute_command("rm", &[&"-rf", BASE_REPOSTORY_NAME]).change_context(UpdateTemplateError)?;

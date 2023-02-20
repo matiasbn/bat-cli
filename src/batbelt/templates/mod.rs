@@ -1,4 +1,5 @@
 pub mod code_overhaul_template;
+pub mod finding_template;
 pub mod package_json_template;
 
 use std::{error::Error, fmt};
