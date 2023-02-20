@@ -326,7 +326,7 @@ pub fn create_git_commit(
             let metadata_type_string = metadata_type.to_string().to_lowercase();
             println!("Creating a commit for {}.md", metadata_type_string);
             let metadata_path = metadata_type.get_path().change_context(GitOperationError)?;
-            let commit_string = format!("notes: {}.md updated", metadata_type_string);
+            let commit_string = format!("metadata: {}.md updated", metadata_type_string);
             (commit_string, vec![metadata_path])
         }
         GitCommit::Figures => {
