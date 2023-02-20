@@ -1,30 +1,32 @@
 use crate::batbelt;
 use crate::batbelt::helpers::get::get_all_rust_files_from_program_path;
-use crate::batbelt::metadata::functions::{
+use crate::batbelt::metadata::functions_metadata::{
     get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataType,
 };
 
-use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use crate::config::BatConfig;
 use colored::Colorize;
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use std::fs;
 use std::path::Path;
 
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
-pub struct EntryPointError;
+pub struct EntrypointParserError;
 
-impl fmt::Display for EntryPointError {
+impl fmt::Display for EntrypointParserError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Command line error")
     }
 }
 
-impl Error for EntryPointError {}
+impl Error for EntrypointParserError {}
+
+#[derive(Clone)]
 pub struct EntrypointParser {
     pub name: String,
     pub handler: Option<FunctionMetadata>,
@@ -47,18 +49,23 @@ impl EntrypointParser {
         }
     }
 
-    pub fn new_from_name(entrypoint_name: &str) -> Result<Self, EntryPointError> {
-        assert!(
-            StructMetadata::structs_metadata_is_initialized().change_context(EntryPointError)?,
-            "Can't run without initializing Structs metadata"
-        );
-        assert!(
+    pub fn new_from_name(entrypoint_name: &str) -> Result<Self, EntrypointParserError> {
+        let struct_metadata_is_initialized = StructMetadata::structs_metadata_is_initialized()
+            .change_context(EntrypointParserError)?;
+        if !struct_metadata_is_initialized {
+            return Err(Report::new(EntrypointParserError)
+                .attach_printable("Can't run without initializing Structs metadata"));
+        };
+        let functions_metadata_is_initialized =
             FunctionMetadata::functions_metadata_is_initialized()
-                .change_context(EntryPointError)?,
-            "Can't run without initializing Functions metadata"
-        );
+                .change_context(EntrypointParserError)?;
+        if !functions_metadata_is_initialized {
+            return Err(Report::new(EntrypointParserError)
+                .attach_printable("Can't run without initializing Functions metadata"));
+        }
+
         let functions_metadata = FunctionMetadata::get_functions_metadata_from_metadata_file()
-            .change_context(EntryPointError)?;
+            .change_context(EntrypointParserError)?;
         let entrypoint_function = functions_metadata
             .iter()
             .find(|function_metadata| {
@@ -72,7 +79,7 @@ impl EntrypointParser {
         let entrypoint_function_body = get_function_body(&entrypoint_content);
         let handlers =
             FunctionMetadata::get_functions_metadata_by_type(FunctionMetadataType::Handler)
-                .change_context(EntryPointError)?;
+                .change_context(EntrypointParserError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
         let handler = handlers.into_iter().find(|function_metadata| {
             let function_source_code = function_metadata.to_source_code(None);
@@ -84,7 +91,7 @@ impl EntrypointParser {
                 && (entrypoint_function_body.contains(&function_metadata.name))
         });
         let structs_metadata = StructMetadata::get_structs_metadata_from_metadata_file()
-            .change_context(EntryPointError)?;
+            .change_context(EntrypointParserError)?;
         let context_accounts = structs_metadata
             .iter()
             .find(|struct_metadata| {
@@ -100,10 +107,10 @@ impl EntrypointParser {
         })
     }
 
-    pub fn get_entrypoints_names(sorted: bool) -> Result<Vec<String>, EntryPointError> {
+    pub fn get_entrypoints_names(sorted: bool) -> Result<Vec<String>, EntrypointParserError> {
         let BatConfig {
             program_lib_path, ..
-        } = BatConfig::get_config().change_context(EntryPointError)?;
+        } = BatConfig::get_config().change_context(EntrypointParserError)?;
 
         let bat_sonar = BatSonar::new_from_path(
             &program_lib_path,
@@ -132,9 +139,9 @@ impl EntrypointParser {
 
     pub fn get_instruction_file_path_with_prompts(
         entrypoint_name: &str,
-    ) -> Result<String, EntryPointError> {
+    ) -> Result<String, EntrypointParserError> {
         let instruction_files_info =
-            get_all_rust_files_from_program_path().change_context(EntryPointError)?;
+            get_all_rust_files_from_program_path().change_context(EntrypointParserError)?;
 
         let instruction_match = instruction_files_info
             .iter()
@@ -173,10 +180,10 @@ impl EntrypointParser {
 
     // fn assert_file_match_entrypoint_name()
 
-    pub fn get_context_name(entrypoint_name: &str) -> Result<String, EntryPointError> {
+    pub fn get_context_name(entrypoint_name: &str) -> Result<String, EntrypointParserError> {
         let BatConfig {
             program_lib_path, ..
-        } = BatConfig::get_config().change_context(EntryPointError)?;
+        } = BatConfig::get_config().change_context(EntrypointParserError)?;
         let lib_file = fs::read_to_string(program_lib_path).unwrap();
         let lib_file_lines: Vec<&str> = lib_file.lines().collect();
         let entrypoint_index = lib_file

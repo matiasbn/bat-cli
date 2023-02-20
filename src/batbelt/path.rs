@@ -1,14 +1,16 @@
+use crate::batbelt::structs::FileInfo;
 use crate::config::{BatAuditorConfig, BatConfig};
 use error_stack::{IntoReport, Result, ResultExt};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, fs, path::Path};
+use walkdir::{DirEntry, WalkDir};
 
 #[derive(Debug)]
 pub struct BatPathError;
 
 impl fmt::Display for BatPathError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Bat Path error")
+        f.write_str("BatPath error")
     }
 }
 
@@ -192,6 +194,49 @@ impl BatFolder {
         }
 
         Ok(path)
+    }
+
+    pub fn get_all_files(
+        &self,
+        sorted: bool,
+        file_name_to_exclude_filters: Option<Vec<String>>,
+        file_extension_to_include_filters: Option<Vec<String>>,
+    ) -> Result<Vec<DirEntry>, BatPathError> {
+        let folder_path = self.get_folder_path(false)?;
+        let mut dir_entries = WalkDir::new(folder_path)
+            .into_iter()
+            .filter_map(|f| {
+                let dir_entry = f.unwrap();
+                if !dir_entry.metadata().unwrap().is_file() || dir_entry.file_name() == ".gitkeep" {
+                    return None;
+                }
+                if file_name_to_exclude_filters.is_some()
+                    && file_name_to_exclude_filters
+                        .clone()
+                        .unwrap()
+                        .into_iter()
+                        .any(|filter| dir_entry.file_name().to_str().unwrap() == filter)
+                {
+                    return None;
+                }
+                if file_extension_to_include_filters.is_some()
+                    && !file_extension_to_include_filters
+                        .clone()
+                        .unwrap()
+                        .into_iter()
+                        .any(|filter| dir_entry.file_name().to_str().unwrap().ends_with(&filter))
+                {
+                    return None;
+                }
+                Some(dir_entry)
+            })
+            .collect::<Vec<_>>();
+        if sorted {
+            dir_entries.sort_by(|dir_entry_a, dir_entry_b| {
+                dir_entry_a.file_name().cmp(&dir_entry_b.file_name())
+            });
+        }
+        Ok(dir_entries)
     }
 }
 

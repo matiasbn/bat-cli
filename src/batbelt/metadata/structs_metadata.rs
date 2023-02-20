@@ -1,4 +1,4 @@
-use crate::batbelt::entrypoint::EntrypointParser;
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::structs::FileInfo;
 use std::fmt::Debug;
 
@@ -7,10 +7,10 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
-use crate::batbelt::metadata::source_code::SourceCodeMetadata;
-use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
+use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataSection};
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
 use std::vec;
 use strum::IntoEnumIterator;
@@ -73,15 +73,24 @@ impl StructMetadata {
     }
 
     pub fn structs_metadata_is_initialized() -> Result<bool, MetadataError> {
-        let metadata_markdown = get_metadata_markdown()?;
+        let metadata_markdown = BatMetadata::get_metadata_markdown()?;
         let structs_section = metadata_markdown
-            .get_section(&MetadataSection::Structs.to_string())
+            .get_section(&BatMetadataSection::Structs.to_string())
             .change_context(MetadataError)?;
         // // check if empty
         let structs_subsections =
             metadata_markdown.get_section_subsections(structs_section.clone());
         let is_initialized = !structs_section.content.is_empty() || structs_subsections.len() > 0;
         Ok(is_initialized)
+    }
+
+    pub fn check_structs_metadata_is_initialized() -> Result<(), MetadataError> {
+        if !Self::structs_metadata_is_initialized()? {
+            return Err(Report::new(MetadataError).attach_printable(
+                "Structs metadata is required to be initialized to execute this action",
+            ));
+        }
+        Ok(())
     }
 
     pub fn get_structs_metadata_by_type(
@@ -112,9 +121,9 @@ impl StructMetadata {
 
     pub fn get_structs_markdown_subsections_from_metadata_file(
     ) -> Result<Vec<MarkdownSection>, MetadataError> {
-        let metadata_markdown = get_metadata_markdown()?;
+        let metadata_markdown = BatMetadata::get_metadata_markdown()?;
         let structs_section = metadata_markdown
-            .get_section(&MetadataSection::Structs.to_sentence_case())
+            .get_section(&BatMetadataSection::Structs.to_sentence_case())
             .change_context(MetadataError)?;
         let structs_subsections = metadata_markdown.get_section_subsections(structs_section);
         Ok(structs_subsections)

@@ -1,46 +1,34 @@
+use std::fs;
+use std::string::String;
+
 use colored::Colorize;
+use error_stack::{IntoReport, Report, Result, ResultExt};
 
+use crate::batbelt;
+use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
-
+use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
+use crate::batbelt::markdown::MarkdownFile;
+use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
+use crate::batbelt::metadata::functions_metadata::get_function_parameters;
+use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::BatMetadataSection;
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::templates::code_overhaul_template::{
+    CodeOverhaulSection, CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
+};
 use crate::commands::CommandError;
 use crate::config::BatConfig;
 
-use crate::batbelt;
-use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
-
-use crate::batbelt::path::{BatFile, BatFolder};
-
-use std::fs;
-
-use crate::batbelt::bash::execute_command;
-
-use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
-use crate::batbelt::metadata::MetadataSection;
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
-use crate::batbelt::templates::code_overhaul::{
-    CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
-};
-
-use crate::batbelt::entrypoint::EntrypointParser;
-use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
-use crate::batbelt::metadata::functions::get_function_parameters;
-use error_stack::{IntoReport, Report, Result, ResultExt};
-use std::string::String;
-
 pub fn start_co_file() -> Result<(), CommandError> {
-    check_correct_branch().change_context(CommandError)?;
-    let bat_config = BatConfig::get_config().unwrap();
-    let to_review_path = batbelt::path::get_folder_path(BatFolder::CodeOverhaulToReview, false)
-        .change_context(CommandError)?;
-
-    // get to-review files
-    let mut review_files = fs::read_dir(to_review_path)
-        .unwrap()
-        .map(|file| file.unwrap().file_name().to_str().unwrap().to_string())
-        .filter(|file| file != ".gitkeep")
-        .collect::<Vec<String>>();
-    review_files.sort();
+    let review_files = BatFolder::CodeOverhaulToReview
+        .get_all_files(true, None, None)
+        .change_context(CommandError)?
+        .into_iter()
+        .map(|entry| entry.file_name().to_str().unwrap().to_string())
+        .collect::<Vec<_>>();
 
     if review_files.is_empty() {
         return Err(Report::new(CommandError)
@@ -52,357 +40,30 @@ pub fn start_co_file() -> Result<(), CommandError> {
 
     // user select file
     let to_start_file_name = &review_files[selection].clone();
-    let entrypoint_name = to_start_file_name.replace(".md", "");
-    let to_review_file_path = batbelt::path::get_file_path(
-        BatFile::CodeOverhaulToReview {
-            file_name: to_start_file_name.clone(),
-        },
-        false,
-    )
+    let entrypoint_name = to_start_file_name.trim_end_matches(".md");
+    let to_review_file_path = BatFile::CodeOverhaulToReview {
+        file_name: to_start_file_name.clone(),
+    }
+    .get_path(true)
     .change_context(CommandError)?;
 
-    let instruction_file_path =
-        EntrypointParser::get_instruction_file_path_with_prompts(&to_start_file_name)
-            .change_context(CommandError)?;
+    let started_path = BatFile::CodeOverhaulStarted {
+        file_name: to_start_file_name.clone(),
+    }
+    .get_path(false)
+    .change_context(CommandError)?;
 
-    let program_lib_path = bat_config.program_lib_path;
-
-    let entrypoint_functions = BatSonar::new_from_path(
-        &program_lib_path,
-        Some("#[program"),
-        SonarResultType::Function,
-    );
-    let entrypoint_function = entrypoint_functions
-        .results
-        .iter()
-        .find(|function| function.name == entrypoint_name)
-        .unwrap();
-
-    let parameters = get_function_parameters(entrypoint_function.content.clone());
-    let context_name = parameters
-        .iter()
-        .find(|parameter| parameter.contains("Context<"))
-        .unwrap()
-        .split("Context<")
-        .last()
-        .unwrap()
-        .split(">")
-        .next()
-        .unwrap();
-
-    let instruction_file_content = fs::read_to_string(&instruction_file_path).unwrap();
-    let instruction_file_functions =
-        BatSonar::new_scanned(&instruction_file_content, SonarResultType::Function);
-    let handler_function = instruction_file_functions
-        .results
-        .iter()
-        .find(|function| {
-            let function_parameters = get_function_parameters(function.content.clone());
-            function_parameters
-                .iter()
-                .any(|parameter| parameter.contains(&context_name))
-        })
-        .unwrap();
-
-    let metadata_path =
-        batbelt::path::get_file_path(BatFile::Metadata, true).change_context(CommandError)?;
-    let metadata_markdown = MarkdownFile::new(&metadata_path);
-    let structs_section = metadata_markdown
-        .get_section(&MetadataSection::Structs.to_sentence_case())
+    let started_template =
+        CodeOverhaulTemplate::new(entrypoint_name, true).change_context(CommandError)?;
+    let mut started_markdown = started_template
+        .to_markdown_file(&started_path)
         .change_context(CommandError)?;
-    let structs_subsections = metadata_markdown.get_section_subsections(structs_section);
-    let context_source_code = structs_subsections
-        .iter()
-        .filter(|subsection| subsection.section_header.title == context_name)
-        .map(|section| StructMetadata::from_markdown_section(section.clone()))
-        .find(|struct_metadata| struct_metadata.struct_type == StructMetadataType::ContextAccounts)
-        .ok_or(CommandError)
-        .into_report()
-        .attach_printable(format!(
-            "Metadata not found for {} entrypoint function, which context name is {}",
-            entrypoint_name.red(),
-            context_name.red(),
-        ))?;
 
-    let started_path = batbelt::path::get_file_path(
-        BatFile::CodeOverhaulStarted {
-            file_name: to_start_file_name.clone(),
-        },
-        false,
-    )
-    .change_context(CommandError)?;
+    started_markdown.save().change_context(CommandError)?;
 
-    let mut started_markdown_file = MarkdownFile::new(&to_review_file_path);
-
-    // Signers section
-    let signers_section = started_markdown_file
-        .get_section(&CodeOverhaulSection::Signers.to_title())
-        .unwrap();
-    let signers_section_content = get_signers_section_content(
-        &context_source_code
-            .clone()
-            .to_source_code(None)
-            .get_source_code_content(),
-    );
-    let mut new_signers_section = signers_section.clone();
-    new_signers_section.content = signers_section_content.clone();
-    started_markdown_file
-        .replace_section(new_signers_section, signers_section, vec![])
-        .unwrap();
-    started_markdown_file.save().unwrap();
-
-    // Function parameters section
-    let function_parameter_section = started_markdown_file
-        .get_section(&CodeOverhaulSection::FunctionParameters.to_title())
-        .unwrap();
-    let handler_function_parameters = get_function_parameters(handler_function.content.clone());
-    let function_parameters_content = if handler_function_parameters.is_empty() {
-        format!(
-            "- {}",
-            CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
-        )
-    } else {
-        handler_function_parameters
-            .iter()
-            .fold("".to_string(), |result, parameter| {
-                if parameter.contains("Context<") {
-                    return result;
-                }
-                if result.is_empty() {
-                    format!("- {}", parameter.trim_end_matches(","))
-                } else {
-                    format!("{}\n- {}", result, parameter.trim_end_matches(","))
-                }
-            })
-    };
-    let mut new_function_parameters_section = function_parameter_section.clone();
-    new_function_parameters_section.content = function_parameters_content.clone();
-    started_markdown_file
-        .replace_section(
-            new_function_parameters_section,
-            function_parameter_section,
-            vec![],
-        )
-        .unwrap();
-
-    // Context accounts section
-    let context_accounts_section = started_markdown_file
-        .get_section(&CodeOverhaulSection::ContextAccounts.to_title())
-        .unwrap();
-
-    let context_accounts_content = get_context_account_section_content(
-        &context_source_code
-            .clone()
-            .to_source_code(None)
-            .get_source_code_content(),
-    );
-    let mut new_context_accounts_section = context_accounts_section.clone();
-    new_context_accounts_section.content = context_accounts_content.clone();
-    started_markdown_file
-        .replace_section(
-            new_context_accounts_section,
-            context_accounts_section,
-            vec![],
-        )
-        .unwrap();
-
-    // Validations section
-    let handler_if_validations = BatSonar::new_from_path(
-        &instruction_file_path,
-        Some(&handler_function.name),
-        SonarResultType::IfValidation,
-    );
-
-    // get the if validations inside any if statement to filter from the handler validations
-    let if_validations = handler_if_validations
-        .results
-        .iter()
-        .map(|if_validation| {
-            let if_in_validations =
-                BatSonar::new_scanned(&if_validation.content, SonarResultType::Validation);
-            if !if_in_validations.results.is_empty() {
-                if_in_validations.results
-            } else {
-                vec![]
-            }
-        })
-        .fold(vec![], |mut result, current| {
-            for res in current {
-                result.push(res);
-            }
-            result
-        });
-
-    // any if that contains an if validation is considered a validation
-    let mut filtered_if_validations = handler_if_validations
-        .clone()
-        .results
-        .iter()
-        .filter(|if_est| {
-            if_validations
-                .clone()
-                .iter()
-                .any(|if_val| if_est.content.contains(&if_val.content))
-        })
-        .map(|result| result.content.clone())
-        .collect::<Vec<_>>();
-
-    let handler_validations =
-        BatSonar::new_from_path(&instruction_file_path, None, SonarResultType::Validation);
-
-    // if there are validations in if_validations, then filter them from handler validations to avoid repetition
-    let mut filtered_handler_validations = if if_validations.is_empty() {
-        handler_validations
-            .results
-            .iter()
-            .map(|result| result.content.clone())
-            .collect::<Vec<_>>()
-    } else {
-        handler_validations
-            .results
-            .iter()
-            .filter(|validation| {
-                !handler_if_validations
-                    .results
-                    .iter()
-                    .any(|if_val| if_val.content.contains(&validation.content.to_string()))
-            })
-            .map(|val| val.content.clone())
-            .collect::<Vec<_>>()
-    };
-
-    let ca_accounts_only_validations = BatSonar::new_scanned(
-        &context_source_code
-            .clone()
-            .to_source_code(None)
-            .get_source_code_content(),
-        SonarResultType::ContextAccountsOnlyValidation,
-    );
-
-    let mut ca_accounts_results = ca_accounts_only_validations
-        .results
-        .iter()
-        .map(|result| result.content.clone())
-        .collect::<Vec<_>>();
-
-    let mut validations_vec: Vec<String> = vec![];
-    validations_vec.append(&mut ca_accounts_results);
-    validations_vec.append(&mut filtered_if_validations);
-    validations_vec.append(&mut filtered_handler_validations);
-
-    let validations_content = if validations_vec.is_empty() {
-        format!(
-            "- {}",
-            CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
-        )
-    } else {
-        validations_vec
-            .iter()
-            .fold("".to_string(), |result, validation| {
-                if result.is_empty() {
-                    format!("- ```rust\n{}\n  ```\n", validation)
-                } else {
-                    format!("{}- ```rust\n{}\n  ```\n", result, validation)
-                }
-            })
-    };
-    let validations_section = started_markdown_file
-        .get_section(&CodeOverhaulSection::Validations.to_title())
-        .unwrap();
-
-    let mut new_validations_section = validations_section.clone();
-    new_validations_section.content = validations_content.clone();
-
-    // println!("val con\n{}", validations_content.clone());
-    started_markdown_file
-        .replace_section(new_validations_section, validations_section, vec![])
-        .unwrap();
-
-    started_markdown_file.save().unwrap();
-
-    execute_command("mv", &[&to_review_file_path, &started_path]).unwrap();
+    execute_command("rm", &[&to_review_file_path]).unwrap();
 
     println!("{to_start_file_name} file moved to started");
-
-    // fill metadata
-    let handler_function_name = handler_function.name.clone();
-    let entrypoint_name = entrypoint_name.clone();
-    let instruction_file_path = instruction_file_path.clone();
-    let context_name = context_name.clone();
-
-    // signers
-    let signers = signers_section_content
-        .lines()
-        .map(|signer| {
-            signer
-                .trim_start_matches("- ")
-                .split(":")
-                .next()
-                .unwrap()
-                .to_string()
-        })
-        .collect::<Vec<_>>();
-    let context_accounts = BatSonar::new_scanned(
-        &context_source_code
-            .to_source_code(None)
-            .get_source_code_content(),
-        SonarResultType::ContextAccountsAll,
-    );
-    let mut_accounts = get_mut_accounts(context_accounts.results.clone());
-    let function_parameters = if !handler_function_parameters.is_empty() {
-        function_parameters_content
-            .lines()
-            .map(|line| {
-                let name = line
-                    .clone()
-                    .strip_prefix("- ")
-                    .unwrap()
-                    .split(": ")
-                    .next()
-                    .unwrap()
-                    .to_string();
-                let param_type = line
-                    .clone()
-                    .strip_prefix("- ")
-                    .unwrap()
-                    .split(": ")
-                    .last()
-                    .unwrap()
-                    .to_string();
-                vec![name, param_type]
-            })
-            .collect::<Vec<_>>()
-    } else {
-        vec![vec![]]
-    };
-
-    let mut metadata_markdown = MarkdownFile::new(&metadata_path);
-    let entrypoint_section = metadata_markdown
-        .get_section(&MetadataSection::Entrypoints.to_sentence_case())
-        .unwrap();
-    let mut entrypoint_section_subsections =
-        metadata_markdown.get_section_subsections(entrypoint_section.clone());
-
-    let new_entrypoint = EntrypointMetadata::new(
-        entrypoint_name,
-        signers,
-        instruction_file_path.clone(),
-        handler_function_name,
-        context_name.to_string(),
-        mut_accounts,
-        function_parameters,
-    );
-    let new_entrypoint_subsection =
-        new_entrypoint.get_markdown_section(&entrypoint_section.section_header.section_hash);
-    entrypoint_section_subsections.push(new_entrypoint_subsection);
-    metadata_markdown
-        .replace_section(
-            entrypoint_section.clone(),
-            entrypoint_section.clone(),
-            entrypoint_section_subsections,
-        )
-        .unwrap();
-    metadata_markdown.save().unwrap();
 
     create_git_commit(
         GitCommit::StartCO,
@@ -411,12 +72,98 @@ pub fn start_co_file() -> Result<(), CommandError> {
     .change_context(CommandError)?;
 
     // open co file in VSCode
-    vs_code_open_file_in_current_window(started_path.as_str()).change_context(CommandError)?;
-    // open instruction file in VSCode
-    vs_code_open_file_in_current_window(&instruction_file_path).change_context(CommandError)?;
+    vs_code_open_file_in_current_window(started_path.as_str())?;
 
+    // open instruction file in VSCode
+    if started_template.entrypoint_parser.is_some() {
+        let ep_parser = started_template.entrypoint_parser.unwrap();
+        if ep_parser.handler.is_some() {
+            let handler = ep_parser.handler.unwrap();
+            vs_code_open_file_in_current_window(&handler.path)?;
+        }
+    }
     Ok(())
 }
+
+// // fill metadata
+// let handler_function_name = handler_function.name.clone();
+// let entrypoint_name = entrypoint_name.clone();
+// let instruction_file_path = instruction_file_path.clone();
+// let context_name = context_name.clone();
+//
+// // signers
+// let signers = signers_section_content
+//     .lines()
+//     .map(|signer| {
+//         signer
+//             .trim_start_matches("- ")
+//             .split(":")
+//             .next()
+//             .unwrap()
+//             .to_string()
+//     })
+//     .collect::<Vec<_>>();
+// let context_accounts = BatSonar::new_scanned(
+//     &context_source_code
+//         .to_source_code(None)
+//         .get_source_code_content(),
+//     SonarResultType::ContextAccountsAll,
+// );
+// let mut_accounts = get_mut_accounts(context_accounts.results.clone());
+// let function_parameters = if !handler_function_parameters.is_empty() {
+//     function_parameters_content
+//         .lines()
+//         .map(|line| {
+//             let name = line
+//                 .clone()
+//                 .strip_prefix("- ")
+//                 .unwrap()
+//                 .split(": ")
+//                 .next()
+//                 .unwrap()
+//                 .to_string();
+//             let param_type = line
+//                 .clone()
+//                 .strip_prefix("- ")
+//                 .unwrap()
+//                 .split(": ")
+//                 .last()
+//                 .unwrap()
+//                 .to_string();
+//             vec![name, param_type]
+//         })
+//         .collect::<Vec<_>>()
+// } else {
+//     vec![vec![]]
+// };
+//
+// let mut metadata_markdown = MarkdownFile::new(&metadata_path);
+// let entrypoint_section = metadata_markdown
+//     .get_section(&BatMetadataSection::Entrypoints.to_sentence_case())
+//     .unwrap();
+// let mut entrypoint_section_subsections =
+//     metadata_markdown.get_section_subsections(entrypoint_section.clone());
+//
+// let new_entrypoint = EntrypointMetadata::new(
+//     entrypoint_name,
+//     signers,
+//     instruction_file_path.clone(),
+//     handler_function_name,
+//     context_name.to_string(),
+//     mut_accounts,
+//     function_parameters,
+// );
+// let new_entrypoint_subsection =
+//     new_entrypoint.get_markdown_section(&entrypoint_section.section_header.section_hash);
+// entrypoint_section_subsections.push(new_entrypoint_subsection);
+// metadata_markdown
+//     .replace_section(
+//         entrypoint_section.clone(),
+//         entrypoint_section.clone(),
+//         entrypoint_section_subsections,
+//     )
+//     .unwrap();
+// metadata_markdown.save().unwrap();
 
 fn get_mut_accounts(results: Vec<SonarResult>) -> Vec<Vec<String>> {
     let mut_accounts_results = results

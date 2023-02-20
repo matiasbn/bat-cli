@@ -2,7 +2,7 @@ use std::fs;
 
 use colored::Colorize;
 
-use super::{MetadataError, MetadataSection};
+use super::{MetadataError, BatMetadataSection};
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
@@ -24,9 +24,9 @@ pub struct SourceCodeScreenshotOptions {
 }
 
 impl SourceCodeScreenshotOptions {
-    pub fn get_default_metadata_options(metadata_section: MetadataSection) -> Self {
+    pub fn get_default_metadata_options(metadata_section: BatMetadataSection) -> Self {
         match metadata_section {
-            MetadataSection::Structs => Self {
+            BatMetadataSection::Structs => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -34,7 +34,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            MetadataSection::Functions => Self {
+            BatMetadataSection::Functions => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -42,7 +42,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            MetadataSection::Entrypoints => Self {
+            BatMetadataSection::Entrypoints => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -50,7 +50,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            MetadataSection::Miro => Self {
+            BatMetadataSection::Miro => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,

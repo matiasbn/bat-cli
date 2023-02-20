@@ -8,17 +8,17 @@ use colored::Colorize;
 
 use crate::batbelt::markdown::MarkdownFile;
 
-use crate::batbelt::entrypoint::EntrypointParser;
 use crate::batbelt::helpers::get::get_only_files_from_folder;
-use crate::batbelt::metadata::entrypoint::EntrypointMetadata;
-use crate::batbelt::metadata::functions::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::MetadataSection;
+use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
+use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
+use crate::batbelt::metadata::BatMetadataSection;
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile;
 use crate::batbelt::structs::{SignerInfo, SignerType};
 
-use crate::batbelt::metadata::source_code::SourceCodeMetadata;
-use crate::batbelt::metadata::source_code::SourceCodeScreenshotOptions;
-use crate::batbelt::metadata::structs::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
+use crate::batbelt::metadata::source_code_metadata::SourceCodeScreenshotOptions;
+use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
 use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
@@ -26,7 +26,7 @@ use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::BatFolder;
-use crate::batbelt::templates::code_overhaul::{
+use crate::batbelt::templates::code_overhaul_template::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
 };
 
@@ -81,7 +81,7 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
             batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
         let metadata_markdown = MarkdownFile::new(&metadata_path);
         let entrypoints_section = metadata_markdown
-            .get_section(&MetadataSection::Entrypoints.to_sentence_case())
+            .get_section(&BatMetadataSection::Entrypoints.to_sentence_case())
             .unwrap();
         let started_entrypoint_section =
             metadata_markdown.get_subsection(&entrypoint_name, entrypoints_section.section_header);
@@ -177,7 +177,7 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
         }
         // Handler figure
         let functions_section = metadata_markdown
-            .get_section(&MetadataSection::Functions.to_sentence_case())
+            .get_section(&BatMetadataSection::Functions.to_sentence_case())
             .unwrap();
         let functions_subsections =
             metadata_markdown.get_section_subsections(functions_section.clone());
@@ -625,8 +625,8 @@ pub async fn deploy_metadata_screenshot_to_frame(
         let section_selected = &metadata_sections_names[selection];
         let section: MarkdownSection = metadata_markdown.get_section(&section_selected).unwrap();
         let selected_section_title = section.section_header.title.clone();
-        let structs_title = MetadataSection::Structs.to_string();
-        let functions_title = MetadataSection::Functions.to_string();
+        let structs_title = BatMetadataSection::Structs.to_string();
+        let functions_title = BatMetadataSection::Functions.to_string();
         let (sourcecode_metadata_vec, screenshot_options): (
             Vec<SourceCodeMetadata>,
             SourceCodeScreenshotOptions,
@@ -664,7 +664,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 )
                 .unwrap();
                 let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                    MetadataSection::Structs,
+                    BatMetadataSection::Structs,
                 );
 
                 let use_default = batbelt::cli_inputs::select_yes_or_no(&format!(
@@ -738,7 +738,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 .unwrap();
 
                 let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                    MetadataSection::Functions,
+                    BatMetadataSection::Functions,
                 );
 
                 let use_default = batbelt::cli_inputs::select_yes_or_no(&format!(

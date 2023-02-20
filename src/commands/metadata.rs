@@ -1,8 +1,12 @@
 use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::metadata::functions::{get_functions_metadata_from_program, FunctionMetadata};
+use crate::batbelt::metadata::functions_metadata::{
+    get_functions_metadata_from_program, FunctionMetadata,
+};
 
-use crate::batbelt::metadata::structs::{get_structs_metadata_from_program, StructMetadata};
-use crate::batbelt::metadata::MetadataSection;
+use crate::batbelt::metadata::structs_metadata::{
+    get_structs_metadata_from_program, StructMetadata,
+};
+use crate::batbelt::metadata::BatMetadataSection;
 
 use crate::batbelt::path::BatFile;
 use crate::{batbelt, GitCommit};
@@ -17,7 +21,7 @@ pub fn functions() -> Result<(), CommandError> {
         batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let functions_section = metadata_markdown
-        .get_section(&MetadataSection::Functions.to_string())
+        .get_section(&BatMetadataSection::Functions.to_string())
         .unwrap();
     let is_initialized =
         FunctionMetadata::functions_metadata_is_initialized().change_context(CommandError)?;
@@ -61,7 +65,7 @@ pub fn structs() -> Result<(), CommandError> {
         batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
     let mut metadata_markdown = MarkdownFile::new(&metadata_path);
     let structs_section = metadata_markdown
-        .get_section(&MetadataSection::Structs.to_string())
+        .get_section(&BatMetadataSection::Structs.to_string())
         .unwrap();
     // // check if empty
     let is_initialized =

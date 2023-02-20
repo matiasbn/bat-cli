@@ -1,16 +1,16 @@
 use crate::batbelt;
-use crate::batbelt::entrypoint::EntrypointParser;
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFolder;
 use crate::config::BatConfig;
 use colored::{ColoredString, Colorize};
 use strum::IntoEnumIterator;
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
-use crate::batbelt::metadata::source_code::SourceCodeMetadata;
-use crate::batbelt::metadata::{get_metadata_markdown, MetadataSection};
+use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataSection};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
-use error_stack::{Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
 use std::vec;
 
@@ -72,17 +72,17 @@ impl FunctionMetadata {
     }
 
     pub fn get_functions_metadata_section() -> Result<MarkdownSection, MetadataError> {
-        let metadata_markdown = get_metadata_markdown()?;
+        let metadata_markdown = BatMetadata::get_metadata_markdown()?;
         let functions_section = metadata_markdown
-            .get_section(&MetadataSection::Functions.to_string())
+            .get_section(&BatMetadataSection::Functions.to_string())
             .change_context(MetadataError)?;
         Ok(functions_section)
     }
 
     pub fn functions_metadata_is_initialized() -> Result<bool, MetadataError> {
-        let metadata_markdown = get_metadata_markdown()?;
+        let metadata_markdown = BatMetadata::get_metadata_markdown()?;
         let functions_section = metadata_markdown
-            .get_section(&MetadataSection::Structs.to_string())
+            .get_section(&BatMetadataSection::Structs.to_string())
             .change_context(MetadataError)?;
         // // check if empty
         let functions_subsections =
@@ -90,6 +90,15 @@ impl FunctionMetadata {
         let is_initialized =
             !functions_section.content.is_empty() || functions_subsections.len() > 0;
         Ok(is_initialized)
+    }
+
+    pub fn check_functions_metadata_is_initialized() -> Result<(), MetadataError> {
+        if !Self::functions_metadata_is_initialized()? {
+            return Err(Report::new(MetadataError).attach_printable(
+                "Functions metadata is required to be initialized to execute this action",
+            ));
+        }
+        Ok(())
     }
 
     pub fn get_functions_metadata_by_type(
@@ -120,9 +129,9 @@ impl FunctionMetadata {
 
     pub fn get_functions_markdown_sections_from_metadata_file(
     ) -> Result<Vec<MarkdownSection>, MetadataError> {
-        let metadata_markdown = batbelt::metadata::get_metadata_markdown()?;
+        let metadata_markdown = batbelt::metadata::BatMetadata::get_metadata_markdown()?;
         let functions_section = metadata_markdown
-            .get_section(&MetadataSection::Functions.to_sentence_case())
+            .get_section(&BatMetadataSection::Functions.to_sentence_case())
             .change_context(MetadataError)?;
         let functions_subsections = metadata_markdown.get_section_subsections(functions_section);
         Ok(functions_subsections)

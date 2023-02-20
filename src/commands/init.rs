@@ -16,7 +16,7 @@ use crate::batbelt::constants::{
     AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT,
     MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
-use crate::batbelt::entrypoint::EntrypointParser;
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::commands::CommandError;
 use crate::config::{BatAuditorConfig, BatConfig};
 
@@ -25,12 +25,13 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::{BatFile, BatFolder};
 
+use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
     let _bat_config = BatConfig::get_config().change_context(CommandError)?;
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
-    if !Path::new("BatAuditor.toml").is_file() || !bat_auditor_config.initialized {
+    if !Path::new("BatAuditor.toml").is_file() {
         prompt_auditor_options()?;
     }
     let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
@@ -150,7 +151,6 @@ fn prompt_auditor_options() -> Result<(), CommandError> {
     let include_vs_code =
         batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
     let mut bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
-    bat_auditor_config.initialized = true;
     bat_auditor_config.auditor_name = auditor_name.to_string();
     bat_auditor_config.vs_code_integration = include_vs_code;
     bat_auditor_config.miro_oauth_access_token = moat;
@@ -287,27 +287,30 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
 }
 
 pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
-    let code_overhaul_auditor_file_path = batbelt::path::get_file_path(
-        BatFile::CodeOverhaulToReview {
-            file_name: entrypoint_name.clone(),
-        },
-        false,
-    )
+    let code_overhaul_file_path = BatFile::CodeOverhaulToReview {
+        file_name: entrypoint_name.clone(),
+    }
+    .get_path(false)
     .change_context(CommandError)?;
-    if Path::new(&code_overhaul_auditor_file_path).is_file() {
+
+    if Path::new(&code_overhaul_file_path).is_file() {
         return Err(Report::new(CommandError).attach_printable(format!(
             "code overhaul file already exists for: {entrypoint_name:?}"
         )));
     }
-    let mut co_template =
-        batbelt::templates::code_overhaul::CodeOverhaulTemplate::template_to_markdown_file(
-            &code_overhaul_auditor_file_path,
-        );
-    co_template.save().change_context(CommandError)?;
+    let co_template =
+        CodeOverhaulTemplate::new(&entrypoint_name, false).change_context(CommandError)?;
+    let mut co_markdown = co_template
+        .to_markdown_file(&code_overhaul_file_path)
+        .change_context(CommandError)?;
+
+    co_markdown.save().change_context(CommandError)?;
+
     println!(
         "code-overhaul file created: {}{}",
         entrypoint_name.green(),
         ".md".green()
     );
+
     Ok(())
 }
