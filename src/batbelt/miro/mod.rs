@@ -68,12 +68,13 @@ impl MiroConfig {
         !self.access_token.is_empty()
     }
 
-    pub fn check_miro_enabled() {
+    pub fn check_miro_enabled() -> Result<(), MiroError> {
         let bat_auditor_config = BatAuditorConfig::get_config().unwrap();
-        assert!(
-            !bat_auditor_config.miro_oauth_access_token.is_empty(),
-            "miro_oauth_access_token is empty in BatAuditor.toml"
-        );
+        if bat_auditor_config.miro_oauth_access_token.is_empty() {
+            return Err(Report::new(MiroError)
+                .attach_printable("miro_oauth_access_token is empty in BatAuditor.toml"));
+        };
+        Ok(())
     }
 
     pub fn get_frame_url(&self, frame_id: &str) -> String {

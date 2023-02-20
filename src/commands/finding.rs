@@ -1,5 +1,5 @@
-use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
+use crate::batbelt::templates::finding_template::FindingTemplate;
 use crate::batbelt::{
     self,
     git::{create_git_commit, GitCommit},
@@ -8,8 +8,9 @@ use crate::batbelt::{
 };
 use colored::Colorize;
 use console::Term;
-use dialoguer::{console, theme::ColorfulTheme, Input, Select};
+use dialoguer::{console, theme::ColorfulTheme, Select};
 use error_stack::{Report, Result, ResultExt};
+use inflector::Inflector;
 use std::{
     fs::{self, File},
     io::{self, BufRead},
@@ -83,22 +84,16 @@ pub fn accept_all() -> Result<(), CommandError> {
 }
 
 pub fn create_finding() -> Result<(), CommandError> {
-    let mut finding_name: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Finding name:")
-        .interact_text()
-        .unwrap();
-    finding_name = finding_name.replace('-', "_").replace(' ', "_");
+    let input_name = batbelt::cli_inputs::input("Finding name:").change_context(CommandError)?;
+    let finding_name = input_name.to_snake_case();
     validate_config_create_finding_file(finding_name.clone())?;
     copy_template_to_findings_to_review(finding_name.clone())?;
     create_git_commit(GitCommit::StartFinding, Some(vec![finding_name.clone()]))
         .change_context(CommandError)?;
-    // let finding_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
-    let finding_file_path = batbelt::path::get_file_path(
-        BatFile::FindingToReview {
-            file_name: finding_name,
-        },
-        false,
-    )
+    let finding_file_path = BatFile::FindingToReview {
+        file_name: finding_name,
+    }
+    .get_path(false)
     .change_context(CommandError)?;
     vs_code_open_file_in_current_window(finding_file_path.as_str()).change_context(CommandError)?;
     Ok(())
@@ -256,12 +251,10 @@ fn prepare_all(create_commit: bool) -> Result<(), CommandError> {
 }
 
 fn validate_config_create_finding_file(finding_name: String) -> Result<(), CommandError> {
-    let finding_file_path = batbelt::path::get_file_path(
-        BatFile::FindingToReview {
-            file_name: finding_name,
-        },
-        false,
-    )
+    let finding_file_path = BatFile::FindingToReview {
+        file_name: finding_name,
+    }
+    .get_path(false)
     .change_context(CommandError)?;
     if Path::new(&finding_file_path).is_file() {
         return Err(Report::new(CommandError).attach_printable(format!(
@@ -273,33 +266,16 @@ fn validate_config_create_finding_file(finding_name: String) -> Result<(), Comma
 
 fn copy_template_to_findings_to_review(finding_name: String) -> Result<(), CommandError> {
     let prompt_text = "is the finding an informational?";
-    let _selection =
+    let is_informational =
         batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
-    let options = vec!["yes", "no"];
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&options)
-        .default(0)
-        .with_prompt("is the finding an informational?")
-        .interact_on_opt(&Term::stderr())
-        .unwrap();
-
-    let template_path = if selection.unwrap() == 0 {
-        // utils::path::get_informational_template_path()?
-        batbelt::path::get_file_path(BatFile::TemplateInformational, true)
-            .change_context(CommandError)?
-    } else {
-        batbelt::path::get_file_path(BatFile::TemplateFinding, true).change_context(CommandError)?
-    };
-    // let new_file_path = utils::path::get_auditor_findings_to_review_path(Some(finding_name))?;
-    let new_file_path = batbelt::path::get_file_path(
-        BatFile::FindingToReview {
-            file_name: finding_name,
-        },
-        false,
-    )
+    FindingTemplate::new_finding_file(&finding_name, is_informational)
+        .change_context(CommandError)?;
+    let finding_path = BatFile::FindingToReview {
+        file_name: finding_name,
+    }
+    .get_path(false)
     .change_context(CommandError)?;
-    execute_command("co", &[&template_path, &new_file_path]).change_context(CommandError)?;
-    println!("Finding file successfully created at: {new_file_path:?}");
+    println!("Finding file successfully created at: {}", finding_path);
     Ok(())
 }
 
@@ -308,11 +284,6 @@ fn validate_finished_finding_file(
     file_name: String,
 ) -> Result<(), CommandError> {
     let file_data = fs::read_to_string(file_path).unwrap();
-    if file_data.contains("## Finding name") {
-        return Err(Report::new(CommandError).attach_printable(format!(
-            "Please update the Finding name of the {file_name} file"
-        )));
-    }
     if file_data.contains("Fill the description") {
         return Err(Report::new(CommandError).attach_printable(format!(
             "Please complete the Description section of the {file_name} file"

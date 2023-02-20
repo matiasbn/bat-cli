@@ -246,6 +246,7 @@ impl MarkdownFile {
                     section_header.clone(),
                     &self.content.clone(),
                 );
+                log::info!("new_section: \n{:#?}", new_section);
                 new_section
             })
             .collect();
@@ -346,10 +347,18 @@ impl MarkdownSection {
                 .to_string();
             MarkdownSection::new(header, section_content, start_line_index, end_line_index)
         } else {
+            let section_content = content_lines
+                .clone()
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()[start_line_index + 1..]
+                .to_vec()
+                .join("\n")
+                .trim_start()
+                .to_string();
             // no end line means that the file ends with a section header
             MarkdownSection::new(
                 header,
-                "".to_string(),
+                section_content,
                 start_line_index,
                 content_lines.count(),
             )

@@ -148,10 +148,10 @@ enum PackageActions {
     /// Creates a git flow release, bumps the version, formats the code and publish
     Release,
 }
+
 #[tokio::main]
 async fn main() {
     let cli: Cli = Cli::parse();
-    println!("verbose {}", cli.verbose.log_level_filter());
 
     env_logger::Builder::new()
         .filter_level(cli.verbose.log_level_filter())

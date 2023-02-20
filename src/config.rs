@@ -14,12 +14,8 @@ impl fmt::Display for BatConfigError {
 
 impl Error for BatConfigError {}
 
-struct BatConfigParameterNotFound(&'static str);
-struct BatAuditorConfigParameterNotFound(&'static str);
-
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct BatAuditorConfig {
-    pub initialized: bool,
     pub auditor_name: String,
     pub miro_oauth_access_token: String,
     pub vs_code_integration: bool,
