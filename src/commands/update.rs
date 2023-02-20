@@ -1,5 +1,6 @@
 use crate::batbelt::bash::execute_command;
 use crate::batbelt::constants::BASE_REPOSTORY_NAME;
+use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::{
     self,
     git::{clone_base_repository, create_git_commit, GitCommit},
@@ -29,7 +30,8 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
     // delete templates folder
     println!("Updating templates folder");
     // let templates_path = utils::path::get_templates_path()?;
-    let templates_path = batbelt::path::get_folder_path(BatFolder::Templates, true)
+    let templates_path = BatFolder::Templates
+        .get_path(true)
         .change_context(UpdateTemplateError)?;
     execute_command("rm", &["-rf", templates_path.as_str()]).change_context(UpdateTemplateError)?;
 
@@ -54,17 +56,18 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
         for file in to_review_folder {
             let file_name = file.unwrap().file_name().into_string().unwrap();
             if file_name != ".gitkeep" {
-                let file_path = batbelt::path::get_file_path(
-                    BatFile::CodeOverhaulToReview {
-                        file_name: file_name.clone(),
-                    },
-                    true,
-                )
+                let file_path = BatFile::CodeOverhaulToReview {
+                    file_name: file_name.clone(),
+                }
+                .get_path(true)
                 .change_context(UpdateTemplateError)?;
-                let template_path = batbelt::path::get_folder_path(BatFolder::Templates, true)
+                execute_command("rm", &[&file_path]).change_context(UpdateTemplateError)?;
+                let co_template = CodeOverhaulTemplate::new(&file_name, false)
                     .change_context(UpdateTemplateError)?;
-                execute_command("cp", &[&template_path, &file_path])
+                let mut co_markdown = co_template
+                    .to_markdown_file(&file_path)
                     .change_context(UpdateTemplateError)?;
+                co_markdown.save().change_context(UpdateTemplateError)?;
             }
         }
     };

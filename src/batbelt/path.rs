@@ -33,6 +33,7 @@ pub enum BatFile {
     TemplateFinding,
     TemplateInformational,
     TemplateCodeOverhaul,
+    PackageJson,
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
     CodeOverhaulFinished { file_name: String },
@@ -52,6 +53,7 @@ impl BatFile {
         let metadata_folder_path = BatFolder::Metadata.get_path(true)?;
         let path = match self {
             //File
+            BatFile::PackageJson => "./package.json".to_string(),
             BatFile::ProgramLib => bat_config.program_lib_path,
             BatFile::FindingCandidates => {
                 format!("{}/finding_candidates.md", auditor_notes_folder_path)
@@ -96,27 +98,27 @@ impl BatFile {
                 format!("./README.md")
             }
             BatFile::CodeOverhaulToReview { file_name } => {
-                let entrypoint_name = file_name.replace(".md", "");
+                let entrypoint_name = file_name.trim_end_matches(".md");
                 format!("{code_overhaul_path}/to-review/{entrypoint_name}.md")
             }
             BatFile::CodeOverhaulStarted { file_name } => {
-                let entrypoint_name = file_name.replace(".md", "");
+                let entrypoint_name = file_name.trim_end_matches(".md");
                 format!("{code_overhaul_path}/started/{entrypoint_name}.md")
             }
             BatFile::CodeOverhaulFinished { file_name } => {
-                let entrypoint_name = file_name.replace(".md", "");
+                let entrypoint_name = file_name.trim_end_matches(".md");
                 format!("{code_overhaul_path}/finished/{entrypoint_name}.md")
             }
             BatFile::FindingToReview { file_name } => {
-                let entrypoint_name = file_name.replace(".md", "");
+                let entrypoint_name = file_name.trim_end_matches(".md");
                 format!("{findings_path}/to-review/{entrypoint_name}.md",)
             }
             BatFile::FindingAccepted { file_name } => {
-                let entrypoint_name = file_name.replace(".md", "");
+                let entrypoint_name = file_name.trim_end_matches(".md");
                 format!("{findings_path}/accepted/{entrypoint_name}.md",)
             }
             BatFile::FindingRejected { file_name } => {
-                let entrypoint_name = file_name.replace(".md", "");
+                let entrypoint_name = file_name.trim_end_matches(".md");
                 format!("{findings_path}/rejected/{entrypoint_name}.md",)
             }
             BatFile::BatToml => "Bat.toml".to_string(),
