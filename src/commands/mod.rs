@@ -5,6 +5,7 @@ pub mod init;
 pub mod metadata;
 pub mod miro;
 // pub mod result;
+pub mod git;
 pub mod sonar;
 pub mod update;
 

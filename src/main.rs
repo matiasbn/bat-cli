@@ -6,6 +6,7 @@ extern crate core;
 extern crate log;
 
 extern crate confy;
+
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::ErrorLevel;
@@ -59,6 +60,9 @@ enum Commands {
     /// Updates the metadata.md file
     #[command(subcommand)]
     Metadata(MetadataActions),
+    /// Git actions to manage repository
+    #[command(subcommand)]
+    Git(GitActions),
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageActions),
@@ -77,6 +81,24 @@ enum Commands {
 //     /// Creates the commit for the results files
 //     Commit,
 // }
+#[derive(Subcommand, Debug)]
+enum GitActions {
+    /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
+    UpdateDevelop,
+    /// Delete local branches
+    DeleteLocalBranches {
+        /// select all options as true
+        #[arg(short, long)]
+        select_all: bool,
+    },
+    /// Delete local branches
+    FetchRemoteBranches {
+        /// select all options as true
+        #[arg(short, long)]
+        select_all: bool,
+    },
+}
+
 #[derive(Subcommand, Debug)]
 enum MetadataActions {
     /// Updates the Structs section of the metadata.md file
@@ -158,10 +180,9 @@ async fn main() {
         .init();
 
     let branch_checked = match cli.command {
-        Commands::Init { .. }
-        | Commands::Create
-        | Commands::Package(PackageActions::Format)
-        | Commands::Package(PackageActions::Release) => Ok(()),
+        Commands::Init { .. } | Commands::Create | Commands::Package(..) | Commands::Git(..) => {
+            Ok(())
+        }
         _ => check_correct_branch(),
     };
 
@@ -176,6 +197,15 @@ async fn main() {
     };
 
     let result = match cli.command {
+        Commands::Git(GitActions::UpdateDevelop) => {
+            commands::git::GitCommands::UpdateDevelop.execute()
+        }
+        Commands::Git(GitActions::DeleteLocalBranches { select_all }) => {
+            commands::git::GitCommands::DeleteLocalBranches { select_all }.execute()
+        }
+        Commands::Git(GitActions::FetchRemoteBranches { select_all }) => {
+            commands::git::GitCommands::FetchRemoteBranches { select_all }.execute()
+        }
         Commands::Sonar => commands::sonar::start_sonar(),
         Commands::Create => commands::create::create_project(),
         Commands::Init {

@@ -1,8 +1,8 @@
 use crate::commands::CommandError;
 use error_stack::{IntoReport, Result, ResultExt};
-use std::process::Command;
+use std::process::{ChildStdout, Command};
 
-pub fn execute_command(command: &str, args: &[&str]) -> Result<(), CommandError> {
+pub fn execute_command(command: &str, args: &[&str]) -> Result<Option<ChildStdout>, CommandError> {
     let message = format!(
         "Error spawning a child process for paramenters: \n command: {} \n args: {:#?}",
         command, args
@@ -24,5 +24,6 @@ pub fn execute_command(command: &str, args: &[&str]) -> Result<(), CommandError>
         .into_report()
         .change_context(CommandError)
         .attach_printable(message)?;
-    Ok(())
+
+    Ok(output.stdout)
 }
