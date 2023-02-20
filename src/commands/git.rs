@@ -1,10 +1,10 @@
 use crate::batbelt;
 use crate::batbelt::bash::execute_command;
-use crate::batbelt::git::get_local_branches;
+
 use crate::commands::CommandError;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, Result, ResultExt};
-use std::env;
+
 use std::process::Command;
 
 pub enum GitCommands {
