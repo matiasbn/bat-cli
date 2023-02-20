@@ -9,8 +9,9 @@ use colored::{ColoredString, Colorize};
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
 
+use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
-use error_stack::{Result, ResultExt};
+use error_stack::{IntoReport, Result, ResultExt};
 use inflector::Inflector;
 use std::{fs, vec};
 use strum::IntoEnumIterator;
@@ -102,42 +103,73 @@ impl StructMetadata {
         )
     }
 
-    pub fn from_markdown_section(md_section: MarkdownSection) -> Self {
+    pub fn from_markdown_section(md_section: MarkdownSection) -> Result<Self, MetadataError> {
         let name = md_section.section_header.title;
-        let path =
-            Self::parse_metadata_info_section(&md_section.content, StructMetadataInfoSection::Path);
-        let struct_type_string =
-            Self::parse_metadata_info_section(&md_section.content, StructMetadataInfoSection::Type);
+        let path = Self::parse_metadata_info_section(
+            &md_section.content,
+            StructMetadataInfoSection::Path,
+        )?;
+        let struct_type_string = Self::parse_metadata_info_section(
+            &md_section.content,
+            StructMetadataInfoSection::Type,
+        )?;
         let start_line_index = Self::parse_metadata_info_section(
             &md_section.content,
             StructMetadataInfoSection::StartLineIndex,
-        );
+        )?;
         let end_line_index = Self::parse_metadata_info_section(
             &md_section.content,
             StructMetadataInfoSection::EndLineIndex,
-        );
-        StructMetadata::new(
+        )?;
+        Ok(StructMetadata::new(
             path,
             name,
             StructMetadataType::from_str(&struct_type_string),
             start_line_index.parse::<usize>().unwrap(),
             end_line_index.parse::<usize>().unwrap(),
-        )
+        ))
+    }
+
+    pub fn get_metadata_vec_from_markdown() -> Result<Vec<StructMetadata>, MetadataError> {
+        let structs_markdown_file =
+            BatMetadataType::Structs.get_markdown_sections_from_metadata_file()?;
+        let structs_metadata = structs_markdown_file
+            .into_iter()
+            .map(|markdown_section| StructMetadata::from_markdown_section(markdown_section.clone()))
+            .collect::<Result<Vec<StructMetadata>, _>>()?;
+        Ok(structs_metadata)
+    }
+
+    pub fn get_metadata_vec_from_markdown_by_type(
+        struct_type: StructMetadataType,
+    ) -> Result<Vec<StructMetadata>, MetadataError> {
+        let metadata_vec = Self::get_metadata_vec_from_markdown()?;
+        let structs_metadata = metadata_vec
+            .into_iter()
+            .filter(|struct_metadata| struct_metadata.struct_type == struct_type)
+            .collect::<Vec<_>>();
+        Ok(structs_metadata)
     }
 
     fn parse_metadata_info_section(
         metadata_info_content: &str,
         struct_section: StructMetadataInfoSection,
-    ) -> String {
+    ) -> Result<String, MetadataError> {
         let section_prefix = struct_section.get_prefix();
         let data = metadata_info_content
             .lines()
             .find(|line| line.contains(&section_prefix))
-            .unwrap()
+            .ok_or(MetadataError)
+            .into_report()
+            .attach_printable(format!(
+                "Error parsing info section {}, with metadata_info_content:\n{}",
+                struct_section.to_snake_case(),
+                metadata_info_content
+            ))?
             .replace(&section_prefix, "")
             .trim()
             .to_string();
-        data
+        Ok(data)
     }
 
     pub fn get_structs_metadata_from_program() -> Result<Vec<Self>, MetadataError> {

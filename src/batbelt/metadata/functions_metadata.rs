@@ -9,7 +9,8 @@ use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
 
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
-use error_stack::{Result, ResultExt};
+use crate::batbelt::metadata::BatMetadataType;
+use error_stack::{IntoReport, Result, ResultExt};
 use inflector::Inflector;
 use std::{fs, vec};
 
@@ -84,31 +85,54 @@ impl FunctionMetadata {
         )
     }
 
-    pub fn from_markdown_section(md_section: MarkdownSection) -> Self {
+    pub fn from_markdown_section(md_section: MarkdownSection) -> Result<Self, MetadataError> {
         let name = md_section.section_header.title;
         let path = Self::parse_metadata_info_section(
             &md_section.content,
             FunctionMetadataInfoSection::Path,
-        );
+        )?;
         let function_type_string = Self::parse_metadata_info_section(
             &md_section.content,
             FunctionMetadataInfoSection::Type,
-        );
+        )?;
         let start_line_index = Self::parse_metadata_info_section(
             &md_section.content,
             FunctionMetadataInfoSection::StartLineIndex,
-        );
+        )?;
         let end_line_index = Self::parse_metadata_info_section(
             &md_section.content,
             FunctionMetadataInfoSection::EndLineIndex,
-        );
-        FunctionMetadata::new(
+        )?;
+        Ok(FunctionMetadata::new(
             path,
             name,
             FunctionMetadataType::from_str(&function_type_string),
             start_line_index.parse::<usize>().unwrap(),
             end_line_index.parse::<usize>().unwrap(),
-        )
+        ))
+    }
+
+    pub fn get_metadata_vec_from_markdown() -> Result<Vec<FunctionMetadata>, MetadataError> {
+        let functions_markdown_file =
+            BatMetadataType::Functions.get_markdown_sections_from_metadata_file()?;
+        let functions_metadata = functions_markdown_file
+            .into_iter()
+            .map(|markdown_section| {
+                FunctionMetadata::from_markdown_section(markdown_section.clone())
+            })
+            .collect::<Result<Vec<FunctionMetadata>, _>>()?;
+        Ok(functions_metadata)
+    }
+
+    pub fn get_metadata_vec_from_markdown_by_type(
+        function_type: FunctionMetadataType,
+    ) -> Result<Vec<FunctionMetadata>, MetadataError> {
+        let metadata_vec = Self::get_metadata_vec_from_markdown()?;
+        let functions_metadata = metadata_vec
+            .into_iter()
+            .filter(|function_metadata| function_metadata.function_type == function_type)
+            .collect::<Vec<_>>();
+        Ok(functions_metadata)
     }
 
     pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, MetadataError> {
@@ -203,16 +227,22 @@ impl FunctionMetadata {
     fn parse_metadata_info_section(
         metadata_info_content: &str,
         function_section: FunctionMetadataInfoSection,
-    ) -> String {
+    ) -> Result<String, MetadataError> {
         let section_prefix = function_section.get_prefix();
         let data = metadata_info_content
             .lines()
             .find(|line| line.contains(&section_prefix))
-            .unwrap()
+            .ok_or(MetadataError)
+            .into_report()
+            .attach_printable(format!(
+                "Error parsing info section {}, with metadata_info_content:\n{}",
+                function_section.to_snake_case(),
+                metadata_info_content
+            ))?
             .replace(&section_prefix, "")
             .trim()
             .to_string();
-        data
+        Ok(data)
     }
 }
 
