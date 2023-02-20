@@ -6,7 +6,7 @@ extern crate core;
 extern crate log;
 
 extern crate confy;
-use crate::commands::git::GitCommands;
+
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::ErrorLevel;

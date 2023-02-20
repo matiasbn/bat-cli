@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fmt;
-use std::io::Read;
+
 use std::str::from_utf8;
 use std::{process::Command, str};
 
@@ -419,5 +419,5 @@ pub fn get_remote_branches() -> Result<String, GitOperationError> {
 
 #[test]
 fn test_get_branches_list() {
-    let branches_list = get_local_branches().unwrap();
+    let _branches_list = get_local_branches().unwrap();
 }
