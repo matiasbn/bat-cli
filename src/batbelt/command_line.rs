@@ -15,6 +15,8 @@ pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), Com
             path_to_file.split("/").last().unwrap()
         );
         execute_command("code", &["-a", path_to_file]).change_context(CommandError)?;
+    } else {
+        println!("Path to file: {:#?}", path_to_file);
     }
     Ok(())
 }
