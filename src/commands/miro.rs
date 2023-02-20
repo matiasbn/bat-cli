@@ -635,7 +635,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                         .unwrap();
                 let selected_struct_type = StructMetadataType::get_structs_type_vec()[selection];
                 let struct_metadata_vec =
-                    StructMetadata::get_metadata_vec_from_markdown_by_type(selected_struct_type)
+                    StructMetadata::get_filtered_metadata(None, Some(selected_struct_type))
                         .change_context(CommandError)?;
                 let struct_metadata_names = struct_metadata_vec
                     .iter()
@@ -698,10 +698,8 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 let selected_function_type =
                     FunctionMetadataType::get_functions_type_vec()[selection];
                 let function_metadata_vec =
-                    FunctionMetadata::get_metadata_vec_from_markdown_by_type(
-                        selected_function_type,
-                    )
-                    .change_context(CommandError)?;
+                    FunctionMetadata::get_filtered_metadata(None, Some(selected_function_type))
+                        .change_context(CommandError)?;
                 let function_metadata_names = function_metadata_vec
                     .iter()
                     .map(|function_metadata| {

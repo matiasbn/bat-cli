@@ -54,7 +54,7 @@ pub fn start_co_file() -> Result<(), CommandError> {
 
     started_markdown.save().change_context(CommandError)?;
 
-    execute_command("rm", &[&to_review_file_path]).unwrap();
+    execute_command("rm", &[&to_review_file_path]).change_context(CommandError)?;
 
     println!("{to_start_file_name} file moved to started");
 

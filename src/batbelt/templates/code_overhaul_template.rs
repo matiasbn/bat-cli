@@ -56,25 +56,27 @@ impl CodeOverhaulTemplate {
             CodeOverhaulSection::MiroFrameUrl.get_section_content(self.entrypoint_parser.clone());
 
         format!(
-            "{state_changes_content}
-             
-            {notes_content}
-
-            {signers_content}
-
-            {function_parameters_content}
-
-            {context_accounts_content}
-
-            {validations_content}
-
+            "{state_changes_content}\
+            \n\
+            \n\
+            {notes_content}\
+            \n\
+            \n\
+            {signers_content}\
+            \n\
+            \n\
+            {function_parameters_content}\
+            \n\
+            \n\
+            {context_accounts_content}\
+            \n\
+            \n\
+            {validations_content}\
+            \n\
+            \n\
             {miro_frame_url_content}
             ",
         )
-        .lines()
-        .map(|line| line.trim().to_string())
-        .collect::<Vec<_>>()
-        .join("\n")
     }
 
     fn get_mut_accounts(results: Vec<SonarResult>) -> Vec<Vec<String>> {
@@ -270,13 +272,9 @@ impl CodeOverhaulSection {
         } else {
             validations_vec
                 .iter()
-                .fold("".to_string(), |result, validation| {
-                    if result.is_empty() {
-                        format!("- ```rust\n{}\n  ```\n", validation)
-                    } else {
-                        format!("{}- ```rust\n{}\n  ```\n", result, validation)
-                    }
-                })
+                .map(|validation| format!("- ```rust\n{}\n  ```", validation))
+                .collect::<Vec<_>>()
+                .join("\n")
         };
         validations_content
     }

@@ -1,6 +1,6 @@
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use crate::batbelt;
 use crate::batbelt::path::{BatFile, BatFolder};
@@ -11,31 +11,12 @@ use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
 
 use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 use std::{fs, vec};
 use strum::IntoEnumIterator;
 
 use super::MetadataError;
-
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
-enum StructMetadataInfoSection {
-    Path,
-    Name,
-    Type,
-    StartLineIndex,
-    EndLineIndex,
-}
-
-impl StructMetadataInfoSection {
-    pub fn get_prefix(&self) -> String {
-        format!("- {}:", self.to_snake_case())
-    }
-
-    pub fn to_snake_case(&self) -> String {
-        self.to_string().to_snake_case()
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct StructMetadata {
@@ -130,24 +111,57 @@ impl StructMetadata {
         ))
     }
 
-    pub fn get_metadata_vec_from_markdown() -> Result<Vec<StructMetadata>, MetadataError> {
+    pub fn get_filtered_metadata(
+        struct_name: Option<&str>,
+        struct_type: Option<StructMetadataType>,
+    ) -> Result<Vec<StructMetadata>, MetadataError> {
+        let struct_sections =
+            BatMetadataType::Structs.get_markdown_sections_from_metadata_file()?;
+
+        let filtered_sections = struct_sections
+            .into_iter()
+            .filter(|section| {
+                if struct_name.is_some()
+                    && struct_name.clone().unwrap() != section.section_header.title
+                {
+                    return false;
+                };
+                if struct_type.is_some() {
+                    let type_content = StructMetadataInfoSection::Type
+                        .get_info_section_content(struct_type.unwrap().to_snake_case());
+                    log::debug!("type_content\n{:#?}", type_content);
+                    if !section.content.contains(&type_content) {
+                        return false;
+                    }
+                };
+                return true;
+            })
+            .collect::<Vec<_>>();
+        log::debug!("struct_name\n{:#?}", struct_name);
+        log::debug!("struct_type\n{:#?}", struct_type);
+        log::debug!("filtered_sections\n{:#?}", filtered_sections);
+        if filtered_sections.is_empty() {
+            let message = format!(
+                "Error finding structs sections for:\nstruct_name: {:#?}\nstruct_type: {:#?}",
+                struct_name, struct_type
+            );
+            return Err(Report::new(MetadataError).attach_printable(message));
+        }
+
+        let struct_metadata_vec = filtered_sections
+            .into_iter()
+            .map(|section| StructMetadata::from_markdown_section(section))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(struct_metadata_vec)
+    }
+
+    fn get_metadata_vec_from_markdown() -> Result<Vec<StructMetadata>, MetadataError> {
         let structs_markdown_file =
             BatMetadataType::Structs.get_markdown_sections_from_metadata_file()?;
         let structs_metadata = structs_markdown_file
             .into_iter()
             .map(|markdown_section| StructMetadata::from_markdown_section(markdown_section.clone()))
             .collect::<Result<Vec<StructMetadata>, _>>()?;
-        Ok(structs_metadata)
-    }
-
-    pub fn get_metadata_vec_from_markdown_by_type(
-        struct_type: StructMetadataType,
-    ) -> Result<Vec<StructMetadata>, MetadataError> {
-        let metadata_vec = Self::get_metadata_vec_from_markdown()?;
-        let structs_metadata = metadata_vec
-            .into_iter()
-            .filter(|struct_metadata| struct_metadata.struct_type == struct_type)
-            .collect::<Vec<_>>();
         Ok(structs_metadata)
     }
 
@@ -350,6 +364,29 @@ impl StructMetadataType {
             })
             .collect::<Vec<_>>();
         structs_type_colorized
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+enum StructMetadataInfoSection {
+    Path,
+    Name,
+    Type,
+    StartLineIndex,
+    EndLineIndex,
+}
+
+impl StructMetadataInfoSection {
+    pub fn get_prefix(&self) -> String {
+        format!("- {}:", self.to_snake_case())
+    }
+
+    pub fn to_snake_case(&self) -> String {
+        self.to_string().to_snake_case()
+    }
+
+    pub fn get_info_section_content<T: Display>(&self, content_value: T) -> String {
+        format!("- {}: {}", self.to_snake_case(), content_value)
     }
 }
 //

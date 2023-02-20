@@ -22,7 +22,7 @@ pub struct MetadataError;
 
 impl fmt::Display for MetadataError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Sonar error")
+        f.write_str("Metadata error")
     }
 }
 

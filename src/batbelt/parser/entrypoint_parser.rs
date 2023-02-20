@@ -1,7 +1,8 @@
 use crate::batbelt;
 use crate::batbelt::helpers::get::get_all_rust_files_from_program_path;
 use crate::batbelt::metadata::functions_metadata::{
-    get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataType,
+    get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataInfoSection,
+    FunctionMetadataType,
 };
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -9,7 +10,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use crate::config::BatConfig;
 use colored::Colorize;
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::fs;
 use std::path::Path;
 
@@ -22,7 +23,7 @@ pub struct EntrypointParserError;
 
 impl fmt::Display for EntrypointParserError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Command line error")
+        f.write_str("EntrypointParser error")
     }
 }
 
@@ -59,25 +60,37 @@ impl EntrypointParser {
             .check_is_initialized()
             .change_context(EntrypointParserError)?;
 
-        let entrypoint_function = FunctionMetadata::get_metadata_vec_from_markdown_by_type(
-            FunctionMetadataType::EntryPoint,
+        let function_sections = BatMetadataType::Functions
+            .get_markdown_sections_from_metadata_file()
+            .change_context(EntrypointParserError)?;
+
+        let type_content = FunctionMetadataInfoSection::Type
+            .get_info_section_content(FunctionMetadataType::EntryPoint.to_string());
+
+        let entrypoint_section = FunctionMetadata::get_filtered_metadata(
+            Some(entrypoint_name),
+            Some(FunctionMetadataType::EntryPoint),
         )
-        .change_context(EntrypointParserError)?
-        .into_iter()
-        .find(|function_metadata| function_metadata.name == entrypoint_name)
-        .ok_or(EntrypointParserError)
-        .into_report()
-        .attach_printable(format!(
-            "Error finding entrypoint function by name: {}",
-            entrypoint_name,
-        ))?;
+        .change_context(EntrypointParserError)?;
+
+        if entrypoint_section.len() != 1 {
+            return Err(Report::new(EntrypointParserError)
+                .attach_printable(format!(
+                    "Incorrect amount of results looking for entrypoint function section"
+                ))
+                .attach_printable(format!("expected: 1,  got: {}", entrypoint_section.len()))
+                .attach_printable(format!("sections_filtered:\n{:#?}", entrypoint_section)))?;
+        }
+
+        let entrypoint_function = entrypoint_section.first().unwrap().clone();
+
         let entrypoint_content = entrypoint_function
             .to_source_code(None)
             .get_source_code_content();
         let entrypoint_function_body = get_function_body(&entrypoint_content);
 
         let handlers =
-            FunctionMetadata::get_metadata_vec_from_markdown_by_type(FunctionMetadataType::Handler)
+            FunctionMetadata::get_filtered_metadata(None, Some(FunctionMetadataType::Handler))
                 .change_context(EntrypointParserError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
 
@@ -90,8 +103,9 @@ impl EntrypointParser {
                 && function_parameters[0].contains(&context_name)
                 && (entrypoint_function_body.contains(&function_metadata.name))
         });
-        let structs_metadata = StructMetadata::get_metadata_vec_from_markdown_by_type(
-            StructMetadataType::ContextAccounts,
+        let structs_metadata = StructMetadata::get_filtered_metadata(
+            Some(&context_name),
+            Some(StructMetadataType::ContextAccounts),
         )
         .change_context(EntrypointParserError)?;
         let context_accounts = structs_metadata
