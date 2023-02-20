@@ -8,11 +8,8 @@ use colored::{ColoredString, Colorize};
 use std::error::Error;
 use std::fmt;
 
-use crate::batbelt::{self};
-
 use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
+
 use crate::batbelt::path::BatFile;
 
 use inflector::Inflector;

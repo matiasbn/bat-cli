@@ -3,14 +3,14 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions_metadata::get_function_parameters;
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::BatFile;
+
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithStateChanges,
 };
 use crate::batbelt::templates::TemplateError;
 use colored::Colorize;
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 
 pub struct CodeOverhaulTemplate {
@@ -35,7 +35,7 @@ impl CodeOverhaulTemplate {
     }
     pub fn to_markdown_file(&self, file_path: &str) -> Result<MarkdownFile, TemplateError> {
         let content = self.get_markdown_content().clone();
-        let mut template = MarkdownFile::new_from_path_and_content(&file_path, content);
+        let template = MarkdownFile::new_from_path_and_content(&file_path, content);
         Ok(template)
     }
 

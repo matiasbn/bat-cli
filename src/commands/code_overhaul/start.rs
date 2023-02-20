@@ -1,26 +1,19 @@
-use std::fs;
 use std::string::String;
 
 use colored::Colorize;
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 use crate::batbelt;
 use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
-use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
-use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
-use crate::batbelt::metadata::functions_metadata::get_function_parameters;
-use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
-use crate::batbelt::metadata::BatMetadataType;
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use crate::batbelt::git::{create_git_commit, GitCommit};
+
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::{
-    CodeOverhaulSection, CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
+    CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
 };
 use crate::commands::CommandError;
-use crate::config::BatConfig;
 
 pub fn start_co_file() -> Result<(), CommandError> {
     let review_files = BatFolder::CodeOverhaulToReview

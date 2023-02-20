@@ -1,7 +1,5 @@
 use crate::batbelt;
 
-use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionLevel};
-
 use std::fs;
 
 use colored::Colorize;

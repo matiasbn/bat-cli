@@ -1,14 +1,11 @@
-use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::BatMetadataType;
 
-use crate::batbelt::path::BatFile;
 use crate::{batbelt, GitCommit};
-use colored::Colorize;
 
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 
 use super::CommandError;
 

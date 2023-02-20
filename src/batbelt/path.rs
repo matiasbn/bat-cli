@@ -1,4 +1,3 @@
-use crate::batbelt::structs::FileInfo;
 use crate::config::{BatAuditorConfig, BatConfig};
 use error_stack::{IntoReport, Result, ResultExt};
 use serde::{Deserialize, Serialize};

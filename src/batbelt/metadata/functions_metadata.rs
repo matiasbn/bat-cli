@@ -1,21 +1,17 @@
-use crate::batbelt;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::path::BatFolder;
 use crate::config::BatConfig;
 use colored::{ColoredString, Colorize};
 use strum::IntoEnumIterator;
 
-use crate::batbelt::markdown::{
-    MarkdownFile, MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel,
-};
+use crate::batbelt::markdown::MarkdownSection;
 use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataType};
+
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
-use crate::batbelt::structs::FileInfo;
-use error_stack::{Report, Result, ResultExt};
+
+use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 use std::{fs, vec};
-use walkdir::DirEntry;
 
 use super::MetadataError;
 

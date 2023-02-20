@@ -9,7 +9,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use crate::config::BatConfig;
 use colored::Colorize;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use std::fs;
 use std::path::Path;
 

@@ -30,7 +30,7 @@ use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
     let _bat_config = BatConfig::get_config().change_context(CommandError)?;
-    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+    let _bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     if !Path::new("BatAuditor.toml").is_file() {
         prompt_auditor_options()?;
     }
