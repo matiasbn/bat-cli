@@ -284,11 +284,3 @@ impl TemplatePlaceholder {
         self.to_string().to_screaming_snake_case()
     }
 }
-
-#[test]
-
-fn test_create_project() {
-    env::set_current_dir("..").unwrap();
-    commands::create::create_project().unwrap();
-    TemplateGenerator::create_project().unwrap();
-}

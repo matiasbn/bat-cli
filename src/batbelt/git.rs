@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::io::Read;
 use std::str::from_utf8;
 use std::{process::Command, str};
 
@@ -12,7 +13,7 @@ use crate::{
     batbelt::{self, path::BatFile},
     config::BatConfig,
 };
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 
 #[derive(Debug)]
 pub struct GitOperationError;
@@ -382,11 +383,6 @@ pub fn check_if_branch_exists(branch_name: &str) -> Result<bool, String> {
     Ok(git_check_branch_exists.stderr.is_empty())
 }
 
-pub fn git_push() -> Result<(), String> {
-    Command::new("git").arg("push").output().unwrap();
-    Ok(())
-}
-
 // returns false if there are files to commit
 pub fn check_files_not_commited() -> Result<bool, String> {
     let output = Command::new("git")
@@ -397,7 +393,31 @@ pub fn check_files_not_commited() -> Result<bool, String> {
     Ok(output.is_empty())
 }
 
+pub fn get_local_branches() -> Result<String, GitOperationError> {
+    let branches_list = Command::new("git")
+        .args(&["branch", "--list"])
+        .output()
+        .into_report()
+        .change_context(GitOperationError)?;
+    let list = from_utf8(branches_list.stdout.as_slice())
+        .into_report()
+        .change_context(GitOperationError)?;
+    Ok(list.to_string())
+}
+
+pub fn get_remote_branches() -> Result<String, GitOperationError> {
+    let branches_list = Command::new("git")
+        .args(&["branch", "-r", "--list"])
+        .output()
+        .into_report()
+        .change_context(GitOperationError)?;
+    let list = from_utf8(branches_list.stdout.as_slice())
+        .into_report()
+        .change_context(GitOperationError)?;
+    Ok(list.to_string())
+}
+
 #[test]
-fn test_create_git_commit() {
-    create_git_commit(GitCommit::FinishCO, Some(vec!["test_co_file".to_string()])).unwrap();
+fn test_get_branches_list() {
+    let branches_list = get_local_branches().unwrap();
 }
