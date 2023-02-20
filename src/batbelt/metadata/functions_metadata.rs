@@ -1,18 +1,21 @@
 use crate::batbelt;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::BatFolder;
+use crate::batbelt::path::{BatFile, BatFolder};
 use crate::config::BatConfig;
 use colored::{ColoredString, Colorize};
 use strum::IntoEnumIterator;
 
-use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
+use crate::batbelt::markdown::{
+    MarkdownFile, MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel,
+};
 use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataSection};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataType};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::structs::FileInfo;
 use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
-use std::vec;
+use std::{fs, vec};
+use walkdir::DirEntry;
 
 use super::MetadataError;
 
@@ -63,106 +66,13 @@ impl FunctionMetadata {
 
     pub fn get_markdown_section_content_string(&self) -> String {
         format!(
-            "- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
+            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
+            self.name,
             self.function_type.to_snake_case(),
             self.path,
             self.start_line_index,
             self.end_line_index
         )
-    }
-
-    pub fn get_functions_metadata_section() -> Result<MarkdownSection, MetadataError> {
-        let metadata_markdown = BatMetadata::get_metadata_markdown()?;
-        let functions_section = metadata_markdown
-            .get_section(&BatMetadataSection::Functions.to_string())
-            .change_context(MetadataError)?;
-        Ok(functions_section)
-    }
-
-    pub fn functions_metadata_is_initialized() -> Result<bool, MetadataError> {
-        let metadata_markdown = BatMetadata::get_metadata_markdown()?;
-        let functions_section = metadata_markdown
-            .get_section(&BatMetadataSection::Structs.to_string())
-            .change_context(MetadataError)?;
-        // // check if empty
-        let functions_subsections =
-            metadata_markdown.get_section_subsections(functions_section.clone());
-        let is_initialized =
-            !functions_section.content.is_empty() || functions_subsections.len() > 0;
-        Ok(is_initialized)
-    }
-
-    pub fn check_functions_metadata_is_initialized() -> Result<(), MetadataError> {
-        if !Self::functions_metadata_is_initialized()? {
-            return Err(Report::new(MetadataError).attach_printable(
-                "Functions metadata is required to be initialized to execute this action",
-            ));
-        }
-        Ok(())
-    }
-
-    pub fn get_functions_metadata_by_type(
-        function_type: FunctionMetadataType,
-    ) -> Result<Vec<FunctionMetadata>, MetadataError> {
-        let functions_metadata = Self::get_functions_metadata_from_metadata_file()?;
-        Ok(functions_metadata
-            .into_iter()
-            .filter(|function_metadata| function_metadata.function_type == function_type)
-            .collect::<Vec<_>>())
-    }
-
-    pub fn get_functions_metadata_names_by_type(
-        function_type: FunctionMetadataType,
-    ) -> Result<Vec<String>, MetadataError> {
-        let functions_metadata = Self::get_functions_metadata_from_metadata_file()?;
-        Ok(functions_metadata
-            .into_iter()
-            .filter_map(|function_metadata| {
-                if function_metadata.function_type == function_type {
-                    Some(function_metadata.name)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>())
-    }
-
-    pub fn get_functions_markdown_sections_from_metadata_file(
-    ) -> Result<Vec<MarkdownSection>, MetadataError> {
-        let metadata_markdown = batbelt::metadata::BatMetadata::get_metadata_markdown()?;
-        let functions_section = metadata_markdown
-            .get_section(&BatMetadataSection::Functions.to_sentence_case())
-            .change_context(MetadataError)?;
-        let functions_subsections = metadata_markdown.get_section_subsections(functions_section);
-        Ok(functions_subsections)
-    }
-
-    pub fn get_functions_metadata_from_metadata_file(
-    ) -> Result<Vec<FunctionMetadata>, MetadataError> {
-        let functions_subsections = Self::get_functions_markdown_sections_from_metadata_file()?;
-        let functions_sourcecodes = functions_subsections
-            .into_iter()
-            .map(|subsection| FunctionMetadata::from_markdown_section(subsection))
-            .collect::<Vec<FunctionMetadata>>();
-        Ok(functions_sourcecodes)
-    }
-
-    pub fn get_functions_sourcecodes_from_metadata_file(
-    ) -> Result<Vec<SourceCodeMetadata>, MetadataError> {
-        let functions_subsections = Self::get_functions_markdown_sections_from_metadata_file()?;
-        let functions_sourcecodes = functions_subsections
-            .into_iter()
-            .map(|subsection| FunctionMetadata::from_markdown_section(subsection))
-            .map(|struct_metadata| {
-                SourceCodeMetadata::new(
-                    struct_metadata.name,
-                    struct_metadata.path,
-                    struct_metadata.start_line_index,
-                    struct_metadata.end_line_index,
-                )
-            })
-            .collect::<Vec<SourceCodeMetadata>>();
-        Ok(functions_sourcecodes)
     }
 
     pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeMetadata {
@@ -176,22 +86,6 @@ impl FunctionMetadata {
             self.start_line_index,
             self.end_line_index,
         )
-    }
-
-    pub fn get_markdown_section(&self, section_hash: &str) -> MarkdownSection {
-        let section_level_header = MarkdownSectionLevel::H2.get_header(&self.name);
-        let section_header = MarkdownSectionHeader::new_from_header_and_hash(
-            section_level_header,
-            section_hash.to_string(),
-            0,
-        );
-        let md_section = MarkdownSection::new(
-            section_header,
-            self.get_markdown_section_content_string(),
-            0,
-            0,
-        );
-        md_section
     }
 
     pub fn from_markdown_section(md_section: MarkdownSection) -> Self {
@@ -219,6 +113,95 @@ impl FunctionMetadata {
             start_line_index.parse::<usize>().unwrap(),
             end_line_index.parse::<usize>().unwrap(),
         )
+    }
+
+    pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, MetadataError> {
+        let program_dir_entries = BatFolder::ProgramPath
+            .get_all_files(false, None, None)
+            .change_context(MetadataError)?;
+        let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
+        let context_names = EntrypointParser::get_all_contexts_names();
+        let mut functions_metadata: Vec<FunctionMetadata> =
+            program_dir_entries
+                .into_iter()
+                .fold(vec![], |mut result_vec, entry| {
+                    let entry_path = entry.path().to_str().unwrap().to_string();
+                    println!("starting the review of the {} file", entry_path.blue());
+                    let file_content = fs::read_to_string(entry.path()).unwrap();
+                    let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
+                    for result in bat_sonar.results {
+                        let function_signature = get_function_signature(&result.content);
+                        println!(
+                            "Function found at {}\n{}",
+                            format!("{}:{}", &entry_path, result.start_line_index + 1).magenta(),
+                            function_signature.green()
+                        );
+                        if entry_path == BatConfig::get_config().unwrap().program_lib_path {
+                            if entrypoints_names
+                                .clone()
+                                .into_iter()
+                                .any(|ep_name| ep_name == result.name)
+                            {
+                                println!("{}", "Function found is Entrypoint type!".yellow());
+                                let function_type = FunctionMetadataType::EntryPoint;
+                                let function_metadata = FunctionMetadata::new(
+                                    entry_path.clone(),
+                                    result.name.to_string(),
+                                    function_type,
+                                    result.start_line_index + 1,
+                                    result.end_line_index + 1,
+                                );
+                                result_vec.push(function_metadata);
+                                continue;
+                            }
+                        }
+                        let result_source_code = SourceCodeMetadata::new(
+                            result.name.clone(),
+                            entry_path.clone(),
+                            result.start_line_index.clone() + 1,
+                            result.end_line_index.clone() + 1,
+                        );
+                        let result_content = result_source_code.get_source_code_content();
+                        let result_parameters = get_function_parameters(result_content.clone());
+                        if !result_parameters.is_empty() {
+                            let first_parameter = result_parameters[0].clone();
+                            if first_parameter.contains("Context")
+                                && context_names
+                                    .clone()
+                                    .into_iter()
+                                    .any(|cx_name| first_parameter.contains(&cx_name))
+                            {
+                                println!("{}", "Function found is Handler type!".yellow());
+                                let function_type = FunctionMetadataType::Handler;
+                                let function_metadata = FunctionMetadata::new(
+                                    entry_path.clone(),
+                                    result.name.to_string(),
+                                    function_type,
+                                    result.start_line_index + 1,
+                                    result.end_line_index + 1,
+                                );
+                                result_vec.push(function_metadata);
+                                continue;
+                            }
+                        }
+                        let function_type = FunctionMetadataType::Other;
+                        let function_metadata = FunctionMetadata::new(
+                            entry_path.clone(),
+                            result.name.to_string(),
+                            function_type,
+                            result.start_line_index + 1,
+                            result.end_line_index + 1,
+                        );
+                        result_vec.push(function_metadata);
+                    }
+                    println!(
+                        "finishing the review of the {} file",
+                        entry_path.clone().blue()
+                    );
+                    return result_vec;
+                });
+        functions_metadata.sort_by(|function_a, function_b| function_a.name.cmp(&function_b.name));
+        Ok(functions_metadata)
     }
 
     fn parse_metadata_info_section(
@@ -348,113 +331,6 @@ pub fn get_function_body(function_content: &str) -> String {
     body.next();
     let body = body.collect::<Vec<_>>().join("{");
     body.trim_end_matches("}").trim().to_string()
-}
-
-pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, MetadataError> {
-    let program_path = batbelt::path::get_folder_path(BatFolder::ProgramPath, false)
-        .change_context(MetadataError)?;
-    let program_folder_files_info = batbelt::helpers::get::get_only_files_from_folder(program_path)
-        .change_context(MetadataError)?;
-    let mut functions_metadata: Vec<FunctionMetadata> = vec![];
-    for file_info in program_folder_files_info {
-        let mut function_metadata_result = get_function_metadata_from_file_info(file_info)?;
-        functions_metadata.append(&mut function_metadata_result);
-    }
-    functions_metadata.sort_by(|function_a, function_b| function_a.name.cmp(&function_b.name));
-    Ok(functions_metadata)
-}
-
-pub fn get_function_metadata_from_file_info(
-    function_file_info: FileInfo,
-) -> Result<Vec<FunctionMetadata>, MetadataError> {
-    let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
-    println!(
-        "starting the review of the {} file",
-        function_file_info.path.clone().blue()
-    );
-    let file_info_content = function_file_info.read_content().unwrap();
-    // let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
-    let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
-    let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
-    let context_names = EntrypointParser::get_all_contexts_names();
-    for result in bat_sonar.results {
-        let function_signature = get_function_signature(&result.content);
-        println!(
-            "Function found at {}\n{}",
-            format!(
-                "{}:{}",
-                function_file_info.path.clone(),
-                result.start_line_index + 1,
-            )
-            .magenta(),
-            function_signature.green()
-        );
-        if function_file_info.path == BatConfig::get_config().unwrap().program_lib_path {
-            if entrypoints_names
-                .clone()
-                .into_iter()
-                .any(|ep_name| ep_name == result.name)
-            {
-                println!("{}", "Function found is Entrypoint type!".yellow());
-                let function_type = FunctionMetadataType::EntryPoint;
-                let function_metadata = FunctionMetadata::new(
-                    function_file_info.path.clone(),
-                    result.name.to_string(),
-                    function_type,
-                    result.start_line_index + 1,
-                    result.end_line_index + 1,
-                );
-                function_metadata_vec.push(function_metadata);
-                continue;
-            }
-        }
-        let result_source_code = SourceCodeMetadata::new(
-            result.name.clone(),
-            function_file_info.path.clone(),
-            result.start_line_index.clone() + 1,
-            result.end_line_index.clone() + 1,
-        );
-        let result_content = result_source_code.get_source_code_content();
-        let result_parameters = get_function_parameters(result_content.clone());
-        if !result_parameters.is_empty() {
-            let first_parameter = result_parameters[0].clone();
-            if first_parameter.contains("Context")
-                && context_names
-                    .clone()
-                    .into_iter()
-                    .any(|cx_name| first_parameter.contains(&cx_name))
-            {
-                println!("{}", "Function found is Handler type!".yellow());
-                let function_type = FunctionMetadataType::Handler;
-                let function_metadata = FunctionMetadata::new(
-                    function_file_info.path.clone(),
-                    result.name.to_string(),
-                    function_type,
-                    result.start_line_index + 1,
-                    result.end_line_index + 1,
-                );
-                function_metadata_vec.push(function_metadata);
-                continue;
-            }
-        }
-        // let prompt_text = "Select the function type:";
-        // let selection =
-        //     batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
-        let function_type = FunctionMetadataType::Other;
-        let function_metadata = FunctionMetadata::new(
-            function_file_info.path.clone(),
-            result.name.to_string(),
-            function_type,
-            result.start_line_index + 1,
-            result.end_line_index + 1,
-        );
-        function_metadata_vec.push(function_metadata);
-    }
-    println!(
-        "finishing the review of the {} file",
-        function_file_info.path.clone().blue()
-    );
-    Ok(function_metadata_vec)
 }
 
 #[test]

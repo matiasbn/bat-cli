@@ -2,7 +2,7 @@ use std::fs;
 
 use colored::Colorize;
 
-use super::{MetadataError, BatMetadataSection};
+use super::{BatMetadataType, MetadataError};
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
@@ -24,9 +24,9 @@ pub struct SourceCodeScreenshotOptions {
 }
 
 impl SourceCodeScreenshotOptions {
-    pub fn get_default_metadata_options(metadata_section: BatMetadataSection) -> Self {
+    pub fn get_default_metadata_options(metadata_section: BatMetadataType) -> Self {
         match metadata_section {
-            BatMetadataSection::Structs => Self {
+            BatMetadataType::Structs => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -34,7 +34,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            BatMetadataSection::Functions => Self {
+            BatMetadataType::Functions => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -42,7 +42,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            BatMetadataSection::Entrypoints => Self {
+            BatMetadataType::Entrypoints => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -50,14 +50,14 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            BatMetadataSection::Miro => Self {
-                include_path: true,
-                offset_to_start_line: true,
-                filter_comments: false,
-                font_size: Some(20),
-                filters: None,
-                show_line_number: true,
-            },
+            // BatMetadataType::Miro => Self {
+            //     include_path: true,
+            //     offset_to_start_line: true,
+            //     filter_comments: false,
+            //     font_size: Some(20),
+            //     filters: None,
+            //     show_line_number: true,
+            // },
         }
     }
 }

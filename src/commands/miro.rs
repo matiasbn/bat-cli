@@ -11,7 +11,7 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::helpers::get::get_only_files_from_folder;
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::BatMetadataSection;
+use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile;
 use crate::batbelt::structs::{SignerInfo, SignerType};
@@ -77,11 +77,12 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
                 "Please complete the signers description before deploying to Miro"
             )));
         }
-        let metadata_path =
-            batbelt::path::get_file_path(BatFile::Metadata, false).change_context(CommandError)?;
-        let metadata_markdown = MarkdownFile::new(&metadata_path);
+        let entrypoints_metadata_path = BatFile::EntrypointsMetadata
+            .get_path(false)
+            .change_context(CommandError)?;
+        let metadata_markdown = MarkdownFile::new(&entrypoints_metadata_path);
         let entrypoints_section = metadata_markdown
-            .get_section(&BatMetadataSection::Entrypoints.to_sentence_case())
+            .get_section(&BatMetadataType::Entrypoints.to_sentence_case())
             .unwrap();
         let started_entrypoint_section =
             metadata_markdown.get_subsection(&entrypoint_name, entrypoints_section.section_header);
@@ -177,7 +178,7 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
         }
         // Handler figure
         let functions_section = metadata_markdown
-            .get_section(&BatMetadataSection::Functions.to_sentence_case())
+            .get_section(&BatMetadataType::Functions.to_sentence_case())
             .unwrap();
         let functions_subsections =
             metadata_markdown.get_section_subsections(functions_section.clone());
@@ -606,32 +607,21 @@ pub async fn deploy_metadata_screenshot_to_frame(
     let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
     let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
     let selected_miro_frame: MiroFrame = miro_frames[selection].clone();
-    let metadata_path =
-        batbelt::path::get_file_path(BatFile::Metadata, true).change_context(CommandError)?;
-    let metadata_markdown = MarkdownFile::new(&metadata_path);
+    let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
+    let metadata_types_colorized_vec = BatMetadataType::get_colorized_metadata_type_vec();
     let mut continue_selection = true;
     while continue_selection {
         // Choose metadata section selection
-        let metadata_sections_names: Vec<String> = metadata_markdown
-            .sections
-            .iter()
-            .filter(|section| section.section_header.section_level == MarkdownSectionLevel::H1)
-            .map(|section| section.section_header.title.clone())
-            .collect();
-        let prompt_text = format!("Please enter the {}", "content type".green());
+        let prompt_text = format!("Please enter the {}", "metadata type".green());
         let selection =
-            batbelt::cli_inputs::select(&prompt_text, metadata_sections_names.clone(), None)
+            batbelt::cli_inputs::select(&prompt_text, metadata_types_colorized_vec.clone(), None)
                 .unwrap();
-        let section_selected = &metadata_sections_names[selection];
-        let section: MarkdownSection = metadata_markdown.get_section(&section_selected).unwrap();
-        let selected_section_title = section.section_header.title.clone();
-        let structs_title = BatMetadataSection::Structs.to_string();
-        let functions_title = BatMetadataSection::Functions.to_string();
+        let metadata_type_selected = &metadata_types_vec[selection];
         let (sourcecode_metadata_vec, screenshot_options): (
             Vec<SourceCodeMetadata>,
             SourceCodeScreenshotOptions,
-        ) = match true {
-            _ if selected_section_title == structs_title => {
+        ) = match metadata_type_selected {
+            BatMetadataType::Structs => {
                 // Choose metadata subsection selection
                 let prompt_text = format!("Please enter the {}", "struct type to deploy".green());
                 let struct_types_colorized = StructMetadataType::get_colorized_structs_type_vec();
@@ -639,8 +629,11 @@ pub async fn deploy_metadata_screenshot_to_frame(
                     batbelt::cli_inputs::select(&prompt_text, struct_types_colorized.clone(), None)
                         .unwrap();
                 let selected_struct_type = StructMetadataType::get_structs_type_vec()[selection];
-                let subsections = metadata_markdown.get_section_subsections(section.clone());
-                let struct_metadata_vec = subsections
+                let structs_markdown_file = BatMetadataType::Structs
+                    .get_markdown()
+                    .change_context(CommandError)?;
+                let struct_metadata_vec = structs_markdown_file
+                    .sections
                     .iter()
                     .map(|section| StructMetadata::from_markdown_section(section.clone()))
                     .filter(|struct_metadata| struct_metadata.struct_type == selected_struct_type)
@@ -664,7 +657,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 )
                 .unwrap();
                 let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                    BatMetadataSection::Structs,
+                    BatMetadataType::Structs,
                 );
 
                 let use_default = batbelt::cli_inputs::select_yes_or_no(&format!(
@@ -692,7 +685,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                     .collect::<Vec<_>>();
                 (sc_vec, screenshot_options)
             }
-            _ if selected_section_title == functions_title => {
+            BatMetadataType::Functions => {
                 // Choose metadata subsection selection
                 let prompt_text = format!("Please enter the {}", "function type to deploy".green());
                 let function_types_colorized =
@@ -705,8 +698,11 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 .unwrap();
                 let selected_function_type =
                     FunctionMetadataType::get_functions_type_vec()[selection];
-                let subsections = metadata_markdown.get_section_subsections(section.clone());
-                let function_metadata_vec = subsections
+                let functions_markdown_file = BatMetadataType::Functions
+                    .get_markdown()
+                    .change_context(CommandError)?;
+                let function_metadata_vec = functions_markdown_file
+                    .sections
                     .iter()
                     .filter_map(|section| {
                         let function_metadata =
@@ -738,7 +734,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 .unwrap();
 
                 let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                    BatMetadataSection::Functions,
+                    BatMetadataType::Functions,
                 );
 
                 let use_default = batbelt::cli_inputs::select_yes_or_no(&format!(

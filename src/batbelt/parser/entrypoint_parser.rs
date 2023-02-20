@@ -13,6 +13,7 @@ use error_stack::{Report, Result, ResultExt};
 use std::fs;
 use std::path::Path;
 
+use crate::batbelt::metadata::BatMetadataType;
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
@@ -50,22 +51,19 @@ impl EntrypointParser {
     }
 
     pub fn new_from_name(entrypoint_name: &str) -> Result<Self, EntrypointParserError> {
-        let struct_metadata_is_initialized = StructMetadata::structs_metadata_is_initialized()
+        BatMetadataType::Structs
+            .check_is_initialized()
             .change_context(EntrypointParserError)?;
-        if !struct_metadata_is_initialized {
-            return Err(Report::new(EntrypointParserError)
-                .attach_printable("Can't run without initializing Structs metadata"));
-        };
-        let functions_metadata_is_initialized =
-            FunctionMetadata::functions_metadata_is_initialized()
-                .change_context(EntrypointParserError)?;
-        if !functions_metadata_is_initialized {
-            return Err(Report::new(EntrypointParserError)
-                .attach_printable("Can't run without initializing Functions metadata"));
-        }
+        BatMetadataType::Functions
+            .check_is_initialized()
+            .change_context(EntrypointParserError)?;
 
-        let functions_metadata = FunctionMetadata::get_functions_metadata_from_metadata_file()
-            .change_context(EntrypointParserError)?;
+        let functions_metadata = BatMetadataType::Functions
+            .get_markdown_sections_from_metadata_file()
+            .change_context(EntrypointParserError)?
+            .into_iter()
+            .map(|markdown_section| FunctionMetadata::from_markdown_section(markdown_section))
+            .collect::<Vec<_>>();
         let entrypoint_function = functions_metadata
             .iter()
             .find(|function_metadata| {
@@ -77,9 +75,13 @@ impl EntrypointParser {
             .to_source_code(None)
             .get_source_code_content();
         let entrypoint_function_body = get_function_body(&entrypoint_content);
-        let handlers =
-            FunctionMetadata::get_functions_metadata_by_type(FunctionMetadataType::Handler)
-                .change_context(EntrypointParserError)?;
+        let handlers = functions_metadata
+            .clone()
+            .into_iter()
+            .filter(|function_metadata| {
+                function_metadata.function_type == FunctionMetadataType::Handler
+            })
+            .collect::<Vec<_>>();
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
         let handler = handlers.into_iter().find(|function_metadata| {
             let function_source_code = function_metadata.to_source_code(None);
@@ -90,8 +92,12 @@ impl EntrypointParser {
                 && function_parameters[0].contains(&context_name)
                 && (entrypoint_function_body.contains(&function_metadata.name))
         });
-        let structs_metadata = StructMetadata::get_structs_metadata_from_metadata_file()
-            .change_context(EntrypointParserError)?;
+        let structs_metadata = BatMetadataType::Structs
+            .get_markdown_sections_from_metadata_file()
+            .change_context(EntrypointParserError)?
+            .into_iter()
+            .map(|markdown_section| StructMetadata::from_markdown_section(markdown_section))
+            .collect::<Vec<_>>();
         let context_accounts = structs_metadata
             .iter()
             .find(|struct_metadata| {

@@ -12,7 +12,7 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::functions_metadata::get_function_parameters;
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
-use crate::batbelt::metadata::BatMetadataSection;
+use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};

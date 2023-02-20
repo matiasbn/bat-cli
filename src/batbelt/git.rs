@@ -7,6 +7,7 @@ use colored::Colorize;
 
 use super::{bash::execute_command, path::BatFolder};
 use crate::batbelt::constants::BASE_REPOSTORY_URL;
+use crate::batbelt::metadata::BatMetadataType;
 use crate::config::BatAuditorConfig;
 use crate::{
     batbelt::{self, path::BatFile},
@@ -68,7 +69,9 @@ pub enum GitCommit {
     Notes,
     AuditResult,
     TMAccounts,
-    UpdateMetadata,
+    UpdateMetadata {
+        metadata_type: BatMetadataType,
+    },
     Figures,
     UpdateCOTemplates,
 }
@@ -113,12 +116,9 @@ pub fn create_git_commit(
             )
             .change_context(GitOperationError)?;
 
-            let metadata_path = batbelt::path::get_file_path(BatFile::Metadata, false)
-                .change_context(GitOperationError)?;
-            (
-                commit_string,
-                vec![file_to_delete_path, file_to_add_path, metadata_path],
-            )
+            // let metadata_path = batbelt::path::get_file_path(BatFile::Metadata, false)
+            //     .change_context(GitOperationError)?;
+            (commit_string, vec![file_to_delete_path, file_to_add_path])
         }
         GitCommit::StartCOMiro => {
             let commit_file = &commit_files.unwrap()[0];
@@ -322,11 +322,11 @@ pub fn create_git_commit(
             let commit_string = format!("notes: threat_modeling.md updated");
             (commit_string, vec![tm_path])
         }
-        GitCommit::UpdateMetadata => {
-            println!("Creating a commit for metadata.md");
-            let metadata_path = batbelt::path::get_file_path(BatFile::Metadata, true)
-                .change_context(GitOperationError)?;
-            let commit_string = format!("notes: metadata.md updated");
+        GitCommit::UpdateMetadata { metadata_type } => {
+            let metadata_type_string = metadata_type.to_string().to_lowercase();
+            println!("Creating a commit for {}.md", metadata_type_string);
+            let metadata_path = metadata_type.get_path().change_context(GitOperationError)?;
+            let commit_string = format!("notes: {}.md updated", metadata_type_string);
             (commit_string, vec![metadata_path])
         }
         GitCommit::Figures => {
