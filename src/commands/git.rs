@@ -3,8 +3,9 @@ use crate::batbelt::bash::execute_command;
 use crate::batbelt::git::get_local_branches;
 use crate::commands::CommandError;
 use colored::Colorize;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::env;
+use std::process::Command;
 
 pub enum GitCommands {
     UpdateDevelop,
@@ -51,10 +52,18 @@ impl GitCommands {
         for branch_name in branches_list {
             log::debug!("branch_name: {}", branch_name);
             let message = format!("Merge branch develop into '{}'", branch_name);
-            execute_command("git", &["checkout", &branch_name]).change_context(CommandError)?;
-            execute_command("git", &["merge", "develop", "-m", &message])
+            log::debug!("Merge message: {}", message);
+            self.checkout_branch(&branch_name)?;
+            println!("Merging develop into {}", branch_name.green());
+            Command::new("git")
+                .args(["merge", "develop", "-m", &message])
+                .output()
+                .into_report()
                 .change_context(CommandError)?;
+            // execute_command("git", &["merge", "develop", "-m", &message])
+            //     .change_context(CommandError)?;
         }
+        self.checkout_branch("develop")?;
         Ok(())
     }
 
@@ -69,8 +78,8 @@ impl GitCommands {
         .change_context(CommandError)?;
         for selection in selections {
             let selected_branch = &branches_list.clone()[selection];
-            println!("Deleting {}", selected_branch.green());
-            log::debug!("selected_branch to delete: {}", selected_branch);
+            println!("Fetching {}", selected_branch.green());
+            log::debug!("selected_branch to fetch: {}", selected_branch);
             execute_command(
                 "git",
                 &["checkout", selected_branch.trim_start_matches("origin/")],
@@ -95,7 +104,7 @@ impl GitCommands {
             let selected_branch = &branches_list.clone()[selection];
             println!("Deleting {}", selected_branch.green());
             log::debug!("selected_branch to delete: {}", selected_branch);
-            execute_command("git", &["branch", "--delete", selected_branch])
+            execute_command("git", &["branch", "-D", selected_branch])
                 .change_context(CommandError)?;
         }
         Ok(())
