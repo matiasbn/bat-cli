@@ -1,34 +1,20 @@
 use crate::batbelt;
 
-use std::fs;
-
 use colored::Colorize;
 
-use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
-
-use crate::batbelt::helpers::get::get_only_files_from_folder;
-use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::{BatMetadataType, MetadataError};
+use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::BatFile;
-use crate::batbelt::structs::{SignerInfo, SignerType};
 
 use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
 use crate::batbelt::metadata::source_code_metadata::SourceCodeScreenshotOptions;
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
-use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
+use crate::batbelt::miro::connector::create_connector;
 use crate::batbelt::miro::frame::MiroFrame;
-use crate::batbelt::miro::image::MiroImage;
 
-use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::MiroConfig;
-use crate::batbelt::path::BatFolder;
-use crate::batbelt::templates::code_overhaul_template::{
-    CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
-};
 
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 
 use super::CommandError;

@@ -47,7 +47,7 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
 
     let readme_path =
         batbelt::path::get_file_path(BatFile::Readme, true).change_context(CommandError)?;
-    let readme_string = fs::read_to_string(readme_path.clone()).unwrap();
+    let _readme_string = fs::read_to_string(readme_path.clone()).unwrap();
 
     // create auditors branches from develop
     for auditor_name in bat_config.auditor_names {

@@ -3,15 +3,15 @@ pub mod finding_template;
 pub mod notes_template;
 pub mod package_json_template;
 
+use crate::batbelt;
 use crate::batbelt::bash::execute_command;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
-use crate::config::{BatAuditorConfig, BatConfig};
-use crate::{batbelt, commands};
+use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 use std::path::Path;
-use std::{env, error::Error, fmt, fs};
+use std::{error::Error, fmt, fs};
 
 #[derive(Debug)]
 pub struct TemplateError;

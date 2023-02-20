@@ -1,5 +1,3 @@
-use crate::batbelt;
-use crate::batbelt::helpers::get::get_all_rust_files_from_program_path;
 use crate::batbelt::metadata::functions_metadata::{
     get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataInfoSection,
     FunctionMetadataType,
@@ -7,15 +5,14 @@ use crate::batbelt::metadata::functions_metadata::{
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
-use crate::batbelt::structs::FileInfo;
+
 use crate::config::BatConfig;
-use colored::Colorize;
+
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::fs;
-use std::path::Path;
 
 use crate::batbelt::metadata::BatMetadataType;
-use crate::commands::CommandError;
+
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
@@ -60,11 +57,11 @@ impl EntrypointParser {
             .check_is_initialized()
             .change_context(EntrypointParserError)?;
 
-        let function_sections = BatMetadataType::Functions
+        let _function_sections = BatMetadataType::Functions
             .get_markdown_sections_from_metadata_file()
             .change_context(EntrypointParserError)?;
 
-        let type_content = FunctionMetadataInfoSection::Type
+        let _type_content = FunctionMetadataInfoSection::Type
             .get_info_section_content(FunctionMetadataType::EntryPoint.to_string());
 
         let entrypoint_section = FunctionMetadata::get_filtered_metadata(

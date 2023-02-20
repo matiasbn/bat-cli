@@ -1,4 +1,3 @@
-use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::templates::finding_template::FindingTemplate;
 use crate::batbelt::{
@@ -9,7 +8,7 @@ use crate::batbelt::{
 };
 use colored::Colorize;
 use console::Term;
-use dialoguer::{console, theme::ColorfulTheme, Input, Select};
+use dialoguer::{console, theme::ColorfulTheme, Select};
 use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
 use std::{
