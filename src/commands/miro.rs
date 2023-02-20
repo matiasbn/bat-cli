@@ -590,7 +590,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
     _default: bool,
     select_all: bool,
 ) -> Result<(), CommandError> {
-    MiroConfig::check_miro_enabled();
+    MiroConfig::check_miro_enabled().change_context(CommandError)?;
 
     println!(
         "\n\nGetting the {} from the {} ...\n\n",

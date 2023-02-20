@@ -26,11 +26,10 @@ use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::path::{BatFile, BatFolder};
 
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
+use crate::batbelt::templates::TemplateGenerator;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
-    let _bat_config = BatConfig::get_config().change_context(CommandError)?;
-    let _bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     if !Path::new("BatAuditor.toml").is_file() {
         prompt_auditor_options()?;
     }
@@ -182,7 +181,6 @@ fn update_readme_file() -> Result<(), CommandError> {
 
 fn initialize_project_repository() -> Result<(), CommandError> {
     let bat_config = BatConfig::get_config().change_context(CommandError)?;
-    let _bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     // git init
     execute_command("git", &["init"]).change_context(CommandError)?;
 
@@ -214,19 +212,7 @@ fn create_auditor_notes_folder() -> Result<(), CommandError> {
         "creating auditor notes folder for {}",
         bat_auditor_config.auditor_name.red()
     );
-    execute_command(
-        "cp",
-        &[
-            "-r",
-            batbelt::path::get_folder_path(BatFolder::NotesTemplate, false)
-                .change_context(CommandError)?
-                .as_str(),
-            batbelt::path::get_folder_path(BatFolder::AuditorNotes, false)
-                .change_context(CommandError)?
-                .as_str(),
-        ],
-    )
-    .change_context(CommandError)?;
+    TemplateGenerator::create_auditor_folders().change_context(CommandError)?;
 
     Ok(())
 }
