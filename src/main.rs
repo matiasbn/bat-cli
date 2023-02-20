@@ -84,14 +84,14 @@ enum Commands {
 #[derive(Subcommand, Debug)]
 enum GitActions {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
-    UpdateDevelop,
+    UpdateBranches,
     /// Delete local branches
     DeleteLocalBranches {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
     },
-    /// Delete local branches
+    /// Fetch remote branches
     FetchRemoteBranches {
         /// select all options as true
         #[arg(short, long)]
@@ -197,7 +197,7 @@ async fn main() {
     };
 
     let result = match cli.command {
-        Commands::Git(GitActions::UpdateDevelop) => {
+        Commands::Git(GitActions::UpdateBranches) => {
             commands::git::GitCommands::UpdateDevelop.execute()
         }
         Commands::Git(GitActions::DeleteLocalBranches { select_all }) => {
