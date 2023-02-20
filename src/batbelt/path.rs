@@ -34,6 +34,7 @@ pub enum BatFile {
     TemplateInformational,
     TemplateCodeOverhaul,
     PackageJson,
+    RobotFile,
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
     CodeOverhaulFinished { file_name: String },
@@ -50,9 +51,10 @@ impl BatFile {
             format!("./notes/{}-notes", bat_auditor_config.auditor_name);
         let findings_path = format!("{}/findings", auditor_notes_folder_path);
         let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
-        let metadata_folder_path = BatFolder::Metadata.get_path(true)?;
+        let metadata_folder_path = BatFolder::Metadata.get_path(false)?;
         let path = match self {
             //File
+            BatFile::RobotFile => format!("{}/robot.md", auditor_notes_folder_path),
             BatFile::PackageJson => "./package.json".to_string(),
             BatFile::ProgramLib => bat_config.program_lib_path,
             BatFile::FindingCandidates => {

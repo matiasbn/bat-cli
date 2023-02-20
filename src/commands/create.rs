@@ -4,6 +4,7 @@ use crate::batbelt::constants::BASE_REPOSTORY_NAME;
 use crate::batbelt::git::clone_base_repository;
 use crate::batbelt::helpers::fs_read_dir;
 use crate::batbelt::structs::FileInfo;
+use crate::batbelt::templates::TemplateGenerator;
 use crate::batbelt::{cli_inputs, helpers};
 use crate::config::BatConfig;
 use colored::Colorize;
@@ -16,12 +17,7 @@ pub fn create_project() -> error_stack::Result<(), CommandError> {
     // get project config
     let bat_config = create_bat_config_file().change_context(CommandError)?;
     println!("Creating {:#?} project", bat_config);
-    // clone repository
-    clone_base_repository();
-    // change folder name
-    execute_command("mv", &[BASE_REPOSTORY_NAME, &bat_config.project_name])?;
-    // Remove .git folder
-    execute_command("rm", &["-rf", &format!("{}/.git", bat_config.project_name)])?;
+    TemplateGenerator::create_project().change_context(CommandError)?;
     execute_command("mv", &["Bat.toml", &bat_config.project_name])?;
 
     println!("Project {} succesfully created", bat_config.project_name);

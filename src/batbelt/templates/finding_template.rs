@@ -2,7 +2,6 @@ use crate::batbelt::path::BatFile;
 use crate::batbelt::templates::TemplateError;
 use error_stack::{IntoReport, Result, ResultExt};
 use inflector::Inflector;
-use serde_json::json;
 use std::fs;
 
 pub struct FindingTemplate;
