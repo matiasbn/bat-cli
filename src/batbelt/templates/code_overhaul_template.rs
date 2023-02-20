@@ -165,7 +165,9 @@ impl CodeOverhaulSection {
                 CodeOverhaulSection::Validations => {
                     self.get_validations_section_content(entrypoint_parser)
                 }
-                CodeOverhaulSection::MiroFrameUrl => "".to_string(),
+                CodeOverhaulSection::MiroFrameUrl => {
+                    CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder()
+                }
             }
         } else {
             "".to_string()
@@ -475,6 +477,7 @@ pub enum CoderOverhaulTemplatePlaceholders {
     CompleteWithStateChanges,
     CompleteWithNotes,
     CompleteWithSignerDescription,
+    CompleteWithMiroFrameUrl,
 }
 
 impl CoderOverhaulTemplatePlaceholders {

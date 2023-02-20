@@ -1,10 +1,9 @@
 use crate::batbelt::bash::execute_command;
-use crate::batbelt::constants::BASE_REPOSTORY_NAME;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::batbelt::{
     self,
-    git::{clone_base_repository, create_git_commit, GitCommit},
+    git::{create_git_commit, GitCommit},
     path::{BatFile, BatFolder},
 };
 use error_stack::{Result, ResultExt};
@@ -24,28 +23,6 @@ impl fmt::Display for UpdateTemplateError {
 impl Error for UpdateTemplateError {}
 
 pub fn update_repository() -> Result<(), UpdateTemplateError> {
-    // clone base repository
-    println!("Cloning base repository");
-    clone_base_repository();
-
-    // delete templates folder
-    println!("Updating templates folder");
-    // let templates_path = utils::path::get_templates_path()?;
-    let templates_path = BatFolder::Templates
-        .get_path(true)
-        .change_context(UpdateTemplateError)?;
-    execute_command("rm", &["-rf", templates_path.as_str()]).change_context(UpdateTemplateError)?;
-
-    // move template to now location
-    execute_command(
-        "mv",
-        &[
-            &(BASE_REPOSTORY_NAME.to_string() + "/templates"),
-            &templates_path,
-        ],
-    )
-    .change_context(UpdateTemplateError)?;
-
     println!("Updating to-review files in code-overhaul folder");
     // move new templates to to-review in the auditor notes folder
     // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
@@ -77,8 +54,6 @@ pub fn update_repository() -> Result<(), UpdateTemplateError> {
     println!("Updating package.json");
     PackageJsonTemplate::update_package_json().change_context(UpdateTemplateError)?;
 
-    // delete base_repository cloned
-    execute_command("rm", &[&"-rf", BASE_REPOSTORY_NAME]).change_context(UpdateTemplateError)?;
     create_git_commit(GitCommit::UpdateRepo, None).change_context(UpdateTemplateError)?;
     println!("Repository successfully updated");
     Ok(())

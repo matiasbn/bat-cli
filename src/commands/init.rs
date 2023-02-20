@@ -10,11 +10,8 @@ use colored::Colorize;
 use crate::batbelt;
 use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
-use crate::batbelt::constants::{
-    AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER,
-    AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER,
-    AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT,
-    MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
+use crate::batbelt::miro::frame::{
+    MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::commands::CommandError;
@@ -51,15 +48,6 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
     let readme_path =
         batbelt::path::get_file_path(BatFile::Readme, true).change_context(CommandError)?;
     let readme_string = fs::read_to_string(readme_path.clone()).unwrap();
-
-    if readme_string.contains(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER) {
-        println!("Updating README.md");
-        update_readme_file()?;
-    }
-    Command::new("git")
-        .args(["add", &readme_path])
-        .output()
-        .unwrap();
 
     // create auditors branches from develop
     for auditor_name in bat_config.auditor_names {
@@ -154,28 +142,6 @@ fn prompt_auditor_options() -> Result<(), CommandError> {
     bat_auditor_config.vs_code_integration = include_vs_code;
     bat_auditor_config.miro_oauth_access_token = moat;
     bat_auditor_config.save().change_context(CommandError)?;
-    Ok(())
-}
-
-fn update_readme_file() -> Result<(), CommandError> {
-    let BatConfig {
-        project_name,
-        client_name,
-        commit_hash_url,
-        starting_date,
-        miro_board_url,
-        ..
-    } = BatConfig::get_config().change_context(CommandError)?;
-    let readme_path =
-        batbelt::path::get_file_path(BatFile::Readme, true).change_context(CommandError)?;
-    let data = fs::read_to_string(readme_path.clone()).unwrap();
-    let updated_readme = data
-        .replace(AUDIT_INFORMATION_PROJECT_NAME_PLACEHOLDER, &project_name)
-        .replace(AUDIT_INFORMATION_CLIENT_NAME_PLACEHOLDER, &client_name)
-        .replace(AUDIT_INFORMATION_COMMIT_HASH_PLACEHOLDER, &commit_hash_url)
-        .replace(AUDIT_INFORMATION_MIRO_BOARD_PLACEHOLER, &miro_board_url)
-        .replace(AUDIT_INFORMATION_STARTING_DATE_PLACEHOLDER, &starting_date);
-    fs::write(readme_path, updated_readme).expect("Could not write to file README.md");
     Ok(())
 }
 

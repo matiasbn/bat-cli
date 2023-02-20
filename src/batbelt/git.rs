@@ -6,7 +6,6 @@ use std::{process::Command, str};
 use colored::Colorize;
 
 use super::{bash::execute_command, path::BatFolder};
-use crate::batbelt::constants::BASE_REPOSTORY_URL;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::BatAuditorConfig;
 use crate::{
@@ -381,14 +380,6 @@ pub fn check_if_branch_exists(branch_name: &str) -> Result<bool, String> {
         .output()
         .unwrap();
     Ok(git_check_branch_exists.stderr.is_empty())
-}
-
-pub fn clone_base_repository() {
-    // Clone base repository
-    Command::new("git")
-        .args(["clone", BASE_REPOSTORY_URL])
-        .output()
-        .unwrap();
 }
 
 pub fn git_push() -> Result<(), String> {

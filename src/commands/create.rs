@@ -1,7 +1,5 @@
 use super::CommandError;
 use crate::batbelt::bash::execute_command;
-use crate::batbelt::constants::BASE_REPOSTORY_NAME;
-use crate::batbelt::git::clone_base_repository;
 use crate::batbelt::helpers::fs_read_dir;
 use crate::batbelt::structs::FileInfo;
 use crate::batbelt::templates::TemplateGenerator;
