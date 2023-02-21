@@ -32,7 +32,7 @@ impl TemplateGenerator {
         Self::create_init_notes_folder()?;
         Self::create_git_ignore()?;
         Self::create_readme()?;
-        PackageJsonTemplate::update_package_json()?;
+        PackageJsonTemplate::create_package_json()?;
         Ok(())
     }
     fn create_git_ignore() -> Result<(), TemplateError> {

@@ -1,7 +1,3 @@
-#![feature(core_panic)]
-#![feature(exit_status_error)]
-extern crate core;
-
 #[macro_use]
 extern crate log;
 
@@ -84,14 +80,14 @@ enum Commands {
 #[derive(Subcommand, Debug)]
 enum GitActions {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
-    UpdateDevelop,
+    UpdateBranches,
     /// Delete local branches
     DeleteLocalBranches {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
     },
-    /// Delete local branches
+    /// Fetch remote branches
     FetchRemoteBranches {
         /// select all options as true
         #[arg(short, long)]
@@ -180,9 +176,11 @@ async fn main() {
         .init();
 
     let branch_checked = match cli.command {
-        Commands::Init { .. } | Commands::Create | Commands::Package(..) | Commands::Git(..) => {
-            Ok(())
-        }
+        Commands::Init { .. }
+        | Commands::Create
+        | Commands::Package(..)
+        | Commands::Git(..)
+        | Commands::Miro(..) => Ok(()),
         _ => check_correct_branch(),
     };
 
@@ -197,7 +195,7 @@ async fn main() {
     };
 
     let result = match cli.command {
-        Commands::Git(GitActions::UpdateDevelop) => {
+        Commands::Git(GitActions::UpdateBranches) => {
             commands::git::GitCommands::UpdateDevelop.execute()
         }
         Commands::Git(GitActions::DeleteLocalBranches { select_all }) => {

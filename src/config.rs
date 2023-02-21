@@ -1,10 +1,22 @@
+use clap::Parser;
+use figment::{
+    providers::{Format, Toml},
+    Figment,
+};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, str};
 
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 
 #[derive(Debug)]
 pub struct BatConfigError;
+
+impl BatConfigError {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
 
 impl fmt::Display for BatConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -14,7 +26,7 @@ impl fmt::Display for BatConfigError {
 
 impl Error for BatConfigError {}
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone, Parser)]
 pub struct BatAuditorConfig {
     pub auditor_name: String,
     pub miro_oauth_access_token: String,
@@ -23,7 +35,9 @@ pub struct BatAuditorConfig {
 
 impl BatAuditorConfig {
     pub fn get_config() -> Result<Self, BatConfigError> {
-        let bat_config: BatAuditorConfig = confy::load_path("BatAuditor.toml")
+        let bat_config: BatAuditorConfig = Figment::new()
+            .merge(Toml::file("BatAuditor.toml"))
+            .extract()
             .into_report()
             .change_context(BatConfigError)?;
         Ok(bat_config)
@@ -51,7 +65,9 @@ pub struct BatConfig {
 
 impl BatConfig {
     pub fn get_config() -> Result<Self, BatConfigError> {
-        let bat_config: BatConfig = confy::load_path("Bat.toml")
+        let bat_config: BatConfig = Figment::new()
+            .merge(Toml::file("Bat.toml"))
+            .extract()
             .into_report()
             .change_context(BatConfigError)?;
         Ok(bat_config)

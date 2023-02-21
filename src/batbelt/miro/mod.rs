@@ -38,7 +38,7 @@ pub type MiroApiResult = Result<reqwest::Response, MiroError>;
 
 impl MiroConfig {
     pub fn new() -> Result<Self, MiroError> {
-        Self::check_miro_enabled();
+        Self::check_miro_enabled()?;
         let bat_config = BatConfig::get_config().change_context(MiroError)?;
         let bat_auditor_config = BatAuditorConfig::get_config().change_context(MiroError)?;
         let access_token = bat_auditor_config.miro_oauth_access_token;
