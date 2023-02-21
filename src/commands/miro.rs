@@ -12,12 +12,36 @@ use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataT
 use crate::batbelt::miro::connector::create_connector;
 use crate::batbelt::miro::frame::MiroFrame;
 
-use crate::batbelt::miro::MiroConfig;
+use crate::batbelt::miro::{MiroColor, MiroConfig};
 
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 
 use super::CommandError;
+
+#[derive(Clone, Copy)]
+pub enum SignerType {
+    Validated,
+    NotValidated,
+    NotSigner,
+}
+
+impl SignerType {
+    pub fn get_sticky_note_color(&self) -> MiroColor {
+        match self {
+            SignerType::Validated => MiroColor::Red,
+            SignerType::NotValidated => MiroColor::DarkBlue,
+            SignerType::NotSigner => MiroColor::Gray,
+        }
+    }
+}
+
+pub struct SignerInfo {
+    pub signer_text: String,
+    pub sticky_note_id: String,
+    pub user_figure_id: String,
+    pub signer_type: SignerType,
+}
 
 pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandError> {
     unimplemented!();

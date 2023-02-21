@@ -4,7 +4,7 @@ pub mod notes_template;
 pub mod package_json_template;
 
 use crate::batbelt;
-use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;

@@ -8,7 +8,7 @@ use std::string::String;
 use colored::Colorize;
 
 use crate::batbelt;
-use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::miro::frame::{
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,

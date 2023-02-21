@@ -4,7 +4,7 @@ use colored::Colorize;
 use error_stack::{Report, Result, ResultExt};
 
 use crate::batbelt;
-use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::git::{create_git_commit, GitCommit};
 

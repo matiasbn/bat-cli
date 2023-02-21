@@ -7,7 +7,7 @@ use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::commands::CommandError;
 
-use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use error_stack::{Report, Result, ResultExt};
 

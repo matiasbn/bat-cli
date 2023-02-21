@@ -6,7 +6,8 @@ use std::{process::Command, str};
 
 use colored::Colorize;
 
-use super::{bash::execute_command, path::BatFolder};
+use super::path::BatFolder;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::BatAuditorConfig;
 use crate::{
