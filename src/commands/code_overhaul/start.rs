@@ -1,6 +1,6 @@
-use std::string::String;
 
-use colored::Colorize;
+
+
 use error_stack::{Report, Result, ResultExt};
 
 use crate::batbelt;
@@ -9,9 +9,9 @@ use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::git::{create_git_commit, GitCommit};
 
 use crate::batbelt::path::{BatFile, BatFolder};
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+
 use crate::batbelt::templates::code_overhaul_template::{
-    CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
+    CodeOverhaulTemplate,
 };
 use crate::commands::CommandError;
 

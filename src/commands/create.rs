@@ -44,7 +44,7 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
         .map(|f| f.path().to_str().unwrap().to_string())
         .collect::<Vec<_>>();
     if local_anchor_project_folders.is_empty() {
-        let message = format!("No Anchor projects were found");
+        let message = format!("No Anchor projects were found on the current working directory");
         return Err(Report::new(CommandError).attach_printable(message));
     }
     // Folder with the program to audit selection
