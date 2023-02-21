@@ -508,14 +508,14 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
         let ep_source_code =
             entrypoint
                 .entrypoint_function
-                .to_source_code(Some(parse_entrypoint_screenshot_name(
+                .to_source_code(Some(parse_screenshot_name(
                     &entrypoint.entrypoint_function.name,
                     &selected_frame.title,
                 )));
         let ca_source_code =
             entrypoint
                 .context_accounts
-                .to_source_code(Some(parse_entrypoint_screenshot_name(
+                .to_source_code(Some(parse_screenshot_name(
                     &entrypoint.context_accounts.name,
                     &selected_frame.title,
                 )));
@@ -542,7 +542,7 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
             .change_context(CommandError)?;
         if let Some(entrypoint_handler) = entrypoint.handler {
             let handler_source_code = entrypoint_handler.to_source_code(Some(
-                parse_entrypoint_screenshot_name(&entrypoint_handler.name, &selected_frame.title),
+                parse_screenshot_name(&entrypoint_handler.name, &selected_frame.title),
             ));
             let handler_image = handler_source_code
                 .deploy_screenshot_to_miro_frame(
@@ -561,10 +561,10 @@ pub async fn deploy_entrypoint_screenshots_to_frame(
     Ok(())
 }
 
-fn parse_entrypoint_screenshot_name(function_name: &str, frame_title: &str) -> String {
+fn parse_screenshot_name(name: &str, frame_title: &str) -> String {
     format!(
         "{}-frame:{}",
-        function_name,
+        name,
         frame_title
             .replace(" ", "_")
             .replace("-", "_")
@@ -662,7 +662,10 @@ pub async fn deploy_metadata_screenshot_to_frame(
                     .enumerate()
                     .filter_map(|(sc_index, sc_metadata)| {
                         if selections.iter().any(|selection| &sc_index == selection) {
-                            Some(sc_metadata.to_source_code(None))
+                            Some(sc_metadata.to_source_code(Some(parse_screenshot_name(
+                                &sc_metadata.name,
+                                &selected_miro_frame.title,
+                            ))))
                         } else {
                             None
                         }
@@ -727,7 +730,10 @@ pub async fn deploy_metadata_screenshot_to_frame(
                     .enumerate()
                     .filter_map(|(sc_index, sc_metadata)| {
                         if selections.iter().any(|selection| &sc_index == selection) {
-                            Some(sc_metadata.to_source_code(None))
+                            Some(sc_metadata.to_source_code(Some(parse_screenshot_name(
+                                &sc_metadata.name,
+                                &selected_miro_frame.title,
+                            ))))
                         } else {
                             None
                         }
@@ -764,12 +770,9 @@ fn test_screaming_snake_case() {
     let function_name = "handle_thing";
     let frame_name = "points-store actors";
     let expected_output = "handle_thing-frame:POINTS_STORE_ACTORS";
-    println!(
-        "{}",
-        parse_entrypoint_screenshot_name(function_name, frame_name)
-    );
+    println!("{}", parse_screenshot_name(function_name, frame_name));
     assert_eq!(
-        parse_entrypoint_screenshot_name(function_name, frame_name),
+        parse_screenshot_name(function_name, frame_name),
         expected_output,
         "incorrect output"
     )
