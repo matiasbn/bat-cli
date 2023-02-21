@@ -1,4 +1,4 @@
-use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::{self, git::check_files_not_commited};
 use error_stack::{Result, ResultExt};
 use std::fs;

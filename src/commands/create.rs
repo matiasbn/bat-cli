@@ -1,17 +1,17 @@
 use super::CommandError;
-use crate::batbelt::bash::execute_command;
-use crate::batbelt::helpers::fs_read_dir;
-use crate::batbelt::structs::FileInfo;
+use crate::batbelt::cli_inputs;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::templates::TemplateGenerator;
-use crate::batbelt::{cli_inputs, helpers};
 use crate::config::BatConfig;
 use colored::Colorize;
-use error_stack::{FutureExt, Report, ResultExt};
+use error_stack::Result;
+use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use normalize_url::normalizer;
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-pub fn create_project() -> error_stack::Result<(), CommandError> {
+pub fn create_project() -> Result<(), CommandError> {
     // get project config
     let bat_config = create_bat_config_file().change_context(CommandError)?;
     println!("Creating {:#?} project", bat_config);
@@ -22,12 +22,12 @@ pub fn create_project() -> error_stack::Result<(), CommandError> {
     Ok(())
 }
 
-fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
-    let local_folders = fs_read_dir(".")
-        .change_context(CommandError)?
+fn create_bat_config_file() -> Result<BatConfig, CommandError> {
+    let local_anchor_project_folders = WalkDir::new(".")
+        .into_iter()
         .map(|f| f.unwrap())
         .filter(|f| {
-            f.file_type().unwrap().is_dir()
+            f.file_type().is_dir()
                 && ![".", "target"]
                     .iter()
                     .any(|y| f.file_name().to_str().unwrap().contains(y))
@@ -38,59 +38,62 @@ fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
             let file_names = dir
                 .map(|f| f.unwrap().file_name().to_str().unwrap().to_string())
                 .collect::<Vec<_>>();
-            let is_bat_project = file_names.contains(&"Bat.toml".to_string());
-            !is_bat_project
+            let is_anchor_project = file_names.contains(&"Anchor.toml".to_string());
+            is_anchor_project
         })
-        .map(|f| f.file_name().into_string().unwrap())
+        .map(|f| f.path().to_str().unwrap().to_string())
         .collect::<Vec<_>>();
+    if local_anchor_project_folders.is_empty() {
+        let message = format!("No Anchor projects were found on the current working directory");
+        return Err(Report::new(CommandError).attach_printable(message));
+    }
     // Folder with the program to audit selection
     let prompt_text = "Select the folder with the program to audit";
-    let selection = cli_inputs::select(prompt_text, local_folders.clone(), None)
+    let selection = cli_inputs::select(prompt_text, local_anchor_project_folders.clone(), None)
         .change_context(CommandError)?;
-    let selected_folder = &local_folders[selection];
-    let cargo_programs_files_info = WalkDir::new(format!("./{}", selected_folder))
+    let selected_folder_path = &local_anchor_project_folders[selection];
+    let cargo_programs_files_info = WalkDir::new(selected_folder_path)
         .into_iter()
-        .map(|entry| {
-            let info = FileInfo {
-                path: entry
-                    .as_ref()
-                    .unwrap()
-                    .path()
-                    .display()
-                    .to_string()
-                    .replace("/Cargo.toml", ""),
-                name: entry
-                    .as_ref()
-                    .unwrap()
-                    .file_name()
-                    .to_os_string()
-                    .into_string()
-                    .unwrap(),
-            };
-            info
+        .map(|f| f.unwrap())
+        .filter(|dir_entry| {
+            dir_entry
+                .file_name()
+                .to_str()
+                .unwrap()
+                .contains("Cargo.toml")
+                && !dir_entry.path().to_str().unwrap().contains("target")
         })
-        .filter(|file_info| {
-            file_info.name.contains("Cargo.toml") && !file_info.path.contains("target")
-        })
-        .collect::<Vec<FileInfo>>();
+        .collect::<Vec<_>>();
 
     // Program to audit selection
     let prompt_text = "Select the program to audit";
     let cargo_programs_paths = cargo_programs_files_info
         .iter()
-        .map(|f| f.path.clone())
+        .map(|f| {
+            f.path()
+                .to_str()
+                .unwrap()
+                .trim_end_matches("/Cargo.toml")
+                .to_string()
+        })
         .collect::<Vec<_>>();
     let selection =
         cli_inputs::select(prompt_text, cargo_programs_paths, None).change_context(CommandError)?;
     let selected_program = &cargo_programs_files_info[selection];
     let program_name = selected_program
-        .path
-        .split("/")
-        .last()
+        .file_name()
+        .to_str()
         .unwrap()
+        .to_string()
         .replace("_", "-");
-    let program_lib_path = selected_program.path.clone() + "/src/lib.rs";
-
+    let program_lib_path = format!(
+        "{}/src/lib.rs",
+        selected_program
+            .path()
+            .to_str()
+            .unwrap()
+            .trim_end_matches("/Cargo.toml")
+    );
     let normalized_to_audit_program_lib_path = program_lib_path.replace("./", "../");
 
     if !Path::new(&program_lib_path).is_file() {
@@ -157,9 +160,7 @@ fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
         "https://miro.com/app/board/uXjVPzsgmiY=/".to_string()
     };
 
-    miro_board_url = helpers::normalize_url(&miro_board_url)
-        .change_context(CommandError)
-        .change_context(CommandError)?;
+    miro_board_url = normalize_miro_board_url(&miro_board_url)?;
 
     let project_repository_url: String = if !cfg!(debug_assertions) {
         cli_inputs::input("Project repo url, where this audit folder would be pushed:")
@@ -181,4 +182,25 @@ fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
     };
     bat_config.save().change_context(CommandError)?;
     Ok(bat_config)
+}
+
+fn normalize_miro_board_url(url_to_normalize: &str) -> Result<String, CommandError> {
+    let url = normalizer::UrlNormalizer::new(url_to_normalize)
+        .into_report()
+        .change_context(CommandError)?
+        .normalize(Some(&["moveToWidget", "cot"]))
+        .into_report()
+        .change_context(CommandError)?;
+    Ok(url)
+}
+
+#[test]
+fn test_normalize_url() {
+    let test_url =
+        "https://miro.com/app/board/uXjVPqatu4c=/?moveToWidget=3458764546015336005&cot=14";
+    let normalized = normalizer::UrlNormalizer::new(test_url)
+        .unwrap()
+        .normalize(Some(&["moveToWidget", "cot"]))
+        .unwrap();
+    println!("normalized: \n{}", normalized)
 }

@@ -53,9 +53,6 @@ enum Commands {
     // /// Updates the audit_result.md file in the root of the audit
     // #[command(subcommand)]
     // Result(ResultActions),
-    /// Updates the metadata.md file
-    #[command(subcommand)]
-    Metadata(MetadataActions),
     /// Git actions to manage repository
     #[command(subcommand)]
     Git(GitActions),
@@ -64,7 +61,7 @@ enum Commands {
     Package(PackageActions),
 }
 
-// #[derive(Subcommand, Debug)]
+// #[derive(Subcommand, Debug, strum_macros::Display)]
 // enum ResultActions {
 //     /// Updates the Code Overhaul section of the audit_result.md file
 //     CodeOverhaul,
@@ -77,7 +74,8 @@ enum Commands {
 //     /// Creates the commit for the results files
 //     Commit,
 // }
-#[derive(Subcommand, Debug)]
+
+#[derive(Subcommand, Debug, strum_macros::Display)]
 enum GitActions {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
     UpdateBranches,
@@ -95,15 +93,7 @@ enum GitActions {
     },
 }
 
-#[derive(Subcommand, Debug)]
-enum MetadataActions {
-    /// Updates the Structs section of the metadata.md file
-    Structs,
-    /// Updates the Functions section of the metadata.md file
-    Functions,
-}
-
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, strum_macros::Display)]
 enum MiroActions {
     /// Deploy or updates a code-overhaul frame
     CodeOverhaul,
@@ -116,7 +106,7 @@ enum MiroActions {
         #[arg(long)]
         sorted: bool,
     },
-    /// Creates an screenshot in a determined frame
+    /// Creates an screenshot in a determined frame from metadata
     Metadata {
         /// deploy the screenshots with the default configuration
         #[arg(long)]
@@ -127,7 +117,7 @@ enum MiroActions {
     },
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, strum_macros::Display)]
 enum FindingActions {
     /// Creates a finding file
     Create,
@@ -141,7 +131,7 @@ enum FindingActions {
     Reject,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, strum_macros::Display)]
 enum CodeOverhaulActions {
     /// Starts a code-overhaul file audit
     Start,
@@ -159,7 +149,7 @@ enum CodeOverhaulActions {
     Templates,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, strum_macros::Display)]
 enum PackageActions {
     /// run cargo clippy and commit the changes
     Format,
@@ -196,7 +186,7 @@ async fn main() {
 
     let result = match cli.command {
         Commands::Git(GitActions::UpdateBranches) => {
-            commands::git::GitCommands::UpdateDevelop.execute()
+            commands::git::GitCommands::UpdateBranches.execute()
         }
         Commands::Git(GitActions::DeleteLocalBranches { select_all }) => {
             commands::git::GitCommands::DeleteLocalBranches { select_all }.execute()
@@ -231,8 +221,6 @@ async fn main() {
             default,
             select_all,
         }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all).await,
-        Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs(),
-        Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding(),

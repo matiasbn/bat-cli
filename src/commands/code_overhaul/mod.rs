@@ -2,7 +2,7 @@ pub mod finish;
 pub mod start;
 pub mod update;
 use super::CommandError;
-use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::config::{BatAuditorConfig, BatConfig};
@@ -11,8 +11,7 @@ use colored::Colorize;
 use error_stack::{Result, ResultExt};
 
 pub fn count_co_files() -> Result<(), CommandError> {
-    let (to_review_count, started_count, finished_count) =
-        batbelt::helpers::count::co_counter().change_context(CommandError)?;
+    let (to_review_count, started_count, finished_count) = co_counter()?;
     println!("to-review co files: {}", format!("{to_review_count}").red());
     println!("started co files: {}", format!("{started_count}").yellow());
     println!("finished co files: {}", format!("{finished_count}").green());
@@ -21,6 +20,22 @@ pub fn count_co_files() -> Result<(), CommandError> {
         format!("{}", to_review_count + started_count + finished_count).purple()
     );
     Ok(())
+}
+
+fn co_counter() -> error_stack::Result<(usize, usize, usize), CommandError> {
+    let to_review_count = BatFolder::CodeOverhaulToReview
+        .get_all_files_names(true, None, None)
+        .change_context(CommandError)?
+        .len();
+    let started_count = BatFolder::CodeOverhaulStarted
+        .get_all_files_names(true, None, None)
+        .change_context(CommandError)?
+        .len();
+    let finished_count = BatFolder::CodeOverhaulFinished
+        .get_all_files_names(true, None, None)
+        .change_context(CommandError)?
+        .len();
+    Ok((to_review_count, started_count, finished_count))
 }
 
 pub fn open_co() -> Result<(), CommandError> {
@@ -36,19 +51,16 @@ pub fn open_co() -> Result<(), CommandError> {
         let selection = batbelt::cli_inputs::select(&prompt_text, options.clone(), None)
             .change_context(CommandError)?;
         let open_started = selection == 0;
-        let folder_path = if open_started {
-            batbelt::path::get_folder_path(BatFolder::CodeOverhaulStarted, true)
-                .change_context(CommandError)?
+        let co_folder = if open_started {
+            BatFolder::CodeOverhaulStarted
         } else {
-            batbelt::path::get_folder_path(BatFolder::CodeOverhaulFinished, true)
-                .change_context(CommandError)?
+            BatFolder::CodeOverhaulFinished
         };
-        let co_files = batbelt::helpers::get::get_only_files_from_folder(folder_path)
-            .change_context(CommandError)?;
-        let co_files = co_files
-            .iter()
-            .filter(|f| f.name != ".gitkeep")
-            .map(|f| f.name.clone())
+        let co_files = co_folder
+            .get_all_files_dir_entries(true, None, None)
+            .change_context(CommandError)?
+            .into_iter()
+            .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
             .collect::<Vec<_>>();
         if !co_files.is_empty() {
             let prompt_text = "Select the code-overhaul file to open:";

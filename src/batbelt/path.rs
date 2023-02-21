@@ -218,7 +218,7 @@ impl BatFolder {
         Ok(path)
     }
 
-    pub fn get_all_files(
+    pub fn get_all_files_dir_entries(
         &self,
         sorted: bool,
         file_name_to_exclude_filters: Option<Vec<String>>,
@@ -259,6 +259,23 @@ impl BatFolder {
             });
         }
         Ok(dir_entries)
+    }
+
+    pub fn get_all_files_names(
+        &self,
+        sorted: bool,
+        file_name_to_exclude_filters: Option<Vec<String>>,
+        file_extension_to_include_filters: Option<Vec<String>>,
+    ) -> Result<Vec<String>, BatPathError> {
+        let dir_entries = self.get_all_files_dir_entries(
+            sorted,
+            file_name_to_exclude_filters,
+            file_extension_to_include_filters,
+        )?;
+        Ok(dir_entries
+            .into_iter()
+            .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
+            .collect::<Vec<_>>())
     }
 }
 

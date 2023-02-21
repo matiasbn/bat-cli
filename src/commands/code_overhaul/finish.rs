@@ -7,20 +7,26 @@ use crate::batbelt::git::{check_correct_branch, create_git_commit, GitCommit};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::commands::CommandError;
 
-use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn finish_co_file() -> Result<(), CommandError> {
     check_correct_branch().change_context(CommandError)?;
     // get to-review files
-    let started_endpoints =
-        batbelt::helpers::get::get_started_entrypoints().change_context(CommandError)?;
-    let prompt_text = "Select the code-overhaul to finish:";
-    let selection = batbelt::cli_inputs::select(prompt_text, started_endpoints.clone(), None)
+    let started_entrypoints = BatFolder::CodeOverhaulStarted
+        .get_all_files_dir_entries(true, None, None)
         .change_context(CommandError)?;
+    let started_entrypoints_names = started_entrypoints
+        .into_iter()
+        .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    let prompt_text = "Select the code-overhaul to finish:";
+    let selection =
+        batbelt::cli_inputs::select(prompt_text, started_entrypoints_names.clone(), None)
+            .change_context(CommandError)?;
 
-    let finished_endpoint = &started_endpoints[selection].clone();
+    let finished_endpoint = &started_entrypoints_names[selection].clone();
     let finished_co_folder_path =
         batbelt::path::get_folder_path(BatFolder::CodeOverhaulFinished, true)
             .change_context(CommandError)?;
@@ -31,7 +37,7 @@ pub async fn finish_co_file() -> Result<(), CommandError> {
         true,
     )
     .change_context(CommandError)?;
-    code_overhaul_file_completed(started_co_file_path.clone())?;
+    check_code_overhaul_file_completed(started_co_file_path.clone())?;
     execute_command("mv", &[&started_co_file_path, &finished_co_folder_path])
         .change_context(CommandError)?;
 
@@ -44,7 +50,7 @@ pub async fn finish_co_file() -> Result<(), CommandError> {
     println!("{} moved to finished", finished_endpoint.green());
     Ok(())
 }
-pub fn code_overhaul_file_completed(file_path: String) -> Result<(), CommandError> {
+fn check_code_overhaul_file_completed(file_path: String) -> Result<(), CommandError> {
     let file_data = fs::read_to_string(file_path).unwrap();
     if file_data
         .contains(&CoderOverhaulTemplatePlaceholders::CompleteWithStateChanges.to_placeholder())

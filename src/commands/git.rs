@@ -1,5 +1,5 @@
 use crate::batbelt;
-use crate::batbelt::bash::execute_command;
+use crate::batbelt::command_line::execute_command;
 
 use crate::commands::CommandError;
 use colored::Colorize;
@@ -8,9 +8,7 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::process::Command;
 
 pub enum GitCommands {
-    UpdateDevelop,
-    MergeAllToDevelop,
-    MergeDevelopToAll,
+    UpdateBranches,
     FetchRemoteBranches { select_all: bool },
     DeleteLocalBranches { select_all: bool },
 }
@@ -19,7 +17,7 @@ impl GitCommands {
     pub fn execute(&self) -> Result<(), CommandError> {
         self.check_develop_exists()?;
         match self {
-            GitCommands::UpdateDevelop => {
+            GitCommands::UpdateBranches => {
                 self.merge_all_to_develop()?;
                 self.merge_develop_to_all()?;
             }
@@ -29,8 +27,6 @@ impl GitCommands {
             GitCommands::DeleteLocalBranches { select_all } => {
                 self.delete_local_branches(select_all.clone())?
             }
-            GitCommands::MergeAllToDevelop => self.merge_all_to_develop()?,
-            GitCommands::MergeDevelopToAll => self.merge_develop_to_all()?,
         }
         Ok(())
     }
@@ -170,13 +166,13 @@ impl GitCommands {
 #[test]
 fn test_get_remote_branches_filtered() {
     let remote_branches =
-        GitCommands::get_remote_branches_filtered(&GitCommands::UpdateDevelop).unwrap();
+        GitCommands::get_remote_branches_filtered(&GitCommands::UpdateBranches).unwrap();
     println!("remote_branches:\n{:#?}", remote_branches)
 }
 
 #[test]
 fn test_get_local_branches_filtered() {
     let local_branches =
-        GitCommands::get_local_branches_filtered(&GitCommands::UpdateDevelop).unwrap();
+        GitCommands::get_local_branches_filtered(&GitCommands::UpdateBranches).unwrap();
     println!("local_branches:\n{:#?}", local_branches)
 }

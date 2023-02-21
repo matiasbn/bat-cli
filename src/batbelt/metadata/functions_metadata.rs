@@ -148,7 +148,7 @@ impl FunctionMetadata {
 
     pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, MetadataError> {
         let program_dir_entries = BatFolder::ProgramPath
-            .get_all_files(false, None, None)
+            .get_all_files_dir_entries(false, None, None)
             .change_context(MetadataError)?;
         let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
         let context_names = EntrypointParser::get_all_contexts_names();

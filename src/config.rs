@@ -11,13 +11,6 @@ use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 #[derive(Debug)]
 pub struct BatConfigError;
 
-impl BatConfigError {
-    #[must_use]
-    pub const fn new() -> Self {
-        Self
-    }
-}
-
 impl fmt::Display for BatConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("BatConfig error")
