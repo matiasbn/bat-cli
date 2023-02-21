@@ -1,9 +1,9 @@
+use crate::batbelt::bash::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::templates::finding_template::FindingTemplate;
 use crate::batbelt::{
     self,
     git::{create_git_commit, GitCommit},
-    helpers::get::get_only_files_from_folder,
     path::{BatFile, BatFolder},
 };
 use colored::Colorize;
@@ -60,20 +60,20 @@ pub fn reject() -> Result<(), CommandError> {
 
 pub fn accept_all() -> Result<(), CommandError> {
     prepare_all(false)?;
-    // let to_review_path = utils::path::get_auditor_findings_to_review_path(None)?;
-    let to_review_path = batbelt::path::get_folder_path(BatFolder::FindingsToReview, true)
+    let accepted_path = BatFolder::FindingsAccepted
+        .get_path(true)
         .change_context(CommandError)?;
-    // let accepted_path = utils::path::get_auditor_findings_accepted_path(None)?;
-    let accepted_path = batbelt::path::get_folder_path(BatFolder::FindingsAccepted, true)
+    let findings_to_review_files = BatFolder::FindingsToReview
+        .get_all_files_dir_entries(true, None, None)
         .change_context(CommandError)?;
-    let findings_to_review_files_info =
-        get_only_files_from_folder(to_review_path).change_context(CommandError)?;
-    for to_review_file in findings_to_review_files_info {
-        let mut output = Command::new("mv")
-            .args([to_review_file.path, accepted_path.clone()])
-            .spawn()
-            .unwrap();
-        output.wait().unwrap();
+    for to_review_file in findings_to_review_files {
+        execute_command(
+            "mv",
+            &[
+                to_review_file.path().to_str().unwrap(),
+                &accepted_path.clone(),
+            ],
+        )?;
     }
     create_git_commit(GitCommit::AcceptAllFinding, None).change_context(CommandError)?;
     println!(

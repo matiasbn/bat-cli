@@ -188,7 +188,7 @@ impl StructMetadata {
 
     pub fn get_structs_metadata_from_program() -> Result<Vec<Self>, MetadataError> {
         let program_dir_entries = BatFolder::ProgramPath
-            .get_all_files(false, None, None)
+            .get_all_files_dir_entries(false, None, None)
             .change_context(MetadataError)?;
         let mut structs_metadata: Vec<Self> =
             program_dir_entries

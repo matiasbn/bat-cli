@@ -6,6 +6,7 @@ pub mod package_json_template;
 use crate::batbelt;
 use crate::batbelt::bash::execute_command;
 use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -128,6 +129,7 @@ audit_result/02_findings_result.md
             .get_path(false)
             .change_context(TemplateError)?;
         Self::create_dir(&auditor_metadata_path, true)?;
+        NoteTemplate::create_notes_templates()?;
         Ok(())
     }
 

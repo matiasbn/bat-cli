@@ -53,9 +53,6 @@ enum Commands {
     // /// Updates the audit_result.md file in the root of the audit
     // #[command(subcommand)]
     // Result(ResultActions),
-    /// Updates the metadata.md file
-    #[command(subcommand)]
-    Metadata(MetadataActions),
     /// Git actions to manage repository
     #[command(subcommand)]
     Git(GitActions),
@@ -96,14 +93,6 @@ enum GitActions {
 }
 
 #[derive(Subcommand, Debug)]
-enum MetadataActions {
-    /// Updates the Structs section of the metadata.md file
-    Structs,
-    /// Updates the Functions section of the metadata.md file
-    Functions,
-}
-
-#[derive(Subcommand, Debug)]
 enum MiroActions {
     /// Deploy or updates a code-overhaul frame
     CodeOverhaul,
@@ -116,7 +105,7 @@ enum MiroActions {
         #[arg(long)]
         sorted: bool,
     },
-    /// Creates an screenshot in a determined frame
+    /// Creates an screenshot in a determined frame from metadata
     Metadata {
         /// deploy the screenshots with the default configuration
         #[arg(long)]
@@ -231,8 +220,6 @@ async fn main() {
             default,
             select_all,
         }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all).await,
-        Commands::Metadata(MetadataActions::Structs) => commands::metadata::structs(),
-        Commands::Metadata(MetadataActions::Functions) => commands::metadata::functions(),
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding(),

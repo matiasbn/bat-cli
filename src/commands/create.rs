@@ -1,12 +1,11 @@
 use super::CommandError;
 use crate::batbelt::bash::execute_command;
-use crate::batbelt::helpers::fs_read_dir;
+use crate::batbelt::cli_inputs;
 use crate::batbelt::structs::FileInfo;
 use crate::batbelt::templates::TemplateGenerator;
-use crate::batbelt::{cli_inputs, helpers};
 use crate::config::BatConfig;
 use colored::Colorize;
-use error_stack::{FutureExt, Report, ResultExt};
+use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
@@ -23,7 +22,8 @@ pub fn create_project() -> error_stack::Result<(), CommandError> {
 }
 
 fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
-    let local_folders = fs_read_dir(".")
+    let local_folders = fs::read_dir(".")
+        .into_report()
         .change_context(CommandError)?
         .map(|f| f.unwrap())
         .filter(|f| {
@@ -157,7 +157,7 @@ fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
         "https://miro.com/app/board/uXjVPzsgmiY=/".to_string()
     };
 
-    miro_board_url = helpers::normalize_url(&miro_board_url)
+    miro_board_url = normalize_url(&miro_board_url)
         .change_context(CommandError)
         .change_context(CommandError)?;
 
@@ -181,4 +181,12 @@ fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
     };
     bat_config.save().change_context(CommandError)?;
     Ok(bat_config)
+}
+
+fn normalize_url(url_to_normalize: &str) -> Result<String, String> {
+    let url = normalizer::UrlNormalizer::new(url_to_normalize)
+        .expect(format!("Bad formated url {}", url_to_normalize).as_str())
+        .normalize(None)
+        .expect(format!("Error normalizing url {}", url_to_normalize).as_str());
+    Ok(url)
 }
