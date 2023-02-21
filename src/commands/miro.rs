@@ -12,7 +12,7 @@ use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataT
 use crate::batbelt::miro::connector::create_connector;
 use crate::batbelt::miro::frame::MiroFrame;
 
-use crate::batbelt::miro::{MiroConfig};
+use crate::batbelt::miro::MiroConfig;
 
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
