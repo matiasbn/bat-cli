@@ -19,7 +19,7 @@ use crate::config::{BatAuditorConfig, BatConfig};
 
 use crate::batbelt::git::GitCommit;
 use crate::batbelt::miro::frame::MiroFrame;
-use crate::batbelt::miro::MiroConfig;
+
 use crate::batbelt::path::{BatFile, BatFolder};
 
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
@@ -137,7 +137,7 @@ fn prompt_auditor_options() -> Result<(), CommandError> {
     let prompt_text = "Do you want to use the VS Code integration?";
     let include_vs_code =
         batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
-    let mut bat_auditor_config = BatAuditorConfig {
+    let bat_auditor_config = BatAuditorConfig {
         auditor_name: auditor_name.to_string(),
         vs_code_integration: include_vs_code,
         miro_oauth_access_token: moat,
