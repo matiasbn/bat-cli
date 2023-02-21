@@ -7,9 +7,9 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
-use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
 
 use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
@@ -71,8 +71,8 @@ impl StructMetadata {
         md_section
     }
 
-    pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeMetadata {
-        SourceCodeMetadata::new(
+    pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeParser {
+        SourceCodeParser::new(
             if let Some(struct_name) = optional_name {
                 struct_name
             } else {

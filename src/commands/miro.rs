@@ -6,14 +6,13 @@ use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMet
 use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
-use crate::batbelt::metadata::source_code_metadata::SourceCodeScreenshotOptions;
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
 use crate::batbelt::miro::connector::create_connector;
 use crate::batbelt::miro::frame::MiroFrame;
 
 use crate::batbelt::miro::MiroConfig;
 
+use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 
@@ -201,7 +200,7 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
     //     let handler_function_metadata =
     //         FunctionMetadata::from_markdown_section(handler_subsection.clone())
     //             .change_context(CommandError)?;
-    //     let handler_source_code = SourceCodeMetadata::new(
+    //     let handler_source_code = SourceCodeParser::new(
     //         handler_function,
     //         handler_function_metadata.path,
     //         handler_function_metadata.start_line_index,
@@ -226,7 +225,7 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
     //             entrypoint_name
     //         ))?;
     //
-    //     let entrypoint_source_code = SourceCodeMetadata::new(
+    //     let entrypoint_source_code = SourceCodeParser::new(
     //         entrypoint_metadata.name,
     //         entrypoint_metadata.path,
     //         entrypoint_metadata.start_line_index,
@@ -237,7 +236,7 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
     //     let context_accounts_section = co_file_markdown
     //         .get_section(&CodeOverhaulSection::ContextAccounts.to_title())
     //         .unwrap();
-    //     let context_accounts_source_code = SourceCodeMetadata::new(
+    //     let context_accounts_source_code = SourceCodeParser::new(
     //         CodeOverhaulSection::ContextAccounts.to_title(),
     //         selected_co_started_path.clone(),
     //         context_accounts_section.start_line_index,
@@ -248,7 +247,7 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
     //         .get_section(&CodeOverhaulSection::Validations.to_title())
     //         .unwrap();
     //
-    //     let validations_accounts_source_code = SourceCodeMetadata::new(
+    //     let validations_accounts_source_code = SourceCodeParser::new(
     //         CodeOverhaulSection::Validations.to_title(),
     //         selected_co_started_path.clone(),
     //         validations_section.start_line_index,
@@ -377,7 +376,7 @@ pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandEr
     //     //             }
     //     //         });
     //     //         if let Some(mut_section) = mut_account_section {
-    //     //             let mut_acc_source_code = SourceCodeMetadata::new(
+    //     //             let mut_acc_source_code = SourceCodeParser::new(
     //     //                 CodeOverhaulSection::Validations.to_title(),
     //     //                 mut_section.path.clone(),
     //     //                 mut_section.start_line_index,
@@ -633,7 +632,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 .unwrap();
         let metadata_type_selected = &metadata_types_vec[selection];
         let (sourcecode_metadata_vec, screenshot_options): (
-            Vec<SourceCodeMetadata>,
+            Vec<SourceCodeParser>,
             SourceCodeScreenshotOptions,
         ) = match metadata_type_selected {
             BatMetadataType::Structs => {
@@ -679,7 +678,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 let screenshot_options = if use_default {
                     default_config
                 } else {
-                    SourceCodeMetadata::prompt_screenshot_options()
+                    SourceCodeParser::prompt_screenshot_options()
                 };
                 let sc_vec = struct_metadata_vec
                     .into_iter()
@@ -746,7 +745,7 @@ pub async fn deploy_metadata_screenshot_to_frame(
                 let screenshot_options = if use_default {
                     default_config
                 } else {
-                    SourceCodeMetadata::prompt_screenshot_options()
+                    SourceCodeParser::prompt_screenshot_options()
                 };
 
                 let sc_vec = function_metadata_vec

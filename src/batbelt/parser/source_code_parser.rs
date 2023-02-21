@@ -2,7 +2,7 @@ use std::fs;
 
 use colored::Colorize;
 
-use super::{BatMetadataType, MetadataError};
+use crate::batbelt::metadata::{BatMetadataType, MetadataError};
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
@@ -63,16 +63,16 @@ impl SourceCodeScreenshotOptions {
 }
 
 #[derive(Debug, Clone)]
-pub struct SourceCodeMetadata {
+pub struct SourceCodeParser {
     pub name: String,
     pub path: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
 }
 
-impl SourceCodeMetadata {
+impl SourceCodeParser {
     pub fn new(name: String, path: String, start_line_index: usize, end_line_index: usize) -> Self {
-        SourceCodeMetadata {
+        SourceCodeParser {
             name,
             path,
             start_line_index,
@@ -97,7 +97,7 @@ impl SourceCodeMetadata {
             .results
             .into_iter()
             .map(|res| {
-                SourceCodeMetadata::new(
+                SourceCodeParser::new(
                     res.name,
                     lib_file_path.clone(),
                     res.start_line_index,

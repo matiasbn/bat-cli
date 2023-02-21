@@ -5,11 +5,11 @@ use colored::{ColoredString, Colorize};
 use strum::IntoEnumIterator;
 
 use crate::batbelt::markdown::MarkdownSection;
-use crate::batbelt::metadata::source_code_metadata::SourceCodeMetadata;
 
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 use std::fmt::Display;
@@ -54,8 +54,8 @@ impl FunctionMetadata {
         )
     }
 
-    pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeMetadata {
-        SourceCodeMetadata::new(
+    pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeParser {
+        SourceCodeParser::new(
             if let Some(function_name) = optional_name {
                 function_name
             } else {
@@ -186,7 +186,7 @@ impl FunctionMetadata {
                                 continue;
                             }
                         }
-                        let result_source_code = SourceCodeMetadata::new(
+                        let result_source_code = SourceCodeParser::new(
                             result.name.clone(),
                             entry_path.clone(),
                             result.start_line_index.clone() + 1,
