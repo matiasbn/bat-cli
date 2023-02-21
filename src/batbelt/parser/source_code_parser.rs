@@ -2,15 +2,17 @@ use std::fs;
 
 use colored::Colorize;
 
-use crate::batbelt::metadata::{BatMetadataType, MetadataError};
+use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::MiroItemType;
+use crate::batbelt::parser::ParserError;
 use crate::batbelt::path::BatFile;
 use crate::batbelt::silicon;
 use crate::batbelt::sonar::BatSonar;
 use crate::batbelt::{self, path::BatFolder};
+use crate::config::BatConfig;
 use error_stack::{Result, ResultExt};
 
 #[derive(Debug, Clone)]
@@ -89,10 +91,10 @@ impl SourceCodeParser {
         content_lines
     }
 
-    pub fn get_entrypoints_sourcecode() -> Result<Vec<Self>, MetadataError> {
-        let lib_file_path = batbelt::path::get_file_path(BatFile::ProgramLib, false)
-            .change_context(MetadataError)?;
-        let entrypoints = BatSonar::get_entrypoints_results().change_context(MetadataError)?;
+    pub fn get_entrypoints_sourcecode() -> Result<Vec<Self>, ParserError> {
+        let lib_file_path =
+            batbelt::path::get_file_path(BatFile::ProgramLib, false).change_context(ParserError)?;
+        let entrypoints = BatSonar::get_entrypoints_results().change_context(ParserError)?;
         let sourcecodes = entrypoints
             .results
             .into_iter()
@@ -136,9 +138,9 @@ impl SourceCodeParser {
     pub fn create_screenshot(
         &self,
         options: SourceCodeScreenshotOptions,
-    ) -> Result<String, MetadataError> {
+    ) -> Result<String, ParserError> {
         let dest_path = batbelt::path::get_folder_path(BatFolder::AuditorFigures, true)
-            .change_context(MetadataError)?;
+            .change_context(ParserError)?;
         let mut offset = if options.offset_to_start_line {
             self.start_line_index
         } else {
@@ -175,14 +177,16 @@ impl SourceCodeParser {
             .to_vec();
         let mut content = content_vec.join("\n");
         if options.include_path {
-            let program_path = batbelt::path::get_folder_path(BatFolder::ProgramPath, false)
-                .change_context(MetadataError)?;
-            let path_to_include = if self.path.contains(&program_path) {
-                let path = self.path.replace(&program_path, "");
-                path.strip_prefix("/").unwrap().to_string()
-            } else {
-                self.path.to_string()
-            };
+            log::debug!("self:\n{:#?}", self);
+            let bat_config = BatConfig::get_config().change_context(ParserError)?;
+            log::debug!("program_name: {}", bat_config.program_name);
+            let splitter = format!("{}/src/", bat_config.program_name);
+            log::debug!("splitter: {}", splitter);
+            let path = self.path.split(&splitter).last().unwrap();
+            let path_to_include = format!("{}{}", splitter, path)
+                .trim_start_matches("/")
+                .to_string();
+            log::debug!("path_to_include: {}", path_to_include);
             content = format!("// {}\n\n{}", path_to_include, content);
             offset = if options.offset_to_start_line {
                 offset - 2
@@ -267,7 +271,7 @@ impl SourceCodeParser {
         x_position: i64,
         y_position: i64,
         options: SourceCodeScreenshotOptions,
-    ) -> Result<MiroImage, MetadataError> {
+    ) -> Result<MiroImage, ParserError> {
         let png_path = self.create_screenshot(options.clone())?;
         let miro_frame_id = miro_frame.item_id.clone();
         println!(
@@ -281,7 +285,7 @@ impl SourceCodeParser {
         screenshot_image
             .deploy()
             .await
-            .change_context(MetadataError)?;
+            .change_context(ParserError)?;
         let miro_item = MiroItem::new(
             &screenshot_image.item_id,
             &miro_frame_id,
@@ -338,4 +342,14 @@ fn test_filter_comments() {
         .join("\n");
 
     println!("filtered \n{}", filtered_lines)
+}
+
+#[test]
+fn test_include_path() {
+    let test_path = "../star-atlas-programs/sol-programs/programs/cargo/src/instructions/update_token_account_for_invalid_type.rs";
+    let test_program_name = "cargo/src/";
+    let path = test_path.split(test_program_name).last().unwrap();
+    println!("path {}", path);
+    let path = format!("{}{}", test_program_name, path);
+    println!("path {}", path)
 }

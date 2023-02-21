@@ -77,23 +77,19 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
                 .to_string()
         })
         .collect::<Vec<_>>();
-    let selection =
-        cli_inputs::select(prompt_text, cargo_programs_paths, None).change_context(CommandError)?;
-    let selected_program = &cargo_programs_files_info[selection];
-    let program_name = selected_program
-        .file_name()
-        .to_str()
+    let selection = cli_inputs::select(prompt_text, cargo_programs_paths.clone(), None)
+        .change_context(CommandError)?;
+    let selected_program_path = &cargo_programs_paths[selection];
+    log::debug!("selected_program: {:#?}", selected_program_path);
+    let program_name = selected_program_path
+        .split("/")
+        .last()
         .unwrap()
         .to_string()
         .replace("_", "-");
-    let program_lib_path = format!(
-        "{}/src/lib.rs",
-        selected_program
-            .path()
-            .to_str()
-            .unwrap()
-            .trim_end_matches("/Cargo.toml")
-    );
+    log::debug!("program_name: {:#?}", program_name);
+    let program_lib_path = format!("{}/src/lib.rs", selected_program_path);
+    log::debug!("program_lib_path: {:#?}", program_lib_path);
     let normalized_to_audit_program_lib_path = program_lib_path.replace("./", "../");
 
     if !Path::new(&program_lib_path).is_file() {
@@ -171,6 +167,7 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
 
     let bat_config = BatConfig {
         initialized: true,
+        program_name,
         auditor_names,
         project_name,
         client_name,
