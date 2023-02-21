@@ -105,10 +105,14 @@ fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
         "Do you want to use the name {} for this project?",
         format!("{project_name}").yellow()
     );
-    let options = vec!["yes", "no"];
-    let selection =
-        cli_inputs::select(prompt_text.as_str(), options, None).change_context(CommandError)?;
-    if selection == 1 {
+
+    let use_default = if !cfg!(debug_assertions) {
+        cli_inputs::select_yes_or_no(prompt_text.as_str()).change_context(CommandError)?
+    } else {
+        true
+    };
+
+    if !use_default {
         project_name = cli_inputs::input("Project name:").change_context(CommandError)?;
     }
     let project_path = format!("./{project_name}");
@@ -118,28 +122,51 @@ fn create_bat_config_file() -> error_stack::Result<BatConfig, CommandError> {
             .attach_printable(format!("Folder {} already exists", project_name)));
     }
 
-    let auditor_names_prompt: String =
+    let auditor_names_prompt: String = if !cfg!(debug_assertions) {
         cli_inputs::input("Auditor names (comma separated, example: alice,bob):")
-            .change_context(CommandError)?;
+            .change_context(CommandError)?
+    } else {
+        "test_user".to_string()
+    };
     let auditor_names: Vec<String> = auditor_names_prompt
         .split(',')
         .map(|l| l.to_string())
         .collect();
-    let client_name: String = cli_inputs::input("Client name:").change_context(CommandError)?;
-    let commit_hash_url: String =
-        cli_inputs::input("Commit hash url:").change_context(CommandError)?;
-    let starting_date: String =
-        cli_inputs::input("Starting date, example: (01/01/2023):").change_context(CommandError)?;
-    let mut miro_board_url: String =
-        cli_inputs::input("Miro board url:").change_context(CommandError)?;
+
+    let client_name: String = if !cfg!(debug_assertions) {
+        cli_inputs::input("Client name:").change_context(CommandError)?
+    } else {
+        "test_client".to_string()
+    };
+
+    let commit_hash_url: String = if !cfg!(debug_assertions) {
+        cli_inputs::input("Commit hash url:").change_context(CommandError)?
+    } else {
+        "test_hash".to_string()
+    };
+
+    let starting_date: String = if !cfg!(debug_assertions) {
+        cli_inputs::input("Starting date, example: (01/01/2023):").change_context(CommandError)?
+    } else {
+        "test_date".to_string()
+    };
+
+    let mut miro_board_url: String = if !cfg!(debug_assertions) {
+        cli_inputs::input("Miro board url:").change_context(CommandError)?
+    } else {
+        "https://miro.com/app/board/uXjVPzsgmiY=/".to_string()
+    };
+
     miro_board_url = helpers::normalize_url(&miro_board_url)
         .change_context(CommandError)
         .change_context(CommandError)?;
 
-    // let miro_board_id = "https://miro.com/app/board/".to_string() + &miro_board_id;
-    let project_repository_url: String =
+    let project_repository_url: String = if !cfg!(debug_assertions) {
         cli_inputs::input("Project repo url, where this audit folder would be pushed:")
-            .change_context(CommandError)?;
+            .change_context(CommandError)?
+    } else {
+        "https://github.com/matiasbn/test-repo".to_string()
+    };
 
     let bat_config = BatConfig {
         initialized: true,

@@ -1,7 +1,3 @@
-#![feature(core_panic)]
-#![feature(exit_status_error)]
-extern crate core;
-
 #[macro_use]
 extern crate log;
 
@@ -180,9 +176,11 @@ async fn main() {
         .init();
 
     let branch_checked = match cli.command {
-        Commands::Init { .. } | Commands::Create | Commands::Package(..) | Commands::Git(..) => {
-            Ok(())
-        }
+        Commands::Init { .. }
+        | Commands::Create
+        | Commands::Package(..)
+        | Commands::Git(..)
+        | Commands::Miro(..) => Ok(()),
         _ => check_correct_branch(),
     };
 

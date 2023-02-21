@@ -137,10 +137,11 @@ fn prompt_auditor_options() -> Result<(), CommandError> {
     let prompt_text = "Do you want to use the VS Code integration?";
     let include_vs_code =
         batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
-    let mut bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
-    bat_auditor_config.auditor_name = auditor_name.to_string();
-    bat_auditor_config.vs_code_integration = include_vs_code;
-    bat_auditor_config.miro_oauth_access_token = moat;
+    let mut bat_auditor_config = BatAuditorConfig {
+        auditor_name: auditor_name.to_string(),
+        vs_code_integration: include_vs_code,
+        miro_oauth_access_token: moat,
+    };
     bat_auditor_config.save().change_context(CommandError)?;
     Ok(())
 }
@@ -193,8 +194,8 @@ pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {
 }
 
 pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
-    let miro_config = MiroConfig::new().change_context(CommandError)?;
-    if !miro_config.miro_enabled() {
+    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+    if bat_auditor_config.miro_oauth_access_token.is_empty() {
         return Ok(());
     }
 

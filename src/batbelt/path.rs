@@ -30,9 +30,6 @@ pub enum BatFile {
     OpenQuestions,
     ProgramLib,
     Readme,
-    TemplateFinding,
-    TemplateInformational,
-    TemplateCodeOverhaul,
     PackageJson,
     RobotFile,
     CodeOverhaulToReview { file_name: String },
@@ -46,35 +43,11 @@ pub enum BatFile {
 impl BatFile {
     pub fn get_path(&self, canonicalize: bool) -> Result<String, BatPathError> {
         let bat_config = BatConfig::get_config().change_context(BatPathError)?;
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(BatPathError)?;
-        let auditor_notes_folder_path =
-            format!("./notes/{}-notes", bat_auditor_config.auditor_name);
-        let findings_path = format!("{}/findings", auditor_notes_folder_path);
-        let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
-        let metadata_folder_path = BatFolder::Metadata.get_path(false)?;
         let path = match self {
-            //File
-            BatFile::RobotFile => format!("{}/robot.md", auditor_notes_folder_path),
+            BatFile::BatToml => "Bat.toml".to_string(),
+            BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
             BatFile::PackageJson => "./package.json".to_string(),
             BatFile::ProgramLib => bat_config.program_lib_path,
-            BatFile::FindingCandidates => {
-                format!("{}/finding_candidates.md", auditor_notes_folder_path)
-            }
-            BatFile::OpenQuestions => {
-                format!("{}/open_questions.md", auditor_notes_folder_path)
-            }
-            BatFile::StructsMetadata => {
-                format!("{}/structs.md", metadata_folder_path)
-            }
-            BatFile::EntrypointsMetadata => {
-                format!("{}/entrypoints.md", metadata_folder_path)
-            }
-            BatFile::FunctionsMetadata => {
-                format!("{}/functions.md", metadata_folder_path)
-            }
-            BatFile::ThreatModeling => {
-                format!("{}/threat_modeling.md", auditor_notes_folder_path)
-            }
             BatFile::AuditResult => {
                 format!("./audit_result.md")
             }
@@ -87,45 +60,81 @@ impl BatFile {
             BatFile::CodeOverhaulResult => {
                 format!("./audit_result/co_result.md")
             }
-            BatFile::TemplateFinding => {
-                format!("./templates/finding.md")
-            }
-            BatFile::TemplateInformational => {
-                format!("./templates/informational.md")
-            }
-            BatFile::TemplateCodeOverhaul => {
-                format!("./templates/code-overhaul.md")
-            }
             BatFile::Readme => {
                 format!("./README.md")
             }
+            BatFile::RobotFile => format!("{}/robot.md", BatFolder::AuditorNotes.get_path(false)?),
+            BatFile::FindingCandidates => {
+                format!(
+                    "{}/finding_candidates.md",
+                    BatFolder::AuditorNotes.get_path(false)?
+                )
+            }
+            BatFile::OpenQuestions => {
+                format!(
+                    "{}/open_questions.md",
+                    BatFolder::AuditorNotes.get_path(false)?
+                )
+            }
+            BatFile::ThreatModeling => {
+                format!(
+                    "{}/threat_modeling.md",
+                    BatFolder::AuditorNotes.get_path(false)?
+                )
+            }
+            BatFile::StructsMetadata => {
+                format!("{}/structs.md", BatFolder::Metadata.get_path(false)?)
+            }
+            BatFile::EntrypointsMetadata => {
+                format!("{}/entrypoints.md", BatFolder::Metadata.get_path(false)?)
+            }
+            BatFile::FunctionsMetadata => {
+                format!("{}/functions.md", BatFolder::Metadata.get_path(false)?)
+            }
             BatFile::CodeOverhaulToReview { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
-                format!("{code_overhaul_path}/to-review/{entrypoint_name}.md")
+                format!(
+                    "{}/{entrypoint_name}.md",
+                    BatFolder::CodeOverhaulToReview.get_path(false)?
+                )
             }
             BatFile::CodeOverhaulStarted { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
-                format!("{code_overhaul_path}/started/{entrypoint_name}.md")
+                format!(
+                    "{}/{entrypoint_name}.md",
+                    BatFolder::CodeOverhaulStarted.get_path(false)?
+                )
             }
             BatFile::CodeOverhaulFinished { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
-                format!("{code_overhaul_path}/finished/{entrypoint_name}.md")
+                format!(
+                    "{}/{entrypoint_name}.md",
+                    BatFolder::CodeOverhaulFinished.get_path(false)?
+                )
             }
             BatFile::FindingToReview { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
-                format!("{findings_path}/to-review/{entrypoint_name}.md",)
+                format!(
+                    "{}/{entrypoint_name}.md",
+                    BatFolder::FindingsToReview.get_path(false)?
+                )
             }
             BatFile::FindingAccepted { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
-                format!("{findings_path}/accepted/{entrypoint_name}.md",)
+                format!(
+                    "{}/{entrypoint_name}.md",
+                    BatFolder::FindingsAccepted.get_path(false)?
+                )
             }
             BatFile::FindingRejected { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
-                format!("{findings_path}/rejected/{entrypoint_name}.md",)
+                format!(
+                    "{}/{entrypoint_name}.md",
+                    BatFolder::FindingsRejected.get_path(false)?
+                )
             }
-            BatFile::BatToml => "Bat.toml".to_string(),
-            BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
         };
+
         if canonicalize {
             return canonicalize_path(path);
         }
@@ -165,7 +174,6 @@ impl BatFolder {
         let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
 
         let path = match self {
-            //File
             BatFolder::Notes => "./notes".to_string(),
             BatFolder::AuditResult => "./audit_result".to_string(),
             BatFolder::AuditResultFigures => "./audit_result/figures".to_string(),
