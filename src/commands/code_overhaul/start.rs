@@ -1,6 +1,3 @@
-
-
-
 use error_stack::{Report, Result, ResultExt};
 
 use crate::batbelt;
@@ -10,9 +7,7 @@ use crate::batbelt::git::{create_git_commit, GitCommit};
 
 use crate::batbelt::path::{BatFile, BatFolder};
 
-use crate::batbelt::templates::code_overhaul_template::{
-    CodeOverhaulTemplate,
-};
+use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::commands::CommandError;
 
 pub fn start_co_file() -> Result<(), CommandError> {
