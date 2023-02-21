@@ -4,6 +4,7 @@ pub mod update;
 use super::CommandError;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::config::{BatAuditorConfig, BatConfig};
 use crate::{batbelt, commands};
@@ -84,13 +85,16 @@ pub fn open_co() -> Result<(), CommandError> {
                 )
                 .change_context(CommandError)?
             };
-            let instruction_file_path =
-                batbelt::path::get_instruction_file_path_from_co_file_path(co_file_path.clone())
+            let ep_parser =
+                EntrypointParser::new_from_name(file_name.clone().trim_end_matches(".md"))
                     .change_context(CommandError)?;
 
             vs_code_open_file_in_current_window(&co_file_path).change_context(CommandError)?;
-            vs_code_open_file_in_current_window(&instruction_file_path)
-                .change_context(CommandError)?;
+            if ep_parser.handler.is_some() {
+                let instruction_file_path = ep_parser.handler.unwrap().path;
+                vs_code_open_file_in_current_window(&instruction_file_path)
+                    .change_context(CommandError)?;
+            }
         } else {
             println!("Empty {} folder", options[selection].clone());
         }
