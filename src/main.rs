@@ -5,7 +5,7 @@ extern crate confy;
 
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
-use clap_verbosity_flag::ErrorLevel;
+
 use colored::Colorize;
 use commands::CommandError;
 use error_stack::ResultExt;

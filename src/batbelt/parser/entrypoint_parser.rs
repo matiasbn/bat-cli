@@ -14,7 +14,6 @@ use std::fs;
 use crate::batbelt::metadata::BatMetadataType;
 
 use crate::batbelt::parser::ParserError;
-use std::{error::Error, fmt};
 
 #[derive(Clone)]
 pub struct EntrypointParser {
