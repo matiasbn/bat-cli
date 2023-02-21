@@ -5,6 +5,7 @@ pub mod package_json_template;
 
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
+use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
@@ -128,7 +129,18 @@ audit_result/02_findings_result.md
         let auditor_metadata_path = BatFolder::Metadata
             .get_path(false)
             .change_context(TemplateError)?;
-        Self::create_dir(&auditor_metadata_path, true)?;
+        Self::create_dir(&auditor_metadata_path, false)?;
+
+        // metadata files
+        let metadata_types = BatMetadataType::get_metadata_type_vec();
+        for metadata_type in metadata_types {
+            let metadata_file = format!(
+                "{}/{}.md",
+                auditor_metadata_path,
+                metadata_type.to_string().to_lowercase()
+            );
+            execute_command("touch", &[&metadata_file]).change_context(TemplateError)?;
+        }
         NoteTemplate::create_notes_templates()?;
         Ok(())
     }
@@ -145,7 +157,7 @@ audit_result/02_findings_result.md
             .change_context(TemplateError)?;
         Self::create_dir(&finished_co_path, true)?;
         Self::create_dir(&started_co_path, true)?;
-        Self::create_dir(&to_review_co_path, true)?;
+        Self::create_dir(&to_review_co_path, false)?;
         Ok(())
     }
 

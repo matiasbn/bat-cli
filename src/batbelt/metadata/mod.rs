@@ -1,7 +1,6 @@
 pub mod entrypoint_metadata;
 pub mod functions_metadata;
 pub mod miro_metadata;
-pub mod source_code_metadata;
 pub mod structs_metadata;
 
 use colored::{ColoredString, Colorize};

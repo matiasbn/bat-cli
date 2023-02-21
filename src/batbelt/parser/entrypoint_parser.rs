@@ -13,18 +13,7 @@ use std::fs;
 
 use crate::batbelt::metadata::BatMetadataType;
 
-use std::{error::Error, fmt};
-
-#[derive(Debug)]
-pub struct EntrypointParserError;
-
-impl fmt::Display for EntrypointParserError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("EntrypointParser error")
-    }
-}
-
-impl Error for EntrypointParserError {}
+use crate::batbelt::parser::ParserError;
 
 #[derive(Clone)]
 pub struct EntrypointParser {
@@ -49,17 +38,17 @@ impl EntrypointParser {
         }
     }
 
-    pub fn new_from_name(entrypoint_name: &str) -> Result<Self, EntrypointParserError> {
+    pub fn new_from_name(entrypoint_name: &str) -> Result<Self, ParserError> {
         BatMetadataType::Structs
             .check_is_initialized()
-            .change_context(EntrypointParserError)?;
+            .change_context(ParserError)?;
         BatMetadataType::Functions
             .check_is_initialized()
-            .change_context(EntrypointParserError)?;
+            .change_context(ParserError)?;
 
         let _function_sections = BatMetadataType::Functions
             .get_markdown_sections_from_metadata_file()
-            .change_context(EntrypointParserError)?;
+            .change_context(ParserError)?;
 
         let _type_content = FunctionMetadataInfoSection::Type
             .get_info_section_content(FunctionMetadataType::EntryPoint.to_string());
@@ -68,10 +57,10 @@ impl EntrypointParser {
             Some(entrypoint_name),
             Some(FunctionMetadataType::EntryPoint),
         )
-        .change_context(EntrypointParserError)?;
+        .change_context(ParserError)?;
 
         if entrypoint_section.len() != 1 {
-            return Err(Report::new(EntrypointParserError)
+            return Err(Report::new(ParserError)
                 .attach_printable(format!(
                     "Incorrect amount of results looking for entrypoint function section"
                 ))
@@ -88,7 +77,7 @@ impl EntrypointParser {
 
         let handlers =
             FunctionMetadata::get_filtered_metadata(None, Some(FunctionMetadataType::Handler))
-                .change_context(EntrypointParserError)?;
+                .change_context(ParserError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
 
         let handler = handlers.into_iter().find(|function_metadata| {
@@ -104,11 +93,11 @@ impl EntrypointParser {
             Some(&context_name),
             Some(StructMetadataType::ContextAccounts),
         )
-        .change_context(EntrypointParserError)?;
+        .change_context(ParserError)?;
         let context_accounts = structs_metadata
             .iter()
             .find(|struct_metadata| struct_metadata.name == context_name)
-            .ok_or(EntrypointParserError)
+            .ok_or(ParserError)
             .into_report()
             .attach_printable(format!(
                 "Error context_accounts struct by name {} for entrypoint_name: {}",
@@ -122,10 +111,10 @@ impl EntrypointParser {
         })
     }
 
-    pub fn get_entrypoints_names(sorted: bool) -> Result<Vec<String>, EntrypointParserError> {
+    pub fn get_entrypoints_names(sorted: bool) -> Result<Vec<String>, ParserError> {
         let BatConfig {
             program_lib_path, ..
-        } = BatConfig::get_config().change_context(EntrypointParserError)?;
+        } = BatConfig::get_config().change_context(ParserError)?;
 
         let bat_sonar = BatSonar::new_from_path(
             &program_lib_path,
@@ -152,10 +141,10 @@ impl EntrypointParser {
         context_accounts_names
     }
 
-    pub fn get_context_name(entrypoint_name: &str) -> Result<String, EntrypointParserError> {
+    pub fn get_context_name(entrypoint_name: &str) -> Result<String, ParserError> {
         let BatConfig {
             program_lib_path, ..
-        } = BatConfig::get_config().change_context(EntrypointParserError)?;
+        } = BatConfig::get_config().change_context(ParserError)?;
         let lib_file = fs::read_to_string(program_lib_path).unwrap();
         let lib_file_lines: Vec<&str> = lib_file.lines().collect();
         let entrypoint_index = lib_file

@@ -53,6 +53,7 @@ pub struct BatConfig {
     pub miro_board_url: String,
     pub auditor_names: Vec<String>,
     pub program_lib_path: String,
+    pub program_name: String,
     pub project_repository_url: String,
 }
 
