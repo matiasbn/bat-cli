@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
-use inflector::Inflector;
 use crate::batbelt::sonar::SonarResult;
+use inflector::Inflector;
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 enum EntrypointInfoSection {
@@ -207,19 +207,18 @@ impl EntrypointMetadata {
             let content_lines = mut_account_result.content.lines().clone();
             let account_name = mut_account_result.name.clone();
             let prefix = format!("pub {}: ", account_name);
-            let mut is_mut = false;
-            if content_lines.count() == 2 {
+            let mut is_mut = if content_lines.count() == 2 {
                 let first_line = mut_account_result.content.lines().next().unwrap();
                 let first_line = first_line
                     .trim()
                     .trim_start_matches("#[account(")
                     .trim_end_matches(")]");
-                is_mut = first_line.split(",").any(|spl| spl.trim() == "mut");
+                first_line.split(",").any(|spl| spl.trim() == "mut")
             } else {
-                is_mut = mut_account_result
+                mut_account_result
                     .content
                     .lines()
-                    .any(|line| line.trim().trim_end_matches(",") == "mut");
+                    .any(|line| line.trim().trim_end_matches(",") == "mut")
             };
             if is_mut {
                 let last_line = mut_account_result

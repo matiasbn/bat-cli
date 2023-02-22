@@ -1,10 +1,10 @@
 use std::error::Error;
 use std::fmt;
 
-pub mod solana_account_parser;
 pub mod context_accounts_parser;
 pub mod entrypoint_parser;
 pub mod function_parser;
+pub mod solana_account_parser;
 pub mod source_code_parser;
 
 #[derive(Debug)]

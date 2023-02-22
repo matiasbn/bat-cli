@@ -522,7 +522,7 @@ pub enum SonarResultType {
 }
 
 impl SonarResultType {
-    fn get_context_accounts_sonar_result_types(&self) -> Vec<SonarResultType> {
+    pub fn get_context_accounts_sonar_result_types(&self) -> Vec<SonarResultType> {
         vec![
             SonarResultType::ContextAccountsAll,
             SonarResultType::ContextAccountsOnlyValidation,
@@ -530,7 +530,7 @@ impl SonarResultType {
         ]
     }
 
-    fn is_context_accounts_sonar_result_type(&self) -> bool {
+    pub fn is_context_accounts_sonar_result_type(&self) -> bool {
         self.get_context_accounts_sonar_result_types()
             .iter()
             .any(|ca_type| self == ca_type)

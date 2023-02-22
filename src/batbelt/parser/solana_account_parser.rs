@@ -1,47 +1,50 @@
+use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
 use crate::batbelt::parser::ParserError;
-use crate::batbelt::sonar::SonarResult;
-use error_stack::Result;
+use crate::batbelt::sonar::{SonarResult, SonarResultType};
+use error_stack::{Report, Result, ResultExt};
+use regex::Regex;
 
-pub enum SolanaAccountTypeParser {
+#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+pub enum SolanaAccountType {
     TokenAccount,
-    TokenMint,
+    Mint,
     Signer,
     UncheckedAccount,
-    PDA,
+    ProgramStateAccount,
     Other,
 }
 
-pub struct SolanaAccountParser {
-    pub name: String,
-    pub is_pda: bool,
-    pub seeds: Option<String>,
-    pub account_type: SolanaAccountTypeParser,
-}
+impl SolanaAccountType {
+    pub fn from_sonar_result(sonar_result: SonarResult) -> Result<Self, ParserError> {
+        let last_line = sonar_result.content.lines();
+        let last_line = last_line.last().unwrap();
 
-impl SolanaAccountParser {
-    pub fn new(
-        name: String,
-        is_pda: bool,
-        seeds: Option<String>,
-        account_type: SolanaAccountTypeParser,
-    ) -> Self {
-        Self {
-            name,
-            is_pda,
-            seeds,
-            account_type,
+        if last_line.contains("Signer<") {
+            return Ok(Self::Signer);
         }
+
+        if last_line.contains(&Self::UncheckedAccount.to_string()) {
+            return Ok(Self::UncheckedAccount);
+        }
+
+        if last_line.contains(&Self::TokenAccount.to_string()) {
+            return Ok(Self::TokenAccount);
+        }
+
+        if last_line.contains(&Self::Mint.to_string()) {
+            return Ok(Self::Mint);
+        }
+
+        let solana_accounts_metadata =
+            StructMetadata::get_filtered_metadata(None, Some(StructMetadataType::SolanaAccount))
+                .change_context(ParserError)?;
+        if solana_accounts_metadata
+            .into_iter()
+            .any(|solana_account| last_line.contains(&solana_account.name))
+        {
+            return Ok(Self::ProgramStateAccount);
+        }
+
+        Ok(Self::Other)
     }
-
-    // pub fn new_from_ca_sonar_result(sonar_result: SonarResult) -> Result<Self, ParserError> {
-    //     let last_line =
-    // }
-}
-
-#[test]
-fn test_get_solana_account_type() {
-    let test_text_1 = "pub key: Signer<'info>,";
-    let test_text_2 = "pub profile: AccountLoader<'info, Profile>,";
-    let test_text_2 = "pub mint: Account<'info, Mint>,";
-    let test_text_2 = "pub token_from: Account<'info, TokenAccount>,";
 }
