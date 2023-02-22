@@ -19,8 +19,8 @@ mod package;
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
 struct Cli {
-    // #[clap(flatten)]
-    // verbose: clap_verbosity_flag::Verbosity<ErrorLevel>,
+    #[clap(flatten)]
+    verbose: clap_verbosity_flag::Verbosity,
     #[command(subcommand)]
     command: Commands,
 }
@@ -160,10 +160,10 @@ enum PackageActions {
 #[tokio::main]
 async fn main() {
     let cli: Cli = Cli::parse();
-    env_logger::init();
-    // env_logger::Builder::new()
-    //     .filter_level(cli.verbose.log_level_filter())
-    //     .init();
+    // env_logger::init();
+    env_logger::Builder::new()
+        .filter_level(cli.verbose.log_level_filter())
+        .init();
 
     let branch_checked = match cli.command {
         Commands::Init { .. }

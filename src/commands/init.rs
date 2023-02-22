@@ -27,10 +27,10 @@ use crate::batbelt::templates::TemplateGenerator;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
+    let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
     if !Path::new("BatAuditor.toml").is_file() {
         prompt_auditor_options()?;
     }
-    let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
     println!("creating project for the next config: ");
     println!("{:#?}", bat_config);
     let output = Command::new("git")
