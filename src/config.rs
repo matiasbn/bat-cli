@@ -6,6 +6,7 @@ use figment::{
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, str};
 
+use crate::batbelt::path::BatFile;
 use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 
 #[derive(Debug)]
@@ -28,8 +29,11 @@ pub struct BatAuditorConfig {
 
 impl BatAuditorConfig {
     pub fn get_config() -> Result<Self, BatConfigError> {
+        let path = BatFile::BatToml
+            .get_path(true)
+            .change_context(BatConfigError)?;
         let bat_config: BatAuditorConfig = Figment::new()
-            .merge(Toml::file("BatAuditor.toml"))
+            .merge(Toml::file(path))
             .extract()
             .into_report()
             .change_context(BatConfigError)?;
@@ -37,7 +41,10 @@ impl BatAuditorConfig {
     }
 
     pub fn save(&self) -> Result<(), BatConfigError> {
-        Ok(confy::store_path("BatAuditor.toml", self)
+        let path = BatFile::BatToml
+            .get_path(false)
+            .change_context(BatConfigError)?;
+        Ok(confy::store_path(path, self)
             .into_report()
             .change_context(BatConfigError)?)
     }
@@ -59,8 +66,11 @@ pub struct BatConfig {
 
 impl BatConfig {
     pub fn get_config() -> Result<Self, BatConfigError> {
+        let path = BatFile::BatToml
+            .get_path(true)
+            .change_context(BatConfigError)?;
         let bat_config: BatConfig = Figment::new()
-            .merge(Toml::file("Bat.toml"))
+            .merge(Toml::file(path))
             .extract()
             .into_report()
             .change_context(BatConfigError)?;
@@ -68,7 +78,10 @@ impl BatConfig {
     }
 
     pub fn save(&self) -> Result<(), BatConfigError> {
-        Ok(confy::store_path("Bat.toml", self)
+        let path = BatFile::BatToml
+            .get_path(false)
+            .change_context(BatConfigError)?;
+        Ok(confy::store_path(path, self)
             .into_report()
             .change_context(BatConfigError)?)
     }

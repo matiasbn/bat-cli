@@ -12,6 +12,7 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::fs;
 
 use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::parser::function_parser::FunctionParser;
 
 use crate::batbelt::parser::ParserError;
 
@@ -45,13 +46,6 @@ impl EntrypointParser {
         BatMetadataType::Functions
             .check_is_initialized()
             .change_context(ParserError)?;
-
-        let _function_sections = BatMetadataType::Functions
-            .get_markdown_sections_from_metadata_file()
-            .change_context(ParserError)?;
-
-        let _type_content = FunctionMetadataInfoSection::Type
-            .get_info_section_content(FunctionMetadataType::EntryPoint.to_string());
 
         let entrypoint_section = FunctionMetadata::get_filtered_metadata(
             Some(entrypoint_name),

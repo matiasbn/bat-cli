@@ -42,12 +42,15 @@ pub enum BatFile {
 
 impl BatFile {
     pub fn get_path(&self, canonicalize: bool) -> Result<String, BatPathError> {
-        let bat_config = BatConfig::get_config().change_context(BatPathError)?;
         let path = match self {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
             BatFile::PackageJson => "./package.json".to_string(),
-            BatFile::ProgramLib => bat_config.program_lib_path,
+            BatFile::ProgramLib => {
+                BatConfig::get_config()
+                    .change_context(BatPathError)?
+                    .program_lib_path
+            }
             BatFile::AuditResult => {
                 format!("./audit_result.md")
             }
