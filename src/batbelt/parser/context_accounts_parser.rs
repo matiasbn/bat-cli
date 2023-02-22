@@ -34,12 +34,12 @@ impl CAAccountParser {
     fn new(
         name: String,
         account_attribute_info: CAAccountAttributeInfo,
-        account_type: CAAccountTypeInfo,
+        account_type_info: CAAccountTypeInfo,
     ) -> Self {
         Self {
             name,
             account_attribute_info,
-            account_type_info: account_type,
+            account_type_info,
         }
     }
 
