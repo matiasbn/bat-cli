@@ -29,9 +29,9 @@ pub struct BatSonar {
     pub content: String,
     pub result_type: SonarResultType,
     pub results: Vec<SonarResult>,
-    pub open_filters: SonarFilter,
-    pub end_of_open_filters: SonarFilter,
-    pub closure_filters: SonarFilter,
+    open_filters: SonarFilter,
+    end_of_open_filters: SonarFilter,
+    closure_filters: SonarFilter,
 }
 
 impl BatSonar {
@@ -95,7 +95,7 @@ impl BatSonar {
     pub fn scan_content_to_get_results(&mut self) {
         let content_lines = self.content.lines();
         for (line_index, line) in content_lines.enumerate() {
-            if self.check_is_open(line) {
+            if self.check_is_opening(line) {
                 if self.result_type.test_last_char_is_semicolon() {
                     let last_line_is_semicolon = line.chars().last().unwrap() == ';';
                     if last_line_is_semicolon {
@@ -244,7 +244,7 @@ impl BatSonar {
         trailing_whitespaces
     }
 
-    fn check_is_open(&self, line: &str) -> bool {
+    fn check_is_opening(&self, line: &str) -> bool {
         let open_filters = self.open_filters.get_filters();
         let end_of_open_filters = self.end_of_open_filters.get_filters();
         if !open_filters.iter().any(|filter| line.contains(filter)) {
@@ -522,7 +522,7 @@ pub enum SonarResultType {
 }
 
 impl SonarResultType {
-    fn get_context_accounts_sonar_result_types(&self) -> Vec<SonarResultType> {
+    pub fn get_context_accounts_sonar_result_types(&self) -> Vec<SonarResultType> {
         vec![
             SonarResultType::ContextAccountsAll,
             SonarResultType::ContextAccountsOnlyValidation,
@@ -530,7 +530,7 @@ impl SonarResultType {
         ]
     }
 
-    fn is_context_accounts_sonar_result_type(&self) -> bool {
+    pub fn is_context_accounts_sonar_result_type(&self) -> bool {
         self.get_context_accounts_sonar_result_types()
             .iter()
             .any(|ca_type| self == ca_type)

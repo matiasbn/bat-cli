@@ -183,6 +183,7 @@ impl SourceCodeParser {
             let splitter = format!("{}/src/", bat_config.program_name);
             log::debug!("splitter: {}", splitter);
             let path = self.path.split(&splitter).last().unwrap();
+            log::debug!("splitted_path_lasth: {}", path);
             let path_to_include = format!("{}{}", splitter, path)
                 .trim_start_matches("/")
                 .to_string();

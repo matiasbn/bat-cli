@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
+use crate::batbelt::sonar::SonarResult;
 use inflector::Inflector;
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
@@ -84,6 +85,7 @@ impl EntrypointMetadata {
                 });
         format!("[{}]", cs_mut_accounts)
     }
+
     fn get_function_parameters_string(&self) -> String {
         let function_parameters =
             self.function_parameters
@@ -191,5 +193,51 @@ impl EntrypointMetadata {
             .trim()
             .to_string();
         data
+    }
+
+    fn get_mut_accounts(results: Vec<SonarResult>) -> Vec<Vec<String>> {
+        let mut_accounts_results = results
+            .iter()
+            .filter(|account| {
+                account.content.contains("#[account(") && account.content.contains("mut")
+            })
+            .collect::<Vec<_>>();
+        let mut result_vec: Vec<Vec<String>> = vec![];
+        for mut_account_result in mut_accounts_results {
+            let content_lines = mut_account_result.content.lines().clone();
+            let account_name = mut_account_result.name.clone();
+            let prefix = format!("pub {}: ", account_name);
+            let is_mut = if content_lines.count() == 2 {
+                let first_line = mut_account_result.content.lines().next().unwrap();
+                let first_line = first_line
+                    .trim()
+                    .trim_start_matches("#[account(")
+                    .trim_end_matches(")]");
+                first_line.split(",").any(|spl| spl.trim() == "mut")
+            } else {
+                mut_account_result
+                    .content
+                    .lines()
+                    .any(|line| line.trim().trim_end_matches(",") == "mut")
+            };
+            if is_mut {
+                let last_line = mut_account_result
+                    .content
+                    .lines()
+                    .last()
+                    .unwrap()
+                    .trim_end_matches(">,");
+                let account_definition = last_line.trim().strip_prefix(&prefix).unwrap();
+                let lifetime = account_definition.clone().split("<").last().unwrap();
+                let lifetime_split = lifetime.split(" ").collect::<Vec<_>>();
+                let account_type = if lifetime_split.len() > 1 {
+                    lifetime_split.last().unwrap().to_string()
+                } else {
+                    account_definition.split("<").next().unwrap().to_string()
+                };
+                result_vec.push(vec![account_name, account_type]);
+            }
+        }
+        result_vec
     }
 }

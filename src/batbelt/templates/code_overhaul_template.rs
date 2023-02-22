@@ -4,7 +4,7 @@ use crate::batbelt::metadata::functions_metadata::get_function_parameters;
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithStateChanges,
 };
@@ -77,53 +77,6 @@ impl CodeOverhaulTemplate {
             {miro_frame_url_content}
             ",
         )
-    }
-
-    fn get_mut_accounts(results: Vec<SonarResult>) -> Vec<Vec<String>> {
-        let mut_accounts_results = results
-            .iter()
-            .filter(|account| {
-                account.content.contains("#[account(") && account.content.contains("mut")
-            })
-            .collect::<Vec<_>>();
-        let mut result_vec: Vec<Vec<String>> = vec![];
-        for mut_account_result in mut_accounts_results {
-            let content_lines = mut_account_result.content.lines().clone();
-            let account_name = mut_account_result.name.clone();
-            let prefix = format!("pub {}: ", account_name);
-            let mut is_mut = false;
-            if content_lines.count() == 2 {
-                let first_line = mut_account_result.content.lines().next().unwrap();
-                let first_line = first_line
-                    .trim()
-                    .trim_start_matches("#[account(")
-                    .trim_end_matches(")]");
-                is_mut = first_line.split(",").any(|spl| spl.trim() == "mut");
-            } else {
-                is_mut = mut_account_result
-                    .content
-                    .lines()
-                    .any(|line| line.trim().trim_end_matches(",") == "mut");
-            };
-            if is_mut {
-                let last_line = mut_account_result
-                    .content
-                    .lines()
-                    .last()
-                    .unwrap()
-                    .trim_end_matches(">,");
-                let account_definition = last_line.trim().strip_prefix(&prefix).unwrap();
-                let lifetime = account_definition.clone().split("<").last().unwrap();
-                let lifetime_split = lifetime.split(" ").collect::<Vec<_>>();
-                let account_type = if lifetime_split.len() > 1 {
-                    lifetime_split.last().unwrap().to_string()
-                } else {
-                    account_definition.split("<").next().unwrap().to_string()
-                };
-                result_vec.push(vec![account_name, account_type]);
-            }
-        }
-        result_vec
     }
 }
 
@@ -285,7 +238,6 @@ impl CodeOverhaulSection {
         let context_source_code = entrypoint_parser.context_accounts.to_source_code(None);
         let context_lines = context_source_code.get_source_code_content();
         // signer names is only the name of the signer
-        // let signers_names = get_signers_description_from_co_file(&context_lines);
         let mut signers: Vec<String> = vec![];
         for (line_index, line) in context_lines.lines().enumerate() {
             if !line.contains("pub") {

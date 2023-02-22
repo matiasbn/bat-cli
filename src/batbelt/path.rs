@@ -1,7 +1,7 @@
 use crate::config::{BatAuditorConfig, BatConfig};
 use error_stack::{IntoReport, Result, ResultExt};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt, fs, path::Path};
+use std::{error::Error, fmt, path::Path};
 use walkdir::{DirEntry, WalkDir};
 
 #[derive(Debug)]
@@ -42,12 +42,15 @@ pub enum BatFile {
 
 impl BatFile {
     pub fn get_path(&self, canonicalize: bool) -> Result<String, BatPathError> {
-        let bat_config = BatConfig::get_config().change_context(BatPathError)?;
         let path = match self {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
             BatFile::PackageJson => "./package.json".to_string(),
-            BatFile::ProgramLib => bat_config.program_lib_path,
+            BatFile::ProgramLib => {
+                BatConfig::get_config()
+                    .change_context(BatPathError)?
+                    .program_lib_path
+            }
             BatFile::AuditResult => {
                 format!("./audit_result.md")
             }
@@ -298,52 +301,4 @@ pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, BatPath
         .into_string()
         .unwrap();
     Ok(canonicalized_path)
-}
-
-pub fn get_instruction_file_path_from_started_co_file(
-    entrypoint_name: String,
-) -> Result<String, BatPathError> {
-    let co_file_path = get_file_path(
-        BatFile::CodeOverhaulStarted {
-            file_name: entrypoint_name.clone(),
-        },
-        false,
-    )?;
-    let program_path = BatConfig::get_config()
-        .change_context(BatPathError)?
-        .program_lib_path
-        .replace("/lib.rs", "")
-        .replace("../", "");
-    let started_file_string = fs::read_to_string(co_file_path.clone()).unwrap();
-    let instruction_file_path = started_file_string
-        .lines()
-        .into_iter()
-        .find(|f| f.contains(&program_path))
-        .expect(&format!(
-            "co file of {} does not contain the instruction path yet",
-            entrypoint_name,
-        ))
-        .to_string();
-    Ok(instruction_file_path)
-}
-
-pub fn get_instruction_file_path_from_co_file_path(
-    co_file_path: String,
-) -> Result<String, BatPathError> {
-    let program_path = BatConfig::get_config()
-        .change_context(BatPathError)?
-        .program_lib_path
-        .replace("/lib.rs", "")
-        .replace("../", "");
-    let file_string = fs::read_to_string(co_file_path.clone()).unwrap();
-    let instruction_file_path = file_string
-        .lines()
-        .into_iter()
-        .find(|f| f.contains(&program_path))
-        .expect(&format!(
-            "co file of {} does not contain the instruction path yet",
-            co_file_path,
-        ))
-        .to_string();
-    Ok(instruction_file_path)
 }

@@ -1,6 +1,5 @@
 use crate::batbelt::metadata::functions_metadata::{
-    get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataInfoSection,
-    FunctionMetadataType,
+    get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataType,
 };
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -45,13 +44,6 @@ impl EntrypointParser {
         BatMetadataType::Functions
             .check_is_initialized()
             .change_context(ParserError)?;
-
-        let _function_sections = BatMetadataType::Functions
-            .get_markdown_sections_from_metadata_file()
-            .change_context(ParserError)?;
-
-        let _type_content = FunctionMetadataInfoSection::Type
-            .get_info_section_content(FunctionMetadataType::EntryPoint.to_string());
 
         let entrypoint_section = FunctionMetadata::get_filtered_metadata(
             Some(entrypoint_name),

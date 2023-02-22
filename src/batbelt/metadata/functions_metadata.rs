@@ -17,7 +17,7 @@ use std::{fs, vec};
 
 use super::MetadataError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionMetadata {
     pub path: String,
     pub name: String,
