@@ -6,6 +6,7 @@ use crate::config::BatConfig;
 use colored::Colorize;
 use error_stack::Result;
 use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use inflector::Inflector;
 use normalize_url::normalizer;
 use std::fs;
 use std::path::Path;
@@ -99,7 +100,7 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
     }
 
     // Project name selection
-    let mut project_name: String = program_name.to_owned() + "-audit";
+    let mut project_name: String = program_name.replace("_", "-").to_owned() + "-audit";
     let prompt_text = format!(
         "Do you want to use the name {} for this project?",
         format!("{project_name}").yellow()

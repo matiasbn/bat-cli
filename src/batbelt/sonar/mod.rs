@@ -29,9 +29,9 @@ pub struct BatSonar {
     pub content: String,
     pub result_type: SonarResultType,
     pub results: Vec<SonarResult>,
-    pub open_filters: SonarFilter,
-    pub end_of_open_filters: SonarFilter,
-    pub closure_filters: SonarFilter,
+    open_filters: SonarFilter,
+    end_of_open_filters: SonarFilter,
+    closure_filters: SonarFilter,
 }
 
 impl BatSonar {

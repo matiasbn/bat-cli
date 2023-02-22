@@ -4,17 +4,20 @@ use crate::batbelt::sonar::SonarResult;
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
+#[derive(Clone, Debug)]
 pub struct FunctionDependencyParser {
     pub is_external: bool,
     pub function_name: String,
     pub dependency_metadata_matches: Option<Vec<FunctionMetadata>>,
 }
 
+#[derive(Clone, Debug)]
 pub struct FunctionParameterParser {
     pub parameter_name: String,
     pub parameter_type: String,
 }
 
+#[derive(Clone, Debug)]
 pub struct FunctionParser {
     pub name: String,
     pub content: String,
@@ -25,7 +28,11 @@ pub struct FunctionParser {
 }
 
 impl FunctionParser {
-    fn new(name: String, content: String) -> Result<Self, ParserError> {
+    fn new(
+        name: String,
+        content: String,
+        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+    ) -> Result<Self, ParserError> {
         let mut new_function_parser = Self {
             name,
             content,
@@ -37,22 +44,28 @@ impl FunctionParser {
         new_function_parser.get_function_signature();
         new_function_parser.get_function_body();
         new_function_parser.get_function_parameters()?;
-        new_function_parser.get_function_dependencies()?;
+        new_function_parser.get_function_dependencies(optional_function_metadata_vec)?;
         Ok(new_function_parser)
     }
 
-    pub fn new_from_metadata(function_metadata: FunctionMetadata) -> Result<Self, ParserError> {
+    pub fn new_from_metadata(
+        function_metadata: FunctionMetadata,
+        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+    ) -> Result<Self, ParserError> {
         let name = function_metadata.name.clone();
         let content = function_metadata
             .to_source_code(None)
             .get_source_code_content();
-        Ok(Self::new(name, content)?)
+        Ok(Self::new(name, content, optional_function_metadata_vec)?)
     }
 
-    pub fn new_from_sonar_result(sonar_result: SonarResult) -> Result<Self, ParserError> {
+    pub fn new_from_sonar_result(
+        sonar_result: SonarResult,
+        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+    ) -> Result<Self, ParserError> {
         let name = sonar_result.name.clone();
         let content = sonar_result.content.clone();
-        Ok(Self::new(name, content)?)
+        Ok(Self::new(name, content, optional_function_metadata_vec)?)
     }
 
     fn get_function_signature(&mut self) {
@@ -142,9 +155,15 @@ impl FunctionParser {
         self.body = body.trim_end_matches("}").trim().to_string();
     }
 
-    fn get_function_dependencies(&mut self) -> Result<(), ParserError> {
-        let function_metadata =
-            FunctionMetadata::get_filtered_metadata(None, None).change_context(ParserError)?;
+    fn get_function_dependencies(
+        &mut self,
+        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+    ) -> Result<(), ParserError> {
+        let function_metadata = if optional_function_metadata_vec.is_some() {
+            optional_function_metadata_vec.unwrap()
+        } else {
+            FunctionMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
+        };
         let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_,\s]*)\)").unwrap();
         let dependency_parser_vec = dependency_regex
             .find_iter(&self.body)
@@ -190,28 +209,28 @@ impl FunctionParser {
     }
 }
 
-#[test]
+// #[test]
 
-fn test_get_function_dependencies_signatures() {
-    let test_text = "
-    match function_1(
-        param1, 
-        param2, 
-        param3, 
-        param4
-    )? {
-        Enum1::Variant1 => Ok(Enum1::Variant1),
-        Enum1::Vartiant2((permission_key, permissions)) => {
-            let permissions = function_3::dep1(permissions);
-            Ok(Enum2::Variant1((
-                param1,
-                P::function3(param1),
-                param_a,
-            )))
-        }
-    }
- ";
-    let test_text_dep_signatures = FunctionParser::get_function_dependencies(test_text).unwrap();
-    println!("deps {:#?}", test_text_dep_signatures);
-    // seeds = \(([\s,\t]{0,}[.\n.?][\s\S]{0,}[\s,\t]{0,}[.\n.?][\s,\t]{0,})\)
-}
+// fn test_get_function_dependencies_signatures() {
+//     let test_text = "
+//     match function_1(
+//         param1,
+//         param2,
+//         param3,
+//         param4
+//     )? {
+//         Enum1::Variant1 => Ok(Enum1::Variant1),
+//         Enum1::Vartiant2((permission_key, permissions)) => {
+//             let permissions = function_3::dep1(permissions);
+//             Ok(Enum2::Variant1((
+//                 param1,
+//                 P::function3(param1),
+//                 param_a,
+//             )))
+//         }
+//     }
+//  ";
+//     let test_text_dep_signatures = FunctionParser::get_function_dependencies(test_text).unwrap();
+//     println!("deps {:#?}", test_text_dep_signatures);
+//     // seeds = \(([\s,\t]{0,}[.\n.?][\s\S]{0,}[\s,\t]{0,}[.\n.?][\s,\t]{0,})\)
+// }

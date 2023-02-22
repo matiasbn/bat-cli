@@ -6,8 +6,10 @@ extern crate confy;
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 
+use crate::commands::miro::MiroActions;
 use colored::Colorize;
 use commands::CommandError;
+use error_stack::Result;
 use error_stack::ResultExt;
 use std::process;
 
@@ -61,6 +63,26 @@ enum Commands {
     Package(PackageActions),
 }
 
+impl Commands {
+    pub async fn execute(&self) -> Result<(), CommandError> {
+        match self {
+            Commands::Create
+            | Commands::Init { .. }
+            | Commands::CO(_)
+            | Commands::Finding(_)
+            | Commands::Update
+            | Commands::Notes
+            | Commands::Sonar
+            | Commands::Git(_)
+            | Commands::Package(_) => {
+                unimplemented!()
+            }
+            Commands::Miro(action) => action.execute_action().await?,
+        }
+        Ok(())
+    }
+}
+
 // #[derive(Subcommand, Debug, strum_macros::Display)]
 // enum ResultActions {
 //     /// Updates the Code Overhaul section of the audit_result.md file
@@ -87,30 +109,6 @@ enum GitActions {
     },
     /// Fetch remote branches
     FetchRemoteBranches {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-    },
-}
-
-#[derive(Subcommand, Debug, strum_macros::Display)]
-enum MiroActions {
-    /// Deploy or updates a code-overhaul frame
-    CodeOverhaul,
-    /// Deploys the entrypoint, context accounts and handler to a Miro frame
-    Entrypoint {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-        /// shows the list of entrypoints sorted by name
-        #[arg(long)]
-        sorted: bool,
-    },
-    /// Creates an screenshot in a determined frame from metadata
-    Metadata {
-        /// deploy the screenshots with the default configuration
-        #[arg(long)]
-        default: bool,
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
@@ -211,16 +209,14 @@ async fn main() {
         Commands::CO(CodeOverhaulActions::Templates) => {
             commands::code_overhaul::update_co_templates()
         }
-        Commands::Miro(MiroActions::CodeOverhaul) => {
-            commands::miro::deploy_code_overhaul_screenshots_to_frame().await
-        }
-        Commands::Miro(MiroActions::Entrypoint { select_all, sorted }) => {
-            commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted).await
-        }
-        Commands::Miro(MiroActions::Metadata {
-            default,
-            select_all,
-        }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all).await,
+        Commands::Miro(..) => cli.command.execute().await,
+        // Commands::Miro(MiroActions::Entrypoint { select_all, sorted }) => {
+        //     commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted).await
+        // }
+        // Commands::Miro(MiroActions::Metadata {
+        //     default,
+        //     select_all,
+        // }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all).await,
         Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
         Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
         Commands::Finding(FindingActions::Update) => commands::finding::update_finding(),

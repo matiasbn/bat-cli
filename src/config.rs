@@ -29,7 +29,7 @@ pub struct BatAuditorConfig {
 
 impl BatAuditorConfig {
     pub fn get_config() -> Result<Self, BatConfigError> {
-        let path = BatFile::BatToml
+        let path = BatFile::BatAuditorToml
             .get_path(true)
             .change_context(BatConfigError)?;
         let bat_config: BatAuditorConfig = Figment::new()
@@ -41,7 +41,7 @@ impl BatAuditorConfig {
     }
 
     pub fn save(&self) -> Result<(), BatConfigError> {
-        let path = BatFile::BatToml
+        let path = BatFile::BatAuditorToml
             .get_path(false)
             .change_context(BatConfigError)?;
         Ok(confy::store_path(path, self)

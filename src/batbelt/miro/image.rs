@@ -14,13 +14,13 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 
 use super::MiroError;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MiroImageType {
     FromUrl,
     FromPath,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MiroImage {
     pub source: String,
     pub image_type: MiroImageType,
