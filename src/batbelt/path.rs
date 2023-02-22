@@ -1,7 +1,7 @@
 use crate::config::{BatAuditorConfig, BatConfig};
 use error_stack::{IntoReport, Result, ResultExt};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt, fs, path::Path};
+use std::{error::Error, fmt, path::Path};
 use walkdir::{DirEntry, WalkDir};
 
 #[derive(Debug)]

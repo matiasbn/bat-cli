@@ -207,7 +207,7 @@ impl EntrypointMetadata {
             let content_lines = mut_account_result.content.lines().clone();
             let account_name = mut_account_result.name.clone();
             let prefix = format!("pub {}: ", account_name);
-            let mut is_mut = if content_lines.count() == 2 {
+            let is_mut = if content_lines.count() == 2 {
                 let first_line = mut_account_result.content.lines().next().unwrap();
                 let first_line = first_line
                     .trim()
