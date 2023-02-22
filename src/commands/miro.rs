@@ -14,7 +14,7 @@ use crate::batbelt::miro::MiroConfig;
 
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
-use clap::{Parser, Subcommand};
+use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 
@@ -799,7 +799,7 @@ impl MiroActions {
         Ok(())
     }
 
-    async fn function_action(&self, select_all: bool) -> Result<(), CommandError> {
+    async fn function_action(&self, _select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
         let mut function_metadata_vec =
             FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;

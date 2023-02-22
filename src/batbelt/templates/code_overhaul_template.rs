@@ -4,7 +4,7 @@ use crate::batbelt::metadata::functions_metadata::get_function_parameters;
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithStateChanges,
 };

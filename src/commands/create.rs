@@ -6,7 +6,7 @@ use crate::config::BatConfig;
 use colored::Colorize;
 use error_stack::Result;
 use error_stack::{FutureExt, IntoReport, Report, ResultExt};
-use inflector::Inflector;
+
 use normalize_url::normalizer;
 use std::fs;
 use std::path::Path;

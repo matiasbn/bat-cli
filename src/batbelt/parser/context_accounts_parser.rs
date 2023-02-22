@@ -1,7 +1,6 @@
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
 use crate::batbelt::parser::ParserError;
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::sonar::{SonarResult, SonarResultType};
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 

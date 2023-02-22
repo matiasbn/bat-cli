@@ -1,8 +1,7 @@
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
 use crate::batbelt::parser::ParserError;
-use crate::batbelt::sonar::{SonarResult, SonarResultType};
-use error_stack::{Report, Result, ResultExt};
-use regex::Regex;
+use crate::batbelt::sonar::SonarResult;
+use error_stack::{Result, ResultExt};
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 pub enum SolanaAccountType {

@@ -1,6 +1,5 @@
 use crate::batbelt::metadata::functions_metadata::{
-    get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataInfoSection,
-    FunctionMetadataType,
+    get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataType,
 };
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -12,7 +11,6 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::fs;
 
 use crate::batbelt::metadata::BatMetadataType;
-use crate::batbelt::parser::function_parser::FunctionParser;
 
 use crate::batbelt::parser::ParserError;
 
