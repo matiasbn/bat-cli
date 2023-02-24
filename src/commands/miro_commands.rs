@@ -23,7 +23,7 @@ use inflector::Inflector;
 use super::CommandError;
 
 #[derive(Subcommand, Debug, strum_macros::Display)]
-pub enum MiroActions {
+pub enum MiroCommand {
     /// Deploy or updates a code-overhaul frame
     CodeOverhaul,
     /// Deploys the entrypoint, context accounts and handler to a Miro frame
@@ -49,15 +49,15 @@ pub enum MiroActions {
     },
 }
 
-impl MiroActions {
-    pub async fn execute_action(&self) -> Result<(), CommandError> {
+impl MiroCommand {
+    pub async fn execute_command(&self) -> Result<(), CommandError> {
         match self {
-            MiroActions::CodeOverhaul => unimplemented!(),
-            MiroActions::Entrypoint { select_all, sorted } => {
+            MiroCommand::CodeOverhaul => unimplemented!(),
+            MiroCommand::Entrypoint { select_all, sorted } => {
                 self.entrypoint_action(*select_all, *sorted).await?
             }
-            MiroActions::Metadata { select_all } => self.metadata_action(*select_all).await?,
-            MiroActions::Function { select_all } => self.function_action(*select_all).await?,
+            MiroCommand::Metadata { select_all } => self.metadata_action(*select_all).await?,
+            MiroCommand::Function { select_all } => self.function_action(*select_all).await?,
         }
         Ok(())
     }
@@ -618,9 +618,9 @@ impl MiroActions {
 
     async fn metadata_action(&self, select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
+        let mut continue_selection = true;
         let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_metadata_type_vec();
-        let mut continue_selection = true;
         while continue_selection {
             // Choose metadata section selection
             let prompt_text = format!("Please enter the {}", "metadata type".green());

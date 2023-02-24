@@ -13,6 +13,9 @@ use crate::batbelt::path::BatFile;
 
 use inflector::Inflector;
 
+use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
+use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
 use error_stack::{Report, Result, ResultExt};
 use strum::IntoEnumIterator;
 
@@ -124,5 +127,15 @@ impl BatMetadataType {
             )));
         }
         Ok(())
+    }
+    pub fn prompt_metadata_type_selection() -> Result<Self, MetadataError> {
+        let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
+        let metadata_types_colorized_vec = BatMetadataType::get_colorized_metadata_type_vec();
+        // Choose metadata section selection
+        let prompt_text = format!("Please enter the {}", "metadata type".green());
+        let selection =
+            BatDialoguer::select(prompt_text, metadata_types_colorized_vec.clone(), None).unwrap();
+        let metadata_type_selected = &metadata_types_vec[selection];
+        Ok(metadata_type_selected.clone())
     }
 }

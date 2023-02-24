@@ -7,24 +7,24 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 
 use std::process::Command;
 
-pub enum GitCommands {
+pub enum GitCommand {
     UpdateBranches,
     FetchRemoteBranches { select_all: bool },
     DeleteLocalBranches { select_all: bool },
 }
 
-impl GitCommands {
+impl GitCommand {
     pub fn execute(&self) -> Result<(), CommandError> {
         self.check_develop_exists()?;
         match self {
-            GitCommands::UpdateBranches => {
+            GitCommand::UpdateBranches => {
                 self.merge_all_to_develop()?;
                 self.merge_develop_to_all()?;
             }
-            GitCommands::FetchRemoteBranches { select_all } => {
+            GitCommand::FetchRemoteBranches { select_all } => {
                 self.fetch_remote_branches(select_all.clone())?
             }
-            GitCommands::DeleteLocalBranches { select_all } => {
+            GitCommand::DeleteLocalBranches { select_all } => {
                 self.delete_local_branches(select_all.clone())?
             }
         }
@@ -166,13 +166,13 @@ impl GitCommands {
 #[test]
 fn test_get_remote_branches_filtered() {
     let remote_branches =
-        GitCommands::get_remote_branches_filtered(&GitCommands::UpdateBranches).unwrap();
+        GitCommand::get_remote_branches_filtered(&GitCommand::UpdateBranches).unwrap();
     println!("remote_branches:\n{:#?}", remote_branches)
 }
 
 #[test]
 fn test_get_local_branches_filtered() {
     let local_branches =
-        GitCommands::get_local_branches_filtered(&GitCommands::UpdateBranches).unwrap();
+        GitCommand::get_local_branches_filtered(&GitCommand::UpdateBranches).unwrap();
     println!("local_branches:\n{:#?}", local_branches)
 }

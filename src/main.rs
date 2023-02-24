@@ -6,7 +6,8 @@ extern crate confy;
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 
-use crate::commands::miro::MiroActions;
+use crate::commands::miro_commands::MiroCommand;
+use crate::commands::sonar_commands::SonarCommand;
 use colored::Colorize;
 use commands::CommandError;
 use error_stack::Result;
@@ -39,28 +40,26 @@ enum Commands {
     },
     /// code-overhaul files management
     #[command(subcommand)]
-    CO(CodeOverhaulActions),
+    CO(CodeOverhaulCommand),
     /// findings files management
     #[command(subcommand)]
-    Finding(FindingActions),
+    Finding(FindingCommand),
     /// Miro integration
     #[command(subcommand)]
-    Miro(MiroActions),
+    Miro(MiroCommand),
+    /// Sonar actions
+    #[command(subcommand)]
+    Sonar(SonarCommand),
+    /// Git actions to manage repository
+    #[command(subcommand)]
+    Git(GitCommand),
     /// Update the templates folder and the package.json of the audit repository
     Update,
     /// Commits the open_questions, smellies and threat_modeling notes
     Notes,
-    /// Initializes the metadata and deploy the Initial Miro frames
-    Sonar,
-    // /// Updates the audit_result.md file in the root of the audit
-    // #[command(subcommand)]
-    // Result(ResultActions),
-    /// Git actions to manage repository
-    #[command(subcommand)]
-    Git(GitActions),
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
-    Package(PackageActions),
+    Package(PackageCommand),
 }
 
 impl Commands {
@@ -72,33 +71,19 @@ impl Commands {
             | Commands::Finding(_)
             | Commands::Update
             | Commands::Notes
-            | Commands::Sonar
             | Commands::Git(_)
             | Commands::Package(_) => {
                 unimplemented!()
             }
-            Commands::Miro(action) => action.execute_action().await?,
+            Commands::Miro(command) => command.execute_command().await?,
+            Commands::Sonar(command) => command.execute_command()?,
         }
         Ok(())
     }
 }
 
-// #[derive(Subcommand, Debug, strum_macros::Display)]
-// enum ResultActions {
-//     /// Updates the Code Overhaul section of the audit_result.md file
-//     CodeOverhaul,
-//     /// Updates the Findings section of the audit_result.md file
-//     Findings {
-//         /// updates the result, formatting with html structure
-//         #[arg(long)]
-//         html: bool,
-//     },
-//     /// Creates the commit for the results files
-//     Commit,
-// }
-
 #[derive(Subcommand, Debug, strum_macros::Display)]
-enum GitActions {
+enum GitCommand {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
     UpdateBranches,
     /// Delete local branches
@@ -116,7 +101,7 @@ enum GitActions {
 }
 
 #[derive(Subcommand, Debug, strum_macros::Display)]
-enum FindingActions {
+enum FindingCommand {
     /// Creates a finding file
     Create,
     /// Finish a finding file by creating a commit
@@ -130,7 +115,7 @@ enum FindingActions {
 }
 
 #[derive(Subcommand, Debug, strum_macros::Display)]
-enum CodeOverhaulActions {
+enum CodeOverhaulCommand {
     /// Starts a code-overhaul file audit
     Start,
     /// Moves the code-overhaul file from to-review to finished
@@ -148,7 +133,7 @@ enum CodeOverhaulActions {
 }
 
 #[derive(Subcommand, Debug, strum_macros::Display)]
-enum PackageActions {
+enum PackageCommand {
     /// run cargo clippy and commit the changes
     Format,
     /// Creates a git flow release, bumps the version, formats the code and publish
@@ -183,32 +168,32 @@ async fn main() {
     };
 
     let result = match cli.command {
-        Commands::Git(GitActions::UpdateBranches) => {
-            commands::git::GitCommands::UpdateBranches.execute()
+        Commands::Git(GitCommand::UpdateBranches) => {
+            commands::git::GitCommand::UpdateBranches.execute()
         }
-        Commands::Git(GitActions::DeleteLocalBranches { select_all }) => {
-            commands::git::GitCommands::DeleteLocalBranches { select_all }.execute()
+        Commands::Git(GitCommand::DeleteLocalBranches { select_all }) => {
+            commands::git::GitCommand::DeleteLocalBranches { select_all }.execute()
         }
-        Commands::Git(GitActions::FetchRemoteBranches { select_all }) => {
-            commands::git::GitCommands::FetchRemoteBranches { select_all }.execute()
+        Commands::Git(GitCommand::FetchRemoteBranches { select_all }) => {
+            commands::git::GitCommand::FetchRemoteBranches { select_all }.execute()
         }
-        Commands::Sonar => commands::sonar::start_sonar(),
         Commands::Create => commands::create::create_project(),
         Commands::Init {
             skip_initial_commit,
         } => commands::init::initialize_bat_project(skip_initial_commit).await,
-        Commands::CO(CodeOverhaulActions::Start) => commands::code_overhaul::start::start_co_file(),
-        Commands::CO(CodeOverhaulActions::Finish) => {
+        Commands::CO(CodeOverhaulCommand::Start) => commands::code_overhaul::start::start_co_file(),
+        Commands::CO(CodeOverhaulCommand::Finish) => {
             commands::code_overhaul::finish::finish_co_file().await
         }
-        Commands::CO(CodeOverhaulActions::Update) => {
+        Commands::CO(CodeOverhaulCommand::Update) => {
             commands::code_overhaul::update::update_co_file()
         }
-        Commands::CO(CodeOverhaulActions::Count) => commands::code_overhaul::count_co_files(),
-        Commands::CO(CodeOverhaulActions::Open) => commands::code_overhaul::open_co(),
-        Commands::CO(CodeOverhaulActions::Templates) => {
+        Commands::CO(CodeOverhaulCommand::Count) => commands::code_overhaul::count_co_files(),
+        Commands::CO(CodeOverhaulCommand::Open) => commands::code_overhaul::open_co(),
+        Commands::CO(CodeOverhaulCommand::Templates) => {
             commands::code_overhaul::update_co_templates()
         }
+        Commands::Sonar(..) => cli.command.execute().await,
         Commands::Miro(..) => cli.command.execute().await,
         // Commands::Miro(MiroActions::Entrypoint { select_all, sorted }) => {
         //     commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted).await
@@ -217,11 +202,11 @@ async fn main() {
         //     default,
         //     select_all,
         // }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all).await,
-        Commands::Finding(FindingActions::Create) => commands::finding::create_finding(),
-        Commands::Finding(FindingActions::Finish) => commands::finding::finish_finding(),
-        Commands::Finding(FindingActions::Update) => commands::finding::update_finding(),
-        Commands::Finding(FindingActions::AcceptAll) => commands::finding::accept_all(),
-        Commands::Finding(FindingActions::Reject) => commands::finding::reject(),
+        Commands::Finding(FindingCommand::Create) => commands::finding::create_finding(),
+        Commands::Finding(FindingCommand::Finish) => commands::finding::finish_finding(),
+        Commands::Finding(FindingCommand::Update) => commands::finding::update_finding(),
+        Commands::Finding(FindingCommand::AcceptAll) => commands::finding::accept_all(),
+        Commands::Finding(FindingCommand::Reject) => commands::finding::reject(),
         Commands::Update => commands::update::update_repository().change_context(CommandError),
         Commands::Notes => {
             batbelt::git::create_git_commit(GitCommit::Notes, None).change_context(CommandError)
@@ -232,9 +217,9 @@ async fn main() {
         // Commands::Result(ResultActions::Commit) => commands::result::results_commit().change_context(CommandError),
         // only for dev
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Format) => package::format().change_context(CommandError),
+        Commands::Package(PackageCommand::Format) => package::format().change_context(CommandError),
         #[cfg(debug_assertions)]
-        Commands::Package(PackageActions::Release) => {
+        Commands::Package(PackageCommand::Release) => {
             package::release().change_context(CommandError)
         }
         _ => unimplemented!("Command only implemented for dev operations"),

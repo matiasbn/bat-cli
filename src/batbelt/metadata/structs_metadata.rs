@@ -8,6 +8,7 @@ use colored::{ColoredString, Colorize};
 
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 
+use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
@@ -109,6 +110,57 @@ impl StructMetadata {
             start_line_index.parse::<usize>().unwrap(),
             end_line_index.parse::<usize>().unwrap(),
         ))
+    }
+
+    pub fn prompt_multiselection(
+        select_all: bool,
+        force_select: bool,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let (struct_metadata_vec, struct_metadata_names) = Self::prompt_types()?;
+        let prompt_text_2 = format!("Please select the struct:");
+
+        let selections = BatDialoguer::multiselect(
+            prompt_text_2.clone(),
+            struct_metadata_names.clone(),
+            Some(&vec![select_all; struct_metadata_names.len()]),
+            force_select,
+        )
+        .change_context(MetadataError)?;
+
+        let filtered_vec = struct_metadata_vec
+            .into_iter()
+            .enumerate()
+            .filter_map(|(sc_index, sc_metadata)| {
+                if selections.iter().any(|selection| &sc_index == selection) {
+                    Some(sc_metadata)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        return Ok(filtered_vec);
+    }
+
+    fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
+        let prompt_text_1 = format!("Please select the struct type:");
+        let struct_types_colorized = StructMetadataType::get_colorized_structs_type_vec();
+        let selection = BatDialoguer::select(prompt_text_1, struct_types_colorized.clone(), None)
+            .change_context(MetadataError)?;
+        let selected_struct_type = StructMetadataType::get_structs_type_vec()[selection];
+        let struct_metadata_vec = Self::get_filtered_metadata(None, Some(selected_struct_type))
+            .change_context(MetadataError)?;
+        let struct_metadata_names = struct_metadata_vec
+            .iter()
+            .map(|struct_metadata| {
+                format!(
+                    "{}: {}:{}",
+                    struct_metadata.name.clone(),
+                    struct_metadata.path.clone(),
+                    struct_metadata.start_line_index.clone()
+                )
+            })
+            .collect::<Vec<_>>();
+        Ok((struct_metadata_vec, struct_metadata_names))
     }
 
     pub fn get_filtered_metadata(
