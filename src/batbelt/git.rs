@@ -15,6 +15,7 @@ use crate::{
     config::BatConfig,
 };
 use error_stack::{IntoReport, Report, Result, ResultExt};
+use inflector::Inflector;
 
 #[derive(Debug)]
 pub struct GitOperationError;
@@ -324,7 +325,7 @@ pub fn create_git_commit(
             (commit_string, vec![tm_path])
         }
         GitCommit::UpdateMetadata { metadata_type } => {
-            let metadata_type_string = metadata_type.to_string().to_lowercase();
+            let metadata_type_string = metadata_type.to_string().to_snake_case();
             println!("Creating a commit for {}.md", metadata_type_string);
             let metadata_path = metadata_type.get_path().change_context(GitOperationError)?;
             let commit_string = format!("metadata: {}.md updated", metadata_type_string);

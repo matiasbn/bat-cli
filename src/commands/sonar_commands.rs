@@ -4,6 +4,7 @@ use crate::batbelt::command_line::execute_command;
 use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
+use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
 use crate::batbelt::metadata::trait_metadata::TraitMetadata;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::path::BatFile;
@@ -84,6 +85,8 @@ impl SonarCommand {
         self.functions()?;
         BatSonar::display_looking_for_loader(SonarResultType::Trait);
         self.traits()?;
+        BatSonar::display_looking_for_loader(SonarResultType::TraitImpl);
+        self.traits_impl()?;
         Ok(())
     }
 
@@ -161,6 +164,36 @@ impl SonarCommand {
         batbelt::git::create_git_commit(
             GitCommit::UpdateMetadata {
                 metadata_type: BatMetadataType::Trait,
+            },
+            None,
+        )
+        .unwrap();
+        Ok(())
+    }
+    fn traits_impl(&self) -> Result<(), CommandError> {
+        let trait_file_path = BatFile::TraitImplMetadata
+            .get_path(false)
+            .change_context(CommandError)?;
+        if !Path::new(&trait_file_path).is_file() {
+            execute_command("touch", &[&trait_file_path])?;
+        }
+        let mut traits_metadata_markdown = BatMetadataType::TraitImpl
+            .get_markdown()
+            .change_context(CommandError)?;
+        let traits_metadata = TraitImplMetadata::get_traits_impl_metadata_from_program()
+            .change_context(CommandError)?;
+        let traits_markdown_content = traits_metadata
+            .into_iter()
+            .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        traits_metadata_markdown.content = traits_markdown_content;
+        traits_metadata_markdown
+            .save()
+            .change_context(CommandError)?;
+        batbelt::git::create_git_commit(
+            GitCommit::UpdateMetadata {
+                metadata_type: BatMetadataType::TraitImpl,
             },
             None,
         )

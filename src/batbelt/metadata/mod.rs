@@ -2,6 +2,7 @@ pub mod entrypoint_metadata;
 pub mod functions_metadata;
 pub mod miro_metadata;
 pub mod structs_metadata;
+pub mod trait_impl_metadata;
 pub mod trait_metadata;
 
 use colored::{ColoredString, Colorize};

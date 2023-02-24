@@ -12,6 +12,7 @@ pub mod functions;
 pub mod structs;
 
 use error_stack::{Result, ResultExt};
+use regex::Regex;
 
 #[derive(Debug)]
 pub struct BatSonarError;
@@ -144,12 +145,11 @@ impl BatSonar {
 
     pub fn display_looking_for_loader(result_type: SonarResultType) {
         let pb = ProgressBar::new_spinner();
-        pb.enable_steady_tick(Duration::from_millis(200));
+        pb.enable_steady_tick(Duration::from_millis(100));
         pb.set_style(
             ProgressStyle::with_template("{spinner:.blue} {msg}")
                 .unwrap()
                 .tick_strings(&[
-                    "📂                  〰️🦇",
                     "📂                  〰️🦇",
                     "📂                〰️  🦇",
                     "📂              〰️    🦇",
@@ -176,7 +176,7 @@ impl BatSonar {
             result_type.to_string().to_plural().green(),
             "BatSonar".red(),
         ));
-        thread::sleep(Duration::from_millis(3400));
+        thread::sleep(Duration::from_millis(1700));
         pb.finish_with_message("Done");
     }
 
@@ -318,6 +318,8 @@ impl SonarResult {
             SonarResultType::Struct => self.get_name(),
             SonarResultType::Module => self.get_name(),
             SonarResultType::ContextAccountsAll => self.get_name(),
+            SonarResultType::Trait => self.get_name(),
+            SonarResultType::TraitImpl => self.get_name(),
             SonarResultType::ContextAccountsOnlyValidation => {
                 self.get_name();
                 self.format_ca_only_validations()
@@ -332,11 +334,7 @@ impl SonarResult {
 
     fn get_name(&mut self) {
         match self.result_type {
-            SonarResultType::Function
-            | SonarResultType::Struct
-            | SonarResultType::Module
-            | SonarResultType::Trait
-            | SonarResultType::TraitImpl => {
+            SonarResultType::Function | SonarResultType::Struct | SonarResultType::Module => {
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
                 let mut first_line_tokenized = first_line.trim().split(" ");
@@ -354,6 +352,41 @@ impl SonarResult {
                     .unwrap();
                 self.name = name.to_string();
                 self.is_public = is_public;
+            }
+            SonarResultType::Trait => {
+                let first_line = self.content.clone();
+                let first_line = first_line.lines().next().unwrap();
+                let mut first_line_tokenized = first_line.trim().split(" ");
+                let is_public = first_line_tokenized.next().unwrap().contains("pub");
+                if is_public {
+                    first_line_tokenized.next().unwrap();
+                }
+                let name_candidate = first_line_tokenized.next().unwrap();
+                let name = name_candidate
+                    .split("<")
+                    .next()
+                    .unwrap()
+                    .split(":")
+                    .next()
+                    .unwrap()
+                    .split("{")
+                    .next()
+                    .unwrap();
+                self.name = name.to_string();
+                self.is_public = is_public;
+                log::debug!("name: {}", name);
+                log::debug!("is_public: {}", is_public);
+            }
+            SonarResultType::TraitImpl => {
+                let first_line = self.content.clone();
+                let first_line = first_line.lines().next().unwrap();
+                let lifetime_regex = Regex::new(r"<[A-Za-z, _:.']*>").unwrap();
+                let filtered = lifetime_regex.replace_all(first_line, "").to_string();
+                let mut first_line_tokenized = filtered.trim().split(" ");
+                first_line_tokenized.next().unwrap();
+                let name = first_line_tokenized.next().unwrap();
+                self.name = name.to_string();
+                log::debug!("name: {}", name);
             }
             SonarResultType::ContextAccountsAll
             | SonarResultType::ContextAccountsOnlyValidation => {
