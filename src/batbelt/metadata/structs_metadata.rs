@@ -252,7 +252,7 @@ impl StructMetadata {
                     let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Struct);
                     for result in bat_sonar.results {
                         println!(
-                            "Function found at {}\n{}",
+                            "Struct found at {}\n{}",
                             format!("{}:{}", &entry_path, result.start_line_index + 1).magenta(),
                             result.content.clone().green()
                         );

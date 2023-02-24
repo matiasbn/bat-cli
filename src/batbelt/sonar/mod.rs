@@ -195,10 +195,14 @@ impl BatSonar {
         starting_line: &str,
     ) -> Option<usize> {
         if (self.result_type == SonarResultType::Validation
+            || self.result_type == SonarResultType::Struct
             || self.result_type == SonarResultType::ContextAccountsAll
             || self.result_type == SonarResultType::ContextAccountsNoValidation)
             && self.starting_line_contains_closure_filter(starting_line)
         {
+            log::debug!("starting_line_contains_closure_filter");
+            log::debug!("result_type; {}", self.result_type.to_string());
+            log::debug!("starting_line; {}", starting_line);
             return Some(start_index);
         }
         let closing_line_candidates = self.get_closing_lines_candidates(trailing_whitespaces);
@@ -333,8 +337,7 @@ impl SonarResult {
                 let first_line = first_line.lines().next().unwrap();
                 let mut first_line_tokenized = first_line.trim().split(" ");
                 let is_public = first_line_tokenized.next().unwrap().contains("pub");
-                let is_crate = first_line_tokenized.next().unwrap().contains("(crate)");
-                if is_crate {
+                if is_public {
                     first_line_tokenized.next().unwrap();
                 }
                 let name_candidate = first_line_tokenized.next().unwrap();
@@ -560,8 +563,8 @@ impl SonarFilter {
             SonarFilter::EndOfOpen(SonarResultType::Function) => vec!["("],
             SonarFilter::Closure(SonarResultType::Function) => vec!["}"],
             SonarFilter::Open(SonarResultType::Struct) => vec!["struct", "pub struct"],
-            SonarFilter::EndOfOpen(SonarResultType::Struct) => vec!["{"],
-            SonarFilter::Closure(SonarResultType::Struct) => vec!["}"],
+            SonarFilter::EndOfOpen(SonarResultType::Struct) => vec!["{", ";"],
+            SonarFilter::Closure(SonarResultType::Struct) => vec!["}", ";"],
             SonarFilter::Open(SonarResultType::Module) => vec!["mod", "pub mod"],
             SonarFilter::EndOfOpen(SonarResultType::Module) => vec!["{"],
             SonarFilter::Closure(SonarResultType::Module) => vec!["}"],

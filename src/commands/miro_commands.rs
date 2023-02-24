@@ -811,11 +811,10 @@ impl MiroCommand {
                 .clone()
                 .into_iter()
                 .map(|f_meta| {
-                    format!(
-                        "{} {}:{} ",
+                    self.get_formatted_path(
                         f_meta.name.clone(),
                         f_meta.path.clone(),
-                        f_meta.start_line_index.clone()
+                        f_meta.start_line_index.clone(),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -961,9 +960,10 @@ impl MiroCommand {
             .clone()
             .into_iter()
             .map(|dep| {
-                format!(
-                    "{} : {}{}",
-                    dep.name, dep.function_metadata.path, dep.function_metadata.start_line_index
+                self.get_formatted_path(
+                    dep.name,
+                    dep.function_metadata.path.clone(),
+                    dep.function_metadata.start_line_index,
                 )
             })
             .collect::<Vec<_>>();
@@ -971,7 +971,7 @@ impl MiroCommand {
         let multi_selection = BatDialoguer::multiselect(
             prompt_text,
             formatted_option.clone(),
-            Some(&vec![false; formatted_option.clone().len()]),
+            Some(&vec![true; formatted_option.clone().len()]),
             false,
         )?;
 
@@ -1027,6 +1027,15 @@ impl MiroCommand {
             .change_context(CommandError)?;
         }
         Ok(())
+    }
+
+    fn get_formatted_path(&self, name: String, path: String, start_line_index: usize) -> String {
+        format!(
+            "{}: {}:{}",
+            name.blue(),
+            path.trim_start_matches("../"),
+            start_line_index
+        )
     }
 
     async fn prompt_select_frame(&self) -> Result<MiroFrame, CommandError> {

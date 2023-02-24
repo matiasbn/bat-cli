@@ -246,7 +246,6 @@ impl MarkdownFile {
                     section_header.clone(),
                     &self.content.clone(),
                 );
-                log::info!("new_section: \n{:#?}", new_section);
                 new_section
             })
             .collect();
