@@ -494,7 +494,7 @@ impl MiroActions {
 
         // prompt the user to select an entrypoint
         let prompt_text = "Please select the entrypoints to deploy";
-        let selected_entrypoints_index = batbelt::cli_inputs::multiselect(
+        let selected_entrypoints_index = batbelt::bat_dialoguer::multiselect(
             prompt_text,
             entrypoints_names.clone(),
             Some(&vec![select_all; entrypoints_names.clone().len()]),
@@ -629,7 +629,7 @@ impl MiroActions {
         while continue_selection {
             // Choose metadata section selection
             let prompt_text = format!("Please enter the {}", "metadata type".green());
-            let selection = batbelt::cli_inputs::select(
+            let selection = batbelt::bat_dialoguer::select(
                 &prompt_text,
                 metadata_types_colorized_vec.clone(),
                 None,
@@ -646,7 +646,7 @@ impl MiroActions {
                         format!("Please enter the {}", "struct type to deploy".green());
                     let struct_types_colorized =
                         StructMetadataType::get_colorized_structs_type_vec();
-                    let selection = batbelt::cli_inputs::select(
+                    let selection = batbelt::bat_dialoguer::select(
                         &prompt_text,
                         struct_types_colorized.clone(),
                         None,
@@ -669,7 +669,7 @@ impl MiroActions {
                         })
                         .collect::<Vec<_>>();
                     let prompt_text = format!("Please enter the {}", "struct to deploy".green());
-                    let selections = batbelt::cli_inputs::multiselect(
+                    let selections = batbelt::bat_dialoguer::multiselect(
                         &prompt_text,
                         struct_metadata_names.clone(),
                         Some(&vec![select_all; struct_metadata_names.len()]),
@@ -679,7 +679,7 @@ impl MiroActions {
                         BatMetadataType::Structs,
                     );
 
-                    let use_default = batbelt::cli_inputs::select_yes_or_no(&format!(
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
                         "Do you want to {}\n{:#?}",
                         "use the default screenshot config?".yellow(),
                         default_config
@@ -713,7 +713,7 @@ impl MiroActions {
                         format!("Please enter the {}", "function type to deploy".green());
                     let function_types_colorized =
                         FunctionMetadataType::get_colorized_functions_type_vec();
-                    let selection = batbelt::cli_inputs::select(
+                    let selection = batbelt::bat_dialoguer::select(
                         &prompt_text,
                         function_types_colorized.clone(),
                         None,
@@ -736,7 +736,7 @@ impl MiroActions {
                         })
                         .collect::<Vec<_>>();
                     let prompt_text = format!("Please enter the {}", "function to deploy".green());
-                    let selections = batbelt::cli_inputs::multiselect(
+                    let selections = batbelt::bat_dialoguer::multiselect(
                         &prompt_text,
                         function_metadata_names.clone(),
                         Some(&vec![select_all; function_metadata_names.len()]),
@@ -747,7 +747,7 @@ impl MiroActions {
                         BatMetadataType::Functions,
                     );
 
-                    let use_default = batbelt::cli_inputs::select_yes_or_no(&format!(
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
                         "Do you want to {}\n{:#?}",
                         "use the default screenshot config?".yellow(),
                         default_config
@@ -795,7 +795,7 @@ impl MiroActions {
                 "continue creating screenshots".yellow(),
                 selected_miro_frame.title.yellow()
             );
-            continue_selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+            continue_selection = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
         }
         Ok(())
     }
@@ -822,7 +822,7 @@ impl MiroActions {
                 })
                 .collect::<Vec<_>>();
             let prompt_text = "Select the Function to deploy";
-            let seleted_function_index = batbelt::cli_inputs::select(
+            let seleted_function_index = batbelt::bat_dialoguer::select(
                 prompt_text,
                 function_metadata_names_vec.clone(),
                 None,
@@ -879,7 +879,7 @@ impl MiroActions {
                 "continue creating screenshots".yellow(),
                 selected_miro_frame.title.yellow()
             );
-            keep_deploying = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+            keep_deploying = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
         }
 
         Ok(())
@@ -990,7 +990,7 @@ impl MiroActions {
             "Select the dependencies to deploy for {}",
             parent_function.name.yellow(),
         );
-        let multi_selection = batbelt::cli_inputs::multiselect(
+        let multi_selection = batbelt::bat_dialoguer::multiselect(
             &prompt_text,
             not_external_dependencies_names.clone(),
             Some(&vec![true; not_external_dependencies_names.clone().len()]),
@@ -1008,7 +1008,7 @@ impl MiroActions {
                     .map(|dep| format!("{} : {}{}", dep.name, dep.path, dep.start_line_index + 1))
                     .collect::<Vec<_>>();
                 let selection =
-                    batbelt::cli_inputs::select(&prompt_text, formatted_option.clone(), None)?;
+                    batbelt::bat_dialoguer::select(&prompt_text, formatted_option.clone(), None)?;
                 dep_matches[selection].clone()
             } else {
                 dep_matches[0].clone()
@@ -1073,7 +1073,8 @@ impl MiroActions {
             .collect();
 
         let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
-        let selection = batbelt::cli_inputs::select(&prompt_text, miro_frame_titles, None).unwrap();
+        let selection =
+            batbelt::bat_dialoguer::select(&prompt_text, miro_frame_titles, None).unwrap();
         let selected_miro_frame: MiroFrame = miro_frames[selection].clone();
         Ok(selected_miro_frame)
     }

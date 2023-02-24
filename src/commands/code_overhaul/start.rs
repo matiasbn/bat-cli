@@ -23,7 +23,7 @@ pub fn start_co_file() -> Result<(), CommandError> {
             .attach_printable("no to-review files in code-overhaul folder"));
     }
     let prompt_text = "Select the code-overhaul file to start:";
-    let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)
+    let selection = batbelt::bat_dialoguer::select(prompt_text, review_files.clone(), None)
         .change_context(CommandError)?;
 
     // user select file

@@ -49,7 +49,7 @@ pub fn open_co() -> Result<(), CommandError> {
             "Do you want to open a {} or a {} file?",
             options[0], options[1]
         );
-        let selection = batbelt::cli_inputs::select(&prompt_text, options.clone(), None)
+        let selection = batbelt::bat_dialoguer::select(&prompt_text, options.clone(), None)
             .change_context(CommandError)?;
         let open_started = selection == 0;
         let co_folder = if open_started {
@@ -65,7 +65,7 @@ pub fn open_co() -> Result<(), CommandError> {
             .collect::<Vec<_>>();
         if !co_files.is_empty() {
             let prompt_text = "Select the code-overhaul file to open:";
-            let selection = batbelt::cli_inputs::select(prompt_text, co_files.clone(), None)
+            let selection = batbelt::bat_dialoguer::select(prompt_text, co_files.clone(), None)
                 .change_context(CommandError)?;
             let file_name = &co_files[selection].clone();
             let co_file_path = if open_started {

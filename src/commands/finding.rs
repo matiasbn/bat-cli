@@ -84,7 +84,7 @@ pub fn accept_all() -> Result<(), CommandError> {
 }
 
 pub fn create_finding() -> Result<(), CommandError> {
-    let input_name = batbelt::cli_inputs::input("Finding name:").change_context(CommandError)?;
+    let input_name = batbelt::bat_dialoguer::input("Finding name:").change_context(CommandError)?;
     let finding_name = input_name.to_snake_case();
     validate_config_create_finding_file(finding_name.clone())?;
     copy_template_to_findings_to_review(finding_name.clone())?;
@@ -109,7 +109,7 @@ pub fn finish_finding() -> Result<(), CommandError> {
         .filter(|file| file != ".gitkeep")
         .collect::<Vec<String>>();
     let prompt_text = "Select finding file to finish:";
-    let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)
+    let selection = batbelt::bat_dialoguer::select(prompt_text, review_files.clone(), None)
         .change_context(CommandError)?;
 
     let finding_name = &review_files[selection].clone();
@@ -153,7 +153,7 @@ pub fn update_finding() -> Result<(), CommandError> {
         .collect::<Vec<String>>();
 
     let prompt_text = "Select finding file to update:";
-    let selection = batbelt::cli_inputs::select(prompt_text, review_files.clone(), None)
+    let selection = batbelt::bat_dialoguer::select(prompt_text, review_files.clone(), None)
         .change_context(CommandError)?;
 
     let finding_name = &review_files[selection].clone();
@@ -267,7 +267,7 @@ fn validate_config_create_finding_file(finding_name: String) -> Result<(), Comma
 fn copy_template_to_findings_to_review(finding_name: String) -> Result<(), CommandError> {
     let prompt_text = "is the finding an informational?";
     let is_informational =
-        batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
+        batbelt::bat_dialoguer::select_yes_or_no(prompt_text).change_context(CommandError)?;
     FindingTemplate::new_finding_file(&finding_name, is_informational)
         .change_context(CommandError)?;
     let finding_path = BatFile::FindingToReview {

@@ -119,7 +119,7 @@ fn prompt_auditor_options() -> Result<(), CommandError> {
     let bat_config = BatConfig::get_config().change_context(CommandError)?;
     let auditor_names = bat_config.auditor_names;
     let prompt_text = format!("Select your name:");
-    let selection = batbelt::cli_inputs::select(&prompt_text, auditor_names.clone(), None)?;
+    let selection = batbelt::bat_dialoguer::select(&prompt_text, auditor_names.clone(), None)?;
     let auditor_name = auditor_names.get(selection).unwrap().clone();
     println!(
         "Is great to have you here {}!",
@@ -127,16 +127,16 @@ fn prompt_auditor_options() -> Result<(), CommandError> {
     );
     let prompt_text = "Do you want to use the Miro integration?";
     let include_miro =
-        batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
+        batbelt::bat_dialoguer::select_yes_or_no(prompt_text).change_context(CommandError)?;
     let moat = if include_miro {
         let prompt_text = "Miro OAuth access token";
-        batbelt::cli_inputs::input(&prompt_text).change_context(CommandError)?
+        batbelt::bat_dialoguer::input(&prompt_text).change_context(CommandError)?
     } else {
         "".to_string()
     };
     let prompt_text = "Do you want to use the VS Code integration?";
     let include_vs_code =
-        batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
+        batbelt::bat_dialoguer::select_yes_or_no(prompt_text).change_context(CommandError)?;
     let bat_auditor_config = BatAuditorConfig {
         auditor_name: auditor_name.to_string(),
         vs_code_integration: include_vs_code,
@@ -199,7 +199,7 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
         return Ok(());
     }
 
-    let user_want_to_deploy = batbelt::cli_inputs::select_yes_or_no(
+    let user_want_to_deploy = batbelt::bat_dialoguer::select_yes_or_no(
         "Do you want to deploy the Miro frames for code overhaul?",
     )
     .change_context(CommandError)?;

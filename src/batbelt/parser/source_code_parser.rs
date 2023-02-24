@@ -212,23 +212,23 @@ impl SourceCodeParser {
     }
 
     pub fn prompt_screenshot_options() -> SourceCodeScreenshotOptions {
-        let include_path = batbelt::cli_inputs::select_yes_or_no(&format!(
+        let include_path = batbelt::bat_dialoguer::select_yes_or_no(&format!(
             "Do you want to {}",
             "include the path?".yellow()
         ))
         .unwrap();
-        let filter_comments = batbelt::cli_inputs::select_yes_or_no(&format!(
+        let filter_comments = batbelt::bat_dialoguer::select_yes_or_no(&format!(
             "Do you want to {}",
             "filter the comments?".yellow()
         ))
         .unwrap();
-        let show_line_number = batbelt::cli_inputs::select_yes_or_no(&format!(
+        let show_line_number = batbelt::bat_dialoguer::select_yes_or_no(&format!(
             "Do you want to {}",
             "include the line numbers?".yellow()
         ))
         .unwrap();
         let offset_to_start_line = if show_line_number {
-            batbelt::cli_inputs::select_yes_or_no(&format!(
+            batbelt::bat_dialoguer::select_yes_or_no(&format!(
                 "Do you want to {}",
                 "offset to the starting line?".yellow()
             ))
@@ -236,14 +236,14 @@ impl SourceCodeParser {
         } else {
             false
         };
-        let include_filters = batbelt::cli_inputs::select_yes_or_no(&format!(
+        let include_filters = batbelt::bat_dialoguer::select_yes_or_no(&format!(
             "Do you want to {}",
             "add customized filters?".red()
         ))
         .unwrap();
         // utils::cli_inputs::select_yes_or_no("Do you want to include filters?").unwrap();
         let filters = if include_filters {
-            let filters_to_include = batbelt::cli_inputs::input(
+            let filters_to_include = batbelt::bat_dialoguer::input(
                 "Please enter the filters, comma separated: #[account,CHECK ",
             )
             .unwrap();

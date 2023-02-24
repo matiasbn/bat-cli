@@ -66,7 +66,7 @@ impl GitCommands {
     fn fetch_remote_branches(&self, select_all: bool) -> Result<(), CommandError> {
         let branches_list = self.get_remote_branches_filtered()?;
         let prompt_test = format!("Select the branches {}", "to fetch".green());
-        let selections = batbelt::cli_inputs::multiselect(
+        let selections = batbelt::bat_dialoguer::multiselect(
             &prompt_test,
             branches_list.clone(),
             Some(&vec![select_all; branches_list.clone().len()]),
@@ -90,7 +90,7 @@ impl GitCommands {
         let branches_list = self.get_local_branches_filtered()?;
         self.checkout_branch("develop")?;
         let prompt_test = format!("Select the branches {}", "to delete".red());
-        let selections = batbelt::cli_inputs::multiselect(
+        let selections = batbelt::bat_dialoguer::multiselect(
             &prompt_test,
             branches_list.clone(),
             Some(&vec![select_all; branches_list.clone().len()]),

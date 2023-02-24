@@ -288,7 +288,7 @@ impl CodeOverhaulSection {
                     signer_name.red(),
                     signer_description_comment
                 );
-                let is_correct = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+                let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
                 if is_correct {
                     let signer_description =
                         format!("- {}: {}", signer_name, signer_description_comment);
@@ -314,7 +314,7 @@ impl CodeOverhaulSection {
                     .iter()
                     .map(|line| line.split("// ").last().unwrap())
                     .collect();
-                let selections = batbelt::cli_inputs::multiselect(
+                let selections = batbelt::bat_dialoguer::multiselect(
                     &prompt_text,
                     signer_formatted.clone(),
                     Some(&vec![false; signer_formatted.clone().len()]),

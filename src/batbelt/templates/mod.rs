@@ -203,7 +203,7 @@ audit_result/02_findings_result.md
             );
         }
         let ending_date =
-            batbelt::cli_inputs::input("Ending date").change_context(TemplateError)?;
+            batbelt::bat_dialoguer::input("Ending date").change_context(TemplateError)?;
         let readme_path = BatFile::Readme
             .get_path(false)
             .change_context(TemplateError)?;

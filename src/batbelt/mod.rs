@@ -1,4 +1,4 @@
-pub mod cli_inputs;
+pub mod bat_dialoguer;
 pub mod command_line;
 pub mod git;
 pub mod markdown;

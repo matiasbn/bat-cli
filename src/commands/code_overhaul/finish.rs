@@ -23,7 +23,7 @@ pub async fn finish_co_file() -> Result<(), CommandError> {
         .collect::<Vec<_>>();
     let prompt_text = "Select the code-overhaul to finish:";
     let selection =
-        batbelt::cli_inputs::select(prompt_text, started_entrypoints_names.clone(), None)
+        batbelt::bat_dialoguer::select(prompt_text, started_entrypoints_names.clone(), None)
             .change_context(CommandError)?;
 
     let finished_endpoint = &started_entrypoints_names[selection].clone();
@@ -61,7 +61,7 @@ fn check_code_overhaul_file_completed(file_path: String) -> Result<(), CommandEr
     }
 
     if file_data.contains(&CoderOverhaulTemplatePlaceholders::CompleteWithNotes.to_placeholder()) {
-        let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
+        let user_decided_to_continue = batbelt::bat_dialoguer::select_yes_or_no(
             "Notes section not completed, do you want to proceed anyway?",
         )
         .change_context(CommandError)?;
@@ -80,7 +80,7 @@ fn check_code_overhaul_file_completed(file_path: String) -> Result<(), CommandEr
     if file_data
         .contains(&CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder())
     {
-        let user_decided_to_continue = batbelt::cli_inputs::select_yes_or_no(
+        let user_decided_to_continue = batbelt::bat_dialoguer::select_yes_or_no(
             "Validations section not completed, do you want to proceed anyway?",
         )
         .change_context(CommandError)?;

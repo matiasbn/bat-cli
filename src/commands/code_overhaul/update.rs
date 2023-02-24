@@ -29,7 +29,7 @@ pub fn update_co_file() -> Result<(), CommandError> {
         )));
     }
 
-    let selection = batbelt::cli_inputs::select(
+    let selection = batbelt::bat_dialoguer::select(
         "Select the code-overhaul file to update:",
         finished_files.clone(),
         None,
