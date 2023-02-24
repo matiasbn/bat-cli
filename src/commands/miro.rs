@@ -12,6 +12,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 
 use crate::batbelt::miro::MiroConfig;
 
+use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
@@ -36,9 +37,6 @@ pub enum MiroActions {
     },
     /// Creates an screenshot in a determined frame from metadata
     Metadata {
-        /// deploy the screenshots with the default configuration
-        #[arg(long)]
-        default: bool,
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
@@ -58,10 +56,7 @@ impl MiroActions {
             MiroActions::Entrypoint { select_all, sorted } => {
                 self.entrypoint_action(*select_all, *sorted).await?
             }
-            MiroActions::Metadata {
-                default,
-                select_all,
-            } => self.metadata_action(*default, *select_all).await?,
+            MiroActions::Metadata { select_all } => self.metadata_action(*select_all).await?,
             MiroActions::Function { select_all } => self.function_action(*select_all).await?,
         }
         Ok(())
@@ -621,7 +616,7 @@ impl MiroActions {
         Ok(())
     }
 
-    async fn metadata_action(&self, _default: bool, select_all: bool) -> Result<(), CommandError> {
+    async fn metadata_action(&self, select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
         let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_metadata_type_vec();
@@ -669,10 +664,11 @@ impl MiroActions {
                         })
                         .collect::<Vec<_>>();
                     let prompt_text = format!("Please enter the {}", "struct to deploy".green());
-                    let selections = batbelt::bat_dialoguer::multiselect(
-                        &prompt_text,
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
                         struct_metadata_names.clone(),
                         Some(&vec![select_all; struct_metadata_names.len()]),
+                        true,
                     )
                     .unwrap();
                     let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
@@ -736,10 +732,11 @@ impl MiroActions {
                         })
                         .collect::<Vec<_>>();
                     let prompt_text = format!("Please enter the {}", "function to deploy".green());
-                    let selections = batbelt::bat_dialoguer::multiselect(
-                        &prompt_text,
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
                         function_metadata_names.clone(),
                         Some(&vec![select_all; function_metadata_names.len()]),
+                        true,
                     )
                     .unwrap();
 
@@ -990,10 +987,11 @@ impl MiroActions {
             "Select the dependencies to deploy for {}",
             parent_function.name.yellow(),
         );
-        let multi_selection = batbelt::bat_dialoguer::multiselect(
-            &prompt_text,
+        let multi_selection = BatDialoguer::multiselect(
+            prompt_text,
             not_external_dependencies_names.clone(),
             Some(&vec![true; not_external_dependencies_names.clone().len()]),
+            false,
         )?;
         for selection in multi_selection {
             let (dep_name, dep_matches) = &not_external_dependencies[selection];
@@ -1073,8 +1071,7 @@ impl MiroActions {
             .collect();
 
         let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
-        let selection =
-            batbelt::bat_dialoguer::select(&prompt_text, miro_frame_titles, None).unwrap();
+        let selection = BatDialoguer::select(prompt_text, miro_frame_titles, None)?;
         let selected_miro_frame: MiroFrame = miro_frames[selection].clone();
         Ok(selected_miro_frame)
     }

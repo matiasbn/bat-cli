@@ -1,3 +1,4 @@
+use colored::Colorize;
 use dialoguer::{console::Term, theme::ColorfulTheme, Input, MultiSelect, Select};
 use error_stack::Result;
 
@@ -11,11 +12,12 @@ impl BatDialoguer {
         prompt_text: String,
         items: Vec<T>,
         default: Option<&Vec<bool>>,
+        force_select: bool,
     ) -> Result<Vec<usize>, CommandError>
     where
         T: ToString + Clone,
     {
-        let mut waiting_response = true;
+        let waiting_response = true;
         while waiting_response {
             let colorful_theme = &ColorfulTheme::default();
             let mut multi_select = MultiSelect::with_theme(colorful_theme);
@@ -24,19 +26,19 @@ impl BatDialoguer {
             if let Some(def) = default {
                 dialog = dialog.defaults(def);
             }
-            let result = dialog.interact_on_opt(&Term::stderr()).unwrap();
-
-            match result {
-                Some(vec_options) => {
-                    return Ok(vec_options);
-                }
-                None => {
-                    println!("No option selected, you should pick at least 1 by hitting space bar");
-                    waiting_response = true;
-                }
+            let result = dialog.interact_on_opt(&Term::stderr()).unwrap().unwrap();
+            log::debug!("force_select: {}", force_select);
+            log::debug!("multiselect_result:\n{:#?}", result);
+            if force_select && result.is_empty() {
+                println!(
+                    "{}",
+                    "No option selected, you should pick at least 1 by hitting space bar".red()
+                );
+            } else {
+                return Ok(result);
             }
         }
-        Ok((vec![]))
+        Ok(vec![])
     }
 
     pub fn select<T>(
@@ -102,6 +104,7 @@ where
         prompt_text.to_string(),
         items,
         default,
+        false,
     )?)
 }
 
