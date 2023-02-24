@@ -2,6 +2,7 @@ pub mod entrypoint_metadata;
 pub mod functions_metadata;
 pub mod miro_metadata;
 pub mod structs_metadata;
+pub mod trait_metadata;
 
 use colored::{ColoredString, Colorize};
 use std::error::Error;
@@ -58,6 +59,8 @@ pub enum BatMetadataType {
     Structs,
     Functions,
     Entrypoints,
+    Trait,
+    TraitImpl,
 }
 
 impl BatMetadataType {
@@ -81,6 +84,8 @@ impl BatMetadataType {
                 Self::Structs => metadata_type.to_sentence_case().red(),
                 Self::Functions => metadata_type.to_sentence_case().yellow(),
                 Self::Entrypoints => metadata_type.to_sentence_case().magenta(),
+                Self::Trait => metadata_type.to_sentence_case().bright_cyan(),
+                Self::TraitImpl => metadata_type.to_sentence_case().bright_blue(),
             })
             .collect::<Vec<_>>();
         structs_type_colorized
@@ -94,7 +99,13 @@ impl BatMetadataType {
             BatMetadataType::Functions => BatFile::FunctionsMetadata
                 .get_path(true)
                 .change_context(MetadataError)?,
-            BatMetadataType::Entrypoints => BatFile::FunctionsMetadata
+            BatMetadataType::Entrypoints => BatFile::EntrypointsMetadata
+                .get_path(true)
+                .change_context(MetadataError)?,
+            BatMetadataType::Trait => BatFile::TraitMetadata
+                .get_path(true)
+                .change_context(MetadataError)?,
+            BatMetadataType::TraitImpl => BatFile::TraitImplMetadata
                 .get_path(true)
                 .change_context(MetadataError)?,
         };

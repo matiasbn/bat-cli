@@ -44,7 +44,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            BatMetadataType::Entrypoints => Self {
+            _ => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,

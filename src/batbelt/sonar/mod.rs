@@ -332,7 +332,11 @@ impl SonarResult {
 
     fn get_name(&mut self) {
         match self.result_type {
-            SonarResultType::Function | SonarResultType::Struct | SonarResultType::Module => {
+            SonarResultType::Function
+            | SonarResultType::Struct
+            | SonarResultType::Module
+            | SonarResultType::Trait
+            | SonarResultType::TraitImpl => {
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
                 let mut first_line_tokenized = first_line.trim().split(" ");
@@ -520,6 +524,8 @@ pub enum SonarResultType {
     If,
     IfValidation,
     Validation,
+    Trait,
+    TraitImpl,
     ContextAccountsAll,
     ContextAccountsOnlyValidation,
     ContextAccountsNoValidation,
@@ -565,6 +571,12 @@ impl SonarFilter {
             SonarFilter::Open(SonarResultType::Struct) => vec!["struct", "pub struct"],
             SonarFilter::EndOfOpen(SonarResultType::Struct) => vec!["{", ";"],
             SonarFilter::Closure(SonarResultType::Struct) => vec!["}", ";"],
+            SonarFilter::Open(SonarResultType::Trait) => vec!["trait", "pub trait"],
+            SonarFilter::EndOfOpen(SonarResultType::Trait) => vec!["{", ";"],
+            SonarFilter::Closure(SonarResultType::Trait) => vec!["}", ";"],
+            SonarFilter::Open(SonarResultType::TraitImpl) => vec!["impl"],
+            SonarFilter::EndOfOpen(SonarResultType::TraitImpl) => vec!["{", ";"],
+            SonarFilter::Closure(SonarResultType::TraitImpl) => vec!["}", ";"],
             SonarFilter::Open(SonarResultType::Module) => vec!["mod", "pub mod"],
             SonarFilter::EndOfOpen(SonarResultType::Module) => vec!["{"],
             SonarFilter::Closure(SonarResultType::Module) => vec!["}"],
