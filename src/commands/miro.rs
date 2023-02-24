@@ -1080,7 +1080,7 @@ impl MiroActions {
 
     fn parse_screenshot_name(&self, name: &str, frame_title: &str) -> String {
         format!(
-            "{}-frame:{}",
+            "{}::frame={}",
             name,
             frame_title
                 .replace(" ", "_")

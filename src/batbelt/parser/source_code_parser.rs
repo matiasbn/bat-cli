@@ -146,12 +146,10 @@ impl SourceCodeParser {
         } else {
             0
         };
-        let content = fs::read_to_string(&self.path).unwrap();
-        let content_lines = content.lines().collect::<Vec<_>>()
-            [self.start_line_index - 1..=self.end_line_index - 1]
-            .to_vec();
+        let content = self.get_source_code_content();
+        log::debug!("content before formatting:\n{}", content);
+        let content_lines = content.lines();
         let content_vec = content_lines
-            .iter()
             .filter_map(|line| {
                 if options.filter_comments {
                     let starts_with_comment = line.trim().split(" ").next().unwrap().contains("//");
@@ -169,12 +167,12 @@ impl SourceCodeParser {
             .filter_map(|line| {
                 if let Some(filters) = options.filters.clone() {
                     if !filters.into_iter().any(|filter| line.contains(&filter)) {
-                        Some("".to_string())
-                    } else {
                         Some(line)
+                    } else {
+                        Some("".to_string())
                     }
                 } else {
-                    None
+                    Some(line)
                 }
             })
             .collect::<Vec<_>>()
@@ -199,6 +197,8 @@ impl SourceCodeParser {
                 0
             };
         }
+
+        log::debug!("content to create screenshot:\n{}", content);
 
         let png_screenshot_path = silicon::create_figure(
             &content,
