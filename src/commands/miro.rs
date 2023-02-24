@@ -12,6 +12,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 
 use crate::batbelt::miro::MiroConfig;
 
+use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use clap::Subcommand;
@@ -804,8 +805,9 @@ impl MiroActions {
         let mut function_metadata_vec =
             FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
         let mut keep_deploying = true;
-        let mut deployed_dependencies: Vec<FunctionMetadata> = vec![];
-        let mut pending_dependencies: Vec<FunctionMetadata> = vec![];
+        let mut deployed_dependencies: Vec<(MiroImage, FunctionMetadata)> = vec![];
+        let mut pending_to_deploy: Vec<(MiroImage, FunctionMetadata)> = vec![];
+        let mut pending_to_check: Vec<FunctionMetadata> = vec![];
         while keep_deploying {
             let function_metadata_names_vec = function_metadata_vec
                 .clone()
@@ -825,159 +827,51 @@ impl MiroActions {
                 function_metadata_names_vec.clone(),
                 None,
             )?;
-            let selected_function_metadata = &function_metadata_vec[seleted_function_index];
-            let function_parser = FunctionParser::new_from_metadata(
+            let selected_function_metadata = &function_metadata_vec[seleted_function_index].clone();
+
+            self.prompt_deploy_dependencies(
                 selected_function_metadata.clone(),
-                Some(function_metadata_vec.clone()),
+                None,
+                selected_miro_frame.clone(),
+                function_metadata_vec.clone(),
+                &mut deployed_dependencies,
+                &mut pending_to_deploy,
+                &mut pending_to_check,
             )
-            .change_context(CommandError)?;
-            let function_sc_options = SourceCodeScreenshotOptions {
-                include_path: true,
-                offset_to_start_line: true,
-                filter_comments: false,
-                font_size: None,
-                filters: None,
-                show_line_number: true,
-            };
-            let not_external_dependencies = function_parser
-                .dependencies
-                .clone()
-                .into_iter()
-                .filter_map(|func_dep| {
-                    if !func_dep.is_external && func_dep.dependency_metadata_matches.is_some() {
-                        Some((
-                            func_dep.function_name,
-                            func_dep.dependency_metadata_matches.clone().unwrap(),
-                        ))
+            .await?;
+
+            while !pending_to_check.is_empty() {
+                let parent_function = pending_to_check.pop().unwrap();
+                let miro_image = deployed_dependencies.clone().into_iter().find_map(|image| {
+                    if image.1 == parent_function {
+                        Some(image.0)
                     } else {
                         None
                     }
-                })
-                .collect::<Vec<_>>();
-            let selected_miro_image = selected_function_metadata
-                .to_source_code(Some(self.parse_screenshot_name(
-                    &selected_function_metadata.name,
-                    &selected_miro_frame.title,
-                )))
-                .deploy_screenshot_to_miro_frame(
+                });
+                self.prompt_deploy_dependencies(
+                    parent_function,
+                    miro_image,
                     selected_miro_frame.clone(),
-                    (selected_miro_frame.height as i64) / 2,
-                    -1 * (selected_miro_frame.width as i64) / 2,
-                    function_sc_options.clone(),
+                    function_metadata_vec.clone(),
+                    &mut deployed_dependencies,
+                    &mut pending_to_deploy,
+                    &mut pending_to_check,
                 )
-                .await
-                .change_context(CommandError)?;
-            deployed_dependencies.push(selected_function_metadata.clone());
-
-            if function_parser.clone().dependencies.is_empty()
-                || not_external_dependencies
-                    .clone()
-                    .into_iter()
-                    .all(|sub_vec| sub_vec.1.is_empty())
-            {
-                println!(
-                    "Function {} does not have dependencies",
-                    function_parser.name.red()
-                );
-                continue;
-            }
-
-            let not_external_dependencies_names = not_external_dependencies
-                .clone()
-                .into_iter()
-                .map(|dp| dp.0.clone())
-                .collect::<Vec<_>>();
-
-            let selected_function_content = selected_function_metadata
-                .to_source_code(None)
-                .get_source_code_content()
-                .lines()
-                .map(|line| {
-                    if not_external_dependencies_names
-                        .clone()
-                        .into_iter()
-                        .any(|dep| line.contains(&dep))
-                    {
-                        line.red()
-                    } else {
-                        line.green()
-                    }
-                })
-                .collect::<Vec<ColoredString>>();
-
-            println!(
-                "{} function:",
-                selected_function_metadata.name.bright_blue()
-            );
-            for line in selected_function_content {
-                println!("{}", line);
-            }
-
-            let prompt_text = format!(
-                "Select the dependencies to deploy for {}",
-                selected_function_metadata.name.yellow(),
-            );
-            let multi_selection = batbelt::cli_inputs::multiselect(
-                &prompt_text,
-                not_external_dependencies_names.clone(),
-                Some(&vec![true; not_external_dependencies_names.clone().len()]),
-            )?;
-            for selection in multi_selection {
-                let (dep_name, dep_matches) = &not_external_dependencies[selection];
-                let selected_dependency = if dep_matches.len() > 1 {
-                    let prompt_text = format!(
-                        "Dependency {} has more than 1 metadata match, select the correct:",
-                        dep_name.green()
-                    );
-                    let formatted_option = dep_matches
-                        .clone()
-                        .into_iter()
-                        .map(|dep| {
-                            format!("{} : {}{}", dep.name, dep.path, dep.start_line_index + 1)
-                        })
-                        .collect::<Vec<_>>();
-                    let selection =
-                        batbelt::cli_inputs::select(&prompt_text, formatted_option.clone(), None)?;
-                    dep_matches[selection].clone()
-                } else {
-                    dep_matches[0].clone()
-                };
-                let repeated_dependency = deployed_dependencies
-                    .clone()
-                    .into_iter()
-                    .any(|dep| dep == selected_dependency);
-                if !repeated_dependency {
-                    deployed_dependencies.push(selected_dependency.clone());
-                    pending_dependencies.push(selected_dependency.clone());
-                }
-            }
-
-            while !pending_dependencies.is_empty() {
-                let dependency = pending_dependencies.pop().unwrap();
-                let dependency_image = dependency
-                    .to_source_code(Some(
-                        self.parse_screenshot_name(&dependency.name, &selected_miro_frame.title),
-                    ))
-                    .deploy_screenshot_to_miro_frame(
-                        selected_miro_frame.clone(),
-                        (selected_miro_frame.height as i64) / 2,
-                        (selected_miro_frame.width as i64) / 2,
-                        function_sc_options.clone(),
-                    )
-                    .await
-                    .change_context(CommandError)?;
-                batbelt::miro::connector::create_connector(
-                    &selected_miro_image.item_id,
-                    &dependency_image.item_id,
-                    None,
-                )
-                .await
-                .change_context(CommandError)?;
+                .await?;
             }
 
             function_metadata_vec = function_metadata_vec
+                .clone()
                 .into_iter()
-                .filter(|dep| !deployed_dependencies.contains(dep))
+                .filter(|dep| {
+                    !deployed_dependencies
+                        .clone()
+                        .into_iter()
+                        .map(|dep| dep.1)
+                        .collect::<Vec<_>>()
+                        .contains(dep)
+                })
                 .collect::<Vec<_>>();
 
             let prompt_text = format!(
@@ -991,7 +885,172 @@ impl MiroActions {
         Ok(())
     }
 
-    // async fn
+    async fn prompt_deploy_dependencies(
+        &self,
+        parent_function: FunctionMetadata,
+        parent_function_image: Option<MiroImage>,
+        selected_miro_frame: MiroFrame,
+        function_metadata_vec: Vec<FunctionMetadata>,
+        deployed_dependencies: &mut Vec<(MiroImage, FunctionMetadata)>,
+        pending_to_deploy: &mut Vec<(MiroImage, FunctionMetadata)>,
+        pending_to_check: &mut Vec<FunctionMetadata>,
+    ) -> Result<(), CommandError> {
+        let function_parser = FunctionParser::new_from_metadata(
+            parent_function.clone(),
+            Some(function_metadata_vec.clone()),
+        )
+        .change_context(CommandError)?;
+
+        let function_sc_options = SourceCodeScreenshotOptions {
+            include_path: true,
+            offset_to_start_line: true,
+            filter_comments: false,
+            font_size: None,
+            filters: None,
+            show_line_number: true,
+        };
+
+        let not_external_dependencies = function_parser
+            .dependencies
+            .clone()
+            .into_iter()
+            .filter_map(|func_dep| {
+                if !func_dep.is_external && func_dep.dependency_metadata_matches.is_some() {
+                    Some((
+                        func_dep.function_name,
+                        func_dep.dependency_metadata_matches.clone().unwrap(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let parent_function_miro_image = if parent_function_image.is_some() {
+            parent_function_image.unwrap()
+        } else {
+            let parent_image = parent_function
+                .to_source_code(Some(self.parse_screenshot_name(
+                    &parent_function.name,
+                    &selected_miro_frame.title,
+                )))
+                .deploy_screenshot_to_miro_frame(
+                    selected_miro_frame.clone(),
+                    (selected_miro_frame.height as i64) / 2,
+                    -1 * (selected_miro_frame.width as i64) / 2,
+                    function_sc_options.clone(),
+                )
+                .await
+                .change_context(CommandError)?;
+            deployed_dependencies.push((parent_image.clone(), parent_function.clone()));
+            parent_image
+        };
+
+        if function_parser.clone().dependencies.is_empty()
+            || not_external_dependencies
+                .clone()
+                .into_iter()
+                .all(|sub_vec| sub_vec.1.is_empty())
+        {
+            println!(
+                "Function {} does not have dependencies",
+                function_parser.name.red()
+            );
+            return Ok(());
+        }
+
+        let not_external_dependencies_names = not_external_dependencies
+            .clone()
+            .into_iter()
+            .map(|dp| dp.0.clone())
+            .collect::<Vec<_>>();
+
+        let selected_function_content = parent_function
+            .to_source_code(None)
+            .get_source_code_content()
+            .lines()
+            .map(|line| {
+                if not_external_dependencies_names
+                    .clone()
+                    .into_iter()
+                    .any(|dep| line.contains(&dep))
+                {
+                    line.red()
+                } else {
+                    line.green()
+                }
+            })
+            .collect::<Vec<ColoredString>>();
+
+        println!("{} function:", parent_function.name.bright_blue());
+        for line in selected_function_content {
+            println!("{}", line);
+        }
+
+        let prompt_text = format!(
+            "Select the dependencies to deploy for {}",
+            parent_function.name.yellow(),
+        );
+        let multi_selection = batbelt::cli_inputs::multiselect(
+            &prompt_text,
+            not_external_dependencies_names.clone(),
+            Some(&vec![true; not_external_dependencies_names.clone().len()]),
+        )?;
+        for selection in multi_selection {
+            let (dep_name, dep_matches) = &not_external_dependencies[selection];
+            let selected_dependency = if dep_matches.len() > 1 {
+                let prompt_text = format!(
+                    "Dependency {} has more than 1 metadata match, select the correct:",
+                    dep_name.green()
+                );
+                let formatted_option = dep_matches
+                    .clone()
+                    .into_iter()
+                    .map(|dep| format!("{} : {}{}", dep.name, dep.path, dep.start_line_index + 1))
+                    .collect::<Vec<_>>();
+                let selection =
+                    batbelt::cli_inputs::select(&prompt_text, formatted_option.clone(), None)?;
+                dep_matches[selection].clone()
+            } else {
+                dep_matches[0].clone()
+            };
+            let repeated_dependency = deployed_dependencies
+                .clone()
+                .into_iter()
+                .any(|dep| dep.1 == selected_dependency);
+            if !repeated_dependency {
+                pending_to_deploy.push((
+                    parent_function_miro_image.clone(),
+                    selected_dependency.clone(),
+                ));
+            }
+            pending_to_check.push(selected_dependency.clone());
+        }
+
+        while !pending_to_deploy.is_empty() {
+            let (parent_image, dependency) = pending_to_deploy.pop().unwrap();
+            let dependency_image = dependency
+                .to_source_code(Some(
+                    self.parse_screenshot_name(&dependency.name, &selected_miro_frame.title),
+                ))
+                .deploy_screenshot_to_miro_frame(
+                    selected_miro_frame.clone(),
+                    (selected_miro_frame.height as i64) / 2,
+                    (selected_miro_frame.width as i64) / 2,
+                    function_sc_options.clone(),
+                )
+                .await
+                .change_context(CommandError)?;
+            batbelt::miro::connector::create_connector(
+                &parent_image.item_id,
+                &dependency_image.item_id,
+                None,
+            )
+            .await
+            .change_context(CommandError)?;
+            deployed_dependencies.push((dependency_image.clone(), dependency.clone()));
+        }
+        Ok(())
+    }
 
     async fn prompt_select_frame(&self) -> Result<MiroFrame, CommandError> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;

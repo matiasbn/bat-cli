@@ -156,7 +156,7 @@ impl SourceCodeParser {
                 if options.filter_comments {
                     let starts_with_comment = line.trim().split(" ").next().unwrap().contains("//");
                     if starts_with_comment {
-                        return None;
+                        return Some("".to_string());
                     }
                     // at this point it does not start with comment
                     let line_contains_comment = line.contains("//");
@@ -166,11 +166,15 @@ impl SourceCodeParser {
                 }
                 return Some(line.to_string());
             })
-            .filter(|line| {
+            .filter_map(|line| {
                 if let Some(filters) = options.filters.clone() {
-                    !filters.into_iter().any(|filter| line.contains(&filter))
+                    if !filters.into_iter().any(|filter| line.contains(&filter)) {
+                        Some("".to_string())
+                    } else {
+                        Some(line)
+                    }
                 } else {
-                    true
+                    None
                 }
             })
             .collect::<Vec<_>>()
