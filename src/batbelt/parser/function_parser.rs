@@ -1,4 +1,4 @@
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
+use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::SonarResult;
 use error_stack::{Report, Result, ResultExt};
@@ -176,7 +176,11 @@ impl FunctionParser {
             // parameters contains :
             let filtered: Vec<String> = function_signature
                 .lines()
-                .filter(|line| line.contains(":"))
+                .filter(|line| {
+                    line.contains(":")
+                        && !line.contains("pub fn")
+                        && !line.contains("pub (crate) fn")
+                })
                 .map(|line| line.trim().trim_end_matches(",").to_string())
                 .collect();
             filtered
@@ -306,13 +310,32 @@ impl FunctionParser {
 //     println!("result: \n{:#?}", dependency_parser_vec);
 // }
 #[test]
-fn test_get_function_dependencies_signatures() {
-    let test_text = "fn contains(&self, other: Self) -> bool {
-        self.contains(other)
-    }";
-    let mut body = test_text.split("{");
-    body.next();
-    let body = body.collect::<Vec<_>>().join("{");
-    let body = body.trim_end_matches("}").trim().to_string();
-    println!("result: \n{:#?}", body);
+fn test_get_function_information() {
+    let test_function = "/// Validates a given key and its permissions.
+/// Returns the parsed permissions.
+pub fn validate_and_parse_static<'a, 'b: 'a, P: StaticPermissionKey>(
+    profile: impl Into<ZeroCopyWrapper<'a, 'b, Profile>>,
+    key: &Signer,
+    key_index: u16,
+    clock: Option<&Clock>,
+) -> Result<KeyValidate<(P, u128)>> {
+    validate_against_list(profile, key, key_index, once(P::permission_key()), clock)
+}";
+    let function_parser = FunctionParser {
+        name: "".to_string(),
+        function_metadata: FunctionMetadata {
+            path: "../star-atlas-programs/sol-programs/programs/player_profile/src/util.rs"
+                .to_string(),
+            name: "validate_and_parse_static".to_string(),
+            function_type: FunctionMetadataType::Other,
+            start_line_index: 121,
+            end_line_index: 128,
+        },
+        content: "".to_string(),
+        signature: "".to_string(),
+        body: "".to_string(),
+        parameters: vec![],
+        dependencies: vec![],
+        external_dependencies: vec![],
+    };
 }

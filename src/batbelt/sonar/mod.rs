@@ -333,7 +333,8 @@ impl SonarResult {
                 let first_line = first_line.lines().next().unwrap();
                 let mut first_line_tokenized = first_line.trim().split(" ");
                 let is_public = first_line_tokenized.next().unwrap().contains("pub");
-                if is_public {
+                let is_crate = first_line_tokenized.next().unwrap().contains("(crate)");
+                if is_crate {
                     first_line_tokenized.next().unwrap();
                 }
                 let name_candidate = first_line_tokenized.next().unwrap();
