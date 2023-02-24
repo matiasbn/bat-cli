@@ -69,7 +69,7 @@ impl SonarCommand {
             "{}: {}:{}",
             name.blue(),
             path.trim_start_matches("../"),
-            start_line_index + 1
+            start_line_index
         )
     }
 

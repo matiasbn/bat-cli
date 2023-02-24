@@ -72,7 +72,7 @@ impl StructMetadata {
         md_section
     }
 
-    pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeParser {
+    pub fn to_source_code_parser(&self, optional_name: Option<String>) -> SourceCodeParser {
         SourceCodeParser::new(
             if let Some(struct_name) = optional_name {
                 struct_name

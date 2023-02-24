@@ -10,6 +10,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
@@ -55,7 +56,7 @@ impl FunctionMetadata {
         )
     }
 
-    pub fn to_source_code(&self, optional_name: Option<String>) -> SourceCodeParser {
+    pub fn to_source_code_parser(&self, optional_name: Option<String>) -> SourceCodeParser {
         SourceCodeParser::new(
             if let Some(function_name) = optional_name {
                 function_name
@@ -65,6 +66,16 @@ impl FunctionMetadata {
             self.path.clone(),
             self.start_line_index,
             self.end_line_index,
+        )
+    }
+
+    pub fn to_function_parser(
+        &self,
+        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+    ) -> Result<FunctionParser, MetadataError> {
+        Ok(
+            FunctionParser::new_from_metadata(self.clone(), optional_function_metadata_vec)
+                .change_context(MetadataError)?,
         )
     }
 

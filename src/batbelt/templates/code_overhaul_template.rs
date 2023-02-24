@@ -137,7 +137,7 @@ impl CodeOverhaulSection {
             );
         }
         let handler_function = entrypoint_parser.handler.unwrap();
-        let context_source_code = handler_function.to_source_code(None);
+        let context_source_code = handler_function.to_source_code_parser(None);
         let instruction_file_path = handler_function.path.clone();
         let handler_if_validations = BatSonar::new_from_path(
             &instruction_file_path,
@@ -235,7 +235,7 @@ impl CodeOverhaulSection {
     }
 
     fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_source_code = entrypoint_parser.context_accounts.to_source_code(None);
+        let context_source_code = entrypoint_parser.context_accounts.to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
         // signer names is only the name of the signer
         let mut signers: Vec<String> = vec![];
@@ -352,7 +352,7 @@ impl CodeOverhaulSection {
     }
 
     fn get_context_account_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_accounts_source_code = entrypoint_parser.context_accounts.to_source_code(None);
+        let context_accounts_source_code = entrypoint_parser.context_accounts.to_source_code_parser(None);
         let context_accounts_content = context_accounts_source_code.get_source_code_content();
         let accounts = BatSonar::new_scanned(
             &context_accounts_content,
@@ -395,7 +395,7 @@ impl CodeOverhaulSection {
         let handler_function = entrypoint_parser.handler.unwrap();
         let handler_function_parameters = get_function_parameters(
             handler_function
-                .to_source_code(None)
+                .to_source_code_parser(None)
                 .get_source_code_content(),
         );
         let function_parameters_content = if handler_function_parameters.is_empty() {
