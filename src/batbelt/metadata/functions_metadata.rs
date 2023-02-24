@@ -108,9 +108,9 @@ impl FunctionMetadata {
         force_select: bool,
     ) -> Result<Vec<Self>, MetadataError> {
         let (function_metadata_vec, function_metadata_names) = Self::prompt_types()?;
-        let prompt_text_2 = format!("Please select the function:");
+        let prompt_text = format!("Please select the {}:", "Function".blue());
         let selections = BatDialoguer::multiselect(
-            prompt_text_2.clone(),
+            prompt_text.clone(),
             function_metadata_names.clone(),
             Some(&vec![select_all; function_metadata_names.len()]),
             force_select,
@@ -132,9 +132,9 @@ impl FunctionMetadata {
     }
 
     fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
-        let prompt_text_1 = format!("Please select the function type:");
+        let prompt_text = format!("Please select the {}:", "Function type".blue());
         let function_types_colorized = FunctionMetadataType::get_colorized_functions_type_vec();
-        let selection = BatDialoguer::select(prompt_text_1, function_types_colorized.clone(), None)
+        let selection = BatDialoguer::select(prompt_text, function_types_colorized.clone(), None)
             .change_context(MetadataError)?;
         let selected_function_type = FunctionMetadataType::get_functions_type_vec()[selection];
         let function_metadata_vec = Self::get_filtered_metadata(None, Some(selected_function_type))
@@ -353,9 +353,9 @@ impl FunctionMetadataType {
         let functions_type_colorized = function_type_vec
             .iter()
             .map(|function_type| match function_type {
-                FunctionMetadataType::Handler => function_type.to_sentence_case().red(),
-                FunctionMetadataType::EntryPoint => function_type.to_sentence_case().yellow(),
-                FunctionMetadataType::Other => function_type.to_sentence_case().magenta(),
+                FunctionMetadataType::Handler => function_type.to_sentence_case().bright_green(),
+                FunctionMetadataType::EntryPoint => function_type.to_sentence_case().bright_blue(),
+                FunctionMetadataType::Other => function_type.to_sentence_case().bright_yellow(),
                 _ => unimplemented!("color no implemented for given type"),
             })
             .collect::<Vec<_>>();

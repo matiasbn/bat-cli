@@ -130,12 +130,4 @@ impl SonarCommand {
         .unwrap();
         Ok(())
     }
-
-    //  fn get_type_vec() -> Vec<Self> {
-    //     Self::iter().collect::<Vec<_>>()
-    // }
-    //
-    // pub fn prompt_options(&self) -> Result<(), CommandError> {
-    //     Ok(())
-    // }
 }

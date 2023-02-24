@@ -132,7 +132,7 @@ impl BatMetadataType {
         let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_metadata_type_vec();
         // Choose metadata section selection
-        let prompt_text = format!("Please enter the {}", "metadata type".green());
+        let prompt_text = format!("Please select the {}", "Metadata type".bright_purple());
         let selection =
             BatDialoguer::select(prompt_text, metadata_types_colorized_vec.clone(), None).unwrap();
         let metadata_type_selected = &metadata_types_vec[selection];

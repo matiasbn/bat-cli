@@ -117,10 +117,10 @@ impl StructMetadata {
         force_select: bool,
     ) -> Result<Vec<Self>, MetadataError> {
         let (struct_metadata_vec, struct_metadata_names) = Self::prompt_types()?;
-        let prompt_text_2 = format!("Please select the struct:");
+        let prompt_text = format!("Please select the {}:", "Struct".blue());
 
         let selections = BatDialoguer::multiselect(
-            prompt_text_2.clone(),
+            prompt_text.clone(),
             struct_metadata_names.clone(),
             Some(&vec![select_all; struct_metadata_names.len()]),
             force_select,
@@ -142,9 +142,9 @@ impl StructMetadata {
     }
 
     fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
-        let prompt_text_1 = format!("Please select the struct type:");
+        let prompt_text = format!("Please select the {}:", "Struct type".blue());
         let struct_types_colorized = StructMetadataType::get_colorized_structs_type_vec();
-        let selection = BatDialoguer::select(prompt_text_1, struct_types_colorized.clone(), None)
+        let selection = BatDialoguer::select(prompt_text, struct_types_colorized.clone(), None)
             .change_context(MetadataError)?;
         let selected_struct_type = StructMetadataType::get_structs_type_vec()[selection];
         let struct_metadata_vec = Self::get_filtered_metadata(None, Some(selected_struct_type))
@@ -409,9 +409,11 @@ impl StructMetadataType {
         let structs_type_colorized = struct_type_vec
             .iter()
             .map(|struct_type| match struct_type {
-                StructMetadataType::ContextAccounts => struct_type.to_sentence_case().red(),
-                StructMetadataType::SolanaAccount => struct_type.to_sentence_case().yellow(),
-                StructMetadataType::Other => struct_type.to_sentence_case().magenta(),
+                StructMetadataType::ContextAccounts => {
+                    struct_type.to_sentence_case().bright_green()
+                }
+                StructMetadataType::SolanaAccount => struct_type.to_sentence_case().bright_blue(),
+                StructMetadataType::Other => struct_type.to_sentence_case().bright_yellow(),
                 _ => unimplemented!("color no implemented for given type"),
             })
             .collect::<Vec<_>>();
