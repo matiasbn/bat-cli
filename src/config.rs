@@ -36,7 +36,8 @@ impl BatAuditorConfig {
             .merge(Toml::file(path))
             .extract()
             .into_report()
-            .change_context(BatConfigError)?;
+            .change_context(BatConfigError)
+            .attach_printable("Error parsing BatAuditor.toml")?;
         Ok(bat_config)
     }
 
@@ -73,7 +74,8 @@ impl BatConfig {
             .merge(Toml::file(path))
             .extract()
             .into_report()
-            .change_context(BatConfigError)?;
+            .change_context(BatConfigError)
+            .attach_printable("Error parsing Bat.toml")?;
         Ok(bat_config)
     }
 
