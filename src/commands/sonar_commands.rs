@@ -96,7 +96,8 @@ impl SonarCommand {
         let metadata_path = BatFolder::Metadata
             .get_path(false)
             .change_context(CommandError)?;
-        execute_command("rm", &[&format!("{}/**.md", metadata_path)])?;
+        execute_command("rm", &["-rf", &metadata_path])?;
+        execute_command("mkdir", &[&metadata_path])?;
         TemplateGenerator::create_auditor_metadata_files().change_context(CommandError)?;
         BatSonar::display_looking_for_loader(SonarResultType::Struct);
         self.structs()?;
