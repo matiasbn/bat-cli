@@ -10,7 +10,8 @@ use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownS
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, MetadataMarkdownContent,
+    BatMetadata, BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType,
+    BatMetadataTypeParser,
 };
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
@@ -31,7 +32,7 @@ pub struct StructMetadata {
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser for StructMetadata {
+impl BatMetadataParser<StructMetadataType> for StructMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -47,26 +48,14 @@ impl BatMetadataParser for StructMetadata {
     fn end_line_index(&self) -> usize {
         self.end_line_index
     }
-    fn metadata_sub_type_string(&self) -> String {
-        self.struct_type.to_string()
+    fn metadata_sub_type(&self) -> StructMetadataType {
+        self.struct_type
     }
-    fn get_markdown_section_content_string(&self) -> String {
-        format!(
-            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
-            self.name,
-            self.struct_type.to_snake_case(),
-            self.path,
-            self.start_line_index,
-            self.end_line_index
-        )
-    }
-}
 
-impl StructMetadata {
-    pub fn new(
+    fn new(
         path: String,
         name: String,
-        struct_type: StructMetadataType,
+        metadata_sub_type: StructMetadataType,
         start_line_index: usize,
         end_line_index: usize,
     ) -> Self {
@@ -74,35 +63,14 @@ impl StructMetadata {
             path,
             name,
             metadata_id: Self::create_metadata_id(),
-            struct_type: struct_type,
+            struct_type: metadata_sub_type,
             start_line_index,
             end_line_index,
         }
     }
+}
 
-    pub fn from_markdown_section(md_section: MarkdownSection) -> Result<Self, MetadataError> {
-        let name = md_section.section_header.title;
-        let path =
-            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Path)?;
-        let struct_type_string =
-            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Type)?;
-        let start_line_index = Self::parse_metadata_info_section(
-            &md_section.content,
-            MetadataMarkdownContent::StartLineIndex,
-        )?;
-        let end_line_index = Self::parse_metadata_info_section(
-            &md_section.content,
-            MetadataMarkdownContent::EndLineIndex,
-        )?;
-        Ok(StructMetadata::new(
-            path,
-            name,
-            StructMetadataType::from_str(&struct_type_string),
-            start_line_index.parse::<usize>().unwrap(),
-            end_line_index.parse::<usize>().unwrap(),
-        ))
-    }
-
+impl StructMetadata {
     pub fn prompt_multiselection(
         select_all: bool,
         force_select: bool,
@@ -134,10 +102,10 @@ impl StructMetadata {
 
     fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
         let prompt_text = format!("Please select the {}:", "Struct type".blue());
-        let struct_types_colorized = StructMetadataType::get_colorized_structs_type_vec();
+        let struct_types_colorized = StructMetadataType::get_colorized_type_vec();
         let selection = BatDialoguer::select(prompt_text, struct_types_colorized.clone(), None)
             .change_context(MetadataError)?;
-        let selected_struct_type = StructMetadataType::get_structs_type_vec()[selection];
+        let selected_struct_type = StructMetadataType::get_metadata_type_vec()[selection];
         let struct_metadata_vec = Self::get_filtered_metadata(None, Some(selected_struct_type))
             .change_context(MetadataError)?;
         let struct_metadata_names = struct_metadata_vec
@@ -169,7 +137,7 @@ impl StructMetadata {
                     return false;
                 };
                 if struct_type.is_some() {
-                    let type_content = MetadataMarkdownContent::Type
+                    let type_content = BatMetadataMarkdownContent::Type
                         .get_info_section_content(struct_type.unwrap().to_snake_case());
                     log::debug!("type_content\n{:#?}", type_content);
                     if !section.content.contains(&type_content) {
@@ -205,27 +173,6 @@ impl StructMetadata {
             .map(|markdown_section| StructMetadata::from_markdown_section(markdown_section.clone()))
             .collect::<Result<Vec<StructMetadata>, _>>()?;
         Ok(structs_metadata)
-    }
-
-    fn parse_metadata_info_section(
-        metadata_info_content: &str,
-        struct_section: MetadataMarkdownContent,
-    ) -> Result<String, MetadataError> {
-        let section_prefix = struct_section.get_prefix();
-        let data = metadata_info_content
-            .lines()
-            .find(|line| line.contains(&section_prefix))
-            .ok_or(MetadataError)
-            .into_report()
-            .attach_printable(format!(
-                "Error parsing info section {}, with metadata_info_content:\n{}",
-                struct_section.to_snake_case(),
-                metadata_info_content
-            ))?
-            .replace(&section_prefix, "")
-            .trim()
-            .to_string();
-        Ok(data)
     }
 
     pub fn get_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
@@ -372,41 +319,4 @@ pub enum StructMetadataType {
     Other,
 }
 
-impl StructMetadataType {
-    pub fn to_snake_case(&self) -> String {
-        self.to_string().to_snake_case()
-    }
-
-    pub fn to_sentence_case(&self) -> String {
-        self.to_string().to_sentence_case()
-    }
-
-    pub fn from_str(type_str: &str) -> StructMetadataType {
-        let structs_type_vec = Self::get_structs_type_vec();
-        let struct_type = structs_type_vec
-            .iter()
-            .find(|struct_type| struct_type.to_snake_case() == type_str.to_snake_case())
-            .unwrap();
-        struct_type.clone()
-    }
-
-    pub fn get_structs_type_vec() -> Vec<StructMetadataType> {
-        StructMetadataType::iter().collect::<Vec<_>>()
-    }
-
-    pub fn get_colorized_structs_type_vec() -> Vec<ColoredString> {
-        let struct_type_vec = Self::get_structs_type_vec();
-        let structs_type_colorized = struct_type_vec
-            .iter()
-            .map(|struct_type| match struct_type {
-                StructMetadataType::ContextAccounts => {
-                    struct_type.to_sentence_case().bright_green()
-                }
-                StructMetadataType::SolanaAccount => struct_type.to_sentence_case().bright_blue(),
-                StructMetadataType::Other => struct_type.to_sentence_case().bright_yellow(),
-                _ => unimplemented!("color no implemented for given type"),
-            })
-            .collect::<Vec<_>>();
-        structs_type_colorized
-    }
-}
+impl BatMetadataTypeParser for StructMetadataType {}

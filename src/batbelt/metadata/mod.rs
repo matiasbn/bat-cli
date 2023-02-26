@@ -17,7 +17,7 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use strum::IntoEnumIterator;
@@ -63,32 +63,9 @@ pub enum BatMetadataType {
     Trait,
 }
 
+impl BatMetadataTypeParser for BatMetadataType {}
+
 impl BatMetadataType {
-    pub fn to_snake_case(&self) -> String {
-        self.to_string().to_snake_case()
-    }
-
-    pub fn to_sentence_case(&self) -> String {
-        self.to_string().to_sentence_case()
-    }
-
-    pub fn get_metadata_type_vec() -> Vec<BatMetadataType> {
-        BatMetadataType::iter().collect::<Vec<_>>()
-    }
-
-    pub fn get_colorized_metadata_type_vec() -> Vec<ColoredString> {
-        let struct_type_vec = Self::get_metadata_type_vec();
-        let structs_type_colorized = struct_type_vec
-            .iter()
-            .map(|metadata_type| match metadata_type {
-                Self::Struct => metadata_type.to_sentence_case().red(),
-                Self::Function => metadata_type.to_sentence_case().yellow(),
-                Self::Trait => metadata_type.to_sentence_case().bright_cyan(),
-            })
-            .collect::<Vec<_>>();
-        structs_type_colorized
-    }
-
     pub fn get_path(&self) -> Result<String, MetadataError> {
         let path = match self {
             BatMetadataType::Struct => BatFile::StructsMetadataFile
@@ -138,7 +115,7 @@ impl BatMetadataType {
     }
     pub fn prompt_metadata_type_selection() -> Result<Self, MetadataError> {
         let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
-        let metadata_types_colorized_vec = BatMetadataType::get_colorized_metadata_type_vec();
+        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec();
         // Choose metadata section selection
         let prompt_text = format!("Please select the {}", "Metadata type".bright_purple());
         let selection =
@@ -146,15 +123,38 @@ impl BatMetadataType {
         let metadata_type_selected = &metadata_types_vec[selection];
         Ok(metadata_type_selected.clone())
     }
+
+    fn get_metadata_vec_from_markdown<T: BatMetadataParser<BatMetadataType>>(
+    ) -> Result<Vec<T>, MetadataError> {
+        let metadata_markdown_file =
+            BatMetadataType::Trait.get_markdown_sections_from_metadata_file()?;
+        let metadata_vec = metadata_markdown_file
+            .into_iter()
+            .map(|markdown_section| T::from_markdown_section(markdown_section.clone()))
+            .collect::<Result<Vec<T>, _>>()?;
+        Ok(metadata_vec)
+    }
 }
 
-pub trait BatMetadataParser {
+pub trait BatMetadataParser<U>
+where
+    Self: Sized,
+    U: BatMetadataTypeParser,
+{
     fn name(&self) -> String;
     fn path(&self) -> String;
     fn metadata_id(&self) -> String;
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
-    fn metadata_sub_type_string(&self) -> String;
+    fn metadata_sub_type(&self) -> U;
+
+    fn new(
+        path: String,
+        name: String,
+        metadata_sub_type: U,
+        start_line_index: usize,
+        end_line_index: usize,
+    ) -> Self;
 
     fn create_metadata_id() -> String {
         let s: String = rand::thread_rng()
@@ -182,16 +182,124 @@ pub trait BatMetadataParser {
         format!(
             "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
             self.name(),
-            self.metadata_sub_type_string().to_snake_case(),
+            self.metadata_sub_type().to_snake_case(),
             self.path(),
             self.start_line_index(),
             self.end_line_index()
         )
     }
+
+    fn from_markdown_section(md_section: MarkdownSection) -> Result<Self, MetadataError> {
+        let message = format!(
+            "Error parsing function_metadata from markdown_section: \n{:#?}",
+            md_section
+        );
+        let name = md_section.section_header.title;
+        let type_string = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::Type,
+        )
+        .attach_printable(message.clone())?;
+        let path = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::Path,
+        )
+        .attach_printable(message.clone())?;
+        let start_line_index = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::StartLineIndex,
+        )
+        .attach_printable(message.clone())?;
+        let end_line_index = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::EndLineIndex,
+        )
+        .attach_printable(message.clone())?;
+        Ok(Self::new(
+            path,
+            name,
+            U::from_str(&type_string),
+            start_line_index.parse::<usize>().unwrap(),
+            end_line_index.parse::<usize>().unwrap(),
+        ))
+    }
+
+    fn parse_metadata_info_section(
+        metadata_info_content: &str,
+        metadata_section: BatMetadataMarkdownContent,
+    ) -> Result<String, MetadataError> {
+        let section_prefix = metadata_section.get_prefix();
+        let data = metadata_info_content
+            .lines()
+            .find(|line| line.contains(&section_prefix))
+            .ok_or(MetadataError)
+            .into_report()
+            .attach_printable(format!(
+                "Error parsing info section {}, with metadata_info_content:\n{}",
+                metadata_section.to_snake_case(),
+                metadata_info_content
+            ))?
+            .replace(&section_prefix, "")
+            .trim()
+            .to_string();
+        Ok(data)
+    }
+}
+
+pub trait BatMetadataTypeParser
+where
+    Self: ToString + Display + IntoEnumIterator + Clone + Sized,
+{
+    fn to_snake_case(&self) -> String {
+        self.to_string().to_snake_case()
+    }
+
+    fn to_sentence_case(&self) -> String {
+        self.to_string().to_sentence_case()
+    }
+
+    fn from_str(type_str: &str) -> Self {
+        let structs_type_vec = Self::get_metadata_type_vec();
+        let struct_type = structs_type_vec
+            .into_iter()
+            .find(|struct_type| struct_type.to_snake_case() == type_str.to_snake_case())
+            .unwrap();
+        struct_type.clone()
+    }
+
+    fn get_metadata_type_vec() -> Vec<Self> {
+        Self::iter().collect::<Vec<_>>()
+    }
+
+    fn colored_from_index(type_str: &str, idx: usize) -> ColoredString {
+        match idx {
+            0 => type_str.bright_green(),
+            1 => type_str.bright_blue(),
+            2 => type_str.bright_yellow(),
+            3 => type_str.bright_cyan(),
+            4 => type_str.bright_purple(),
+            _ => type_str.bright_white(),
+        }
+    }
+
+    fn get_colorized_type_vec() -> Vec<ColoredString> {
+        let metadata_type_vec = Self::get_metadata_type_vec();
+        let metadata_type_colorized = metadata_type_vec
+            .iter()
+            .enumerate()
+            .map(|metadata_type| {
+                Self::colored_from_index(
+                    &(*metadata_type.1).to_sentence_case().clone(),
+                    metadata_type.0,
+                )
+            })
+            .collect::<Vec<_>>();
+        metadata_type_colorized
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
-enum MetadataMarkdownContent {
+enum BatMetadataMarkdownContent {
     Path,
     Name,
     Type,
@@ -199,7 +307,7 @@ enum MetadataMarkdownContent {
     EndLineIndex,
 }
 
-impl MetadataMarkdownContent {
+impl BatMetadataMarkdownContent {
     pub fn get_prefix(&self) -> String {
         format!("- {}:", self.to_snake_case())
     }

@@ -10,7 +10,8 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, MetadataMarkdownContent,
+    BatMetadata, BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType,
+    BatMetadataTypeParser,
 };
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
@@ -32,7 +33,7 @@ pub struct FunctionMetadata {
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser for FunctionMetadata {
+impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -48,29 +49,29 @@ impl BatMetadataParser for FunctionMetadata {
     fn end_line_index(&self) -> usize {
         self.end_line_index
     }
-    fn metadata_sub_type_string(&self) -> String {
-        self.function_type.to_string()
+    fn metadata_sub_type(&self) -> FunctionMetadataType {
+        self.function_type
     }
-}
 
-impl FunctionMetadata {
     fn new(
         path: String,
         name: String,
-        function_type: FunctionMetadataType,
+        metadata_sub_type: FunctionMetadataType,
         start_line_index: usize,
         end_line_index: usize,
     ) -> Self {
-        FunctionMetadata {
+        Self {
             path,
             name,
             metadata_id: Self::create_metadata_id(),
-            function_type: function_type,
+            function_type: metadata_sub_type,
             start_line_index,
             end_line_index,
         }
     }
+}
 
+impl FunctionMetadata {
     pub fn to_function_parser(
         &self,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
@@ -90,20 +91,24 @@ impl FunctionMetadata {
             md_section
         );
         let name = md_section.section_header.title;
-        let path =
-            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Path)
-                .attach_printable(message.clone())?;
-        let function_type_string =
-            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Type)
-                .attach_printable(message.clone())?;
+        let path = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::Path,
+        )
+        .attach_printable(message.clone())?;
+        let function_type_string = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::Type,
+        )
+        .attach_printable(message.clone())?;
         let start_line_index = Self::parse_metadata_info_section(
             &md_section.content,
-            MetadataMarkdownContent::StartLineIndex,
+            BatMetadataMarkdownContent::StartLineIndex,
         )
         .attach_printable(message.clone())?;
         let end_line_index = Self::parse_metadata_info_section(
             &md_section.content,
-            MetadataMarkdownContent::EndLineIndex,
+            BatMetadataMarkdownContent::EndLineIndex,
         )
         .attach_printable(message.clone())?;
         Ok(FunctionMetadata::new(
@@ -145,10 +150,10 @@ impl FunctionMetadata {
 
     fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
         let prompt_text = format!("Please select the {}:", "Function type".blue());
-        let function_types_colorized = FunctionMetadataType::get_colorized_functions_type_vec();
+        let function_types_colorized = FunctionMetadataType::get_colorized_type_vec();
         let selection = BatDialoguer::select(prompt_text, function_types_colorized.clone(), None)
             .change_context(MetadataError)?;
-        let selected_function_type = FunctionMetadataType::get_functions_type_vec()[selection];
+        let selected_function_type = FunctionMetadataType::get_metadata_type_vec()[selection];
         let function_metadata_vec = Self::get_filtered_metadata(None, Some(selected_function_type))
             .change_context(MetadataError)?;
         let function_metadata_names = function_metadata_vec
@@ -181,7 +186,7 @@ impl FunctionMetadata {
                     return false;
                 };
                 if function_type.is_some() {
-                    let type_content = MetadataMarkdownContent::Type
+                    let type_content = BatMetadataMarkdownContent::Type
                         .get_info_section_content(function_type.unwrap().to_snake_case());
                     log::debug!("type_content\n{:#?}", type_content);
                     if !section.content.contains(&type_content) {
@@ -309,26 +314,6 @@ impl FunctionMetadata {
             .collect::<Result<Vec<FunctionMetadata>, _>>()?;
         Ok(functions_metadata)
     }
-
-    fn parse_metadata_info_section(
-        metadata_info_content: &str,
-        function_section: MetadataMarkdownContent,
-    ) -> Result<String, MetadataError> {
-        let section_prefix = function_section.get_prefix();
-        let data = metadata_info_content
-            .lines()
-            .find(|line| line.contains(&section_prefix))
-            .ok_or(MetadataError)
-            .into_report()
-            .attach_printable(format!(
-                "Error parsing info section {:#?}",
-                function_section.to_snake_case()
-            ))?
-            .replace(&section_prefix, "")
-            .trim()
-            .to_string();
-        Ok(data)
-    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
@@ -338,42 +323,7 @@ pub enum FunctionMetadataType {
     Other,
 }
 
-impl FunctionMetadataType {
-    pub fn to_snake_case(&self) -> String {
-        self.to_string().to_snake_case()
-    }
-
-    pub fn to_sentence_case(&self) -> String {
-        self.to_string().to_sentence_case()
-    }
-
-    pub fn get_functions_type_vec() -> Vec<FunctionMetadataType> {
-        FunctionMetadataType::iter().collect::<Vec<_>>()
-    }
-
-    pub fn from_str(type_str: &str) -> FunctionMetadataType {
-        let functions_type_vec = Self::get_functions_type_vec();
-        let function_type = functions_type_vec
-            .iter()
-            .find(|function_type| function_type.to_snake_case() == type_str.to_snake_case())
-            .unwrap();
-        function_type.clone()
-    }
-
-    pub fn get_colorized_functions_type_vec() -> Vec<ColoredString> {
-        let function_type_vec = Self::get_functions_type_vec();
-        let functions_type_colorized = function_type_vec
-            .iter()
-            .map(|function_type| match function_type {
-                FunctionMetadataType::Handler => function_type.to_sentence_case().bright_green(),
-                FunctionMetadataType::EntryPoint => function_type.to_sentence_case().bright_blue(),
-                FunctionMetadataType::Other => function_type.to_sentence_case().bright_yellow(),
-                _ => unimplemented!("color no implemented for given type"),
-            })
-            .collect::<Vec<_>>();
-        functions_type_colorized
-    }
-}
+impl BatMetadataTypeParser for FunctionMetadataType {}
 
 pub fn get_function_parameters(function_content: String) -> Vec<String> {
     let content_lines = function_content.lines();

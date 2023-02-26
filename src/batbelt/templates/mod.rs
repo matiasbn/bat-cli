@@ -5,7 +5,7 @@ pub mod package_json_template;
 
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
-use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::metadata::{BatMetadataType, BatMetadataTypeParser};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;

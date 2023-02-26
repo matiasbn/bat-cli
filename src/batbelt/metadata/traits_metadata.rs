@@ -11,7 +11,8 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, MetadataMarkdownContent,
+    BatMetadata, BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType,
+    BatMetadataTypeParser,
 };
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::parse_formatted_path;
@@ -34,7 +35,7 @@ pub struct TraitMetadata {
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser for TraitMetadata {
+impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -50,29 +51,28 @@ impl BatMetadataParser for TraitMetadata {
     fn end_line_index(&self) -> usize {
         self.end_line_index
     }
-    fn metadata_sub_type_string(&self) -> String {
-        self.trait_type.to_string()
+    fn metadata_sub_type(&self) -> TraitMetadataType {
+        self.trait_type
     }
-}
-
-impl TraitMetadata {
     fn new(
         path: String,
         name: String,
-        trait_type: TraitMetadataType,
+        metadata_sub_type: TraitMetadataType,
         start_line_index: usize,
         end_line_index: usize,
     ) -> Self {
-        TraitMetadata {
+        Self {
             path,
             name,
-            trait_type,
             metadata_id: Self::create_metadata_id(),
+            trait_type: metadata_sub_type,
             start_line_index,
             end_line_index,
         }
     }
+}
 
+impl TraitMetadata {
     pub fn to_trait_impl_parser(
         &self,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
@@ -89,20 +89,24 @@ impl TraitMetadata {
             md_section
         );
         let name = md_section.section_header.title;
-        let trait_type_string =
-            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Type)
-                .attach_printable(message.clone())?;
-        let path =
-            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Path)
-                .attach_printable(message.clone())?;
+        let trait_type_string = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::Type,
+        )
+        .attach_printable(message.clone())?;
+        let path = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::Path,
+        )
+        .attach_printable(message.clone())?;
         let start_line_index = Self::parse_metadata_info_section(
             &md_section.content,
-            MetadataMarkdownContent::StartLineIndex,
+            BatMetadataMarkdownContent::StartLineIndex,
         )
         .attach_printable(message.clone())?;
         let end_line_index = Self::parse_metadata_info_section(
             &md_section.content,
-            MetadataMarkdownContent::EndLineIndex,
+            BatMetadataMarkdownContent::EndLineIndex,
         )
         .attach_printable(message.clone())?;
         Ok(TraitMetadata::new(
@@ -255,26 +259,6 @@ impl TraitMetadata {
             .collect::<Result<Vec<TraitMetadata>, _>>()?;
         Ok(functions_metadata)
     }
-
-    fn parse_metadata_info_section(
-        metadata_info_content: &str,
-        trait_section: MetadataMarkdownContent,
-    ) -> Result<String, MetadataError> {
-        let section_prefix = trait_section.get_prefix();
-        let data = metadata_info_content
-            .lines()
-            .find(|line| line.contains(&section_prefix))
-            .ok_or(MetadataError)
-            .into_report()
-            .attach_printable(format!(
-                "Error parsing info section {:#?}",
-                trait_section.to_snake_case()
-            ))?
-            .replace(&section_prefix, "")
-            .trim()
-            .to_string();
-        Ok(data)
-    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
@@ -283,37 +267,4 @@ pub enum TraitMetadataType {
     Implementation,
 }
 
-impl TraitMetadataType {
-    pub fn to_snake_case(&self) -> String {
-        self.to_string().to_snake_case()
-    }
-
-    pub fn to_sentence_case(&self) -> String {
-        self.to_string().to_sentence_case()
-    }
-
-    pub fn get_functions_type_vec() -> Vec<TraitMetadataType> {
-        TraitMetadataType::iter().collect::<Vec<_>>()
-    }
-
-    pub fn from_str(type_str: &str) -> TraitMetadataType {
-        let functions_type_vec = Self::get_functions_type_vec();
-        let function_type = functions_type_vec
-            .iter()
-            .find(|function_type| function_type.to_snake_case() == type_str.to_snake_case())
-            .unwrap();
-        function_type.clone()
-    }
-
-    pub fn get_colorized_functions_type_vec() -> Vec<ColoredString> {
-        let function_type_vec = Self::get_functions_type_vec();
-        let functions_type_colorized = function_type_vec
-            .iter()
-            .map(|function_type| match function_type {
-                Self::Implementation => function_type.to_sentence_case().bright_green(),
-                Self::Definition => function_type.to_sentence_case().bright_blue(),
-            })
-            .collect::<Vec<_>>();
-        functions_type_colorized
-    }
-}
+impl BatMetadataTypeParser for TraitMetadataType {}
