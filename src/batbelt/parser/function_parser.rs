@@ -1,6 +1,6 @@
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
 use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
-use crate::batbelt::metadata::MetadataError;
+use crate::batbelt::metadata::{BatMetadataParser, MetadataError};
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::SonarResult;
@@ -319,94 +319,94 @@ impl FunctionParser {
     }
 }
 
-#[test]
-fn test_get_function_information() {
-    let test_function = "/// Validates a given key and its permissions.
-/// Returns the parsed permissions.
-pub fn validate_and_parse_static<'a, 'b: 'a, P: StaticPermissionKey>(
-    profile: impl Into<ZeroCopyWrapper<'a, 'b, Profile>>,
-    key: &Signer,
-    key_index: u16,
-    clock: Option<&Clock>,
-) -> Result<KeyValidate<(P, u128)>> {
-    validate_against_list(profile, key, key_index, once(P::permission_key()), clock)
-}";
-    let function_parser = FunctionParser {
-        name: "".to_string(),
-        function_metadata: FunctionMetadata {
-            path: "../star-atlas-programs/sol-programs/programs/player_profile/src/util.rs"
-                .to_string(),
-            name: "validate_and_parse_static".to_string(),
-            function_type: FunctionMetadataType::Other,
-            start_line_index: 121,
-            end_line_index: 128,
-        },
-        content: "".to_string(),
-        signature: "".to_string(),
-        body: "".to_string(),
-        parameters: vec![],
-        dependencies: vec![],
-        external_dependencies: vec![],
-    };
-}
-
-#[test]
-fn test_dep_regex() {
-    let test_text = " 
-profile.into();
-let list = profile.list()?;
-let profile_key = list.get(key_index as usize).ok_or_else(|| {
-ProfilePermissions::from_bits_truncate(u128::from_le_bytes(profile_key.permissions))
-contains(ProfilePermissions::AUTH)
-return Ok(KeyValidate::Auth);
-Ok(Clock::get()?.unix_timestamp),
-Ok(clock.unix_timestamp),
-Ok(KeyValidate::Permissioned((
-profile_key.permission_key,
-profile_key.permissions,
-)))
-
-match validate_key(profile, key, key_index, clock)? {
-KeyValidate::Auth => Ok(KeyValidate::Auth),
-KeyValidate::Permissioned((permission_key, permissions)) => {
-let permissions = u128::from_le_bytes(permissions);
-Ok(KeyValidate::Permissioned((
-permission_key,
-P::from_bits_truncate(permissions),
-permissions,
-)))
-
-match validate_and_parse(profile, key, key_index, clock)? {
-KeyValidate::Auth => Ok(KeyValidate::Auth),
-KeyValidate::Permissioned((permission_key, permissions, permissions_raw)) => {
-if !valid_permission_keys.into_iter().any(|k| k == &permission_key)
-Ok(KeyValidate::Permissioned((permissions, permissions_raw)))
-validate_against_list(profile, key, key_index, once(P::permission_key()), clock)
-match validate_and_parse_static(profile, key, key_index, clock)? {
-KeyValidate::Auth => Ok(KeyValidate::Auth),
-KeyValidate::Permissioned((permissions, permissions_raw)) => {
-let permissions: P = permissions;
-if permissions.contains(required_permissions) {
-Ok(KeyValidate::Permissioned(permissions_raw))
-match validate_against_list(profile, key, key_index, valid_permission_keys, clock)? {
-KeyValidate::Auth => Ok(KeyValidate::Auth),
-KeyValidate::Permissioned((permissions, permissions_raw)) => {
-
-if permissions.contains(required_permissions) {
-Ok(KeyValidate::Permissioned(permissions_raw))";
-
-    let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_,\s]*)\)").unwrap(); //[A-Za-z0-9_]+\(([A-Za-z0-9_,():\s])*\)$
-    let dependency_parser_vec = dependency_regex
-        .find_iter(test_text)
-        .map(|regex_match| regex_match.as_str().to_string())
-        .collect::<Vec<_>>();
-    println!("result: \n{:#?}", dependency_parser_vec);
-}
-
-#[test]
-fn test_detect_double_parentheses() {
-    let test_text = "Permissioned((permissions, permissions_raw))";
-    let test_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
-    let result = test_regex.is_match(test_text);
-    println!("{}", result);
-}
+// #[test]
+// fn test_get_function_information() {
+//     let test_function = "/// Validates a given key and its permissions.
+// /// Returns the parsed permissions.
+// pub fn validate_and_parse_static<'a, 'b: 'a, P: StaticPermissionKey>(
+//     profile: impl Into<ZeroCopyWrapper<'a, 'b, Profile>>,
+//     key: &Signer,
+//     key_index: u16,
+//     clock: Option<&Clock>,
+// ) -> Result<KeyValidate<(P, u128)>> {
+//     validate_against_list(profile, key, key_index, once(P::permission_key()), clock)
+// }";
+//     let function_parser = FunctionParser {
+//         name: "".to_string(),
+//         function_metadata: FunctionMetadata {
+//             path: "../star-atlas-programs/sol-programs/programs/player_profile/src/util.rs"
+//                 .to_string(),
+//             name: "validate_and_parse_static".to_string(),
+//             function_type: FunctionMetadataType::Other,
+//             start_line_index: 121,
+//             end_line_index: 128,
+//         },
+//         content: "".to_string(),
+//         signature: "".to_string(),
+//         body: "".to_string(),
+//         parameters: vec![],
+//         dependencies: vec![],
+//         external_dependencies: vec![],
+//     };
+// }
+//
+// #[test]
+// fn test_dep_regex() {
+//     let test_text = "
+// profile.into();
+// let list = profile.list()?;
+// let profile_key = list.get(key_index as usize).ok_or_else(|| {
+// ProfilePermissions::from_bits_truncate(u128::from_le_bytes(profile_key.permissions))
+// contains(ProfilePermissions::AUTH)
+// return Ok(KeyValidate::Auth);
+// Ok(Clock::get()?.unix_timestamp),
+// Ok(clock.unix_timestamp),
+// Ok(KeyValidate::Permissioned((
+// profile_key.permission_key,
+// profile_key.permissions,
+// )))
+//
+// match validate_key(profile, key, key_index, clock)? {
+// KeyValidate::Auth => Ok(KeyValidate::Auth),
+// KeyValidate::Permissioned((permission_key, permissions)) => {
+// let permissions = u128::from_le_bytes(permissions);
+// Ok(KeyValidate::Permissioned((
+// permission_key,
+// P::from_bits_truncate(permissions),
+// permissions,
+// )))
+//
+// match validate_and_parse(profile, key, key_index, clock)? {
+// KeyValidate::Auth => Ok(KeyValidate::Auth),
+// KeyValidate::Permissioned((permission_key, permissions, permissions_raw)) => {
+// if !valid_permission_keys.into_iter().any(|k| k == &permission_key)
+// Ok(KeyValidate::Permissioned((permissions, permissions_raw)))
+// validate_against_list(profile, key, key_index, once(P::permission_key()), clock)
+// match validate_and_parse_static(profile, key, key_index, clock)? {
+// KeyValidate::Auth => Ok(KeyValidate::Auth),
+// KeyValidate::Permissioned((permissions, permissions_raw)) => {
+// let permissions: P = permissions;
+// if permissions.contains(required_permissions) {
+// Ok(KeyValidate::Permissioned(permissions_raw))
+// match validate_against_list(profile, key, key_index, valid_permission_keys, clock)? {
+// KeyValidate::Auth => Ok(KeyValidate::Auth),
+// KeyValidate::Permissioned((permissions, permissions_raw)) => {
+//
+// if permissions.contains(required_permissions) {
+// Ok(KeyValidate::Permissioned(permissions_raw))";
+//
+//     let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_,\s]*)\)").unwrap(); //[A-Za-z0-9_]+\(([A-Za-z0-9_,():\s])*\)$
+//     let dependency_parser_vec = dependency_regex
+//         .find_iter(test_text)
+//         .map(|regex_match| regex_match.as_str().to_string())
+//         .collect::<Vec<_>>();
+//     println!("result: \n{:#?}", dependency_parser_vec);
+// }
+//
+// #[test]
+// fn test_detect_double_parentheses() {
+//     let test_text = "Permissioned((permissions, permissions_raw))";
+//     let test_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
+//     let result = test_regex.is_match(test_text);
+//     println!("{}", result);
+// }

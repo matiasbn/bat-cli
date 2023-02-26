@@ -9,7 +9,7 @@ use crate::batbelt::markdown::MarkdownSection;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
@@ -24,8 +24,24 @@ use super::MetadataError;
 pub struct TraitMetadata {
     pub path: String,
     pub name: String,
+    pub metadata_id: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
+}
+
+impl BatMetadataParser for TraitMetadata {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+    fn path(&self) -> String {
+        self.path.clone()
+    }
+    fn start_line_index(&self) -> usize {
+        self.start_line_index
+    }
+    fn end_line_index(&self) -> usize {
+        self.end_line_index
+    }
 }
 
 impl TraitMetadata {
@@ -33,6 +49,7 @@ impl TraitMetadata {
         TraitMetadata {
             path,
             name,
+            metadata_id: Self::get_metadata_id(),
             start_line_index,
             end_line_index,
         }
@@ -42,19 +59,6 @@ impl TraitMetadata {
         format!(
             "# {}\n\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
             self.name, self.path, self.start_line_index, self.end_line_index
-        )
-    }
-
-    pub fn to_source_code_parser(&self, optional_name: Option<String>) -> SourceCodeParser {
-        SourceCodeParser::new(
-            if let Some(function_name) = optional_name {
-                function_name
-            } else {
-                self.name.clone()
-            },
-            self.path.clone(),
-            self.start_line_index,
-            self.end_line_index,
         )
     }
 

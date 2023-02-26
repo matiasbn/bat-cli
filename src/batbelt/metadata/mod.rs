@@ -1,6 +1,4 @@
-pub mod entrypoint_metadata;
 pub mod functions_metadata;
-pub mod miro_metadata;
 pub mod structs_metadata;
 pub mod trait_impl_metadata;
 pub mod trait_metadata;
@@ -18,7 +16,10 @@ use inflector::Inflector;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
+use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use error_stack::{Report, Result, ResultExt};
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use strum::IntoEnumIterator;
 
 #[derive(Debug)]
@@ -61,7 +62,6 @@ pub enum BatMetadataType {
     Functions,
     Trait,
     TraitImpl,
-    Entrypoints,
 }
 
 impl BatMetadataType {
@@ -84,7 +84,6 @@ impl BatMetadataType {
             .map(|metadata_type| match metadata_type {
                 Self::Structs => metadata_type.to_sentence_case().red(),
                 Self::Functions => metadata_type.to_sentence_case().yellow(),
-                Self::Entrypoints => metadata_type.to_sentence_case().magenta(),
                 Self::Trait => metadata_type.to_sentence_case().bright_cyan(),
                 Self::TraitImpl => metadata_type.to_sentence_case().bright_blue(),
             })
@@ -98,9 +97,6 @@ impl BatMetadataType {
                 .get_path(true)
                 .change_context(MetadataError)?,
             BatMetadataType::Functions => BatFile::FunctionsMetadataFile
-                .get_path(true)
-                .change_context(MetadataError)?,
-            BatMetadataType::Entrypoints => BatFile::EntrypointsMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
             BatMetadataType::Trait => BatFile::TraitMetadataFile
@@ -154,5 +150,34 @@ impl BatMetadataType {
             BatDialoguer::select(prompt_text, metadata_types_colorized_vec.clone(), None).unwrap();
         let metadata_type_selected = &metadata_types_vec[selection];
         Ok(metadata_type_selected.clone())
+    }
+}
+
+pub trait BatMetadataParser {
+    fn name(&self) -> String;
+    fn path(&self) -> String;
+    fn start_line_index(&self) -> usize;
+    fn end_line_index(&self) -> usize;
+
+    fn get_metadata_id() -> String {
+        let s: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect();
+        s
+    }
+
+    fn to_source_code_parser(&self, optional_name: Option<String>) -> SourceCodeParser {
+        SourceCodeParser::new(
+            if let Some(function_name) = optional_name {
+                function_name
+            } else {
+                self.name()
+            },
+            self.path(),
+            self.start_line_index(),
+            self.end_line_index(),
+        )
     }
 }

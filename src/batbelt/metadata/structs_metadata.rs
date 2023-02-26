@@ -9,7 +9,7 @@ use colored::{ColoredString, Colorize};
 use crate::batbelt::markdown::{MarkdownSection, MarkdownSectionHeader, MarkdownSectionLevel};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -24,8 +24,24 @@ pub struct StructMetadata {
     pub path: String,
     pub name: String,
     pub struct_type: StructMetadataType,
+    pub metadata_id: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
+}
+
+impl BatMetadataParser for StructMetadata {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+    fn path(&self) -> String {
+        self.path.clone()
+    }
+    fn start_line_index(&self) -> usize {
+        self.start_line_index
+    }
+    fn end_line_index(&self) -> usize {
+        self.end_line_index
+    }
 }
 
 impl StructMetadata {
@@ -39,6 +55,7 @@ impl StructMetadata {
         StructMetadata {
             path,
             name,
+            metadata_id: Self::get_metadata_id(),
             struct_type,
             start_line_index,
             end_line_index,
@@ -53,35 +70,6 @@ impl StructMetadata {
             self.path,
             self.start_line_index,
             self.end_line_index
-        )
-    }
-
-    pub fn to_markdown_section(&self, section_hash: &str) -> MarkdownSection {
-        let section_level_header = MarkdownSectionLevel::H2.get_header(&self.name);
-        let section_header = MarkdownSectionHeader::new_from_header_and_hash(
-            section_level_header,
-            section_hash.to_string(),
-            0,
-        );
-        let md_section = MarkdownSection::new(
-            section_header,
-            self.get_markdown_section_content_string(),
-            0,
-            0,
-        );
-        md_section
-    }
-
-    pub fn to_source_code_parser(&self, optional_name: Option<String>) -> SourceCodeParser {
-        SourceCodeParser::new(
-            if let Some(struct_name) = optional_name {
-                struct_name
-            } else {
-                self.name.clone()
-            },
-            self.path.clone(),
-            self.start_line_index,
-            self.end_line_index,
         )
     }
 

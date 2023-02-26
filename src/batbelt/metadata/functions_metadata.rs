@@ -10,7 +10,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
-use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
@@ -25,9 +25,25 @@ use super::MetadataError;
 pub struct FunctionMetadata {
     pub path: String,
     pub name: String,
+    pub metadata_id: String,
     pub function_type: FunctionMetadataType,
     pub start_line_index: usize,
     pub end_line_index: usize,
+}
+
+impl BatMetadataParser for FunctionMetadata {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+    fn path(&self) -> String {
+        self.path.clone()
+    }
+    fn start_line_index(&self) -> usize {
+        self.start_line_index
+    }
+    fn end_line_index(&self) -> usize {
+        self.end_line_index
+    }
 }
 
 impl FunctionMetadata {
@@ -41,6 +57,7 @@ impl FunctionMetadata {
         FunctionMetadata {
             path,
             name,
+            metadata_id: Self::get_metadata_id(),
             function_type,
             start_line_index,
             end_line_index,
@@ -55,19 +72,6 @@ impl FunctionMetadata {
             self.path,
             self.start_line_index,
             self.end_line_index
-        )
-    }
-
-    pub fn to_source_code_parser(&self, optional_name: Option<String>) -> SourceCodeParser {
-        SourceCodeParser::new(
-            if let Some(function_name) = optional_name {
-                function_name
-            } else {
-                self.name.clone()
-            },
-            self.path.clone(),
-            self.start_line_index,
-            self.end_line_index,
         )
     }
 
