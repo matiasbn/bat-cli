@@ -47,6 +47,14 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
     fn metadata_sub_type(&self) -> TraitMetadataType {
         self.trait_type
     }
+
+    fn match_bat_metadata_type() -> BatMetadataType {
+        BatMetadataType::Trait
+    }
+    fn metadata_name() -> String {
+        "Trait".to_string()
+    }
+
     fn new(
         path: String,
         name: String,
@@ -76,82 +84,15 @@ impl TraitMetadata {
         )
     }
 
-    pub fn prompt_multiselection(
-        select_all: bool,
-        force_select: bool,
-    ) -> Result<Vec<Self>, MetadataError> {
-        let (function_metadata_vec, function_metadata_names) = Self::prompt_types()?;
-        let prompt_text = format!("Select the {}:", "TraitImpl".blue());
-        let selections = BatDialoguer::multiselect(
-            prompt_text.clone(),
-            function_metadata_names.clone(),
-            Some(&vec![select_all; function_metadata_names.len()]),
-            force_select,
-        )
-        .change_context(MetadataError)?;
-
-        let filtered_vec = function_metadata_vec
-            .into_iter()
-            .enumerate()
-            .filter_map(|(sc_index, sc_metadata)| {
-                if selections.iter().any(|selection| &sc_index == selection) {
-                    Some(sc_metadata)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        return Ok(filtered_vec);
-    }
-
-    fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
-        let function_metadata_vec =
-            Self::get_filtered_metadata(None).change_context(MetadataError)?;
-        let function_metadata_names = function_metadata_vec
-            .iter()
-            .map(|function_metadata| {
-                parse_formatted_path(
-                    function_metadata.name.clone(),
-                    function_metadata.path.clone(),
-                    function_metadata.start_line_index.clone(),
-                )
-            })
-            .collect::<Vec<_>>();
-        Ok((function_metadata_vec, function_metadata_names))
-    }
-
-    pub fn get_filtered_metadata(
+    pub fn get_trait_parser_vec(
         trait_name: Option<&str>,
-    ) -> Result<Vec<TraitMetadata>, MetadataError> {
-        let traits_impl_sections =
-            BatMetadataType::Trait.get_markdown_sections_from_metadata_file()?;
-
-        let filtered_sections = traits_impl_sections
+        trait_type: Option<TraitMetadataType>,
+        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+    ) -> Result<Vec<TraitImplParser>, MetadataError> {
+        Self::get_filtered_metadata(trait_name, trait_type)?
             .into_iter()
-            .filter(|section| {
-                if trait_name.is_some()
-                    && trait_name.clone().unwrap() != section.section_header.title
-                {
-                    return false;
-                };
-                return true;
-            })
-            .collect::<Vec<_>>();
-        log::debug!("trait_name\n{:#?}", trait_name);
-        log::debug!("filtered_sections\n{:#?}", filtered_sections);
-        if filtered_sections.is_empty() {
-            let message = format!(
-                "Error finding trait sections for:\ntrait_name: {:#?}\n",
-                trait_name,
-            );
-            return Err(Report::new(MetadataError).attach_printable(message));
-        }
-
-        let trait_metadata_vec = filtered_sections
-            .into_iter()
-            .map(|section| TraitMetadata::from_markdown_section(section))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(trait_metadata_vec)
+            .map(|impl_meta| impl_meta.to_trait_impl_parser(optional_function_metadata_vec.clone()))
+            .collect::<Result<Vec<_>, MetadataError>>()
     }
 
     pub fn get_metadata_from_program_files() -> Result<Vec<TraitMetadata>, MetadataError> {

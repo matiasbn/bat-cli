@@ -383,6 +383,7 @@ impl SonarResult {
                 let lifetime_regex = Regex::new(r"&*'+[A-Za-z0-9:]+[, ]*").unwrap();
                 let name = lifetime_regex
                     .replace_all(first_line, "")
+                    .trim()
                     .to_string()
                     .replace("<>", "")
                     .trim_start_matches("impl")

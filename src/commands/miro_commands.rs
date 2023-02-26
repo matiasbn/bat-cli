@@ -805,12 +805,9 @@ impl MiroCommand {
         let selected_miro_frame = self.prompt_select_frame().await?;
         let function_metadata_vec =
             FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
-        let trait_impl_parser_vec = TraitMetadata::get_filtered_metadata(None)
-            .change_context(CommandError)?
-            .into_iter()
-            .map(|impl_meta| impl_meta.to_trait_impl_parser(Some(function_metadata_vec.clone())))
-            .collect::<Result<Vec<_>, MetadataError>>()
-            .change_context(CommandError)?;
+        let trait_impl_parser_vec =
+            TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata_vec.clone()))
+                .change_context(CommandError)?;
         let mut keep_deploying = true;
         let mut deployed_dependencies: Vec<(MiroImage, FunctionMetadata)> = vec![];
         let mut pending_to_check: Vec<FunctionMetadata> = vec![];

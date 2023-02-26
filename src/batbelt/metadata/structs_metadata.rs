@@ -49,6 +49,13 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
         self.struct_type
     }
 
+    fn match_bat_metadata_type() -> BatMetadataType {
+        BatMetadataType::Struct
+    }
+    fn metadata_name() -> String {
+        "Struct".to_string()
+    }
+
     fn new(
         path: String,
         name: String,
@@ -68,100 +75,6 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
 }
 
 impl StructMetadata {
-    pub fn prompt_multiselection(
-        select_all: bool,
-        force_select: bool,
-    ) -> Result<Vec<Self>, MetadataError> {
-        let (struct_metadata_vec, struct_metadata_names) = Self::prompt_types()?;
-        let prompt_text = format!("Please select the {}:", "Struct".blue());
-
-        let selections = BatDialoguer::multiselect(
-            prompt_text.clone(),
-            struct_metadata_names.clone(),
-            Some(&vec![select_all; struct_metadata_names.len()]),
-            force_select,
-        )
-        .change_context(MetadataError)?;
-
-        let filtered_vec = struct_metadata_vec
-            .into_iter()
-            .enumerate()
-            .filter_map(|(sc_index, sc_metadata)| {
-                if selections.iter().any(|selection| &sc_index == selection) {
-                    Some(sc_metadata)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        return Ok(filtered_vec);
-    }
-
-    fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
-        let prompt_text = format!("Please select the {}:", "Struct type".blue());
-        let struct_types_colorized = StructMetadataType::get_colorized_type_vec();
-        let selection = BatDialoguer::select(prompt_text, struct_types_colorized.clone(), None)
-            .change_context(MetadataError)?;
-        let selected_struct_type = StructMetadataType::get_metadata_type_vec()[selection];
-        let struct_metadata_vec = Self::get_filtered_metadata(None, Some(selected_struct_type))
-            .change_context(MetadataError)?;
-        let struct_metadata_names = struct_metadata_vec
-            .iter()
-            .map(|struct_metadata| {
-                format!(
-                    "{}: {}:{}",
-                    struct_metadata.name.clone(),
-                    struct_metadata.path.clone(),
-                    struct_metadata.start_line_index.clone()
-                )
-            })
-            .collect::<Vec<_>>();
-        Ok((struct_metadata_vec, struct_metadata_names))
-    }
-
-    pub fn get_filtered_metadata(
-        struct_name: Option<&str>,
-        struct_type: Option<StructMetadataType>,
-    ) -> Result<Vec<StructMetadata>, MetadataError> {
-        let struct_sections = BatMetadataType::Struct.get_markdown_sections_from_metadata_file()?;
-
-        let filtered_sections = struct_sections
-            .into_iter()
-            .filter(|section| {
-                if struct_name.is_some()
-                    && struct_name.clone().unwrap() != section.section_header.title
-                {
-                    return false;
-                };
-                if struct_type.is_some() {
-                    let type_content = BatMetadataMarkdownContent::Type
-                        .get_info_section_content(struct_type.unwrap().to_snake_case());
-                    log::debug!("type_content\n{:#?}", type_content);
-                    if !section.content.contains(&type_content) {
-                        return false;
-                    }
-                };
-                return true;
-            })
-            .collect::<Vec<_>>();
-        log::debug!("struct_name\n{:#?}", struct_name);
-        log::debug!("struct_type\n{:#?}", struct_type);
-        log::debug!("filtered_sections\n{:#?}", filtered_sections);
-        if filtered_sections.is_empty() {
-            let message = format!(
-                "Error finding structs sections for:\nstruct_name: {:#?}\nstruct_type: {:#?}",
-                struct_name, struct_type
-            );
-            return Err(Report::new(MetadataError).attach_printable(message));
-        }
-
-        let struct_metadata_vec = filtered_sections
-            .into_iter()
-            .map(|section| StructMetadata::from_markdown_section(section))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(struct_metadata_vec)
-    }
-
     pub fn get_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
         let program_dir_entries = BatFolder::ProgramPath
             .get_all_files_dir_entries(false, None, None)

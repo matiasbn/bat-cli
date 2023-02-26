@@ -1,5 +1,7 @@
+use crate::batbelt::metadata::BatMetadataType;
 use crate::config::{BatAuditorConfig, BatConfig};
 use error_stack::{IntoReport, Result, ResultExt};
+use inflector::Inflector;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, path::Path};
 use walkdir::{DirEntry, WalkDir};
@@ -86,13 +88,34 @@ impl BatFile {
                 )
             }
             BatFile::StructsMetadataFile => {
-                format!("{}/structs.md", BatFolder::Metadata.get_path(false)?)
+                format!(
+                    "{}/{}.md",
+                    BatFolder::Metadata.get_path(false)?,
+                    BatMetadataType::Struct
+                        .to_string()
+                        .to_lowercase()
+                        .to_plural()
+                )
             }
             BatFile::FunctionsMetadataFile => {
-                format!("{}/functions.md", BatFolder::Metadata.get_path(false)?)
+                format!(
+                    "{}/{}.md",
+                    BatFolder::Metadata.get_path(false)?,
+                    BatMetadataType::Function
+                        .to_string()
+                        .to_lowercase()
+                        .to_plural()
+                )
             }
             BatFile::TraitsMetadataFile => {
-                format!("{}/traits.md", BatFolder::Metadata.get_path(false)?)
+                format!(
+                    "{}/{}.md",
+                    BatFolder::Metadata.get_path(false)?,
+                    BatMetadataType::Trait
+                        .to_string()
+                        .to_lowercase()
+                        .to_plural()
+                )
             }
             BatFile::CodeOverhaulToReview { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");

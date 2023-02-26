@@ -2,6 +2,7 @@ use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::parser::ParserError;
 
+use crate::batbelt::metadata::BatMetadataParser;
 use error_stack::{Result, ResultExt};
 use regex::Regex;
 

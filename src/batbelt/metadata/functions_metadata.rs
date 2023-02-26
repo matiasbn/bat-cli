@@ -50,6 +50,13 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
         self.function_type
     }
 
+    fn match_bat_metadata_type() -> BatMetadataType {
+        BatMetadataType::Function
+    }
+    fn metadata_name() -> String {
+        "Function".to_string()
+    }
+
     fn new(
         path: String,
         name: String,
@@ -80,100 +87,6 @@ impl FunctionMetadata {
             optional_trait_impl_parser_vec,
         )
         .change_context(MetadataError)?)
-    }
-
-    pub fn prompt_multiselection(
-        select_all: bool,
-        force_select: bool,
-    ) -> Result<Vec<Self>, MetadataError> {
-        let (function_metadata_vec, function_metadata_names) = Self::prompt_types()?;
-        let prompt_text = format!("Please select the {}:", "Function".blue());
-        let selections = BatDialoguer::multiselect(
-            prompt_text.clone(),
-            function_metadata_names.clone(),
-            Some(&vec![select_all; function_metadata_names.len()]),
-            force_select,
-        )
-        .change_context(MetadataError)?;
-
-        let filtered_vec = function_metadata_vec
-            .into_iter()
-            .enumerate()
-            .filter_map(|(sc_index, sc_metadata)| {
-                if selections.iter().any(|selection| &sc_index == selection) {
-                    Some(sc_metadata)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        return Ok(filtered_vec);
-    }
-
-    fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
-        let prompt_text = format!("Please select the {}:", "Function type".blue());
-        let function_types_colorized = FunctionMetadataType::get_colorized_type_vec();
-        let selection = BatDialoguer::select(prompt_text, function_types_colorized.clone(), None)
-            .change_context(MetadataError)?;
-        let selected_function_type = FunctionMetadataType::get_metadata_type_vec()[selection];
-        let function_metadata_vec = Self::get_filtered_metadata(None, Some(selected_function_type))
-            .change_context(MetadataError)?;
-        let function_metadata_names = function_metadata_vec
-            .iter()
-            .map(|function_metadata| {
-                format!(
-                    "{}: {}:{}",
-                    function_metadata.name.clone(),
-                    function_metadata.path.clone(),
-                    function_metadata.start_line_index.clone()
-                )
-            })
-            .collect::<Vec<_>>();
-        Ok((function_metadata_vec, function_metadata_names))
-    }
-
-    pub fn get_filtered_metadata(
-        function_name: Option<&str>,
-        function_type: Option<FunctionMetadataType>,
-    ) -> Result<Vec<FunctionMetadata>, MetadataError> {
-        let function_sections =
-            BatMetadataType::Function.get_markdown_sections_from_metadata_file()?;
-
-        let filtered_sections = function_sections
-            .into_iter()
-            .filter(|section| {
-                if function_name.is_some()
-                    && function_name.clone().unwrap() != section.section_header.title
-                {
-                    return false;
-                };
-                if function_type.is_some() {
-                    let type_content = BatMetadataMarkdownContent::Type
-                        .get_info_section_content(function_type.unwrap().to_snake_case());
-                    log::debug!("type_content\n{:#?}", type_content);
-                    if !section.content.contains(&type_content) {
-                        return false;
-                    }
-                };
-                return true;
-            })
-            .collect::<Vec<_>>();
-        log::debug!("function_name\n{:#?}", function_name);
-        log::debug!("function_type\n{:#?}", function_type);
-        log::debug!("filtered_sections\n{:#?}", filtered_sections);
-        if filtered_sections.is_empty() {
-            let message = format!(
-                "Error finding function sections for:\nfunction_name: {:#?}\nfunction_type: {:#?}",
-                function_name, function_type
-            );
-            return Err(Report::new(MetadataError).attach_printable(message));
-        }
-
-        let function_metadata_vec = filtered_sections
-            .into_iter()
-            .map(|section| FunctionMetadata::from_markdown_section(section))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(function_metadata_vec)
     }
 
     pub fn get_metadata_from_program_files() -> Result<Vec<FunctionMetadata>, MetadataError> {

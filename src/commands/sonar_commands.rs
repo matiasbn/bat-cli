@@ -6,13 +6,14 @@ use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
-use crate::batbelt::path::BatFile;
+use crate::batbelt::path::{BatFile, BatFolder};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{Result, ResultExt};
 use std::path::Path;
 
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
+use crate::batbelt::templates::TemplateGenerator;
 
 use super::CommandError;
 
@@ -92,6 +93,11 @@ impl SonarCommand {
     }
 
     fn execute_run(&self) -> Result<(), CommandError> {
+        let metadata_path = BatFolder::Metadata
+            .get_path(false)
+            .change_context(CommandError)?;
+        execute_command("rm", &[&format!("{}/**.md", metadata_path)])?;
+        TemplateGenerator::create_auditor_metadata_files().change_context(CommandError)?;
         BatSonar::display_looking_for_loader(SonarResultType::Struct);
         self.structs()?;
         BatSonar::display_looking_for_loader(SonarResultType::Function);
@@ -151,12 +157,6 @@ impl SonarCommand {
         Ok(())
     }
     fn traits(&self) -> Result<(), CommandError> {
-        let trait_file_path = BatFile::TraitsMetadataFile
-            .get_path(false)
-            .change_context(CommandError)?;
-        if !Path::new(&trait_file_path).is_file() {
-            execute_command("touch", &[&trait_file_path])?;
-        }
         let mut traits_metadata_markdown = BatMetadataType::Trait
             .get_markdown()
             .change_context(CommandError)?;

@@ -5,7 +5,7 @@ pub mod package_json_template;
 
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
-use crate::batbelt::metadata::{BatMetadataType, BatMetadataTypeParser};
+use crate::batbelt::metadata::{BatMetadataType, BatMetadataTypeParser, MetadataError};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
@@ -130,18 +130,21 @@ audit_result/02_findings_result.md
             .get_path(false)
             .change_context(TemplateError)?;
         Self::create_dir(&auditor_metadata_path, false)?;
-
-        // metadata files
-        let metadata_types = BatMetadataType::get_metadata_type_vec();
-        for metadata_type in metadata_types {
-            let metadata_file = format!(
-                "{}/{}.md",
-                auditor_metadata_path,
-                metadata_type.to_string().to_lowercase()
-            );
-            execute_command("touch", &[&metadata_file]).change_context(TemplateError)?;
-        }
+        Self::create_auditor_metadata_files()?;
         NoteTemplate::create_notes_templates()?;
+        Ok(())
+    }
+
+    pub fn create_auditor_metadata_files() -> Result<(), TemplateError> {
+        // metadata files
+        let metadata_types_path = BatMetadataType::get_metadata_type_vec()
+            .into_iter()
+            .map(|meta_type| meta_type.get_path())
+            .collect::<Result<Vec<_>, MetadataError>>()
+            .change_context(TemplateError)?;
+        for metadata_path in metadata_types_path {
+            execute_command("touch", &[&metadata_path]).change_context(TemplateError)?;
+        }
         Ok(())
     }
 

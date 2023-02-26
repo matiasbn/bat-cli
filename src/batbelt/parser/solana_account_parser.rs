@@ -1,4 +1,5 @@
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::BatMetadataParser;
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::SonarResult;
 use error_stack::{Result, ResultExt};

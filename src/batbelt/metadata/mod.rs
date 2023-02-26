@@ -15,6 +15,10 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
+use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
+use crate::batbelt::metadata::structs_metadata::StructMetadata;
+use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
@@ -68,13 +72,13 @@ impl BatMetadataType {
     pub fn get_path(&self) -> Result<String, MetadataError> {
         let path = match self {
             BatMetadataType::Struct => BatFile::StructsMetadataFile
-                .get_path(true)
+                .get_path(false)
                 .change_context(MetadataError)?,
             BatMetadataType::Function => BatFile::FunctionsMetadataFile
-                .get_path(true)
+                .get_path(false)
                 .change_context(MetadataError)?,
             BatMetadataType::Trait => BatFile::TraitsMetadataFile
-                .get_path(true)
+                .get_path(false)
                 .change_context(MetadataError)?,
         };
         Ok(path)
@@ -146,6 +150,9 @@ where
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
     fn metadata_sub_type(&self) -> U;
+    fn match_bat_metadata_type() -> BatMetadataType;
+
+    fn metadata_name() -> String;
 
     fn new(
         path: String,
@@ -243,11 +250,107 @@ where
             .to_string();
         Ok(data)
     }
+
+    fn prompt_multiselection(
+        select_all: bool,
+        force_select: bool,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let (metadata_vec, metadata_names) = Self::prompt_types()?;
+        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
+        let selections = BatDialoguer::multiselect(
+            prompt_text.clone(),
+            metadata_names.clone(),
+            Some(&vec![select_all; metadata_names.len()]),
+            force_select,
+        )
+        .change_context(MetadataError)?;
+
+        let filtered_vec = metadata_vec
+            .into_iter()
+            .enumerate()
+            .filter_map(|(sc_index, sc_metadata)| {
+                if selections.iter().any(|selection| &sc_index == selection) {
+                    Some(sc_metadata)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        return Ok(filtered_vec);
+    }
+
+    fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
+        let prompt_text = format!(
+            "Please select the {} {}:",
+            Self::metadata_name().blue(),
+            "type".blue()
+        );
+        let selection = BatDialoguer::select(prompt_text, U::get_colorized_type_vec(), None)
+            .change_context(MetadataError)?;
+        let selected_sub_type = U::get_metadata_type_vec()[selection].clone();
+        let metadata_vec_filtered = Self::get_filtered_metadata(None, Some(selected_sub_type))
+            .change_context(MetadataError)?;
+        let metadata_names = metadata_vec_filtered
+            .iter()
+            .map(|metadata| {
+                parse_formatted_path(
+                    metadata.name().clone(),
+                    metadata.path().clone(),
+                    metadata.start_line_index().clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        Ok((metadata_vec_filtered, metadata_names))
+    }
+
+    fn get_filtered_metadata(
+        metadata_name: Option<&str>,
+        metadata_type: Option<U>,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let markdown_sections =
+            Self::match_bat_metadata_type().get_markdown_sections_from_metadata_file()?;
+
+        let filtered_sections = markdown_sections
+            .into_iter()
+            .filter(|section| {
+                if metadata_name.is_some()
+                    && metadata_name.clone().unwrap() != section.section_header.title
+                {
+                    return false;
+                };
+                if metadata_type.is_some() {
+                    let type_content = BatMetadataMarkdownContent::Type
+                        .get_info_section_content(metadata_type.clone().unwrap().to_snake_case());
+                    log::debug!("type_content\n{:#?}", type_content);
+                    if !section.content.contains(&type_content) {
+                        return false;
+                    }
+                };
+                return true;
+            })
+            .collect::<Vec<_>>();
+        log::debug!("metadata_name\n{:#?}", metadata_name);
+        log::debug!("metadata_type\n{:#?}", metadata_type);
+        log::debug!("filtered_sections\n{:#?}", filtered_sections);
+        if filtered_sections.is_empty() {
+            let message = format!(
+                "Error finding metadata sections for:\nmetadata_name: {:#?}\nmetadata_type: {:#?}",
+                metadata_name, metadata_type
+            );
+            return Err(Report::new(MetadataError).attach_printable(message));
+        }
+
+        let function_metadata_vec = filtered_sections
+            .into_iter()
+            .map(|section| Self::from_markdown_section(section))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(function_metadata_vec)
+    }
 }
 
 pub trait BatMetadataTypeParser
 where
-    Self: ToString + Display + IntoEnumIterator + Clone + Sized,
+    Self: ToString + Display + IntoEnumIterator + Clone + Sized + Debug,
 {
     fn to_snake_case(&self) -> String {
         self.to_string().to_snake_case()

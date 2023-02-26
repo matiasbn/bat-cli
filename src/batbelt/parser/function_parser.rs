@@ -93,11 +93,7 @@ impl FunctionParser {
         let trait_impl_parser_vec = if optional_trait_impl_parser_vec.clone().is_some() {
             optional_trait_impl_parser_vec.clone().unwrap()
         } else {
-            TraitMetadata::get_filtered_metadata(None)
-                .change_context(ParserError)?
-                .into_iter()
-                .map(|impl_meta| impl_meta.to_trait_impl_parser(Some(function_metadata.clone())))
-                .collect::<Result<Vec<_>, MetadataError>>()
+            TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata.clone()))
                 .change_context(ParserError)?
         };
         let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
