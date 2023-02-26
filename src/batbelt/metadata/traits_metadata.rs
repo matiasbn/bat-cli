@@ -15,6 +15,7 @@ use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use error_stack::{Report, Result, ResultExt};
 
 use std::{fs, vec};
+use walkdir::DirEntry;
 
 use super::MetadataError;
 
@@ -71,6 +72,35 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
             end_line_index,
         }
     }
+
+    fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
+        let entry_path = entry.path().to_str().unwrap().to_string();
+        let file_content = fs::read_to_string(entry.path()).unwrap();
+        let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::TraitImpl);
+        let mut result_vec = vec![];
+        for result in bat_sonar.results {
+            let function_metadata = TraitMetadata::new(
+                entry_path.clone(),
+                result.name.to_string(),
+                TraitMetadataType::Implementation,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+            );
+            result_vec.push(function_metadata);
+        }
+        let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Trait);
+        for result in bat_sonar.results {
+            let function_metadata = TraitMetadata::new(
+                entry_path.clone(),
+                result.name.to_string(),
+                TraitMetadataType::Definition,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+            );
+            result_vec.push(function_metadata);
+        }
+        Ok(result_vec)
+    }
 }
 
 impl TraitMetadata {
@@ -93,60 +123,6 @@ impl TraitMetadata {
             .into_iter()
             .map(|impl_meta| impl_meta.to_trait_impl_parser(optional_function_metadata_vec.clone()))
             .collect::<Result<Vec<_>, MetadataError>>()
-    }
-
-    pub fn get_metadata_from_program_files() -> Result<Vec<TraitMetadata>, MetadataError> {
-        let program_dir_entries = BatFolder::ProgramPath
-            .get_all_files_dir_entries(false, None, None)
-            .change_context(MetadataError)?;
-        let mut traits_metadata: Vec<TraitMetadata> =
-            program_dir_entries
-                .into_iter()
-                .fold(vec![], |mut result_vec, entry| {
-                    let entry_path = entry.path().to_str().unwrap().to_string();
-                    println!("starting the review of the {} file", entry_path.blue());
-                    let file_content = fs::read_to_string(entry.path()).unwrap();
-                    let bat_sonar =
-                        BatSonar::new_scanned(&file_content, SonarResultType::TraitImpl);
-                    for result in bat_sonar.results {
-                        println!(
-                            "Trait implementation found at {}\n{}",
-                            format!("{}:{}", &entry_path, result.start_line_index + 1).magenta(),
-                            result.content.clone().green()
-                        );
-                        let function_metadata = TraitMetadata::new(
-                            entry_path.clone(),
-                            result.name.to_string(),
-                            TraitMetadataType::Implementation,
-                            result.start_line_index + 1,
-                            result.end_line_index + 1,
-                        );
-                        result_vec.push(function_metadata);
-                    }
-                    let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Trait);
-                    for result in bat_sonar.results {
-                        println!(
-                            "Trait Definition found at {}\n{}",
-                            format!("{}:{}", &entry_path, result.start_line_index + 1).magenta(),
-                            result.content.clone().green()
-                        );
-                        let function_metadata = TraitMetadata::new(
-                            entry_path.clone(),
-                            result.name.to_string(),
-                            TraitMetadataType::Definition,
-                            result.start_line_index + 1,
-                            result.end_line_index + 1,
-                        );
-                        result_vec.push(function_metadata);
-                    }
-                    println!(
-                        "finishing the review of the {} file",
-                        entry_path.clone().blue()
-                    );
-                    return result_vec;
-                });
-        traits_metadata.sort_by(|function_a, function_b| function_a.name.cmp(&function_b.name));
-        Ok(traits_metadata)
     }
 }
 

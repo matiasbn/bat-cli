@@ -9,7 +9,7 @@ use std::fmt::{Debug, Display};
 
 use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
 
-use crate::batbelt::path::BatFile;
+use crate::batbelt::path::{BatFile, BatFolder};
 
 use inflector::Inflector;
 
@@ -24,6 +24,7 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use strum::IntoEnumIterator;
+use walkdir::DirEntry;
 
 #[derive(Debug)]
 pub struct MetadataError;
@@ -228,6 +229,24 @@ where
             start_line_index.parse::<usize>().unwrap(),
             end_line_index.parse::<usize>().unwrap(),
         ))
+    }
+    fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError>;
+
+    fn get_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
+        let program_dir_entries = BatFolder::ProgramPath
+            .get_all_files_dir_entries(false, None, None)
+            .change_context(MetadataError)?;
+        let mut metadata_vec: Vec<Self> = program_dir_entries
+            .into_iter()
+            .map(|entry| Self::get_metadata_from_dir_entry(entry.clone()))
+            .collect::<Result<Vec<_>, MetadataError>>()?
+            .into_iter()
+            .fold(vec![], |mut result_vec, mut entry| {
+                result_vec.append(&mut entry);
+                result_vec
+            });
+        metadata_vec.sort_by(|function_a, function_b| function_a.name().cmp(&function_b.name()));
+        Ok(metadata_vec)
     }
 
     fn parse_metadata_info_section(

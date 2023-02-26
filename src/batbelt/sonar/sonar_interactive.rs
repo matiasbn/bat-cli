@@ -1,27 +1,29 @@
+use crate::batbelt;
+use crate::batbelt::git::GitCommit;
+use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
+use crate::batbelt::metadata::structs_metadata::StructMetadata;
+use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, BatMetadataTypeParser};
+use crate::batbelt::path::BatFolder;
 use crate::batbelt::sonar::{BatSonarError, SonarResultType};
 use colored::Colorize;
-use dialoguer::console::Emoji;
-use error_stack::Result;
-use indicatif::{ProgressBar, ProgressStyle};
+use dialoguer::console::{style, Emoji};
+use error_stack::{Result, ResultExt};
+use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
 use inflector::Inflector;
+use rand::Rng;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static BAT: Emoji<'_, '_> = Emoji("🦇", "BatSonar");
 static FOLDER: Emoji<'_, '_> = Emoji("📂", "Program Folder");
 static WAVE: Emoji<'_, '_> = Emoji("〰", "-");
+static SPARKLE: Emoji<'_, '_> = Emoji("✨ ", ":-)");
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 pub enum BatSonarInteractive {
     SonarStart { sonar_result_type: SonarResultType },
-    Cargo,
-    CargoWrap,
-    Download,
-    DownloadContinued,
-    DownloadSpeed,
-    FineBars,
-    Log,
-    Yarnish,
+    ParseMetadata,
 }
 
 impl BatSonarInteractive {
@@ -30,7 +32,7 @@ impl BatSonarInteractive {
             BatSonarInteractive::SonarStart { sonar_result_type } => {
                 self.sonar_start(*sonar_result_type)?
             }
-            _ => unimplemented!(),
+            BatSonarInteractive::ParseMetadata => self.parse_metadata()?,
         }
         Ok(())
     }
@@ -61,7 +63,7 @@ impl BatSonarInteractive {
                     &format!("{}              {}    {}", FOLDER, WAVE, BAT),
                     &format!("{}                {}  {}", FOLDER, WAVE, BAT),
                     &format!("{}                  {}{}", FOLDER, WAVE, BAT),
-                    &format!("{}                    {}", FOLDER, BAT),
+                    &format!("{}{}", FOLDER, BAT),
                 ]),
         );
         pb.set_message(format!(
@@ -70,7 +72,152 @@ impl BatSonarInteractive {
             "BatSonar".red(),
         ));
         thread::sleep(Duration::from_millis(1800));
-        pb.finish_with_message("Done");
+        pb.finish_with_message(format!(
+            "{} search finished ",
+            sonar_result_type.to_string().to_plural().green(),
+        ));
+        Ok(())
+    }
+
+    fn parse_metadata(&self) -> Result<(), BatSonarError> {
+        let started = Instant::now();
+        let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+        let program_dir_entries = BatFolder::ProgramPath
+            .get_all_files_dir_entries(false, None, None)
+            .change_context(BatSonarError)?;
+        println!(
+            "Analizing {} files",
+            style(format!("{}", program_dir_entries.len())).bold().dim(),
+        );
+        let m = MultiProgress::new();
+        let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
+
+        let handles: Vec<_> = (0..metadata_types_vec.len())
+            .map(|i| {
+                let program_dir_clone = program_dir_entries.clone();
+                let metadata_type = metadata_types_vec.clone()[i];
+                let pb = m.add(ProgressBar::new(program_dir_clone.clone().len() as u64));
+                let mut total = 0;
+                pb.set_style(spinner_style.clone());
+                thread::spawn(move || {
+                    for (idx, entry) in program_dir_clone.iter().enumerate().clone() {
+                        pb.set_prefix(format!("[{}/{}]", idx, program_dir_clone.len()));
+                        pb.set_message(format!(
+                            "Getting {} on: {}",
+                            metadata_type.to_string().to_lowercase().to_plural(),
+                            entry.clone().path().to_str().unwrap().clone()
+                        ));
+                        let result = match metadata_type {
+                            BatMetadataType::Struct => {
+                                StructMetadata::get_metadata_from_dir_entry(entry.clone())
+                                    .unwrap()
+                                    .len()
+                            }
+                            BatMetadataType::Function => {
+                                FunctionMetadata::get_metadata_from_dir_entry(entry.clone())
+                                    .unwrap()
+                                    .len()
+                            }
+                            BatMetadataType::Trait => {
+                                TraitMetadata::get_metadata_from_dir_entry(entry.clone())
+                                    .unwrap()
+                                    .len()
+                            }
+                        };
+                        total += result;
+                        pb.inc(1);
+                        thread::sleep(Duration::from_millis(200));
+                    }
+                    pb.finish_with_message(format!(
+                        "{} {} results",
+                        total,
+                        metadata_type.to_string().blue()
+                    ));
+                })
+            })
+            .collect();
+        for h in handles {
+            let _ = h.join();
+        }
+        // m.clear().unwrap();
+
+        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
+        Ok(())
+    }
+
+    fn functions(&self) -> Result<(), BatSonarError> {
+        let mut functions_metadata_markdown = BatMetadataType::Function
+            .get_markdown()
+            .change_context(BatSonarError)?;
+        let functions_metadata =
+            FunctionMetadata::get_metadata_from_program_files().change_context(BatSonarError)?;
+        let functions_markdown_content = functions_metadata
+            .into_iter()
+            .map(|function_metadata| function_metadata.get_markdown_section_content_string())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        functions_metadata_markdown.content = functions_markdown_content;
+        functions_metadata_markdown
+            .save()
+            .change_context(BatSonarError)?;
+        batbelt::git::create_git_commit(
+            GitCommit::UpdateMetadata {
+                metadata_type: BatMetadataType::Function,
+            },
+            None,
+        )
+        .unwrap();
+        Ok(())
+    }
+
+    fn structs(&self) -> Result<(), BatSonarError> {
+        let mut structs_metadata_markdown = BatMetadataType::Struct
+            .get_markdown()
+            .change_context(BatSonarError)?;
+        let structs_metadata =
+            StructMetadata::get_metadata_from_program_files().change_context(BatSonarError)?;
+        let structs_markdown_content = structs_metadata
+            .into_iter()
+            .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        structs_metadata_markdown.content = structs_markdown_content;
+        structs_metadata_markdown
+            .save()
+            .change_context(BatSonarError)?;
+        batbelt::git::create_git_commit(
+            GitCommit::UpdateMetadata {
+                metadata_type: BatMetadataType::Struct,
+            },
+            None,
+        )
+        .unwrap();
+        Ok(())
+    }
+    fn traits(&self) -> Result<(), BatSonarError> {
+        let mut traits_metadata_markdown = BatMetadataType::Trait
+            .get_markdown()
+            .change_context(BatSonarError)?;
+        let traits_metadata =
+            TraitMetadata::get_metadata_from_program_files().change_context(BatSonarError)?;
+        let traits_markdown_content = traits_metadata
+            .into_iter()
+            .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        traits_metadata_markdown.content = traits_markdown_content;
+        traits_metadata_markdown
+            .save()
+            .change_context(BatSonarError)?;
+        batbelt::git::create_git_commit(
+            GitCommit::UpdateMetadata {
+                metadata_type: BatMetadataType::Trait,
+            },
+            None,
+        )
+        .unwrap();
         Ok(())
     }
 }
@@ -125,35 +272,35 @@ mod sonar_interactive_test {
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
 
-        println!(
-            "{} {}Resolving packages...",
-            style("[1/4]").bold().dim(),
-            LOOKING_GLASS
-        );
-        println!(
-            "{} {}Fetching packages...",
-            style("[2/4]").bold().dim(),
-            TRUCK
-        );
-
-        println!(
-            "{} {}Linking dependencies...",
-            style("[3/4]").bold().dim(),
-            CLIP
-        );
-        let deps = 1232;
-        let pb = ProgressBar::new(deps);
-        for _ in 0..deps {
-            pb.inc(1);
-            thread::sleep(Duration::from_millis(3));
-        }
-        pb.finish_and_clear();
-
-        println!(
-            "{} {}Building fresh packages...",
-            style("[4/4]").bold().dim(),
-            PAPER
-        );
+        // println!(
+        //     "{} {}Resolving packages...",
+        //     style("[1/4]").bold().dim(),
+        //     LOOKING_GLASS
+        // );
+        // println!(
+        //     "{} {}Fetching packages...",
+        //     style("[2/4]").bold().dim(),
+        //     TRUCK
+        // );
+        //
+        // println!(
+        //     "{} {}Linking dependencies...",
+        //     style("[3/4]").bold().dim(),
+        //     CLIP
+        // );
+        // let deps = 1232;
+        // let pb = ProgressBar::new(deps);
+        // for _ in 0..deps {
+        //     pb.inc(1);
+        //     thread::sleep(Duration::from_millis(3));
+        // }
+        // pb.finish_and_clear();
+        //
+        // println!(
+        //     "{} {}Building fresh packages...",
+        //     style("[4/4]").bold().dim(),
+        //     PAPER
+        // );
         let m = MultiProgress::new();
         let handles: Vec<_> = (0..4u32)
             .map(|i| {
@@ -177,7 +324,7 @@ mod sonar_interactive_test {
         for h in handles {
             let _ = h.join();
         }
-        m.clear().unwrap();
+        // m.clear().unwrap();
 
         println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
     }
@@ -509,47 +656,14 @@ mod sonar_interactive_test {
                 // For more spinners check out the cli-spinners project:
                 // https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
                 .tick_strings(&[
-                    // &format!("{}                  〰️{}", FOLDER, BAT),
-                    &format!("{}▐       .{}", FOLDER, BAT),
-                    &format!("{}▐       ⡀{}", FOLDER, BAT),
-                    &format!("{}▐-{}", FOLDER, BAT),
-                    &format!("{}▐      ⠂ {}", FOLDER, BAT),
-                    &format!("{}▐     ⠈  {}", FOLDER, BAT),
-                    &format!("{}▐     ⠂  {}", FOLDER, BAT),
-                    &format!("{}▐    ⠠   {}", FOLDER, BAT),
-                    &format!("{}▐    ⡀   {}", FOLDER, BAT),
-                    &format!("{}▐   ⠠    {}", FOLDER, BAT),
-                    &format!("{}▐   ⠂    {}", FOLDER, BAT),
-                    &format!("{}▐  ⠈     {}", FOLDER, BAT),
-                    &format!("{}▐  ⠂     {}", FOLDER, BAT),
-                    &format!("{}▐ ⠠      {}", FOLDER, BAT),
-                    &format!("{}▐ ⡀      {}", FOLDER, BAT),
-                    &format!("{}▐⠠       {}", FOLDER, BAT),
-                    &format!("{}▐⠂       {}", FOLDER, BAT),
-                    &format!("{}▐⠈       {}", FOLDER, BAT),
-                    &format!("{}▐ ⠂      {}", FOLDER, BAT),
-                    &format!("{}▐ ⠠      {}", FOLDER, BAT),
-                    &format!("{}▐  ⡀     {}", FOLDER, BAT),
-                    &format!("{}▐  ⠠     {}", FOLDER, BAT),
-                    &format!("{}▐   ⠂    {}", FOLDER, BAT),
-                    &format!("{}▐   ⠈    {}", FOLDER, BAT),
-                    &format!("{}▐    ⠂   {}", FOLDER, BAT),
-                    &format!("{}▐    ⠠   {}", FOLDER, BAT),
-                    &format!("{}▐     ⡀  {}", FOLDER, BAT),
-                    &format!("{}▐     ⠠  {}", FOLDER, BAT),
-                    &format!("{}▐      ⠂ {}", FOLDER, BAT),
-                    &format!("{}▐      ⠈ {}", FOLDER, BAT),
-                    &format!("{}▐       ⠂{}", FOLDER, BAT),
+                    "▹▹▹▹▹",
+                    "▸▹▹▹▹",
+                    "▹▸▹▹▹",
+                    "▹▹▸▹▹",
+                    "▹▹▹▸▹",
+                    "▹▹▹▹▸",
+                    "▪▪▪▪▪",
                 ]),
-            // .tick_strings(&[
-            //     "▹▹▹▹▹",
-            //     "▸▹▹▹▹",
-            //     "▹▸▹▹▹",
-            //     "▹▹▸▹▹",
-            //     "▹▹▹▸▹",
-            //     "▹▹▹▹▸",
-            //     "▪▪▪▪▪",
-            // ]),
         );
         pb.set_message("Calculating...");
         thread::sleep(Duration::from_secs(5));

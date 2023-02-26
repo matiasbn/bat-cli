@@ -16,6 +16,7 @@ use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
 use std::{fs, vec};
 use strum::IntoEnumIterator;
+use walkdir::DirEntry;
 
 use super::MetadataError;
 
@@ -72,81 +73,56 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
             end_line_index,
         }
     }
+
+    fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
+        let entry_path = entry.path().to_str().unwrap().to_string();
+        let file_content = fs::read_to_string(entry.path()).unwrap();
+        let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Struct);
+        let mut result_vec = vec![];
+        for result in bat_sonar.results {
+            let is_context_accounts =
+                Self::assert_struct_is_context_accounts(&file_content, result.clone()).unwrap();
+            if is_context_accounts {
+                let struct_type = StructMetadataType::ContextAccounts;
+                let struct_metadata = StructMetadata::new(
+                    entry_path.clone(),
+                    result.name.to_string(),
+                    struct_type,
+                    result.start_line_index + 1,
+                    result.end_line_index + 1,
+                );
+                result_vec.push(struct_metadata);
+                continue;
+            }
+            let is_solana_account =
+                Self::assert_struct_is_solana_account(&file_content, result.clone());
+            if is_solana_account {
+                let struct_type = StructMetadataType::SolanaAccount;
+                let struct_metadata = StructMetadata::new(
+                    entry_path.clone(),
+                    result.name.to_string(),
+                    struct_type,
+                    result.start_line_index + 1,
+                    result.end_line_index + 1,
+                );
+                result_vec.push(struct_metadata);
+                continue;
+            }
+            let struct_type = StructMetadataType::Other;
+            let struct_metadata = StructMetadata::new(
+                entry_path.clone(),
+                result.name.to_string(),
+                struct_type,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+            );
+            result_vec.push(struct_metadata);
+        }
+        Ok(result_vec)
+    }
 }
 
 impl StructMetadata {
-    pub fn get_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
-        let program_dir_entries = BatFolder::ProgramPath
-            .get_all_files_dir_entries(false, None, None)
-            .change_context(MetadataError)?;
-        let mut structs_metadata: Vec<Self> =
-            program_dir_entries
-                .into_iter()
-                .fold(vec![], |mut result_vec, entry| {
-                    let entry_path = entry.path().to_str().unwrap().to_string();
-                    println!("starting the review of the {} file", entry_path.blue());
-                    let file_content = fs::read_to_string(entry.path()).unwrap();
-                    let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Struct);
-                    for result in bat_sonar.results {
-                        println!(
-                            "Struct found at {}\n{}",
-                            format!("{}:{}", &entry_path, result.start_line_index + 1).magenta(),
-                            result.content.clone().green()
-                        );
-                        let is_context_accounts =
-                            Self::assert_struct_is_context_accounts(&file_content, result.clone())
-                                .unwrap();
-                        if is_context_accounts {
-                            println!("{}", "Struct found is ContextAccounts type!".yellow());
-                            let struct_type = StructMetadataType::ContextAccounts;
-                            let struct_metadata = StructMetadata::new(
-                                entry_path.clone(),
-                                result.name.to_string(),
-                                struct_type,
-                                result.start_line_index + 1,
-                                result.end_line_index + 1,
-                            );
-                            result_vec.push(struct_metadata);
-                            continue;
-                        }
-                        let is_solana_account =
-                            Self::assert_struct_is_solana_account(&file_content, result.clone());
-                        if is_solana_account {
-                            println!("{}", "Struct found is SolanaAccount type!".yellow());
-                            let struct_type = StructMetadataType::SolanaAccount;
-                            let struct_metadata = StructMetadata::new(
-                                entry_path.clone(),
-                                result.name.to_string(),
-                                struct_type,
-                                result.start_line_index + 1,
-                                result.end_line_index + 1,
-                            );
-                            result_vec.push(struct_metadata);
-                            continue;
-                        }
-                        // let prompt_text = "Select the struct type:";
-                        // let selection =
-                        //     batbelt::cli_inputs::select(prompt_text, struct_types_colored.clone(), None)?;
-                        let struct_type = StructMetadataType::Other;
-                        let struct_metadata = StructMetadata::new(
-                            entry_path.clone(),
-                            result.name.to_string(),
-                            struct_type,
-                            result.start_line_index + 1,
-                            result.end_line_index + 1,
-                        );
-                        result_vec.push(struct_metadata);
-                    }
-                    println!(
-                        "finishing the review of the {} file",
-                        entry_path.clone().blue()
-                    );
-                    return result_vec;
-                });
-        structs_metadata.sort_by(|function_a, function_b| function_a.name.cmp(&function_b.name));
-        Ok(structs_metadata)
-    }
-
     fn assert_struct_is_context_accounts(
         file_info_content: &str,
         sonar_result: SonarResult,
