@@ -1,5 +1,5 @@
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
+use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -11,13 +11,13 @@ pub struct TraitImplParser {
     pub name: String,
     pub impl_from: String,
     pub impl_to: String,
-    pub trait_impl_metadata: TraitImplMetadata,
+    pub trait_impl_metadata: TraitMetadata,
     pub impl_functions: Vec<FunctionMetadata>,
 }
 
 impl TraitImplParser {
     pub fn new_from_metadata(
-        trait_impl_metadata: TraitImplMetadata,
+        trait_impl_metadata: TraitMetadata,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
     ) -> Result<Self, ParserError> {
         let name = trait_impl_metadata.name.clone();

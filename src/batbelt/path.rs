@@ -20,9 +20,7 @@ pub enum BatFile {
     BatAuditorToml,
     FunctionsMetadataFile,
     StructsMetadataFile,
-    TraitMetadataFile,
-    TraitImplMetadataFile,
-    EntrypointsMetadataFile,
+    TraitsMetadataFile,
     ThreatModeling,
     AuditResult,
     FindingsResult,
@@ -90,17 +88,11 @@ impl BatFile {
             BatFile::StructsMetadataFile => {
                 format!("{}/structs.md", BatFolder::Metadata.get_path(false)?)
             }
-            BatFile::EntrypointsMetadataFile => {
-                format!("{}/entrypoints.md", BatFolder::Metadata.get_path(false)?)
-            }
             BatFile::FunctionsMetadataFile => {
                 format!("{}/functions.md", BatFolder::Metadata.get_path(false)?)
             }
-            BatFile::TraitMetadataFile => {
+            BatFile::TraitsMetadataFile => {
                 format!("{}/traits.md", BatFolder::Metadata.get_path(false)?)
-            }
-            BatFile::TraitImplMetadataFile => {
-                format!("{}/trait_impl.md", BatFolder::Metadata.get_path(false)?)
             }
             BatFile::CodeOverhaulToReview { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");

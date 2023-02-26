@@ -10,7 +10,7 @@ use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::fs;
 
-use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 
 use crate::batbelt::parser::ParserError;
 
@@ -38,10 +38,10 @@ impl EntrypointParser {
     }
 
     pub fn new_from_name(entrypoint_name: &str) -> Result<Self, ParserError> {
-        BatMetadataType::Structs
+        BatMetadataType::Struct
             .check_is_initialized()
             .change_context(ParserError)?;
-        BatMetadataType::Functions
+        BatMetadataType::Function
             .check_is_initialized()
             .change_context(ParserError)?;
 

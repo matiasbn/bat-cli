@@ -10,7 +10,9 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{
+    BatMetadata, BatMetadataParser, BatMetadataType, MetadataMarkdownContent,
+};
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
@@ -23,20 +25,24 @@ use std::{fs, vec};
 use super::MetadataError;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TraitImplMetadata {
+pub struct TraitMetadata {
     pub path: String,
     pub name: String,
+    pub trait_type: TraitMetadataType,
     pub metadata_id: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser for TraitImplMetadata {
+impl BatMetadataParser for TraitMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
     fn path(&self) -> String {
         self.path.clone()
+    }
+    fn metadata_id(&self) -> String {
+        self.metadata_id.clone()
     }
     fn start_line_index(&self) -> usize {
         self.start_line_index
@@ -44,24 +50,27 @@ impl BatMetadataParser for TraitImplMetadata {
     fn end_line_index(&self) -> usize {
         self.end_line_index
     }
+    fn metadata_sub_type_string(&self) -> String {
+        self.trait_type.to_string()
+    }
 }
 
-impl TraitImplMetadata {
-    fn new(path: String, name: String, start_line_index: usize, end_line_index: usize) -> Self {
-        TraitImplMetadata {
+impl TraitMetadata {
+    fn new(
+        path: String,
+        name: String,
+        trait_type: TraitMetadataType,
+        start_line_index: usize,
+        end_line_index: usize,
+    ) -> Self {
+        TraitMetadata {
             path,
             name,
-            metadata_id: Self::get_metadata_id(),
+            trait_type,
+            metadata_id: Self::create_metadata_id(),
             start_line_index,
             end_line_index,
         }
-    }
-
-    pub fn get_markdown_section_content_string(&self) -> String {
-        format!(
-            "# {}\n\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
-            self.name, self.path, self.start_line_index, self.end_line_index
-        )
     }
 
     pub fn to_trait_impl_parser(
@@ -80,24 +89,26 @@ impl TraitImplMetadata {
             md_section
         );
         let name = md_section.section_header.title;
-        let path = Self::parse_metadata_info_section(
-            &md_section.content,
-            TraitImplMetadataInfoSection::Path,
-        )
-        .attach_printable(message.clone())?;
+        let trait_type_string =
+            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Type)
+                .attach_printable(message.clone())?;
+        let path =
+            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Path)
+                .attach_printable(message.clone())?;
         let start_line_index = Self::parse_metadata_info_section(
             &md_section.content,
-            TraitImplMetadataInfoSection::StartLineIndex,
+            MetadataMarkdownContent::StartLineIndex,
         )
         .attach_printable(message.clone())?;
         let end_line_index = Self::parse_metadata_info_section(
             &md_section.content,
-            TraitImplMetadataInfoSection::EndLineIndex,
+            MetadataMarkdownContent::EndLineIndex,
         )
         .attach_printable(message.clone())?;
-        Ok(TraitImplMetadata::new(
+        Ok(TraitMetadata::new(
             path,
             name,
+            TraitMetadataType::from_str(&trait_type_string),
             start_line_index.parse::<usize>().unwrap(),
             end_line_index.parse::<usize>().unwrap(),
         ))
@@ -149,9 +160,9 @@ impl TraitImplMetadata {
 
     pub fn get_filtered_metadata(
         trait_name: Option<&str>,
-    ) -> Result<Vec<TraitImplMetadata>, MetadataError> {
+    ) -> Result<Vec<TraitMetadata>, MetadataError> {
         let traits_impl_sections =
-            BatMetadataType::TraitImpl.get_markdown_sections_from_metadata_file()?;
+            BatMetadataType::Trait.get_markdown_sections_from_metadata_file()?;
 
         let filtered_sections = traits_impl_sections
             .into_iter()
@@ -176,17 +187,16 @@ impl TraitImplMetadata {
 
         let trait_metadata_vec = filtered_sections
             .into_iter()
-            .map(|section| TraitImplMetadata::from_markdown_section(section))
+            .map(|section| TraitMetadata::from_markdown_section(section))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(trait_metadata_vec)
     }
 
-    pub fn get_traits_impl_metadata_from_program() -> Result<Vec<TraitImplMetadata>, MetadataError>
-    {
+    pub fn get_metadata_from_program_files() -> Result<Vec<TraitMetadata>, MetadataError> {
         let program_dir_entries = BatFolder::ProgramPath
             .get_all_files_dir_entries(false, None, None)
             .change_context(MetadataError)?;
-        let mut traits_metadata: Vec<TraitImplMetadata> =
+        let mut traits_metadata: Vec<TraitMetadata> =
             program_dir_entries
                 .into_iter()
                 .fold(vec![], |mut result_vec, entry| {
@@ -197,13 +207,30 @@ impl TraitImplMetadata {
                         BatSonar::new_scanned(&file_content, SonarResultType::TraitImpl);
                     for result in bat_sonar.results {
                         println!(
-                            "TraitImpl found at {}\n{}",
+                            "Trait implementation found at {}\n{}",
                             format!("{}:{}", &entry_path, result.start_line_index + 1).magenta(),
                             result.content.clone().green()
                         );
-                        let function_metadata = TraitImplMetadata::new(
+                        let function_metadata = TraitMetadata::new(
                             entry_path.clone(),
                             result.name.to_string(),
+                            TraitMetadataType::Implementation,
+                            result.start_line_index + 1,
+                            result.end_line_index + 1,
+                        );
+                        result_vec.push(function_metadata);
+                    }
+                    let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Trait);
+                    for result in bat_sonar.results {
+                        println!(
+                            "Trait Definition found at {}\n{}",
+                            format!("{}:{}", &entry_path, result.start_line_index + 1).magenta(),
+                            result.content.clone().green()
+                        );
+                        let function_metadata = TraitMetadata::new(
+                            entry_path.clone(),
+                            result.name.to_string(),
+                            TraitMetadataType::Definition,
                             result.start_line_index + 1,
                             result.end_line_index + 1,
                         );
@@ -219,23 +246,21 @@ impl TraitImplMetadata {
         Ok(traits_metadata)
     }
 
-    fn get_metadata_vec_from_markdown() -> Result<Vec<TraitImplMetadata>, MetadataError> {
+    fn get_metadata_vec_from_markdown() -> Result<Vec<TraitMetadata>, MetadataError> {
         let functions_markdown_file =
-            BatMetadataType::TraitImpl.get_markdown_sections_from_metadata_file()?;
+            BatMetadataType::Trait.get_markdown_sections_from_metadata_file()?;
         let functions_metadata = functions_markdown_file
             .into_iter()
-            .map(|markdown_section| {
-                TraitImplMetadata::from_markdown_section(markdown_section.clone())
-            })
-            .collect::<Result<Vec<TraitImplMetadata>, _>>()?;
+            .map(|markdown_section| TraitMetadata::from_markdown_section(markdown_section.clone()))
+            .collect::<Result<Vec<TraitMetadata>, _>>()?;
         Ok(functions_metadata)
     }
 
     fn parse_metadata_info_section(
         metadata_info_content: &str,
-        function_section: TraitImplMetadataInfoSection,
+        trait_section: MetadataMarkdownContent,
     ) -> Result<String, MetadataError> {
-        let section_prefix = function_section.get_prefix();
+        let section_prefix = trait_section.get_prefix();
         let data = metadata_info_content
             .lines()
             .find(|line| line.contains(&section_prefix))
@@ -243,7 +268,7 @@ impl TraitImplMetadata {
             .into_report()
             .attach_printable(format!(
                 "Error parsing info section {:#?}",
-                function_section.to_snake_case()
+                trait_section.to_snake_case()
             ))?
             .replace(&section_prefix, "")
             .trim()
@@ -253,23 +278,42 @@ impl TraitImplMetadata {
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
-pub enum TraitImplMetadataInfoSection {
-    Path,
-    Name,
-    StartLineIndex,
-    EndLineIndex,
+pub enum TraitMetadataType {
+    Definition,
+    Implementation,
 }
 
-impl TraitImplMetadataInfoSection {
-    pub fn get_prefix(&self) -> String {
-        format!("- {}:", self.to_snake_case())
-    }
-
+impl TraitMetadataType {
     pub fn to_snake_case(&self) -> String {
         self.to_string().to_snake_case()
     }
 
-    pub fn get_info_section_content<T: Display>(&self, content_value: T) -> String {
-        format!("- {}: {}", self.to_snake_case(), content_value)
+    pub fn to_sentence_case(&self) -> String {
+        self.to_string().to_sentence_case()
+    }
+
+    pub fn get_functions_type_vec() -> Vec<TraitMetadataType> {
+        TraitMetadataType::iter().collect::<Vec<_>>()
+    }
+
+    pub fn from_str(type_str: &str) -> TraitMetadataType {
+        let functions_type_vec = Self::get_functions_type_vec();
+        let function_type = functions_type_vec
+            .iter()
+            .find(|function_type| function_type.to_snake_case() == type_str.to_snake_case())
+            .unwrap();
+        function_type.clone()
+    }
+
+    pub fn get_colorized_functions_type_vec() -> Vec<ColoredString> {
+        let function_type_vec = Self::get_functions_type_vec();
+        let functions_type_colorized = function_type_vec
+            .iter()
+            .map(|function_type| match function_type {
+                Self::Implementation => function_type.to_sentence_case().bright_green(),
+                Self::Definition => function_type.to_sentence_case().bright_blue(),
+            })
+            .collect::<Vec<_>>();
+        functions_type_colorized
     }
 }

@@ -28,7 +28,7 @@ pub struct SourceCodeScreenshotOptions {
 impl SourceCodeScreenshotOptions {
     pub fn get_default_metadata_options(metadata_section: BatMetadataType) -> Self {
         match metadata_section {
-            BatMetadataType::Structs => Self {
+            BatMetadataType::Struct => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -36,7 +36,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            BatMetadataType::Functions => Self {
+            BatMetadataType::Function => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,

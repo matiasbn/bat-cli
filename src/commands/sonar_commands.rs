@@ -4,9 +4,8 @@ use crate::batbelt::command_line::execute_command;
 use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
-use crate::batbelt::metadata::trait_metadata::TraitMetadata;
-use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::path::BatFile;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -43,7 +42,7 @@ impl SonarCommand {
             let selected_bat_metadata_type =
                 BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
             match selected_bat_metadata_type {
-                BatMetadataType::Structs => {
+                BatMetadataType::Struct => {
                     let selections = StructMetadata::prompt_multiselection(select_all, true)
                         .change_context(CommandError)?;
                     for selection in selections {
@@ -54,7 +53,7 @@ impl SonarCommand {
                         )
                     }
                 }
-                BatMetadataType::Functions => {
+                BatMetadataType::Function => {
                     let selections = FunctionMetadata::prompt_multiselection(select_all, true)
                         .change_context(CommandError)?;
                     for selection in selections {
@@ -76,18 +75,6 @@ impl SonarCommand {
                         )
                     }
                 }
-                BatMetadataType::TraitImpl => {
-                    let selections = TraitImplMetadata::prompt_multiselection(select_all, true)
-                        .change_context(CommandError)?;
-                    for selection in selections {
-                        self.print_formatted_path(
-                            selection.name,
-                            selection.path,
-                            selection.start_line_index,
-                        )
-                    }
-                }
-                _ => unimplemented!(),
             }
             let prompt_text = format!("Do you want to continute {}", "printing paths?".yellow());
             continue_printing = BatDialoguer::select_yes_or_no(prompt_text)?;
@@ -111,17 +98,15 @@ impl SonarCommand {
         self.functions()?;
         BatSonar::display_looking_for_loader(SonarResultType::Trait);
         self.traits()?;
-        BatSonar::display_looking_for_loader(SonarResultType::TraitImpl);
-        self.traits_impl()?;
         Ok(())
     }
 
     fn functions(&self) -> Result<(), CommandError> {
-        let mut functions_metadata_markdown = BatMetadataType::Functions
+        let mut functions_metadata_markdown = BatMetadataType::Function
             .get_markdown()
             .change_context(CommandError)?;
         let functions_metadata =
-            FunctionMetadata::get_functions_metadata_from_program().change_context(CommandError)?;
+            FunctionMetadata::get_metadata_from_program_files().change_context(CommandError)?;
         let functions_markdown_content = functions_metadata
             .into_iter()
             .map(|function_metadata| function_metadata.get_markdown_section_content_string())
@@ -133,7 +118,7 @@ impl SonarCommand {
             .change_context(CommandError)?;
         batbelt::git::create_git_commit(
             GitCommit::UpdateMetadata {
-                metadata_type: BatMetadataType::Functions,
+                metadata_type: BatMetadataType::Function,
             },
             None,
         )
@@ -142,11 +127,11 @@ impl SonarCommand {
     }
 
     fn structs(&self) -> Result<(), CommandError> {
-        let mut structs_metadata_markdown = BatMetadataType::Structs
+        let mut structs_metadata_markdown = BatMetadataType::Struct
             .get_markdown()
             .change_context(CommandError)?;
         let structs_metadata =
-            StructMetadata::get_structs_metadata_from_program().change_context(CommandError)?;
+            StructMetadata::get_metadata_from_program_files().change_context(CommandError)?;
         let structs_markdown_content = structs_metadata
             .into_iter()
             .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
@@ -158,16 +143,15 @@ impl SonarCommand {
             .change_context(CommandError)?;
         batbelt::git::create_git_commit(
             GitCommit::UpdateMetadata {
-                metadata_type: BatMetadataType::Structs,
+                metadata_type: BatMetadataType::Struct,
             },
             None,
         )
         .unwrap();
         Ok(())
     }
-
     fn traits(&self) -> Result<(), CommandError> {
-        let trait_file_path = BatFile::TraitMetadataFile
+        let trait_file_path = BatFile::TraitsMetadataFile
             .get_path(false)
             .change_context(CommandError)?;
         if !Path::new(&trait_file_path).is_file() {
@@ -177,7 +161,7 @@ impl SonarCommand {
             .get_markdown()
             .change_context(CommandError)?;
         let traits_metadata =
-            TraitMetadata::get_traits_metadata_from_program().change_context(CommandError)?;
+            TraitMetadata::get_metadata_from_program_files().change_context(CommandError)?;
         let traits_markdown_content = traits_metadata
             .into_iter()
             .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
@@ -190,36 +174,6 @@ impl SonarCommand {
         batbelt::git::create_git_commit(
             GitCommit::UpdateMetadata {
                 metadata_type: BatMetadataType::Trait,
-            },
-            None,
-        )
-        .unwrap();
-        Ok(())
-    }
-    fn traits_impl(&self) -> Result<(), CommandError> {
-        let trait_file_path = BatFile::TraitImplMetadataFile
-            .get_path(false)
-            .change_context(CommandError)?;
-        if !Path::new(&trait_file_path).is_file() {
-            execute_command("touch", &[&trait_file_path])?;
-        }
-        let mut traits_metadata_markdown = BatMetadataType::TraitImpl
-            .get_markdown()
-            .change_context(CommandError)?;
-        let traits_metadata = TraitImplMetadata::get_traits_impl_metadata_from_program()
-            .change_context(CommandError)?;
-        let traits_markdown_content = traits_metadata
-            .into_iter()
-            .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        traits_metadata_markdown.content = traits_markdown_content;
-        traits_metadata_markdown
-            .save()
-            .change_context(CommandError)?;
-        batbelt::git::create_git_commit(
-            GitCommit::UpdateMetadata {
-                metadata_type: BatMetadataType::TraitImpl,
             },
             None,
         )

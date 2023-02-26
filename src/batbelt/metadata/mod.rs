@@ -1,11 +1,11 @@
 pub mod functions_metadata;
 pub mod structs_metadata;
-pub mod trait_impl_metadata;
-pub mod trait_metadata;
+pub mod traits_metadata;
 
 use colored::{ColoredString, Colorize};
 use std::error::Error;
 use std::fmt;
+use std::fmt::{Debug, Display};
 
 use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
 
@@ -58,10 +58,9 @@ impl BatMetadata {
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 pub enum BatMetadataType {
-    Structs,
-    Functions,
+    Struct,
+    Function,
     Trait,
-    TraitImpl,
 }
 
 impl BatMetadataType {
@@ -82,10 +81,9 @@ impl BatMetadataType {
         let structs_type_colorized = struct_type_vec
             .iter()
             .map(|metadata_type| match metadata_type {
-                Self::Structs => metadata_type.to_sentence_case().red(),
-                Self::Functions => metadata_type.to_sentence_case().yellow(),
+                Self::Struct => metadata_type.to_sentence_case().red(),
+                Self::Function => metadata_type.to_sentence_case().yellow(),
                 Self::Trait => metadata_type.to_sentence_case().bright_cyan(),
-                Self::TraitImpl => metadata_type.to_sentence_case().bright_blue(),
             })
             .collect::<Vec<_>>();
         structs_type_colorized
@@ -93,16 +91,13 @@ impl BatMetadataType {
 
     pub fn get_path(&self) -> Result<String, MetadataError> {
         let path = match self {
-            BatMetadataType::Structs => BatFile::StructsMetadataFile
+            BatMetadataType::Struct => BatFile::StructsMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
-            BatMetadataType::Functions => BatFile::FunctionsMetadataFile
+            BatMetadataType::Function => BatFile::FunctionsMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
-            BatMetadataType::Trait => BatFile::TraitMetadataFile
-                .get_path(true)
-                .change_context(MetadataError)?,
-            BatMetadataType::TraitImpl => BatFile::TraitImplMetadataFile
+            BatMetadataType::Trait => BatFile::TraitsMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
         };
@@ -156,10 +151,12 @@ impl BatMetadataType {
 pub trait BatMetadataParser {
     fn name(&self) -> String;
     fn path(&self) -> String;
+    fn metadata_id(&self) -> String;
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
+    fn metadata_sub_type_string(&self) -> String;
 
-    fn get_metadata_id() -> String {
+    fn create_metadata_id() -> String {
         let s: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -179,5 +176,39 @@ pub trait BatMetadataParser {
             self.start_line_index(),
             self.end_line_index(),
         )
+    }
+
+    fn get_markdown_section_content_string(&self) -> String {
+        format!(
+            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
+            self.name(),
+            self.metadata_sub_type_string().to_snake_case(),
+            self.path(),
+            self.start_line_index(),
+            self.end_line_index()
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+enum MetadataMarkdownContent {
+    Path,
+    Name,
+    Type,
+    StartLineIndex,
+    EndLineIndex,
+}
+
+impl MetadataMarkdownContent {
+    pub fn get_prefix(&self) -> String {
+        format!("- {}:", self.to_snake_case())
+    }
+
+    pub fn to_snake_case(&self) -> String {
+        self.to_string().to_snake_case()
+    }
+
+    pub fn get_info_section_content<T: Display>(&self, content_value: T) -> String {
+        format!("- {}: {}", self.to_snake_case(), content_value)
     }
 }

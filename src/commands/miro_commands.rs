@@ -3,7 +3,7 @@ use crate::batbelt;
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::{BatMetadataType, MetadataError};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataError};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -13,7 +13,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
+use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
@@ -635,7 +635,7 @@ impl MiroCommand {
                 Vec<SourceCodeParser>,
                 SourceCodeScreenshotOptions,
             ) = match metadata_type_selected {
-                BatMetadataType::Structs => {
+                BatMetadataType::Struct => {
                     // Choose metadata subsection selection
                     let prompt_text =
                         format!("Please enter the {}", "struct type to deploy".green());
@@ -672,7 +672,7 @@ impl MiroCommand {
                     )
                     .unwrap();
                     let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Structs,
+                        BatMetadataType::Struct,
                     );
 
                     let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
@@ -705,7 +705,7 @@ impl MiroCommand {
                         .collect::<Vec<_>>();
                     (sc_vec, screenshot_options)
                 }
-                BatMetadataType::Functions => {
+                BatMetadataType::Function => {
                     // Choose metadata subsection selection
                     let prompt_text =
                         format!("Please enter the {}", "function type to deploy".green());
@@ -743,7 +743,7 @@ impl MiroCommand {
                     .unwrap();
 
                     let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Functions,
+                        BatMetadataType::Function,
                     );
 
                     let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
@@ -805,7 +805,7 @@ impl MiroCommand {
         let selected_miro_frame = self.prompt_select_frame().await?;
         let mut function_metadata_vec =
             FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
-        let mut trait_impl_parser_vec = TraitImplMetadata::get_filtered_metadata(None)
+        let mut trait_impl_parser_vec = TraitMetadata::get_filtered_metadata(None)
             .change_context(CommandError)?
             .into_iter()
             .map(|impl_meta| impl_meta.to_trait_impl_parser(Some(function_metadata_vec.clone())))

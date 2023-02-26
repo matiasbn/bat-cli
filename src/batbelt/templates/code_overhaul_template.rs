@@ -1,7 +1,7 @@
 use crate::batbelt;
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions_metadata::get_function_parameters;
-use crate::batbelt::metadata::BatMetadata;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
@@ -235,7 +235,9 @@ impl CodeOverhaulSection {
     }
 
     fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_source_code = entrypoint_parser.context_accounts.to_source_code_parser(None);
+        let context_source_code = entrypoint_parser
+            .context_accounts
+            .to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
         // signer names is only the name of the signer
         let mut signers: Vec<String> = vec![];
@@ -352,7 +354,9 @@ impl CodeOverhaulSection {
     }
 
     fn get_context_account_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_accounts_source_code = entrypoint_parser.context_accounts.to_source_code_parser(None);
+        let context_accounts_source_code = entrypoint_parser
+            .context_accounts
+            .to_source_code_parser(None);
         let context_accounts_content = context_accounts_source_code.get_source_code_content();
         let accounts = BatSonar::new_scanned(
             &context_accounts_content,

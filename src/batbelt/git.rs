@@ -325,7 +325,7 @@ pub fn create_git_commit(
             (commit_string, vec![tm_path])
         }
         GitCommit::UpdateMetadata { metadata_type } => {
-            let metadata_type_string = metadata_type.to_string().to_snake_case();
+            let metadata_type_string = metadata_type.to_string().to_plural().to_snake_case();
             println!("Creating a commit for {}.md", metadata_type_string);
             let metadata_path = metadata_type.get_path().change_context(GitOperationError)?;
             let commit_string = format!("metadata: {}.md updated", metadata_type_string);

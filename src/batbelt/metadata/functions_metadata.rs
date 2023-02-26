@@ -9,8 +9,9 @@ use crate::batbelt::markdown::MarkdownSection;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{
+    BatMetadata, BatMetadataParser, BatMetadataType, MetadataMarkdownContent,
+};
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
@@ -38,11 +39,17 @@ impl BatMetadataParser for FunctionMetadata {
     fn path(&self) -> String {
         self.path.clone()
     }
+    fn metadata_id(&self) -> String {
+        self.metadata_id.clone()
+    }
     fn start_line_index(&self) -> usize {
         self.start_line_index
     }
     fn end_line_index(&self) -> usize {
         self.end_line_index
+    }
+    fn metadata_sub_type_string(&self) -> String {
+        self.function_type.to_string()
     }
 }
 
@@ -57,22 +64,11 @@ impl FunctionMetadata {
         FunctionMetadata {
             path,
             name,
-            metadata_id: Self::get_metadata_id(),
-            function_type,
+            metadata_id: Self::create_metadata_id(),
+            function_type: function_type,
             start_line_index,
             end_line_index,
         }
-    }
-
-    pub fn get_markdown_section_content_string(&self) -> String {
-        format!(
-            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
-            self.name,
-            self.function_type.to_snake_case(),
-            self.path,
-            self.start_line_index,
-            self.end_line_index
-        )
     }
 
     pub fn to_function_parser(
@@ -94,24 +90,20 @@ impl FunctionMetadata {
             md_section
         );
         let name = md_section.section_header.title;
-        let path = Self::parse_metadata_info_section(
-            &md_section.content,
-            FunctionMetadataInfoSection::Path,
-        )
-        .attach_printable(message.clone())?;
-        let function_type_string = Self::parse_metadata_info_section(
-            &md_section.content,
-            FunctionMetadataInfoSection::Type,
-        )
-        .attach_printable(message.clone())?;
+        let path =
+            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Path)
+                .attach_printable(message.clone())?;
+        let function_type_string =
+            Self::parse_metadata_info_section(&md_section.content, MetadataMarkdownContent::Type)
+                .attach_printable(message.clone())?;
         let start_line_index = Self::parse_metadata_info_section(
             &md_section.content,
-            FunctionMetadataInfoSection::StartLineIndex,
+            MetadataMarkdownContent::StartLineIndex,
         )
         .attach_printable(message.clone())?;
         let end_line_index = Self::parse_metadata_info_section(
             &md_section.content,
-            FunctionMetadataInfoSection::EndLineIndex,
+            MetadataMarkdownContent::EndLineIndex,
         )
         .attach_printable(message.clone())?;
         Ok(FunctionMetadata::new(
@@ -178,7 +170,7 @@ impl FunctionMetadata {
         function_type: Option<FunctionMetadataType>,
     ) -> Result<Vec<FunctionMetadata>, MetadataError> {
         let function_sections =
-            BatMetadataType::Functions.get_markdown_sections_from_metadata_file()?;
+            BatMetadataType::Function.get_markdown_sections_from_metadata_file()?;
 
         let filtered_sections = function_sections
             .into_iter()
@@ -189,7 +181,7 @@ impl FunctionMetadata {
                     return false;
                 };
                 if function_type.is_some() {
-                    let type_content = FunctionMetadataInfoSection::Type
+                    let type_content = MetadataMarkdownContent::Type
                         .get_info_section_content(function_type.unwrap().to_snake_case());
                     log::debug!("type_content\n{:#?}", type_content);
                     if !section.content.contains(&type_content) {
@@ -217,7 +209,7 @@ impl FunctionMetadata {
         Ok(function_metadata_vec)
     }
 
-    pub fn get_functions_metadata_from_program() -> Result<Vec<FunctionMetadata>, MetadataError> {
+    pub fn get_metadata_from_program_files() -> Result<Vec<FunctionMetadata>, MetadataError> {
         let program_dir_entries = BatFolder::ProgramPath
             .get_all_files_dir_entries(false, None, None)
             .change_context(MetadataError)?;
@@ -308,7 +300,7 @@ impl FunctionMetadata {
 
     fn get_metadata_vec_from_markdown() -> Result<Vec<FunctionMetadata>, MetadataError> {
         let functions_markdown_file =
-            BatMetadataType::Functions.get_markdown_sections_from_metadata_file()?;
+            BatMetadataType::Function.get_markdown_sections_from_metadata_file()?;
         let functions_metadata = functions_markdown_file
             .into_iter()
             .map(|markdown_section| {
@@ -320,7 +312,7 @@ impl FunctionMetadata {
 
     fn parse_metadata_info_section(
         metadata_info_content: &str,
-        function_section: FunctionMetadataInfoSection,
+        function_section: MetadataMarkdownContent,
     ) -> Result<String, MetadataError> {
         let section_prefix = function_section.get_prefix();
         let data = metadata_info_content
@@ -380,29 +372,6 @@ impl FunctionMetadataType {
             })
             .collect::<Vec<_>>();
         functions_type_colorized
-    }
-}
-
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
-pub enum FunctionMetadataInfoSection {
-    Path,
-    Name,
-    Type,
-    StartLineIndex,
-    EndLineIndex,
-}
-
-impl FunctionMetadataInfoSection {
-    pub fn get_prefix(&self) -> String {
-        format!("- {}:", self.to_snake_case())
-    }
-
-    pub fn to_snake_case(&self) -> String {
-        self.to_string().to_snake_case()
-    }
-
-    pub fn get_info_section_content<T: Display>(&self, content_value: T) -> String {
-        format!("- {}: {}", self.to_snake_case(), content_value)
     }
 }
 
