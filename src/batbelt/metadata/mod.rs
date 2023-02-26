@@ -59,9 +59,9 @@ impl BatMetadata {
 pub enum BatMetadataType {
     Structs,
     Functions,
-    Entrypoints,
     Trait,
     TraitImpl,
+    Entrypoints,
 }
 
 impl BatMetadataType {
@@ -94,19 +94,19 @@ impl BatMetadataType {
 
     pub fn get_path(&self) -> Result<String, MetadataError> {
         let path = match self {
-            BatMetadataType::Structs => BatFile::StructsMetadata
+            BatMetadataType::Structs => BatFile::StructsMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
-            BatMetadataType::Functions => BatFile::FunctionsMetadata
+            BatMetadataType::Functions => BatFile::FunctionsMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
-            BatMetadataType::Entrypoints => BatFile::EntrypointsMetadata
+            BatMetadataType::Entrypoints => BatFile::EntrypointsMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
-            BatMetadataType::Trait => BatFile::TraitMetadata
+            BatMetadataType::Trait => BatFile::TraitMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
-            BatMetadataType::TraitImpl => BatFile::TraitImplMetadata
+            BatMetadataType::TraitImpl => BatFile::TraitImplMetadataFile
                 .get_path(true)
                 .change_context(MetadataError)?,
         };
@@ -115,6 +115,7 @@ impl BatMetadataType {
 
     pub fn get_markdown(&self) -> Result<MarkdownFile, MetadataError> {
         let file_path = self.get_path()?;
+        log::debug!("markdown file path: {}", file_path);
         let markdown_file = MarkdownFile::new(&file_path);
         Ok(markdown_file)
     }
@@ -123,6 +124,10 @@ impl BatMetadataType {
         &self,
     ) -> Result<Vec<MarkdownSection>, MetadataError> {
         let markdown_file = self.get_markdown()?;
+        if markdown_file.sections.is_empty() {
+            return Err(Report::new(MetadataError)
+                .attach_printable(format!("Markdown file is empty:\n{:#?}", markdown_file)));
+        }
         Ok(markdown_file.sections)
     }
 

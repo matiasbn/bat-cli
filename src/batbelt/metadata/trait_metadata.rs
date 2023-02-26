@@ -11,6 +11,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::parser::function_parser::FunctionParser;
+use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
@@ -84,63 +85,56 @@ impl TraitMetadata {
         ))
     }
     //
-    // pub fn prompt_multiselection(
-    //     select_all: bool,
-    //     force_select: bool,
-    // ) -> Result<Vec<Self>, MetadataError> {
-    //     let (function_metadata_vec, function_metadata_names) = Self::prompt_types()?;
-    //     let prompt_text = format!("Please select the {}:", "Function".blue());
-    //     let selections = BatDialoguer::multiselect(
-    //         prompt_text.clone(),
-    //         function_metadata_names.clone(),
-    //         Some(&vec![select_all; function_metadata_names.len()]),
-    //         force_select,
-    //     )
-    //     .change_context(MetadataError)?;
+    pub fn prompt_multiselection(
+        select_all: bool,
+        force_select: bool,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let (function_metadata_vec, function_metadata_names) = Self::prompt_types()?;
+        let prompt_text = format!("Select the {}:", "Trait".blue());
+        let selections = BatDialoguer::multiselect(
+            prompt_text.clone(),
+            function_metadata_names.clone(),
+            Some(&vec![select_all; function_metadata_names.len()]),
+            force_select,
+        )
+        .change_context(MetadataError)?;
+
+        let filtered_vec = function_metadata_vec
+            .into_iter()
+            .enumerate()
+            .filter_map(|(sc_index, sc_metadata)| {
+                if selections.iter().any(|selection| &sc_index == selection) {
+                    Some(sc_metadata)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        return Ok(filtered_vec);
+    }
     //
-    //     let filtered_vec = function_metadata_vec
-    //         .into_iter()
-    //         .enumerate()
-    //         .filter_map(|(sc_index, sc_metadata)| {
-    //             if selections.iter().any(|selection| &sc_index == selection) {
-    //                 Some(sc_metadata)
-    //             } else {
-    //                 None
-    //             }
-    //         })
-    //         .collect::<Vec<_>>();
-    //     return Ok(filtered_vec);
-    // }
-    //
-    // fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
-    //     let prompt_text = format!("Please select the {}:", "Function type".blue());
-    //     let function_types_colorized = TraitMetadataType::get_colorized_functions_type_vec();
-    //     let selection = BatDialoguer::select(prompt_text, function_types_colorized.clone(), None)
-    //         .change_context(MetadataError)?;
-    //     let selected_function_type = TraitMetadataType::get_functions_type_vec()[selection];
-    //     let function_metadata_vec = Self::get_filtered_metadata(None, Some(selected_function_type))
-    //         .change_context(MetadataError)?;
-    //     let function_metadata_names = function_metadata_vec
-    //         .iter()
-    //         .map(|function_metadata| {
-    //             format!(
-    //                 "{}: {}:{}",
-    //                 function_metadata.name.clone(),
-    //                 function_metadata.path.clone(),
-    //                 function_metadata.start_line_index.clone()
-    //             )
-    //         })
-    //         .collect::<Vec<_>>();
-    //     Ok((function_metadata_vec, function_metadata_names))
-    // }
+    fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
+        let function_metadata_vec =
+            Self::get_filtered_metadata(None).change_context(MetadataError)?;
+        let function_metadata_names = function_metadata_vec
+            .iter()
+            .map(|function_metadata| {
+                parse_formatted_path(
+                    function_metadata.name.clone(),
+                    function_metadata.path.clone(),
+                    function_metadata.start_line_index.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        Ok((function_metadata_vec, function_metadata_names))
+    }
 
     pub fn get_filtered_metadata(
         trait_name: Option<&str>,
     ) -> Result<Vec<TraitMetadata>, MetadataError> {
-        let function_sections =
-            BatMetadataType::Functions.get_markdown_sections_from_metadata_file()?;
-
-        let filtered_sections = function_sections
+        let traits_sections = BatMetadataType::Trait.get_markdown_sections_from_metadata_file()?;
+        log::debug!("traits_sections:\n{:#?}", traits_sections);
+        let filtered_sections = traits_sections
             .into_iter()
             .filter(|section| {
                 if trait_name.is_some()

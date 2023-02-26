@@ -9,9 +9,11 @@ use crate::batbelt::markdown::MarkdownSection;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
+use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 use std::fmt::Display;
@@ -72,11 +74,14 @@ impl FunctionMetadata {
     pub fn to_function_parser(
         &self,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+        optional_trait_impl_parser_vec: Option<Vec<TraitImplParser>>,
     ) -> Result<FunctionParser, MetadataError> {
-        Ok(
-            FunctionParser::new_from_metadata(self.clone(), optional_function_metadata_vec)
-                .change_context(MetadataError)?,
+        Ok(FunctionParser::new_from_metadata(
+            self.clone(),
+            optional_function_metadata_vec,
+            optional_trait_impl_parser_vec,
         )
+        .change_context(MetadataError)?)
     }
 
     pub fn from_markdown_section(md_section: MarkdownSection) -> Result<Self, MetadataError> {

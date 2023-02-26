@@ -18,11 +18,11 @@ impl Error for BatPathError {}
 pub enum BatFile {
     BatToml,
     BatAuditorToml,
-    FunctionsMetadata,
-    StructsMetadata,
-    TraitMetadata,
-    TraitImplMetadata,
-    EntrypointsMetadata,
+    FunctionsMetadataFile,
+    StructsMetadataFile,
+    TraitMetadataFile,
+    TraitImplMetadataFile,
+    EntrypointsMetadataFile,
     ThreatModeling,
     AuditResult,
     FindingsResult,
@@ -87,19 +87,19 @@ impl BatFile {
                     BatFolder::AuditorNotes.get_path(false)?
                 )
             }
-            BatFile::StructsMetadata => {
+            BatFile::StructsMetadataFile => {
                 format!("{}/structs.md", BatFolder::Metadata.get_path(false)?)
             }
-            BatFile::EntrypointsMetadata => {
+            BatFile::EntrypointsMetadataFile => {
                 format!("{}/entrypoints.md", BatFolder::Metadata.get_path(false)?)
             }
-            BatFile::FunctionsMetadata => {
+            BatFile::FunctionsMetadataFile => {
                 format!("{}/functions.md", BatFolder::Metadata.get_path(false)?)
             }
-            BatFile::TraitMetadata => {
+            BatFile::TraitMetadataFile => {
                 format!("{}/traits.md", BatFolder::Metadata.get_path(false)?)
             }
-            BatFile::TraitImplMetadata => {
+            BatFile::TraitImplMetadataFile => {
                 format!("{}/trait_impl.md", BatFolder::Metadata.get_path(false)?)
             }
             BatFile::CodeOverhaulToReview { file_name } => {

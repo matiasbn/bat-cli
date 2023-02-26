@@ -3,7 +3,7 @@ use crate::batbelt;
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::metadata::{BatMetadataType, MetadataError};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -13,9 +13,11 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::metadata::trait_impl_metadata::TraitImplMetadata;
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
+use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
@@ -803,6 +805,12 @@ impl MiroCommand {
         let selected_miro_frame = self.prompt_select_frame().await?;
         let mut function_metadata_vec =
             FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
+        let mut trait_impl_parser_vec = TraitImplMetadata::get_filtered_metadata(None)
+            .change_context(CommandError)?
+            .into_iter()
+            .map(|impl_meta| impl_meta.to_trait_impl_parser(Some(function_metadata_vec.clone())))
+            .collect::<Result<Vec<_>, MetadataError>>()
+            .change_context(CommandError)?;
         let mut keep_deploying = true;
         let mut deployed_dependencies: Vec<(MiroImage, FunctionMetadata)> = vec![];
         let mut pending_to_check: Vec<FunctionMetadata> = vec![];
@@ -842,6 +850,7 @@ impl MiroCommand {
                     miro_image,
                     selected_miro_frame.clone(),
                     function_metadata_vec.clone(),
+                    trait_impl_parser_vec.clone(),
                     &mut deployed_dependencies,
                     &mut pending_to_check,
                 )
@@ -878,11 +887,15 @@ impl MiroCommand {
         parent_function_image: Option<MiroImage>,
         selected_miro_frame: MiroFrame,
         function_metadata_vec: Vec<FunctionMetadata>,
+        trait_impl_parser_vec: Vec<TraitImplParser>,
         deployed_dependencies: &mut Vec<(MiroImage, FunctionMetadata)>,
         pending_to_check: &mut Vec<FunctionMetadata>,
     ) -> Result<(), CommandError> {
         let function_parser = parent_function
-            .to_function_parser(Some(function_metadata_vec.clone()))
+            .to_function_parser(
+                Some(function_metadata_vec.clone()),
+                Some(trait_impl_parser_vec),
+            )
             .change_context(CommandError)?;
 
         let function_sc_options = SourceCodeScreenshotOptions {

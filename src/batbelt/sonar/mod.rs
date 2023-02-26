@@ -380,12 +380,16 @@ impl SonarResult {
             SonarResultType::TraitImpl => {
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
-                let lifetime_regex = Regex::new(r"<[A-Za-z, _:.']*>").unwrap();
-                let filtered = lifetime_regex.replace_all(first_line, "").to_string();
-                let mut first_line_tokenized = filtered.trim().split(" ");
-                first_line_tokenized.next().unwrap();
-                let name = first_line_tokenized.next().unwrap();
-                self.name = name.to_string();
+                let lifetime_regex = Regex::new(r"&*'+[A-Za-z0-9:]+[, ]*").unwrap();
+                let name = lifetime_regex
+                    .replace_all(first_line, "")
+                    .to_string()
+                    .replace("<>", "")
+                    .trim_start_matches("impl")
+                    .trim()
+                    .trim_end_matches(" {")
+                    .to_string();
+                self.name = name.clone();
                 log::debug!("name: {}", name);
             }
             SonarResultType::ContextAccountsAll

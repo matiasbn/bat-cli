@@ -22,25 +22,29 @@ pub enum SonarCommand {
     /// Updates the functions.md and structs.md files with data
     Run,
     /// Gets the path to a metadata information from metadata files
-    PrintPath,
+    PrintPath {
+        /// select all options as true
+        #[arg(short, long)]
+        select_all: bool,
+    },
 }
 
 impl SonarCommand {
     pub fn execute_command(&self) -> Result<(), CommandError> {
         match self {
             SonarCommand::Run => self.execute_run(),
-            SonarCommand::PrintPath => self.execute_print_path(),
+            SonarCommand::PrintPath { select_all } => self.execute_print_path(*select_all),
         }
     }
 
-    fn execute_print_path(&self) -> Result<(), CommandError> {
+    fn execute_print_path(&self, select_all: bool) -> Result<(), CommandError> {
         let mut continue_printing = true;
         while continue_printing {
             let selected_bat_metadata_type =
                 BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
             match selected_bat_metadata_type {
                 BatMetadataType::Structs => {
-                    let selections = StructMetadata::prompt_multiselection(false, true)
+                    let selections = StructMetadata::prompt_multiselection(select_all, true)
                         .change_context(CommandError)?;
                     for selection in selections {
                         self.print_formatted_path(
@@ -51,7 +55,29 @@ impl SonarCommand {
                     }
                 }
                 BatMetadataType::Functions => {
-                    let selections = FunctionMetadata::prompt_multiselection(false, true)
+                    let selections = FunctionMetadata::prompt_multiselection(select_all, true)
+                        .change_context(CommandError)?;
+                    for selection in selections {
+                        self.print_formatted_path(
+                            selection.name,
+                            selection.path,
+                            selection.start_line_index,
+                        )
+                    }
+                }
+                BatMetadataType::Trait => {
+                    let selections = TraitMetadata::prompt_multiselection(select_all, true)
+                        .change_context(CommandError)?;
+                    for selection in selections {
+                        self.print_formatted_path(
+                            selection.name,
+                            selection.path,
+                            selection.start_line_index,
+                        )
+                    }
+                }
+                BatMetadataType::TraitImpl => {
+                    let selections = TraitImplMetadata::prompt_multiselection(select_all, true)
                         .change_context(CommandError)?;
                     for selection in selections {
                         self.print_formatted_path(
@@ -141,7 +167,7 @@ impl SonarCommand {
     }
 
     fn traits(&self) -> Result<(), CommandError> {
-        let trait_file_path = BatFile::TraitMetadata
+        let trait_file_path = BatFile::TraitMetadataFile
             .get_path(false)
             .change_context(CommandError)?;
         if !Path::new(&trait_file_path).is_file() {
@@ -171,7 +197,7 @@ impl SonarCommand {
         Ok(())
     }
     fn traits_impl(&self) -> Result<(), CommandError> {
-        let trait_file_path = BatFile::TraitImplMetadata
+        let trait_file_path = BatFile::TraitImplMetadataFile
             .get_path(false)
             .change_context(CommandError)?;
         if !Path::new(&trait_file_path).is_file() {
