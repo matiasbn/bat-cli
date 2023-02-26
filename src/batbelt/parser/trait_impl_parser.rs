@@ -1,10 +1,9 @@
-use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
+use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::parser::ParserError;
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
-use error_stack::{IntoReport, Report, Result, ResultExt};
+
+use error_stack::{Result, ResultExt};
 use regex::Regex;
-use std::fs;
 
 #[derive(Clone, Debug)]
 pub struct TraitImplParser {
@@ -58,7 +57,7 @@ impl TraitImplParser {
     fn get_from_to(&mut self) -> Result<(), ParserError> {
         let name = self.name.clone();
         let match_regex = Regex::new(r"[A-Za-z0-9]+<[<A-Za-z0-9>]+> for [A-Za-z0-9]+").unwrap();
-        let generic_type_regex = Regex::new(r"").unwrap();
+        let _generic_type_regex = Regex::new(r"").unwrap();
         if match_regex.is_match(&name) {
             let mut splitted = name.split(" for ");
             self.impl_from = splitted.next().unwrap().to_string();

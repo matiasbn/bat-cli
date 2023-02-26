@@ -14,8 +14,7 @@ use crate::batbelt::path::BatFile;
 use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
+
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;

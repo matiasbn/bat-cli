@@ -7,7 +7,7 @@ use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::path::BatFile;
-use clap::{Parser, Subcommand};
+use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{Result, ResultExt};
 use std::path::Path;

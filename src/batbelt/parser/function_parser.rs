@@ -1,9 +1,9 @@
-use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
+use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, MetadataError};
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use crate::batbelt::parser::ParserError;
-use crate::batbelt::sonar::SonarResult;
+
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 

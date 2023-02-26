@@ -17,7 +17,7 @@ use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::miro::image::MiroImage;
-use crate::batbelt::parser::function_parser::FunctionParser;
+
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use clap::Subcommand;
@@ -803,9 +803,9 @@ impl MiroCommand {
 
     async fn function_action(&self, _select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
-        let mut function_metadata_vec =
+        let function_metadata_vec =
             FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
-        let mut trait_impl_parser_vec = TraitMetadata::get_filtered_metadata(None)
+        let trait_impl_parser_vec = TraitMetadata::get_filtered_metadata(None)
             .change_context(CommandError)?
             .into_iter()
             .map(|impl_meta| impl_meta.to_trait_impl_parser(Some(function_metadata_vec.clone())))
