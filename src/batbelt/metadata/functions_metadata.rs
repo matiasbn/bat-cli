@@ -85,41 +85,6 @@ impl FunctionMetadata {
         .change_context(MetadataError)?)
     }
 
-    pub fn from_markdown_section(md_section: MarkdownSection) -> Result<Self, MetadataError> {
-        let message = format!(
-            "Error parsing function_metadata from markdown_section: \n{:#?}",
-            md_section
-        );
-        let name = md_section.section_header.title;
-        let path = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::Path,
-        )
-        .attach_printable(message.clone())?;
-        let function_type_string = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::Type,
-        )
-        .attach_printable(message.clone())?;
-        let start_line_index = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::StartLineIndex,
-        )
-        .attach_printable(message.clone())?;
-        let end_line_index = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::EndLineIndex,
-        )
-        .attach_printable(message.clone())?;
-        Ok(FunctionMetadata::new(
-            path,
-            name,
-            FunctionMetadataType::from_str(&function_type_string),
-            start_line_index.parse::<usize>().unwrap(),
-            end_line_index.parse::<usize>().unwrap(),
-        ))
-    }
-
     pub fn prompt_multiselection(
         select_all: bool,
         force_select: bool,
@@ -300,18 +265,6 @@ impl FunctionMetadata {
                     return result_vec;
                 });
         functions_metadata.sort_by(|function_a, function_b| function_a.name.cmp(&function_b.name));
-        Ok(functions_metadata)
-    }
-
-    fn get_metadata_vec_from_markdown() -> Result<Vec<FunctionMetadata>, MetadataError> {
-        let functions_markdown_file =
-            BatMetadataType::Function.get_markdown_sections_from_metadata_file()?;
-        let functions_metadata = functions_markdown_file
-            .into_iter()
-            .map(|markdown_section| {
-                FunctionMetadata::from_markdown_section(markdown_section.clone())
-            })
-            .collect::<Result<Vec<FunctionMetadata>, _>>()?;
         Ok(functions_metadata)
     }
 }

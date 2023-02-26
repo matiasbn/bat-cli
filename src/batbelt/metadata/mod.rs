@@ -299,7 +299,7 @@ where
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
-enum BatMetadataMarkdownContent {
+pub enum BatMetadataMarkdownContent {
     Path,
     Name,
     Type,

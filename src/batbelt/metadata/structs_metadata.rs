@@ -165,16 +165,6 @@ impl StructMetadata {
         Ok(struct_metadata_vec)
     }
 
-    fn get_metadata_vec_from_markdown() -> Result<Vec<StructMetadata>, MetadataError> {
-        let structs_markdown_file =
-            BatMetadataType::Struct.get_markdown_sections_from_metadata_file()?;
-        let structs_metadata = structs_markdown_file
-            .into_iter()
-            .map(|markdown_section| StructMetadata::from_markdown_section(markdown_section.clone()))
-            .collect::<Result<Vec<StructMetadata>, _>>()?;
-        Ok(structs_metadata)
-    }
-
     pub fn get_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
         let program_dir_entries = BatFolder::ProgramPath
             .get_all_files_dir_entries(false, None, None)
