@@ -12,6 +12,7 @@ use colored::Colorize;
 use error_stack::{Result, ResultExt};
 use std::path::Path;
 
+use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::TemplateGenerator;
 
@@ -99,11 +100,23 @@ impl SonarCommand {
         execute_command("rm", &["-rf", &metadata_path])?;
         execute_command("mkdir", &[&metadata_path])?;
         TemplateGenerator::create_auditor_metadata_files().change_context(CommandError)?;
-        BatSonar::display_looking_for_loader(SonarResultType::Struct);
+        BatSonarInteractive::SonarStart {
+            sonar_result_type: SonarResultType::Struct,
+        }
+        .print_interactive()
+        .change_context(CommandError)?;
+        BatSonarInteractive::SonarStart {
+            sonar_result_type: SonarResultType::Function,
+        }
+        .print_interactive()
+        .change_context(CommandError)?;
+        BatSonarInteractive::SonarStart {
+            sonar_result_type: SonarResultType::Trait,
+        }
+        .print_interactive()
+        .change_context(CommandError)?;
         self.structs()?;
-        BatSonar::display_looking_for_loader(SonarResultType::Function);
         self.functions()?;
-        BatSonar::display_looking_for_loader(SonarResultType::Trait);
         self.traits()?;
         Ok(())
     }

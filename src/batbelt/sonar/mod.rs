@@ -9,6 +9,7 @@ use std::time::Duration;
 use std::{fs, thread};
 
 pub mod functions;
+pub mod sonar_interactive;
 pub mod structs;
 
 use error_stack::{Result, ResultExt};
@@ -141,43 +142,6 @@ impl BatSonar {
                 self.results.push(sonar_result);
             }
         }
-    }
-
-    pub fn display_looking_for_loader(result_type: SonarResultType) {
-        let pb = ProgressBar::new_spinner();
-        pb.enable_steady_tick(Duration::from_millis(100));
-        pb.set_style(
-            ProgressStyle::with_template("{spinner:.blue} {msg}")
-                .unwrap()
-                .tick_strings(&[
-                    "📂                  〰️🦇",
-                    "📂                〰️  🦇",
-                    "📂              〰️    🦇",
-                    "📂            〰️      🦇",
-                    "📂          〰️        🦇",
-                    "📂        〰️          🦇",
-                    "📂      〰️            🦇",
-                    "📂    〰️              🦇",
-                    "📂  〰️                🦇",
-                    "📂〰️                  🦇",
-                    "📂  〰️                🦇",
-                    "📂    〰️              🦇",
-                    "📂      〰️            🦇",
-                    "📂        〰️          🦇",
-                    "📂          〰️        🦇",
-                    "📂            〰️      🦇",
-                    "📂              〰️    🦇",
-                    "📂                〰️  🦇",
-                    "📂                  〰️🦇",
-                ]),
-        );
-        pb.set_message(format!(
-            "Looking for {} with {}...",
-            result_type.to_string().to_plural().green(),
-            "BatSonar".red(),
-        ));
-        thread::sleep(Duration::from_millis(1700));
-        pb.finish_with_message("Done");
     }
 
     fn get_result_content(&self, start_line_index: usize, end_line_index: usize) -> String {
@@ -554,8 +518,9 @@ impl SonarResult {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, strum_macros::Display)]
+#[derive(Clone, Debug, Copy, PartialEq, Default, strum_macros::Display, strum_macros::EnumIter)]
 pub enum SonarResultType {
+    #[default]
     Function,
     Struct,
     Module,
@@ -908,10 +873,14 @@ fn test_context_accounts_only_validations() {
     assert_eq!(accounts.results.len(), 3, "incorrect length");
 }
 
-#[test]
-fn test_if_validation() {
-    // vec!["require", "valid", "assert", "verify"]
-    let test_text = "
+#[cfg(test)]
+mod sonar_test {
+    use crate::batbelt::sonar::{BatSonar, SonarResultType};
+
+    #[test]
+    fn test_if_validation() {
+        // vec!["require", "valid", "assert", "verify"]
+        let test_text = "
     if this_is_a_validation {
         require_gt!(1,2)
     } else {
@@ -930,8 +899,9 @@ fn test_if_validation() {
 
 
     ";
-    let accounts = BatSonar::new_scanned(test_text, SonarResultType::IfValidation);
+        let accounts = BatSonar::new_scanned(test_text, SonarResultType::IfValidation);
 
-    // Only crafting_process, token_from and mint includes #[account
-    assert_eq!(accounts.results.len(), 3, "incorrect length");
+        // Only crafting_process, token_from and mint includes #[account
+        assert_eq!(accounts.results.len(), 3, "incorrect length");
+    }
 }
