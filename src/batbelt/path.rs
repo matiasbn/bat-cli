@@ -212,13 +212,16 @@ impl BatFile {
     }
 
     pub fn remove_file(&self) -> BatPathResult<()> {
-        fs::remove_file(&self.get_path(false)?)
-            .into_report()
-            .change_context(BatPathError)
-            .attach_printable(format!(
-                "Error removing file in path:\n {}",
-                self.get_path(false)?
-            ))
+        if self.file_exists()? {
+            fs::remove_file(&self.get_path(false)?)
+                .into_report()
+                .change_context(BatPathError)
+                .attach_printable(format!(
+                    "Error removing file in path:\n {}",
+                    self.get_path(false)?
+                ))?;
+        }
+        Ok(())
     }
 
     pub fn create_empty(&self, canonicalize: bool) -> BatPathResult<()> {
