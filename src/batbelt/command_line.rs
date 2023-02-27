@@ -1,4 +1,5 @@
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
 use std::str::from_utf8;
 
 use error_stack::{IntoReport, ResultExt};
@@ -65,7 +66,7 @@ impl BatEnumerator for CodeEditor {}
 
 pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> CommandResult<String> {
     let message = format!(
-        "Error spawning a child process for parameters: \n command: {} \n args: {:#?}",
+        "Error executing a process for parameters: \n command: {} \n args: {:#?}",
         command, args
     );
 
@@ -94,4 +95,58 @@ pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> Comm
     }
 
     Ok(output_string)
+}
+
+pub fn execute_child_process(command: &str, args: &[&str]) -> CommandResult<String> {
+    let message = format!(
+        "Error spawning a child process for parameters: \n command: {} \n args: {:#?}",
+        command, args
+    );
+
+    let mut output = Command::new(command)
+        .args(args)
+        .stdout(Stdio::piped())
+        .spawn()
+        .into_report()
+        .change_context(CommandError)
+        .attach_printable(message)?;
+
+    let message = format!("Error waiting child process: \n {:#?}", output.stdout);
+
+    output
+        .wait()
+        .into_report()
+        .change_context(CommandError)
+        .attach_printable(message)?;
+
+    let message = format!("Error waiting child process: \n {:#?}", output.stdout);
+
+    let mut output_string = String::new();
+    output
+        .stdout
+        .ok_or(CommandError)
+        .into_report()
+        .attach_printable(message)?
+        .read_to_string(&mut output_string)
+        .into_report()
+        .change_context(CommandError)?;
+
+    log::debug!("output_string: \n{:#?}", output_string);
+
+    Ok(output_string)
+    // Ok("output_string".to_string())
+}
+
+#[cfg(test)]
+mod command_line_tester {
+    use crate::batbelt::command_line::execute_child_process;
+
+    #[test]
+    fn test_executed_piped() {
+        env_logger::init();
+        let ls_result = execute_child_process("gflfs", &["2.0.0"]).unwrap();
+        // let ls_result = execute_child_process("cargo", &["install"]).unwrap();
+        println!("ls_rrsuylt {}", ls_result)
+        // let ls_result = execute_piped_process("ls", &["-la"], true).unwrap();
+    }
 }
