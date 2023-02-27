@@ -6,6 +6,7 @@ use figment::{
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, str};
 
+use crate::batbelt::command_line::CodeEditor;
 use crate::batbelt::path::BatFile;
 use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 
@@ -20,11 +21,12 @@ impl fmt::Display for BatConfigError {
 
 impl Error for BatConfigError {}
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone, Parser)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct BatAuditorConfig {
     pub auditor_name: String,
     pub miro_oauth_access_token: String,
-    pub vs_code_integration: bool,
+    pub editor_integration: bool,
+    pub code_editor: CodeEditor,
 }
 
 impl BatAuditorConfig {

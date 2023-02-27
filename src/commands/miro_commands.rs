@@ -3,9 +3,7 @@ use crate::batbelt;
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::{
-    BatMetadataParser, BatMetadataType, BatMetadataTypeParser, MetadataError,
-};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataError};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -20,6 +18,7 @@ use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
+use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;

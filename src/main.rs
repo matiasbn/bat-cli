@@ -153,15 +153,13 @@ enum PackageCommand {
 async fn main() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
     if cli.command != Commands::Create {
+        let bat_log_file = BatFile::Batlog;
+        bat_log_file.remove_file().change_context(CommandError)?;
         let logfile = FileAppender::builder()
             .encoder(Box::new(PatternEncoder::new(
                 "{d(%Y-%m-%d %H:%M:%S)} [{f}:{L}] {h({l})} {M}{n}{m}{n}",
             )))
-            .build(
-                BatFile::Batlog
-                    .get_path(false)
-                    .change_context(CommandError)?,
-            )
+            .build(bat_log_file.get_path(false).change_context(CommandError)?)
             .ok()
             .ok_or(CommandError)?;
 

@@ -1,4 +1,6 @@
+use crate::batbelt::BatEnumerator;
 use error_stack::{IntoReport, Report, Result, ResultExt};
+use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::process::{ChildStdout, Command, Stdio};
 use std::str::from_utf8;
@@ -6,10 +8,41 @@ use std::str::from_utf8;
 use crate::commands::{CommandError, CommandResult};
 use crate::config::BatAuditorConfig;
 
+#[derive(
+    Default,
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    strum_macros::EnumIter,
+    strum_macros::Display,
+    PartialOrd,
+    PartialEq,
+)]
+pub enum CodeEditor {
+    #[default]
+    None,
+    VSCode,
+    CLion,
+}
+
+impl CodeEditor {
+    pub fn open_file(&self) -> CommandResult<()> {
+        match self {
+            CodeEditor::CLion => {}
+            CodeEditor::VSCode => {}
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+impl BatEnumerator for CodeEditor {}
+
 pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), CommandError> {
     let vs_code_integration = BatAuditorConfig::get_config()
         .change_context(CommandError)?
-        .vs_code_integration;
+        .editor_integration;
     if vs_code_integration {
         println!(
             "Opening {} in VS Code",
