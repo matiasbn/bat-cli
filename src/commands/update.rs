@@ -4,8 +4,10 @@ use std::fs;
 
 use error_stack::{Result, ResultExt};
 
+use crate::batbelt::path::BatFile::GitIgnore;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+use crate::batbelt::templates::TemplateGenerator;
 use crate::batbelt::{
     git::GitCommit,
     path::{BatFile, BatFolder},
@@ -17,7 +19,7 @@ pub fn update_repository() -> CommandResult<()> {
     // move new templates to to-review in the auditor notes folder
     // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
     let to_review_file_names = BatFolder::CodeOverhaulToReview
-        .get_all_bat_files(true, None, None)
+        .get_all_bat_files(false, None, None)
         .change_context(CommandError)?;
     // if the auditor to-review code overhaul folder exists
     for bat_file in to_review_file_names {
@@ -37,6 +39,9 @@ pub fn update_repository() -> CommandResult<()> {
     // replace package.json
     println!("Updating package.json");
     PackageJsonTemplate::update_package_json().change_context(CommandError)?;
+    GitIgnore { for_init: false }
+        .write_content(true, &TemplateGenerator::get_git_ignore_content())
+        .change_context(CommandError)?;
     GitCommit::UpdateTemplates
         .create_commit()
         .change_context(CommandError)?;

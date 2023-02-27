@@ -197,10 +197,6 @@ where
             format!("{}\n\n{}", metadata_markdown_content, new_markdown_content)
         };
 
-        log::debug!("metadata_markdown_content:\n{}", metadata_markdown_content);
-        log::debug!("new_markdown_content:\n{}", new_markdown_content);
-        log::debug!("result_metadata_content:\n{}", result_metadata_content);
-
         let mut markdown_file = Self::get_bat_metadata_type().get_markdown()?;
         markdown_file.content = result_metadata_content;
         markdown_file.save().change_context(MetadataError)?;

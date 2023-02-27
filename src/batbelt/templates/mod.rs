@@ -32,28 +32,21 @@ impl TemplateGenerator {
     pub fn create_project() -> Result<(), TemplateError> {
         Self::create_project_folder()?;
         Self::create_init_notes_folder()?;
-        Self::create_git_ignore()?;
+        BatFile::GitIgnore { for_init: true }
+            .write_content(false, &Self::get_git_ignore_content())
+            .change_context(TemplateError)?;
         Self::create_readme()?;
         PackageJsonTemplate::create_package_json()?;
-        Ok(())
-    }
-    fn create_git_ignore() -> Result<(), TemplateError> {
-        let content = ".idea
-build_check_temp
-temp/preview/*.html
-temp/preview/*.md
-./temp/*.md
-builds
-BatAuditor.toml
-robot-repository
-audit_result/02_findings_result.md
-";
-        let bat_config = BatConfig::get_config().change_context(TemplateError)?;
-        let path = format!("./{}/.gitignore", bat_config.project_name);
-        fs::write(path, content)
-            .into_report()
+        BatFile::Batlog
+            .create_empty(false)
             .change_context(TemplateError)?;
         Ok(())
+    }
+    pub fn get_git_ignore_content() -> String {
+        ".idea\n\
+            BatAuditor.toml\n\
+            Batlog.log"
+            .to_string()
     }
 
     fn create_project_folder() -> Result<(), TemplateError> {
@@ -207,18 +200,16 @@ audit_result/02_findings_result.md
         }
         let ending_date =
             batbelt::bat_dialoguer::input("Ending date").change_context(TemplateError)?;
-        let readme_path = BatFile::Readme
-            .get_path(false)
-            .change_context(TemplateError)?;
-        let readme_content = fs::read_to_string(&readme_path)
-            .into_report()
+        let bat_readme = BatFile::Readme { for_init: false };
+        let readme_content = bat_readme
+            .read_content(true)
             .change_context(TemplateError)?;
         let updated_content = readme_content.replace(
             &TemplatePlaceholder::EmptyEndingDate.to_placeholder(),
             &ending_date,
         );
-        fs::write(&readme_path, updated_content)
-            .into_report()
+        bat_readme
+            .write_content(true, &updated_content)
             .change_context(TemplateError)?;
         let robot_content = Self::robot_file_content(&ending_date)?;
         fs::write(robot_file_path, robot_content)

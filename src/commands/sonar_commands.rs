@@ -18,7 +18,7 @@ use crate::batbelt::templates::TemplateGenerator;
 
 use super::CommandError;
 
-#[derive(Subcommand, Debug, strum_macros::Display)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
 pub enum SonarCommand {
     /// Updates the functions.md and structs.md files with data
     Run,

@@ -6,12 +6,19 @@ extern crate confy;
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 
+use crate::batbelt::path::BatFile;
 use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
+use crate::commands::CommandResult;
 use colored::Colorize;
 use commands::CommandError;
-use error_stack::Result;
-use error_stack::ResultExt;
+use error_stack::{FutureExt, IntoReport, Result};
+use error_stack::{Report, ResultExt};
+use log::LevelFilter;
+use log4rs::append::file::FileAppender;
+use log4rs::config::{Appender, Root};
+use log4rs::encode::pattern::PatternEncoder;
+use log4rs::Config;
 use std::process;
 
 mod batbelt;
@@ -21,7 +28,7 @@ mod package;
 
 // pub type BatDerive = #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, PartialEq)]
 #[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
 struct Cli {
     // #[clap(flatten)]
@@ -30,7 +37,7 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(strum_macros::Display, Subcommand, Debug)]
+#[derive(strum_macros::Display, Subcommand, Debug, PartialEq)]
 enum Commands {
     /// Creates a Bat project
     Create,
@@ -84,7 +91,7 @@ impl Commands {
     }
 }
 
-#[derive(Subcommand, Debug, strum_macros::Display)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
 enum GitCommand {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
     UpdateBranches,
@@ -102,7 +109,7 @@ enum GitCommand {
     },
 }
 
-#[derive(Subcommand, Debug, strum_macros::Display)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
 enum FindingCommand {
     /// Creates a finding file
     Create,
@@ -116,7 +123,7 @@ enum FindingCommand {
     Reject,
 }
 
-#[derive(Subcommand, Debug, strum_macros::Display)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
 enum CodeOverhaulCommand {
     /// Starts a code-overhaul file audit
     Start,
@@ -134,7 +141,7 @@ enum CodeOverhaulCommand {
     Templates,
 }
 
-#[derive(Subcommand, Debug, strum_macros::Display)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
 enum PackageCommand {
     /// run cargo clippy and commit the changes
     Format,
@@ -143,12 +150,37 @@ enum PackageCommand {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
-    env_logger::init();
-    // env_logger::Builder::new()
-    //     .filter_level(cli.verbose.log_level_filter())
-    //     .init();
+    if cli.command != Commands::Create {
+        let logfile = FileAppender::builder()
+            .encoder(Box::new(PatternEncoder::new(
+                "d(%Y-%m-%d %H:%M:%S) ]::{l} {f}:{L}:\n{m}\n",
+            )))
+            .build(
+                BatFile::Batlog
+                    .get_path(false)
+                    .change_context(CommandError)?,
+            )
+            .ok()
+            .ok_or(CommandError)?;
+
+        let config = Config::builder()
+            .appender(Appender::builder().build("logfile", Box::new(logfile)))
+            .build(
+                Root::builder()
+                    .appender("logfile")
+                    .build(LevelFilter::Debug),
+            )
+            .ok()
+            .ok_or(CommandError)?;
+
+        log4rs::init_config(config)
+            .into_report()
+            .change_context(CommandError)?;
+    } else {
+        env_logger::init();
+    }
 
     let branch_checked = match cli.command {
         Commands::Init { .. }
@@ -197,26 +229,15 @@ async fn main() {
         }
         Commands::Sonar(..) => cli.command.execute().await,
         Commands::Miro(..) => cli.command.execute().await,
-        // Commands::Miro(MiroActions::Entrypoint { select_all, sorted }) => {
-        //     commands::miro::deploy_entrypoint_screenshots_to_frame(select_all, sorted).await
-        // }
-        // Commands::Miro(MiroActions::Metadata {
-        //     default,
-        //     select_all,
-        // }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all).await,
         Commands::Finding(FindingCommand::Create) => commands::finding::start_finding(),
         Commands::Finding(FindingCommand::Finish) => commands::finding::finish_finding(),
         Commands::Finding(FindingCommand::Update) => commands::finding::update_finding(),
         Commands::Finding(FindingCommand::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingCommand::Reject) => commands::finding::reject(),
         Commands::Update => commands::update::update_repository().change_context(CommandError),
-        Commands::Notes => {
-            GitCommit::Notes.create_commit().change_context(CommandError)
-        }
-        // Commands::Result(ResultActions::Findings { html }) => {
-        //     commands::result::findings_result(html)
-        // }
-        // Commands::Result(ResultActions::Commit) => commands::result::results_commit().change_context(CommandError),
+        Commands::Notes => GitCommit::Notes
+            .create_commit()
+            .change_context(CommandError),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageCommand::Format) => package::format().change_context(CommandError),
@@ -228,17 +249,12 @@ async fn main() {
     };
     match result {
         Ok(_) => {
-            log::info!(
-                "{} script executed correctly",
-                cli.command.to_string().bright_green()
-            )
+            log::info!("{} script executed correctly", cli.command.to_string())
         }
         Err(error) => {
-            eprintln!(
-                "{} script finished with error",
-                cli.command.to_string().bright_red()
-            );
+            eprintln!("{} script finished with error", cli.command.to_string());
             log::error!("error output:\n {:#?}", error)
         }
     }
+    Ok(())
 }

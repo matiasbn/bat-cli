@@ -25,6 +25,7 @@ type BatPathResult<T> = Result<T, BatPathError>;
 pub enum BatFile {
     BatToml,
     BatAuditorToml,
+    Batlog,
     FunctionsMetadataFile,
     StructsMetadataFile,
     TraitsMetadataFile,
@@ -32,8 +33,9 @@ pub enum BatFile {
     FindingCandidates,
     OpenQuestions,
     ProgramLib,
-    Readme,
-    PackageJson,
+    Readme { for_init: bool },
+    GitIgnore { for_init: bool },
+    PackageJson { for_init: bool },
     RobotFile,
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
@@ -49,14 +51,41 @@ impl BatFile {
         let path = match self {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
-            BatFile::PackageJson => "./package.json".to_string(),
+            BatFile::Batlog => format!("Batlog.log"),
+            BatFile::PackageJson { for_init } => {
+                format!(
+                    "{}/package.json",
+                    if *for_init {
+                        BatFolder::ProjectFolderPath.get_path(true)?
+                    } else {
+                        ".".to_string()
+                    }
+                )
+            }
+            BatFile::GitIgnore { for_init } => {
+                format!(
+                    "{}/.gitignore",
+                    if *for_init {
+                        BatFolder::ProjectFolderPath.get_path(true)?
+                    } else {
+                        ".".to_string()
+                    }
+                )
+            }
             BatFile::ProgramLib => {
                 BatConfig::get_config()
                     .change_context(BatPathError)?
                     .program_lib_path
             }
-            BatFile::Readme => {
-                format!("./README.md")
+            BatFile::Readme { for_init } => {
+                format!(
+                    "{}/README.md",
+                    if *for_init {
+                        BatFolder::ProjectFolderPath.get_path(true)?
+                    } else {
+                        ".".to_string()
+                    }
+                )
             }
             BatFile::RobotFile => format!(
                 "{}/robot.md",
@@ -183,12 +212,12 @@ impl BatFile {
     }
 
     pub fn remove_file(&self) -> BatPathResult<()> {
-        fs::remove_file(&self.get_path(true)?)
+        fs::remove_file(&self.get_path(false)?)
             .into_report()
             .change_context(BatPathError)
             .attach_printable(format!(
                 "Error removing file in path:\n {}",
-                self.get_path(true)?
+                self.get_path(false)?
             ))
     }
 
@@ -223,7 +252,7 @@ impl BatFile {
     }
 
     pub fn get_file_name(&self) -> BatPathResult<String> {
-        Ok(Path::new(&self.get_path(true)?)
+        Ok(Path::new(&self.get_path(false)?)
             .file_name()
             .unwrap()
             .to_str()
@@ -243,9 +272,12 @@ impl BatFile {
 pub enum BatFolder {
     Metadata,
     ProgramPath,
+    ProjectFolderPath,
+    FindingsFolderPath,
     FindingsToReview,
     FindingsAccepted,
     FindingsRejected,
+    CodeOverhaulFolderPath,
     CodeOverhaulToReview,
     CodeOverhaulStarted,
     CodeOverhaulFinished,
@@ -257,39 +289,78 @@ pub enum BatFolder {
 impl BatFolder {
     pub fn get_path(&self, canonicalize: bool) -> Result<String, BatPathError> {
         let bat_config = BatConfig::get_config().change_context(BatPathError)?;
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(BatPathError)?;
-
-        let auditor_notes_folder_path =
-            format!("./notes/{}-notes", bat_auditor_config.auditor_name);
-        let findings_path = format!("{}/findings", auditor_notes_folder_path);
-        let code_overhaul_path = format!("{}/code-overhaul", auditor_notes_folder_path);
 
         let path = match self {
             BatFolder::Notes => "./notes".to_string(),
-            BatFolder::AuditorNotes => auditor_notes_folder_path,
-            BatFolder::AuditorFigures => format!("{auditor_notes_folder_path}/figures"),
-            BatFolder::Metadata => format!("{auditor_notes_folder_path}/metadata"),
+            BatFolder::ProjectFolderPath => format!("./{}", bat_config.project_name),
+            BatFolder::AuditorNotes => {
+                let bat_auditor_config =
+                    BatAuditorConfig::get_config().change_context(BatPathError)?;
+
+                let auditor_notes_folder_path =
+                    format!("./notes/{}-notes", bat_auditor_config.auditor_name);
+                auditor_notes_folder_path
+            }
+            BatFolder::AuditorFigures => {
+                format!(
+                    "{}/figures",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
+            BatFolder::Metadata => {
+                format!(
+                    "{}/metadata",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
             BatFolder::ProgramPath => bat_config
                 .program_lib_path
                 .trim_end_matches("/lib.rs")
                 .to_string(),
+            BatFolder::FindingsFolderPath => {
+                format!("{}/findings", BatFolder::AuditorNotes.get_path(true)?)
+            }
             BatFolder::FindingsToReview => {
-                format!("{}/to-review", findings_path)
+                format!(
+                    "{}/to-review",
+                    BatFolder::FindingsFolderPath.get_path(canonicalize)?
+                )
             }
             BatFolder::FindingsAccepted => {
-                format!("{}/accepted", findings_path)
+                format!(
+                    "{}/accepted",
+                    BatFolder::FindingsFolderPath.get_path(canonicalize)?
+                )
             }
             BatFolder::FindingsRejected => {
-                format!("{}/rejected", findings_path)
+                format!(
+                    "{}/rejected",
+                    BatFolder::FindingsFolderPath.get_path(canonicalize)?
+                )
+            }
+            BatFolder::CodeOverhaulFolderPath => {
+                format!(
+                    "{}/code-overhaul",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
             }
             BatFolder::CodeOverhaulToReview => {
-                format!("{}/to-review", code_overhaul_path)
+                format!(
+                    "{}/to-review",
+                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                )
             }
             BatFolder::CodeOverhaulStarted => {
-                format!("{}/started", code_overhaul_path)
+                format!(
+                    "{}/started",
+                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                )
             }
             BatFolder::CodeOverhaulFinished => {
-                format!("{}/finished", code_overhaul_path)
+                format!(
+                    "{}/finished",
+                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                )
             }
         };
 

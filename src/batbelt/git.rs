@@ -309,7 +309,7 @@ impl GitCommit {
             }
             GitCommit::UpdateTemplates => {
                 vec![
-                    BatFile::PackageJson
+                    BatFile::PackageJson { for_init: false }
                         .get_path(true)
                         .change_context(GitError)?,
                     BatFolder::CodeOverhaulToReview

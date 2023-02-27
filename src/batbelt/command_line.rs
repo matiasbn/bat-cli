@@ -45,8 +45,6 @@ pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> Comm
         .change_context(CommandError)
         .attach_printable(message)?;
 
-    log::debug!("child_output: \n{:#?}", output.stdout);
-
     let message = format!(
         "Error reading output of child process for child_output: \n {:#?}",
         output.stdout
