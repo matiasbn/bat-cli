@@ -1,15 +1,17 @@
-pub mod finish;
-pub mod start;
-pub mod update;
-use super::CommandError;
+use colored::Colorize;
+use error_stack::{Result, ResultExt};
+
 use crate::batbelt::command_line::execute_command;
-use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::config::{BatAuditorConfig, BatConfig};
 use crate::{batbelt, commands};
-use colored::Colorize;
-use error_stack::{Result, ResultExt};
+
+use super::CommandError;
+
+pub mod finish;
+pub mod start;
+pub mod update;
 
 pub fn count_co_files() -> Result<(), CommandError> {
     let (to_review_count, started_count, finished_count) = co_counter()?;
@@ -40,16 +42,16 @@ fn co_counter() -> error_stack::Result<(usize, usize, usize), CommandError> {
 }
 
 pub fn open_co() -> Result<(), CommandError> {
-    let bat_config = BatConfig::get_config().change_context(CommandError)?;
+    let _bat_config = BatConfig::get_config().change_context(CommandError)?;
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     // list to start
-    if bat_auditor_config.vs_code_integration {
+    if bat_auditor_config.use_code_editor {
         let options = vec!["started".green(), "finished".yellow()];
         let prompt_text = format!(
             "Do you want to open a {} or a {} file?",
             options[0], options[1]
         );
-        let selection = batbelt::cli_inputs::select(&prompt_text, options.clone(), None)
+        let selection = batbelt::bat_dialoguer::select(&prompt_text, options.clone(), None)
             .change_context(CommandError)?;
         let open_started = selection == 0;
         let co_folder = if open_started {
@@ -65,40 +67,42 @@ pub fn open_co() -> Result<(), CommandError> {
             .collect::<Vec<_>>();
         if !co_files.is_empty() {
             let prompt_text = "Select the code-overhaul file to open:";
-            let selection = batbelt::cli_inputs::select(prompt_text, co_files.clone(), None)
+            let selection = batbelt::bat_dialoguer::select(prompt_text, co_files.clone(), None)
                 .change_context(CommandError)?;
             let file_name = &co_files[selection].clone();
-            let co_file_path = if open_started {
-                batbelt::path::get_file_path(
-                    BatFile::CodeOverhaulStarted {
-                        file_name: file_name.clone(),
-                    },
-                    true,
-                )
-                .change_context(CommandError)?
+            let bat_file = if open_started {
+                BatFile::CodeOverhaulStarted {
+                    file_name: file_name.clone(),
+                }
             } else {
-                batbelt::path::get_file_path(
-                    BatFile::CodeOverhaulFinished {
-                        file_name: file_name.clone(),
-                    },
-                    true,
-                )
-                .change_context(CommandError)?
+                BatFile::CodeOverhaulFinished {
+                    file_name: file_name.clone(),
+                }
             };
             let ep_parser =
                 EntrypointParser::new_from_name(file_name.clone().trim_end_matches(".md"))
                     .change_context(CommandError)?;
 
-            vs_code_open_file_in_current_window(&co_file_path).change_context(CommandError)?;
+            bat_file
+                .open_in_editor(true, None)
+                .change_context(CommandError)?;
             if ep_parser.handler.is_some() {
-                let instruction_file_path = ep_parser.handler.unwrap().path;
-                vs_code_open_file_in_current_window(&instruction_file_path)
-                    .change_context(CommandError)?;
+                let handler_metadata = ep_parser.handler.unwrap();
+                let _instruction_file_path = handler_metadata.path;
+                let _start_line_index = handler_metadata.start_line_index;
+                // BatAuditorConfig::get_config()
+                //     .change_context(CommandError)?
+                //     .code_editor::;
             }
+            BatFile::ProgramLib
+                .open_in_editor(true, Some(ep_parser.entrypoint_function.start_line_index))
+                .change_context(CommandError)?;
+            return Ok(());
         } else {
             println!("Empty {} folder", options[selection].clone());
         }
-        vs_code_open_file_in_current_window(&bat_config.program_lib_path)
+        BatFile::ProgramLib
+            .open_in_editor(true, None)
             .change_context(CommandError)?;
     } else {
         print!("VSCode integration not enabled");
@@ -109,8 +113,8 @@ pub fn open_co() -> Result<(), CommandError> {
 pub fn update_co_templates() -> Result<(), CommandError> {
     let co_to_review_path = batbelt::path::get_folder_path(BatFolder::CodeOverhaulToReview, true)
         .change_context(CommandError)?;
-    execute_command("rm", &["-rf", &co_to_review_path]).change_context(CommandError)?;
-    execute_command("mkdir", &[&co_to_review_path]).change_context(CommandError)?;
+    execute_command("rm", &["-rf", &co_to_review_path], false).change_context(CommandError)?;
+    execute_command("mkdir", &[&co_to_review_path], false).change_context(CommandError)?;
     commands::init::initialize_code_overhaul_files().unwrap();
     Ok(())
 }

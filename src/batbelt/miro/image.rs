@@ -87,9 +87,9 @@ impl MiroImage {
         api_response: reqwest::Response,
     ) -> Result<(), MiroError> {
         let response_string = api_response.text().await.unwrap();
-        let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
-        self.item_id = response["id"].to_string().replace("\"", "");
-        self.parent_id = response["parent"]["id"].to_string().replace("\"", "");
+        let response: Value = serde_json::from_str(response_string.as_str()).unwrap();
+        self.item_id = response["id"].to_string().replace('\"', "");
+        self.parent_id = response["parent"]["id"].to_string().replace('\"', "");
         self.height = response["geometry"]["height"].as_f64().unwrap() as u64;
         self.width = response["geometry"]["width"].as_f64().unwrap() as u64;
         self.x_position = response["position"]["x"].as_f64().unwrap() as i64;

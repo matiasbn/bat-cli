@@ -1,7 +1,7 @@
 use crate::batbelt;
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions_metadata::get_function_parameters;
-use crate::batbelt::metadata::BatMetadata;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
@@ -34,8 +34,8 @@ impl CodeOverhaulTemplate {
         })
     }
     pub fn to_markdown_file(&self, file_path: &str) -> Result<MarkdownFile, TemplateError> {
-        let content = self.get_markdown_content().clone();
-        let template = MarkdownFile::new_from_path_and_content(&file_path, content);
+        let content = self.get_markdown_content();
+        let template = MarkdownFile::new_from_path_and_content(file_path, content);
         Ok(template)
     }
 
@@ -137,7 +137,7 @@ impl CodeOverhaulSection {
             );
         }
         let handler_function = entrypoint_parser.handler.unwrap();
-        let context_source_code = handler_function.to_source_code(None);
+        let context_source_code = handler_function.to_source_code_parser(None);
         let instruction_file_path = handler_function.path.clone();
         let handler_if_validations = BatSonar::new_from_path(
             &instruction_file_path,
@@ -167,7 +167,6 @@ impl CodeOverhaulSection {
 
         // any if that contains an if validation is considered a validation
         let mut filtered_if_validations = handler_if_validations
-            .clone()
             .results
             .iter()
             .filter(|if_est| {
@@ -204,7 +203,7 @@ impl CodeOverhaulSection {
         };
 
         let ca_accounts_only_validations = BatSonar::new_scanned(
-            &context_source_code.clone().get_source_code_content(),
+            &context_source_code.get_source_code_content(),
             SonarResultType::ContextAccountsOnlyValidation,
         );
 
@@ -235,7 +234,9 @@ impl CodeOverhaulSection {
     }
 
     fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_source_code = entrypoint_parser.context_accounts.to_source_code(None);
+        let context_source_code = entrypoint_parser
+            .context_accounts
+            .to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
         // signer names is only the name of the signer
         let mut signers: Vec<String> = vec![];
@@ -258,7 +259,7 @@ impl CodeOverhaulSection {
                 continue;
             }
             let signer_name = content.clone().last().unwrap().trim().replace("pub ", "");
-            let signer_name = signer_name.split(":").next().unwrap();
+            let signer_name = signer_name.split(':').next().unwrap();
             // delete last line
             content.pop().unwrap();
             let signer_comments = content
@@ -266,13 +267,13 @@ impl CodeOverhaulSection {
                 .filter(|line| {
                     line.clone()
                         .trim()
-                        .split(" ")
+                        .split(' ')
                         .next()
                         .unwrap()
                         .contains("//")
                 })
                 .collect::<Vec<_>>();
-            if signer_comments.len() == 0 {
+            if signer_comments.is_empty() {
                 let signer_description = format!(
                     "- {}: {}",
                     signer_name,
@@ -288,7 +289,7 @@ impl CodeOverhaulSection {
                     signer_name.red(),
                     signer_description_comment
                 );
-                let is_correct = batbelt::cli_inputs::select_yes_or_no(&prompt_text).unwrap();
+                let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
                 if is_correct {
                     let signer_description =
                         format!("- {}: {}", signer_name, signer_description_comment);
@@ -314,7 +315,7 @@ impl CodeOverhaulSection {
                     .iter()
                     .map(|line| line.split("// ").last().unwrap())
                     .collect();
-                let selections = batbelt::cli_inputs::multiselect(
+                let selections = batbelt::bat_dialoguer::multiselect(
                     &prompt_text,
                     signer_formatted.clone(),
                     Some(&vec![false; signer_formatted.clone().len()]),
@@ -352,7 +353,9 @@ impl CodeOverhaulSection {
     }
 
     fn get_context_account_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_accounts_source_code = entrypoint_parser.context_accounts.to_source_code(None);
+        let context_accounts_source_code = entrypoint_parser
+            .context_accounts
+            .to_source_code_parser(None);
         let context_accounts_content = context_accounts_source_code.get_source_code_content();
         let accounts = BatSonar::new_scanned(
             &context_accounts_content,
@@ -370,7 +373,7 @@ impl CodeOverhaulSection {
         let context_filtered = format!(
             "{}\n{}\n{}",
             first_line,
-            accounts_string.trim_start_matches("\n"),
+            accounts_string.trim_start_matches('\n'),
             last_line,
         );
         let formatted = context_filtered
@@ -395,7 +398,7 @@ impl CodeOverhaulSection {
         let handler_function = entrypoint_parser.handler.unwrap();
         let handler_function_parameters = get_function_parameters(
             handler_function
-                .to_source_code(None)
+                .to_source_code_parser(None)
                 .get_source_code_content(),
         );
         let function_parameters_content = if handler_function_parameters.is_empty() {
@@ -411,9 +414,9 @@ impl CodeOverhaulSection {
                         return result;
                     }
                     if result.is_empty() {
-                        format!("- {}", parameter.trim_end_matches(","))
+                        format!("- {}", parameter.trim_end_matches(','))
                     } else {
-                        format!("{}\n- {}", result, parameter.trim_end_matches(","))
+                        format!("{}\n- {}", result, parameter.trim_end_matches(','))
                     }
                 })
         };

@@ -2,10 +2,10 @@ pub mod code_overhaul;
 pub mod create;
 pub mod finding;
 pub mod init;
-pub mod miro;
+pub mod miro_commands;
 // pub mod result;
 pub mod git;
-pub mod sonar;
+pub mod sonar_commands;
 pub mod update;
 
 use std::{error::Error, fmt};
@@ -20,3 +20,5 @@ impl fmt::Display for CommandError {
 }
 
 impl Error for CommandError {}
+
+pub type CommandResult<T> = error_stack::Result<T, CommandError>;

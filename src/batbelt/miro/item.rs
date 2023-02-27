@@ -49,8 +49,8 @@ impl MiroItem {
     }
 
     pub async fn update_item_parent_and_position(&self) {
-        Self::update_item_parent(&self).await;
-        Self::update_item_position(&self).await;
+        Self::update_item_parent(self).await;
+        Self::update_item_position(self).await;
     }
 
     pub async fn get_items_on_board(

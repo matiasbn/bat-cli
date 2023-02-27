@@ -5,10 +5,11 @@ pub mod package_json_template;
 
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
-use crate::batbelt::metadata::BatMetadataType;
+use crate::batbelt::metadata::{BatMetadataType, MetadataError};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+use crate::batbelt::BatEnumerator;
 use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
@@ -32,28 +33,21 @@ impl TemplateGenerator {
     pub fn create_project() -> Result<(), TemplateError> {
         Self::create_project_folder()?;
         Self::create_init_notes_folder()?;
-        Self::create_git_ignore()?;
+        BatFile::GitIgnore { for_init: true }
+            .write_content(false, &Self::get_git_ignore_content())
+            .change_context(TemplateError)?;
         Self::create_readme()?;
         PackageJsonTemplate::create_package_json()?;
-        Ok(())
-    }
-    fn create_git_ignore() -> Result<(), TemplateError> {
-        let content = ".idea
-build_check_temp
-temp/preview/*.html
-temp/preview/*.md
-./temp/*.md
-builds
-BatAuditor.toml
-robot-repository
-audit_result/02_findings_result.md
-";
-        let bat_config = BatConfig::get_config().change_context(TemplateError)?;
-        let path = format!("./{}/.gitignore", bat_config.project_name);
-        fs::write(path, content)
-            .into_report()
+        BatFile::Batlog
+            .create_empty(false)
             .change_context(TemplateError)?;
         Ok(())
+    }
+    pub fn get_git_ignore_content() -> String {
+        ".idea\n\
+            BatAuditor.toml\n\
+            Batlog.log"
+            .to_string()
     }
 
     fn create_project_folder() -> Result<(), TemplateError> {
@@ -130,18 +124,21 @@ audit_result/02_findings_result.md
             .get_path(false)
             .change_context(TemplateError)?;
         Self::create_dir(&auditor_metadata_path, false)?;
-
-        // metadata files
-        let metadata_types = BatMetadataType::get_metadata_type_vec();
-        for metadata_type in metadata_types {
-            let metadata_file = format!(
-                "{}/{}.md",
-                auditor_metadata_path,
-                metadata_type.to_string().to_lowercase()
-            );
-            execute_command("touch", &[&metadata_file]).change_context(TemplateError)?;
-        }
+        Self::create_auditor_metadata_files()?;
         NoteTemplate::create_notes_templates()?;
+        Ok(())
+    }
+
+    pub fn create_auditor_metadata_files() -> Result<(), TemplateError> {
+        // metadata files
+        let metadata_types_path = BatMetadataType::get_metadata_type_vec()
+            .into_iter()
+            .map(|meta_type| meta_type.get_path())
+            .collect::<Result<Vec<_>, MetadataError>>()
+            .change_context(TemplateError)?;
+        for metadata_path in metadata_types_path {
+            execute_command("touch", &[&metadata_path], false).change_context(TemplateError)?;
+        }
         Ok(())
     }
 
@@ -179,7 +176,7 @@ audit_result/02_findings_result.md
 
     fn create_gitkeep(path: &str) -> Result<(), TemplateError> {
         let gitkeep_path = format!("{}/.gitkeep", path);
-        execute_command("touch", &[&gitkeep_path]).change_context(TemplateError)?;
+        execute_command("touch", &[&gitkeep_path], false).change_context(TemplateError)?;
         Ok(())
     }
 
@@ -203,19 +200,17 @@ audit_result/02_findings_result.md
             );
         }
         let ending_date =
-            batbelt::cli_inputs::input("Ending date").change_context(TemplateError)?;
-        let readme_path = BatFile::Readme
-            .get_path(false)
-            .change_context(TemplateError)?;
-        let readme_content = fs::read_to_string(&readme_path)
-            .into_report()
+            batbelt::bat_dialoguer::input("Ending date").change_context(TemplateError)?;
+        let bat_readme = BatFile::Readme { for_init: false };
+        let readme_content = bat_readme
+            .read_content(true)
             .change_context(TemplateError)?;
         let updated_content = readme_content.replace(
             &TemplatePlaceholder::EmptyEndingDate.to_placeholder(),
             &ending_date,
         );
-        fs::write(&readme_path, updated_content)
-            .into_report()
+        bat_readme
+            .write_content(true, &updated_content)
             .change_context(TemplateError)?;
         let robot_content = Self::robot_file_content(&ending_date)?;
         fs::write(robot_file_path, robot_content)

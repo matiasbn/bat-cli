@@ -1,5 +1,5 @@
 use super::CommandError;
-use crate::batbelt::cli_inputs;
+use crate::batbelt::bat_dialoguer;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::templates::TemplateGenerator;
 use crate::config::BatConfig;
@@ -17,7 +17,7 @@ pub fn create_project() -> Result<(), CommandError> {
     let bat_config = create_bat_config_file().change_context(CommandError)?;
     println!("Creating {:#?} project", bat_config);
     TemplateGenerator::create_project().change_context(CommandError)?;
-    execute_command("mv", &["Bat.toml", &bat_config.project_name])?;
+    execute_command("mv", &["Bat.toml", &bat_config.project_name], false)?;
 
     println!("Project {} succesfully created", bat_config.project_name);
     Ok(())
@@ -39,18 +39,18 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
             let file_names = dir
                 .map(|f| f.unwrap().file_name().to_str().unwrap().to_string())
                 .collect::<Vec<_>>();
-            let is_anchor_project = file_names.contains(&"Anchor.toml".to_string());
-            is_anchor_project
+
+            file_names.contains(&"Anchor.toml".to_string())
         })
         .map(|f| f.path().to_str().unwrap().to_string())
         .collect::<Vec<_>>();
     if local_anchor_project_folders.is_empty() {
-        let message = format!("No Anchor projects were found on the current working directory");
+        let message = "No Anchor projects were found on the current working directory".to_string();
         return Err(Report::new(CommandError).attach_printable(message));
     }
     // Folder with the program to audit selection
     let prompt_text = "Select the folder with the program to audit";
-    let selection = cli_inputs::select(prompt_text, local_anchor_project_folders.clone(), None)
+    let selection = bat_dialoguer::select(prompt_text, local_anchor_project_folders.clone(), None)
         .change_context(CommandError)?;
     let selected_folder_path = &local_anchor_project_folders[selection];
     let cargo_programs_files_info = WalkDir::new(selected_folder_path)
@@ -78,16 +78,16 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
                 .to_string()
         })
         .collect::<Vec<_>>();
-    let selection = cli_inputs::select(prompt_text, cargo_programs_paths.clone(), None)
+    let selection = bat_dialoguer::select(prompt_text, cargo_programs_paths.clone(), None)
         .change_context(CommandError)?;
     let selected_program_path = &cargo_programs_paths[selection];
     log::debug!("selected_program: {:#?}", selected_program_path);
     let program_name = selected_program_path
-        .split("/")
+        .split('/')
         .last()
         .unwrap()
         .to_string()
-        .replace("_", "-");
+        .replace('_', "-");
     log::debug!("program_name: {:#?}", program_name);
     let program_lib_path = format!("{}/src/lib.rs", selected_program_path);
     log::debug!("program_lib_path: {:#?}", program_lib_path);
@@ -100,20 +100,20 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
     }
 
     // Project name selection
-    let mut project_name: String = program_name.replace("_", "-").to_owned() + "-audit";
+    let mut project_name: String = program_name.replace('_', "-") + "-audit";
     let prompt_text = format!(
         "Do you want to use the name {} for this project?",
-        format!("{project_name}").yellow()
+        project_name.yellow()
     );
 
     let use_default = if !cfg!(debug_assertions) {
-        cli_inputs::select_yes_or_no(prompt_text.as_str()).change_context(CommandError)?
+        bat_dialoguer::select_yes_or_no(prompt_text.as_str()).change_context(CommandError)?
     } else {
         true
     };
 
     if !use_default {
-        project_name = cli_inputs::input("Project name:").change_context(CommandError)?;
+        project_name = bat_dialoguer::input("Project name:").change_context(CommandError)?;
     }
     let project_path = format!("./{project_name}");
 
@@ -123,7 +123,7 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
     }
 
     let auditor_names_prompt: String = if !cfg!(debug_assertions) {
-        cli_inputs::input("Auditor names (comma separated, example: alice,bob):")
+        bat_dialoguer::input("Auditor names (comma separated, example: alice,bob):")
             .change_context(CommandError)?
     } else {
         "test_user".to_string()
@@ -134,25 +134,26 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
         .collect();
 
     let client_name: String = if !cfg!(debug_assertions) {
-        cli_inputs::input("Client name:").change_context(CommandError)?
+        bat_dialoguer::input("Client name:").change_context(CommandError)?
     } else {
         "test_client".to_string()
     };
 
     let commit_hash_url: String = if !cfg!(debug_assertions) {
-        cli_inputs::input("Commit hash url:").change_context(CommandError)?
+        bat_dialoguer::input("Commit hash url:").change_context(CommandError)?
     } else {
         "test_hash".to_string()
     };
 
     let starting_date: String = if !cfg!(debug_assertions) {
-        cli_inputs::input("Starting date, example: (01/01/2023):").change_context(CommandError)?
+        bat_dialoguer::input("Starting date, example: (01/01/2023):")
+            .change_context(CommandError)?
     } else {
         "test_date".to_string()
     };
 
     let mut miro_board_url: String = if !cfg!(debug_assertions) {
-        cli_inputs::input("Miro board url:").change_context(CommandError)?
+        bat_dialoguer::input("Miro board url:").change_context(CommandError)?
     } else {
         "https://miro.com/app/board/uXjVPzsgmiY=/".to_string()
     };
@@ -160,7 +161,7 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
     miro_board_url = normalize_miro_board_url(&miro_board_url)?;
 
     let project_repository_url: String = if !cfg!(debug_assertions) {
-        cli_inputs::input("Project repo url, where this audit folder would be pushed:")
+        bat_dialoguer::input("Project repo url, where this audit folder would be pushed:")
             .change_context(CommandError)?
     } else {
         "https://github.com/matiasbn/test-repo".to_string()

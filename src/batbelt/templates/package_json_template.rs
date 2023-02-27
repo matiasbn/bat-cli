@@ -1,34 +1,22 @@
 use crate::batbelt::path::BatFile;
 use crate::batbelt::templates::TemplateError;
-use crate::config::BatConfig;
-use error_stack::{IntoReport, Result, ResultExt};
+
+use error_stack::{Result, ResultExt};
 use serde_json::json;
-use std::fs;
 
 pub struct PackageJsonTemplate;
 
 impl PackageJsonTemplate {
     pub fn update_package_json() -> Result<(), TemplateError> {
-        let content = Self::get_package_json_content();
-        let package_path = BatFile::PackageJson
-            .get_path(false)
-            .change_context(TemplateError)?;
-        fs::write(&package_path, content)
-            .into_report()
+        BatFile::PackageJson { for_init: false }
+            .write_content(false, &Self::get_package_json_content())
             .change_context(TemplateError)?;
         Ok(())
     }
 
     pub fn create_package_json() -> Result<(), TemplateError> {
-        let content = Self::get_package_json_content();
-        let package_path = format!(
-            "{}/package.json",
-            BatConfig::get_config()
-                .change_context(TemplateError)?
-                .project_name
-        );
-        fs::write(&package_path, content)
-            .into_report()
+        BatFile::PackageJson { for_init: true }
+            .write_content(false, &Self::get_package_json_content())
             .change_context(TemplateError)?;
         Ok(())
     }
@@ -54,8 +42,8 @@ impl PackageJsonTemplate {
         "author": "",
         "license": "ISC"
         });
-        let content = serde_json::to_string_pretty(&package_json).unwrap();
-        content
+
+        serde_json::to_string_pretty(&package_json).unwrap()
     }
 }
 

@@ -28,7 +28,7 @@ pub struct SourceCodeScreenshotOptions {
 impl SourceCodeScreenshotOptions {
     pub fn get_default_metadata_options(metadata_section: BatMetadataType) -> Self {
         match metadata_section {
-            BatMetadataType::Structs => Self {
+            BatMetadataType::Struct => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -36,7 +36,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            BatMetadataType::Functions => Self {
+            BatMetadataType::Function => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -44,7 +44,7 @@ impl SourceCodeScreenshotOptions {
                 filters: None,
                 show_line_number: true,
             },
-            BatMetadataType::Entrypoints => Self {
+            _ => Self {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
@@ -146,17 +146,15 @@ impl SourceCodeParser {
         } else {
             0
         };
-        let content = fs::read_to_string(&self.path).unwrap();
-        let content_lines = content.lines().collect::<Vec<_>>()
-            [self.start_line_index - 1..=self.end_line_index - 1]
-            .to_vec();
+        let content = self.get_source_code_content();
+        log::debug!("content before formatting:\n{}", content);
+        let content_lines = content.lines();
         let content_vec = content_lines
-            .iter()
             .filter_map(|line| {
                 if options.filter_comments {
-                    let starts_with_comment = line.trim().split(" ").next().unwrap().contains("//");
+                    let starts_with_comment = line.trim().split(' ').next().unwrap().contains("//");
                     if starts_with_comment {
-                        return None;
+                        return Some("".to_string());
                     }
                     // at this point it does not start with comment
                     let line_contains_comment = line.contains("//");
@@ -164,13 +162,17 @@ impl SourceCodeParser {
                         return Some(line.split("//").next().unwrap().to_string());
                     }
                 }
-                return Some(line.to_string());
+                Some(line.to_string())
             })
-            .filter(|line| {
+            .filter_map(|line| {
                 if let Some(filters) = options.filters.clone() {
-                    !filters.into_iter().any(|filter| line.contains(&filter))
+                    if !filters.into_iter().any(|filter| line.contains(&filter)) {
+                        Some(line)
+                    } else {
+                        Some("".to_string())
+                    }
                 } else {
-                    true
+                    Some(line)
                 }
             })
             .collect::<Vec<_>>()
@@ -185,7 +187,7 @@ impl SourceCodeParser {
             let path = self.path.split(&splitter).last().unwrap();
             log::debug!("splitted_path_lasth: {}", path);
             let path_to_include = format!("{}{}", splitter, path)
-                .trim_start_matches("/")
+                .trim_start_matches('/')
                 .to_string();
             log::debug!("path_to_include: {}", path_to_include);
             content = format!("// {}\n\n{}", path_to_include, content);
@@ -195,6 +197,8 @@ impl SourceCodeParser {
                 0
             };
         }
+
+        log::debug!("content to create screenshot:\n{}", content);
 
         let png_screenshot_path = silicon::create_figure(
             &content,
@@ -208,23 +212,23 @@ impl SourceCodeParser {
     }
 
     pub fn prompt_screenshot_options() -> SourceCodeScreenshotOptions {
-        let include_path = batbelt::cli_inputs::select_yes_or_no(&format!(
+        let include_path = batbelt::bat_dialoguer::select_yes_or_no(&format!(
             "Do you want to {}",
             "include the path?".yellow()
         ))
         .unwrap();
-        let filter_comments = batbelt::cli_inputs::select_yes_or_no(&format!(
+        let filter_comments = batbelt::bat_dialoguer::select_yes_or_no(&format!(
             "Do you want to {}",
             "filter the comments?".yellow()
         ))
         .unwrap();
-        let show_line_number = batbelt::cli_inputs::select_yes_or_no(&format!(
+        let show_line_number = batbelt::bat_dialoguer::select_yes_or_no(&format!(
             "Do you want to {}",
             "include the line numbers?".yellow()
         ))
         .unwrap();
         let offset_to_start_line = if show_line_number {
-            batbelt::cli_inputs::select_yes_or_no(&format!(
+            batbelt::bat_dialoguer::select_yes_or_no(&format!(
                 "Do you want to {}",
                 "offset to the starting line?".yellow()
             ))
@@ -232,20 +236,20 @@ impl SourceCodeParser {
         } else {
             false
         };
-        let include_filters = batbelt::cli_inputs::select_yes_or_no(&format!(
+        let include_filters = batbelt::bat_dialoguer::select_yes_or_no(&format!(
             "Do you want to {}",
             "add customized filters?".red()
         ))
         .unwrap();
         // utils::cli_inputs::select_yes_or_no("Do you want to include filters?").unwrap();
         let filters = if include_filters {
-            let filters_to_include = batbelt::cli_inputs::input(
+            let filters_to_include = batbelt::bat_dialoguer::input(
                 "Please enter the filters, comma separated: #[account,CHECK ",
             )
             .unwrap();
             if !filters_to_include.is_empty() {
                 let filters: Vec<String> = filters_to_include
-                    .split(",")
+                    .split(',')
                     .map(|filter| filter.trim().to_string())
                     .collect();
                 Some(filters)
@@ -255,15 +259,15 @@ impl SourceCodeParser {
         } else {
             None
         };
-        let screenshot_options = SourceCodeScreenshotOptions {
+
+        SourceCodeScreenshotOptions {
             include_path,
             offset_to_start_line,
             filter_comments,
             show_line_number,
             filters,
             font_size: Some(20),
-        };
-        screenshot_options
+        }
     }
 
     pub async fn deploy_screenshot_to_miro_frame(
@@ -327,7 +331,7 @@ fn test_filter_comments() {
     let filtered_lines = test_text_lines
         .filter_map(|line| {
             if !line.is_empty() {
-                let starts_with_comment = line.trim().split(" ").next().unwrap().contains("//");
+                let starts_with_comment = line.trim().split(' ').next().unwrap().contains("//");
                 if starts_with_comment {
                     return None;
                 }
@@ -337,7 +341,7 @@ fn test_filter_comments() {
                     return Some(line.split("//").next().unwrap());
                 }
             }
-            return Some(line);
+            Some(line)
         })
         .collect::<Vec<_>>()
         .join("\n");

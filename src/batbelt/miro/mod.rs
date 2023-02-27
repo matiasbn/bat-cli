@@ -59,7 +59,7 @@ impl MiroConfig {
             Err(error) => {
                 let message = "Bad response from Miro";
                 log::error!("Miro response: \n {:#?}", error);
-                return Err(Report::new(MiroError).attach_printable(message));
+                Err(Report::new(MiroError).attach_printable(message))
             }
         }
     }
@@ -96,7 +96,7 @@ impl MiroConfig {
             .split("board/")
             .last()
             .ok_or(MiroError)?
-            .split("/")
+            .split('/')
             .next()
             .ok_or(MiroError)?
             .to_string();
@@ -140,15 +140,15 @@ impl MiroObject {
         response: reqwest::Response,
     ) -> Result<Vec<Self>, MiroError> {
         let response_string = response.text().await.unwrap();
-        let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
+        let response: Value = serde_json::from_str(response_string.as_str()).unwrap();
         let data = response["data"].as_array().unwrap();
         let objects = data
             .clone()
             .into_iter()
             .map(|data_response| {
-                let item_id = data_response["id"].to_string().replace("\"", "");
-                let item_type = data_response["type"].to_string().replace("\"", "");
-                let title = data_response["data"]["title"].to_string().replace("\"", "");
+                let item_id = data_response["id"].to_string().replace('\"', "");
+                let item_type = data_response["type"].to_string().replace('\"', "");
+                let title = data_response["data"]["title"].to_string().replace('\"', "");
                 let height = data_response["geometry"]["height"].as_f64().unwrap() as u64;
                 let width = data_response["geometry"]["width"].as_f64().unwrap() as u64;
                 let x_position = data_response["position"]["x"].as_f64().unwrap() as i64;
@@ -309,14 +309,14 @@ pub mod helpers {
         let response = MiroItem::get_items_on_board(Some(MiroItemType::Frame)).await?;
         let response = response.text().await.unwrap();
         let value: serde_json::Value =
-            serde_json::from_str(&response.to_string()).expect("JSON was not well-formatted");
+            serde_json::from_str(&response).expect("JSON was not well-formatted");
         let frames = value["data"].as_array().unwrap();
         let accounts_frame_id = frames
-            .into_iter()
+            .iter()
             .find(|f| f["data"]["title"] == "Accounts")
             .unwrap()["id"]
             .to_string();
-        Ok(accounts_frame_id.clone().replace("\"", ""))
+        Ok(accounts_frame_id.replace('\"', ""))
     }
 
     // pub fn get_data_for_snapshots(
@@ -525,8 +525,8 @@ pub mod helpers {
         match response {
             Ok(response) => {
                 let response_string = response.text().await.unwrap();
-                let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
-                Ok(response["id"].to_string().replace("\"", ""))
+                let response: Value = serde_json::from_str(response_string.as_str()).unwrap();
+                Ok(response["id"].to_string().replace('\"', ""))
             }
             Err(err_message) => {
                 Err(Report::new(MiroError).attach_printable(err_message.to_string()))

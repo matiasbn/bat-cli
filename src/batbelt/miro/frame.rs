@@ -50,16 +50,16 @@ impl MiroFrame {
         api_response: reqwest::Response,
     ) -> Result<(), MiroError> {
         let response_string = api_response.text().await.unwrap();
-        let value: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
+        let value: Value = serde_json::from_str(response_string.as_str()).unwrap();
         self.parse_value(value)?;
         Ok(())
     }
 
     fn parse_value(&mut self, value: Value) -> Result<(), MiroError> {
         let miro_config = MiroConfig::new()?;
-        self.item_id = value["id"].to_string().replace("\"", "");
+        self.item_id = value["id"].to_string().replace('\"', "");
         self.frame_url = Some(miro_config.get_frame_url(&self.item_id));
-        self.title = value["data"]["title"].to_string().replace("\"", "");
+        self.title = value["data"]["title"].to_string().replace('\"', "");
         self.height = value["geometry"]["height"].as_f64().ok_or(MiroError)? as u64;
         self.width = value["geometry"]["width"].as_f64().ok_or(MiroError)? as u64;
         self.x_position = value["position"]["x"].as_f64().ok_or(MiroError)? as i64;
@@ -98,7 +98,7 @@ impl MiroFrame {
             .await
             .unwrap();
         let response_string = response.text().await.unwrap();
-        let response: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
+        let response: Value = serde_json::from_str(response_string.as_str()).unwrap();
         debug!("MiroItem::get_items_on_board:\n {}", response);
         let data = response["data"].as_array().unwrap();
         let frames = data

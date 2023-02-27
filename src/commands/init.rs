@@ -1,15 +1,11 @@
-use std::fs::{self};
-
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::str::from_utf8;
+
 use std::string::String;
 
 use colored::Colorize;
 
 use crate::batbelt;
-use crate::batbelt::command_line::execute_command;
-use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::miro::frame::{
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
@@ -17,37 +13,38 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::commands::CommandError;
 use crate::config::{BatAuditorConfig, BatConfig};
 
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::{GitAction, GitCommit};
 use crate::batbelt::miro::frame::MiroFrame;
 
 use crate::batbelt::path::{BatFile, BatFolder};
 
+use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::TemplateGenerator;
+use crate::batbelt::ShareableData;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
     let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
     if !Path::new("BatAuditor.toml").is_file() {
-        prompt_auditor_options()?;
+        BatAuditorConfig::new_with_prompt().change_context(CommandError)?;
     }
     println!("creating project for the next config: ");
     println!("{:#?}", bat_config);
-    let output = Command::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .output()
-        .unwrap()
-        .stdout;
-    let git_initialized: bool = from_utf8(&output).unwrap() == "true\n";
-    if !git_initialized {
+
+    let shared_initialized = ShareableData::new(false);
+
+    GitAction::CheckGitIsInitialized {
+        is_initialized: shared_initialized.original,
+    }
+    .execute_action()
+    .change_context(CommandError)?;
+
+    if !*shared_initialized.cloned.borrow() {
         println!("Initializing project repository");
         initialize_project_repository()?;
         println!("Project repository successfully initialized");
     }
-
-    let readme_path =
-        batbelt::path::get_file_path(BatFile::Readme, true).change_context(CommandError)?;
-    let _readme_string = fs::read_to_string(readme_path.clone()).unwrap();
 
     // create auditors branches from develop
     for auditor_name in bat_config.auditor_names {
@@ -77,24 +74,25 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
         .output()
         .unwrap();
 
-    // validate_init_config()?;
-    // let auditor_notes_folder = utils::path::get_auditor_notes_path()?;
-    let auditor_notes_folder = batbelt::path::get_folder_path(BatFolder::AuditorNotes, false)
-        .change_context(CommandError)?;
-    let auditor_notes_folder_exists = Path::new(&auditor_notes_folder).is_dir();
-    if auditor_notes_folder_exists {
-        let auditor_notes_files = BatFolder::AuditorNotes
+    let auditor_notes_bat_folder = BatFolder::AuditorNotes;
+    if auditor_notes_bat_folder
+        .folder_exists()
+        .change_context(CommandError)?
+    {
+        let auditor_notes_files = auditor_notes_bat_folder
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
         if auditor_notes_files.is_empty() {
-            create_auditor_notes_folder()?;
+            TemplateGenerator::create_auditor_folders().change_context(CommandError)?;
+
             // create overhaul files
             initialize_code_overhaul_files()?;
             // commit to-review files
             create_miro_frames_for_entrypoints().await?;
         }
     } else {
-        create_auditor_notes_folder()?;
+        TemplateGenerator::create_auditor_folders().change_context(CommandError)?;
+
         // create overhaul files
         initialize_code_overhaul_files()?;
         // commit to-review files
@@ -103,83 +101,42 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
 
     println!("Project successfully initialized");
     if !skip_initial_commit {
-        batbelt::git::create_git_commit(GitCommit::InitAuditor, None)
+        GitCommit::InitAuditor
+            .create_commit()
             .change_context(CommandError)?;
     }
-    // let lib_file_path = utils::path::get_program_lib_path()?;
-    let lib_file_path =
-        batbelt::path::get_file_path(BatFile::ProgramLib, true).change_context(CommandError)?;
-    // Open lib.rs file in vscode
-    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())
+
+    BatFile::ProgramLib
+        .open_in_editor(true, None)
         .change_context(CommandError)?;
     Ok(())
 }
 
-fn prompt_auditor_options() -> Result<(), CommandError> {
-    let bat_config = BatConfig::get_config().change_context(CommandError)?;
-    let auditor_names = bat_config.auditor_names;
-    let prompt_text = format!("Select your name:");
-    let selection = batbelt::cli_inputs::select(&prompt_text, auditor_names.clone(), None)?;
-    let auditor_name = auditor_names.get(selection).unwrap().clone();
-    println!(
-        "Is great to have you here {}!",
-        format!("{}", auditor_name).green()
-    );
-    let prompt_text = "Do you want to use the Miro integration?";
-    let include_miro =
-        batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
-    let moat = if include_miro {
-        let prompt_text = "Miro OAuth access token";
-        batbelt::cli_inputs::input(&prompt_text).change_context(CommandError)?
-    } else {
-        "".to_string()
-    };
-    let prompt_text = "Do you want to use the VS Code integration?";
-    let include_vs_code =
-        batbelt::cli_inputs::select_yes_or_no(prompt_text).change_context(CommandError)?;
-    let bat_auditor_config = BatAuditorConfig {
-        auditor_name: auditor_name.to_string(),
-        vs_code_integration: include_vs_code,
-        miro_oauth_access_token: moat,
-    };
-    bat_auditor_config.save().change_context(CommandError)?;
-    Ok(())
-}
-
 fn initialize_project_repository() -> Result<(), CommandError> {
-    let bat_config = BatConfig::get_config().change_context(CommandError)?;
     // git init
-    execute_command("git", &["init"]).change_context(CommandError)?;
+    GitAction::Init
+        .execute_action()
+        .change_context(CommandError)?;
 
     println!("Adding project repository as remote");
-    execute_command(
-        "git",
-        &[
-            "remote",
-            "add",
-            "origin",
-            bat_config.project_repository_url.as_str(),
-        ],
-    )
-    .change_context(CommandError)?;
+    GitAction::RemoteAddProjectRepo
+        .execute_action()
+        .change_context(CommandError)?;
 
     println!("Commit all to main");
-    execute_command("git", &["add", "-A"]).change_context(CommandError)?;
-    execute_command("git", &["commit", "-m", "initial commit"]).change_context(CommandError)?;
+    GitAction::AddAll
+        .execute_action()
+        .change_context(CommandError)?;
+    GitCommit::Init
+        .create_commit()
+        .change_context(CommandError)?;
 
     println!("Creating develop branch");
-    execute_command("git", &["checkout", "-b", "develop"]).change_context(CommandError)?;
-
-    Ok(())
-}
-
-fn create_auditor_notes_folder() -> Result<(), CommandError> {
-    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
-    println!(
-        "creating auditor notes folder for {}",
-        bat_auditor_config.auditor_name.red()
-    );
-    TemplateGenerator::create_auditor_folders().change_context(CommandError)?;
+    GitAction::CreateBranch {
+        branch_name: "develop".to_string(),
+    }
+    .execute_action()
+    .change_context(CommandError)?;
 
     Ok(())
 }
@@ -199,8 +156,8 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
         return Ok(());
     }
 
-    let user_want_to_deploy = batbelt::cli_inputs::select_yes_or_no(
-        "Do you want to deploy the Miro frames for code overhaul?",
+    let user_want_to_deploy = BatDialoguer::select_yes_or_no(
+        "Do you want to deploy the Miro frames for code overhaul?".to_string(),
     )
     .change_context(CommandError)?;
 
@@ -223,7 +180,7 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
         if !frame_already_deployed {
             println!("Creating frame in Miro for {}", entrypoint_name.green());
             let mut miro_frame =
-                MiroFrame::new(&entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
+                MiroFrame::new(entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
             miro_frame.deploy().await.change_context(CommandError)?;
             let x_modifier = entrypoint_index as i64 % MIRO_BOARD_COLUMNS;
             let y_modifier = entrypoint_index as i64 / MIRO_BOARD_COLUMNS;

@@ -1,17 +1,17 @@
 use crate::batbelt;
 use crate::batbelt::path::BatFile;
-use colored::Colorize;
-use indicatif::{ProgressBar, ProgressStyle};
-use inflector::Inflector;
+
 use std::error::Error;
 use std::fmt::{self, Debug};
-use std::time::Duration;
-use std::{fs, thread};
+
+use std::fs;
 
 pub mod functions;
+pub mod sonar_interactive;
 pub mod structs;
 
 use error_stack::{Result, ResultExt};
+use regex::Regex;
 
 #[derive(Debug)]
 pub struct BatSonarError;
@@ -39,15 +39,15 @@ impl BatSonar {
         BatSonar {
             content: content.to_string(),
             results: vec![],
-            result_type: result_type.clone(),
-            open_filters: SonarFilter::Open(result_type.clone()),
-            end_of_open_filters: SonarFilter::EndOfOpen(result_type.clone()),
-            closure_filters: SonarFilter::Closure(result_type.clone()),
+            result_type,
+            open_filters: SonarFilter::Open(result_type),
+            end_of_open_filters: SonarFilter::EndOfOpen(result_type),
+            closure_filters: SonarFilter::Closure(result_type),
         }
     }
 
     pub fn new_scanned(content: &str, result_type: SonarResultType) -> Self {
-        let mut new_sonar = BatSonar::new(&content, result_type.clone());
+        let mut new_sonar = BatSonar::new(content, result_type);
         new_sonar.scan_content_to_get_results();
         new_sonar
     }
@@ -59,11 +59,10 @@ impl BatSonar {
     ) -> Self {
         let content = fs::read_to_string(path).unwrap();
 
-        let mut new_sonar = BatSonar::new(&content, result_type.clone());
+        let mut new_sonar = BatSonar::new(&content, result_type);
 
         if let Some(starting_content) = starting_line_content {
             let start_line_index = content
-                .clone()
                 .lines()
                 .position(|line| line.contains(starting_content))
                 .unwrap();
@@ -97,7 +96,7 @@ impl BatSonar {
         for (line_index, line) in content_lines.enumerate() {
             if self.check_is_opening(line) {
                 if self.result_type.test_last_char_is_semicolon() {
-                    let last_line_is_semicolon = line.chars().last().unwrap() == ';';
+                    let last_line_is_semicolon = line.ends_with(';');
                     if last_line_is_semicolon {
                         continue;
                     }
@@ -115,7 +114,7 @@ impl BatSonar {
                     "",
                     &result_content,
                     trailing_whitespaces,
-                    self.result_type.clone(),
+                    self.result_type,
                     start_line_index,
                     end_line_index,
                     true,
@@ -126,7 +125,7 @@ impl BatSonar {
                 // The context account filter duplicates the accouns starting with #[account(
                 if (self.result_type == SonarResultType::ContextAccountsAll
                     || self.result_type == SonarResultType::ContextAccountsNoValidation)
-                    && self.results.len() > 0
+                    && !self.results.is_empty()
                 {
                     let last_result = self.results.clone();
                     let last_result = last_result.last().unwrap();
@@ -140,44 +139,6 @@ impl BatSonar {
                 self.results.push(sonar_result);
             }
         }
-    }
-
-    pub fn display_looking_for_loader(result_type: SonarResultType) {
-        let pb = ProgressBar::new_spinner();
-        pb.enable_steady_tick(Duration::from_millis(200));
-        pb.set_style(
-            ProgressStyle::with_template("{spinner:.blue} {msg}")
-                .unwrap()
-                .tick_strings(&[
-                    "📂                  〰️🦇",
-                    "📂                  〰️🦇",
-                    "📂                〰️  🦇",
-                    "📂              〰️    🦇",
-                    "📂            〰️      🦇",
-                    "📂          〰️        🦇",
-                    "📂        〰️          🦇",
-                    "📂      〰️            🦇",
-                    "📂    〰️              🦇",
-                    "📂  〰️                🦇",
-                    "📂〰️                  🦇",
-                    "📂  〰️                🦇",
-                    "📂    〰️              🦇",
-                    "📂      〰️            🦇",
-                    "📂        〰️          🦇",
-                    "📂          〰️        🦇",
-                    "📂            〰️      🦇",
-                    "📂              〰️    🦇",
-                    "📂                〰️  🦇",
-                    "📂                  〰️🦇",
-                ]),
-        );
-        pb.set_message(format!(
-            "Looking for {} with {}...",
-            result_type.to_string().to_plural().green(),
-            "BatSonar".red(),
-        ));
-        thread::sleep(Duration::from_millis(3400));
-        pb.finish_with_message("Done");
     }
 
     fn get_result_content(&self, start_line_index: usize, end_line_index: usize) -> String {
@@ -195,10 +156,14 @@ impl BatSonar {
         starting_line: &str,
     ) -> Option<usize> {
         if (self.result_type == SonarResultType::Validation
+            || self.result_type == SonarResultType::Struct
             || self.result_type == SonarResultType::ContextAccountsAll
             || self.result_type == SonarResultType::ContextAccountsNoValidation)
             && self.starting_line_contains_closure_filter(starting_line)
         {
+            log::debug!("starting_line_contains_closure_filter");
+            log::debug!("result_type; {}", self.result_type.to_string());
+            log::debug!("starting_line; {}", starting_line);
             return Some(start_index);
         }
         let closing_line_candidates = self.get_closing_lines_candidates(trailing_whitespaces);
@@ -217,7 +182,7 @@ impl BatSonar {
                 .any(|candidate| line.1 == candidate)
                 && line.0 > start_index
         });
-        return closing_index;
+        closing_index
     }
 
     fn starting_line_contains_closure_filter(&self, starting_line: &str) -> bool {
@@ -259,7 +224,7 @@ impl BatSonar {
         // Check if open is the preffix of the line
         for filter in open_filters {
             let suffix_strip = line.trim().strip_prefix(filter);
-            if let Some(_) = suffix_strip {
+            if suffix_strip.is_some() {
                 return true;
             }
         }
@@ -288,7 +253,7 @@ impl SonarResult {
         end_line_index: usize,
         is_public: bool,
     ) -> Self {
-        let new_result = SonarResult {
+        SonarResult {
             name: name.to_string(),
             content: content.to_string(),
             trailing_whitespaces,
@@ -296,8 +261,7 @@ impl SonarResult {
             start_line_index,
             end_line_index,
             is_public,
-        };
-        new_result
+        }
     }
 
     pub fn is_valid_result(&self) -> bool {
@@ -314,6 +278,8 @@ impl SonarResult {
             SonarResultType::Struct => self.get_name(),
             SonarResultType::Module => self.get_name(),
             SonarResultType::ContextAccountsAll => self.get_name(),
+            SonarResultType::Trait => self.get_name(),
+            SonarResultType::TraitImpl => self.get_name(),
             SonarResultType::ContextAccountsOnlyValidation => {
                 self.get_name();
                 self.format_ca_only_validations()
@@ -331,29 +297,69 @@ impl SonarResult {
             SonarResultType::Function | SonarResultType::Struct | SonarResultType::Module => {
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
-                let mut first_line_tokenized = first_line.trim().split(" ");
+                let mut first_line_tokenized = first_line.trim().split(' ');
                 let is_public = first_line_tokenized.next().unwrap().contains("pub");
                 if is_public {
                     first_line_tokenized.next().unwrap();
                 }
                 let name_candidate = first_line_tokenized.next().unwrap();
                 let name = name_candidate
-                    .split("<")
+                    .split('<')
                     .next()
                     .unwrap()
-                    .split("(")
+                    .split('(')
                     .next()
                     .unwrap();
                 self.name = name.to_string();
                 self.is_public = is_public;
             }
+            SonarResultType::Trait => {
+                let first_line = self.content.clone();
+                let first_line = first_line.lines().next().unwrap();
+                let mut first_line_tokenized = first_line.trim().split(' ');
+                let is_public = first_line_tokenized.next().unwrap().contains("pub");
+                if is_public {
+                    first_line_tokenized.next().unwrap();
+                }
+                let name_candidate = first_line_tokenized.next().unwrap();
+                let name = name_candidate
+                    .split('<')
+                    .next()
+                    .unwrap()
+                    .split(':')
+                    .next()
+                    .unwrap()
+                    .split('{')
+                    .next()
+                    .unwrap();
+                self.name = name.to_string();
+                self.is_public = is_public;
+                log::debug!("name: {}", name);
+                log::debug!("is_public: {}", is_public);
+            }
+            SonarResultType::TraitImpl => {
+                let first_line = self.content.clone();
+                let first_line = first_line.lines().next().unwrap();
+                let lifetime_regex = Regex::new(r"&*'+[A-Za-z0-9:]+[, ]*").unwrap();
+                let name = lifetime_regex
+                    .replace_all(first_line, "")
+                    .trim()
+                    .to_string()
+                    .replace("<>", "")
+                    .trim_start_matches("impl")
+                    .trim()
+                    .trim_end_matches(" {")
+                    .to_string();
+                self.name = name.clone();
+                log::debug!("name: {}", name);
+            }
             SonarResultType::ContextAccountsAll
             | SonarResultType::ContextAccountsOnlyValidation => {
                 let content = self.content.clone();
-                let mut last_line = content.lines().last().unwrap().trim().split(" ");
+                let mut last_line = content.lines().last().unwrap().trim().split(' ');
                 last_line.next().unwrap();
-                let name = last_line.next().unwrap().replace(":", "");
-                self.name = name.to_string();
+                let name = last_line.next().unwrap().replace(':', "");
+                self.name = name;
             }
             _ => {}
         }
@@ -362,13 +368,13 @@ impl SonarResult {
     fn format_ca_only_validations(&mut self) {
         let content = self.content.clone();
         // single line, only filter the first line
-        if content.clone().lines().count() == 2 {
+        if content.lines().count() == 2 {
             let first_line = content.lines().next().unwrap();
             let first_line_formatted = first_line
                 .trim_start()
                 .trim_start_matches("#[account(")
                 .trim_end_matches(")]");
-            let first_line_tokenized = first_line_formatted.split(",");
+            let first_line_tokenized = first_line_formatted.split(',');
             let first_line_filtered = first_line_tokenized
                 .filter(|token| {
                     self.result_type
@@ -424,13 +430,13 @@ impl SonarResult {
             return;
         }
         // single line, only filter the first line
-        if content.clone().lines().count() == 2 {
+        if content.lines().count() == 2 {
             let first_line = content.lines().next().unwrap();
             let first_line_formatted = first_line
                 .trim_start()
                 .trim_start_matches("#[account(")
                 .trim_end_matches(")]");
-            let first_line_tokenized = first_line_formatted.split(",");
+            let first_line_tokenized = first_line_formatted.split(',');
             let first_line_filtered = first_line_tokenized
                 .filter(|token| {
                     !self
@@ -441,7 +447,7 @@ impl SonarResult {
                 })
                 .collect::<Vec<_>>();
             let last_line = content.lines().last().unwrap();
-            if first_line_filtered.len() == 0 {
+            if first_line_filtered.is_empty() {
                 self.content = last_line.to_string();
             } else {
                 let result_filtered = first_line_filtered.join(",");
@@ -470,14 +476,14 @@ impl SonarResult {
                 .collect::<Vec<String>>();
             let first_line = content.lines().next().unwrap();
             let last_line = content.lines().last().unwrap();
-            if filtered_lines.len() == 0 {
+            if filtered_lines.is_empty() {
                 self.content = last_line.to_string();
             } else if filtered_lines.len() == 1 {
                 // only 1 line, convert multiline to single line
                 let formatted_content = format!(
                     "{}{})]\n{}",
-                    first_line.trim_end_matches("\n"),
-                    filtered_lines[0].trim().trim_end_matches("\n"),
+                    first_line.trim_end_matches('\n'),
+                    filtered_lines[0].trim().trim_end_matches('\n'),
                     last_line
                 );
                 self.content = formatted_content
@@ -508,14 +514,17 @@ impl SonarResult {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, strum_macros::Display)]
+#[derive(Clone, Debug, Copy, PartialEq, Default, strum_macros::Display, strum_macros::EnumIter)]
 pub enum SonarResultType {
+    #[default]
     Function,
     Struct,
     Module,
     If,
     IfValidation,
     Validation,
+    Trait,
+    TraitImpl,
     ContextAccountsAll,
     ContextAccountsOnlyValidation,
     ContextAccountsNoValidation,
@@ -559,8 +568,14 @@ impl SonarFilter {
             SonarFilter::EndOfOpen(SonarResultType::Function) => vec!["("],
             SonarFilter::Closure(SonarResultType::Function) => vec!["}"],
             SonarFilter::Open(SonarResultType::Struct) => vec!["struct", "pub struct"],
-            SonarFilter::EndOfOpen(SonarResultType::Struct) => vec!["{"],
-            SonarFilter::Closure(SonarResultType::Struct) => vec!["}"],
+            SonarFilter::EndOfOpen(SonarResultType::Struct) => vec!["{", ";"],
+            SonarFilter::Closure(SonarResultType::Struct) => vec!["}", ";"],
+            SonarFilter::Open(SonarResultType::Trait) => vec!["trait", "pub trait"],
+            SonarFilter::EndOfOpen(SonarResultType::Trait) => vec!["{", ";"],
+            SonarFilter::Closure(SonarResultType::Trait) => vec!["}", ";"],
+            SonarFilter::Open(SonarResultType::TraitImpl) => vec!["impl"],
+            SonarFilter::EndOfOpen(SonarResultType::TraitImpl) => vec!["{", ";"],
+            SonarFilter::Closure(SonarResultType::TraitImpl) => vec!["}", ";"],
             SonarFilter::Open(SonarResultType::Module) => vec!["mod", "pub mod"],
             SonarFilter::EndOfOpen(SonarResultType::Module) => vec!["{"],
             SonarFilter::Closure(SonarResultType::Module) => vec!["}"],
@@ -596,12 +611,11 @@ impl SonarFilter {
 
 #[test]
 fn test_get_functions() {
-    let expected_second_function = format!(
-        "        pub fn create_game_2<'info>(
-        ) -> Result<()> {{
+    let expected_second_function = "        pub fn create_game_2<'info>(
+        ) -> Result<()> {
             handle_create_game_2(&ctx, key_index, free_create)
-        }}"
-    );
+        }"
+    .to_string();
     let expected_first_function = format!(
         "{}\n{}\n{}\n{}",
         "       pub fn create_game_1<'info>() -> Result<()> {",
@@ -609,13 +623,12 @@ fn test_get_functions() {
         "           handle_create_game_1(&ctx, key_index, free_create)",
         "       }"
     );
-    let expected_third_function = format!(
-        "        pub fn create_fleet(
+    let expected_third_function = "        pub fn create_fleet(
             sector: [i64; 2],
-        ) -> Result<()> {{
+        ) -> Result<()> {
             handle_create_fleet(&ctx, key_index, stats.into(), sector)
-        }}"
-    );
+        }"
+    .to_string();
 
     let content = format!("{}\n\n{}", expected_first_function, expected_third_function);
     let mut bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Function);
@@ -633,11 +646,10 @@ fn test_get_functions() {
 
 #[test]
 fn test_get_structs() {
-    let expected_first_struct = format!(
-        "            pub struct StructName {{
+    let expected_first_struct = "            pub struct StructName {
                 handle_create_game_2(&ctx, key_index, free_create)
-            }}"
-    );
+            }"
+    .to_string();
     let expected_first_function = format!(
         "{}\n{}\n{}\n{}",
         "       pub fn create_game_1<'info>() -> Result<()> {",
@@ -645,13 +657,12 @@ fn test_get_structs() {
         "           handle_create_game_1(&ctx, key_index, free_create)",
         "       }"
     );
-    let expected_second_struct = format!(
-        "        struct create_fleet {{
+    let expected_second_struct = "        struct create_fleet {
             sector: [i64; 2],
-        ) -> Result<()> {{
+        ) -> Result<()> {
             handle_create_fleet(&ctx, key_index, stats.into(), sector)
-        }}"
-    );
+        }"
+    .to_string();
 
     let content = format!("{}\n\n{}", expected_first_function, expected_second_struct);
     let mut bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Struct);
@@ -665,11 +676,10 @@ fn test_get_structs() {
 }
 #[test]
 fn test_get_modules() {
-    let expected_first_mod = format!(
-        "            pub mod modName {{
+    let expected_first_mod = "            pub mod modName {
                 handle_create_game_2(&ctx, key_index, free_create)
-            }}"
-    );
+            }"
+    .to_string();
     let expected_first_function = format!(
         "{}\n{}\n{}\n{}",
         "       pub fn create_game_1<'info>() -> Result<()> {",
@@ -677,13 +687,12 @@ fn test_get_modules() {
         "           handle_create_game_1(&ctx, key_index, free_create)",
         "       }"
     );
-    let expected_second_mod = format!(
-        "        mod create_fleet {{
+    let expected_second_mod = "        mod create_fleet {
             sector: [i64; 2],
-        ) -> Result<()> {{
+        ) -> Result<()> {
             handle_create_fleet(&ctx, key_index, stats.into(), sector)
-        }}"
-    );
+        }"
+    .to_string();
 
     let content = format!("{}\n\n{}", expected_first_function, expected_second_mod);
     let bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Module);
@@ -699,8 +708,8 @@ fn test_get_modules() {
 fn test_get_function_body() {
     // let function_signature = "pub fn cancel_impulse<'info>(ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>, key_index: Option<u16>)";
     let function = "pub fn cancel_impulse<'info>()->Result<String, String> { body }";
-    let body = function.split("{").collect::<Vec<_>>()[1]
-        .split("}")
+    let body = function.split('{').collect::<Vec<_>>()[1]
+        .split('}')
         .next()
         .unwrap();
     println!("body {:#?}", body)
@@ -854,10 +863,14 @@ fn test_context_accounts_only_validations() {
     assert_eq!(accounts.results.len(), 3, "incorrect length");
 }
 
-#[test]
-fn test_if_validation() {
-    // vec!["require", "valid", "assert", "verify"]
-    let test_text = "
+#[cfg(test)]
+mod sonar_test {
+    use crate::batbelt::sonar::{BatSonar, SonarResultType};
+
+    #[test]
+    fn test_if_validation() {
+        // vec!["require", "valid", "assert", "verify"]
+        let test_text = "
     if this_is_a_validation {
         require_gt!(1,2)
     } else {
@@ -876,8 +889,9 @@ fn test_if_validation() {
 
 
     ";
-    let accounts = BatSonar::new_scanned(test_text, SonarResultType::IfValidation);
+        let accounts = BatSonar::new_scanned(test_text, SonarResultType::IfValidation);
 
-    // Only crafting_process, token_from and mint includes #[account
-    assert_eq!(accounts.results.len(), 3, "incorrect length");
+        // Only crafting_process, token_from and mint includes #[account
+        assert_eq!(accounts.results.len(), 3, "incorrect length");
+    }
 }

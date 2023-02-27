@@ -7,25 +7,25 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 
 use std::process::Command;
 
-pub enum GitCommands {
+pub enum GitCommand {
     UpdateBranches,
     FetchRemoteBranches { select_all: bool },
     DeleteLocalBranches { select_all: bool },
 }
 
-impl GitCommands {
+impl GitCommand {
     pub fn execute(&self) -> Result<(), CommandError> {
         self.check_develop_exists()?;
         match self {
-            GitCommands::UpdateBranches => {
+            GitCommand::UpdateBranches => {
                 self.merge_all_to_develop()?;
                 self.merge_develop_to_all()?;
             }
-            GitCommands::FetchRemoteBranches { select_all } => {
-                self.fetch_remote_branches(select_all.clone())?
+            GitCommand::FetchRemoteBranches { select_all } => {
+                self.fetch_remote_branches(*select_all)?
             }
-            GitCommands::DeleteLocalBranches { select_all } => {
-                self.delete_local_branches(select_all.clone())?
+            GitCommand::DeleteLocalBranches { select_all } => {
+                self.delete_local_branches(*select_all)?
             }
         }
         Ok(())
@@ -37,7 +37,7 @@ impl GitCommands {
         for branch_name in branches_list {
             log::debug!("branch_name: {}", branch_name);
             let message = format!("Merge branch '{}' into develop", branch_name);
-            execute_command("git", &["merge", &branch_name, "-m", &message])
+            execute_command("git", &["merge", &branch_name, "-m", &message], false)
                 .change_context(CommandError)?;
         }
         Ok(())
@@ -66,10 +66,10 @@ impl GitCommands {
     fn fetch_remote_branches(&self, select_all: bool) -> Result<(), CommandError> {
         let branches_list = self.get_remote_branches_filtered()?;
         let prompt_test = format!("Select the branches {}", "to fetch".green());
-        let selections = batbelt::cli_inputs::multiselect(
+        let selections = batbelt::bat_dialoguer::multiselect(
             &prompt_test,
             branches_list.clone(),
-            Some(&vec![select_all; branches_list.clone().len()]),
+            Some(&vec![select_all; branches_list.len()]),
         )
         .change_context(CommandError)?;
         for selection in selections {
@@ -79,6 +79,7 @@ impl GitCommands {
             execute_command(
                 "git",
                 &["checkout", selected_branch.trim_start_matches("origin/")],
+                false,
             )
             .change_context(CommandError)?;
         }
@@ -90,17 +91,17 @@ impl GitCommands {
         let branches_list = self.get_local_branches_filtered()?;
         self.checkout_branch("develop")?;
         let prompt_test = format!("Select the branches {}", "to delete".red());
-        let selections = batbelt::cli_inputs::multiselect(
+        let selections = batbelt::bat_dialoguer::multiselect(
             &prompt_test,
             branches_list.clone(),
-            Some(&vec![select_all; branches_list.clone().len()]),
+            Some(&vec![select_all; branches_list.len()]),
         )
         .change_context(CommandError)?;
         for selection in selections {
             let selected_branch = &branches_list.clone()[selection];
             println!("Deleting {}", selected_branch.green());
             log::debug!("selected_branch to delete: {}", selected_branch);
-            execute_command("git", &["branch", "-D", selected_branch])
+            execute_command("git", &["branch", "-D", selected_branch], false)
                 .change_context(CommandError)?;
         }
         Ok(())
@@ -110,7 +111,7 @@ impl GitCommands {
         let branches_list = batbelt::git::get_local_branches().change_context(CommandError)?;
         if !branches_list
             .lines()
-            .any(|line| line.trim_start_matches("*").trim_start() == "develop")
+            .any(|line| line.trim_start_matches('*').trim_start() == "develop")
         {
             log::debug!("branches_list:\n{}", branches_list);
             return Err(Report::new(CommandError).attach_printable("develop branch not found"));
@@ -124,7 +125,7 @@ impl GitCommands {
         let list = branches_list
             .lines()
             .filter_map(|branch| {
-                let branch_name = branch.trim().trim_start_matches("*").trim();
+                let branch_name = branch.trim().trim_start_matches('*').trim();
                 if branch_name != "main" && branch_name != "develop" {
                     Some(branch_name.to_string())
                 } else {
@@ -142,7 +143,7 @@ impl GitCommands {
         let list = branches_list
             .lines()
             .filter_map(|branch| {
-                let branch_name = branch.trim().trim_start_matches("*").trim();
+                let branch_name = branch.trim().trim_start_matches('*').trim();
                 if branch_name != "origin/main"
                     && branch_name != "origin/develop"
                     && branch_name.split(" ->").next().unwrap() != "origin/HEAD"
@@ -158,7 +159,7 @@ impl GitCommands {
     }
 
     fn checkout_branch(&self, branch_name: &str) -> Result<(), CommandError> {
-        execute_command("git", &["checkout", branch_name]).change_context(CommandError)?;
+        execute_command("git", &["checkout", branch_name], false).change_context(CommandError)?;
         Ok(())
     }
 }
@@ -166,13 +167,13 @@ impl GitCommands {
 #[test]
 fn test_get_remote_branches_filtered() {
     let remote_branches =
-        GitCommands::get_remote_branches_filtered(&GitCommands::UpdateBranches).unwrap();
+        GitCommand::get_remote_branches_filtered(&GitCommand::UpdateBranches).unwrap();
     println!("remote_branches:\n{:#?}", remote_branches)
 }
 
 #[test]
 fn test_get_local_branches_filtered() {
     let local_branches =
-        GitCommands::get_local_branches_filtered(&GitCommands::UpdateBranches).unwrap();
+        GitCommand::get_local_branches_filtered(&GitCommand::UpdateBranches).unwrap();
     println!("local_branches:\n{:#?}", local_branches)
 }
