@@ -1,6 +1,7 @@
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::io::Read;
 use std::process::{ChildStdout, Command, Stdio};
+use std::str::from_utf8;
 
 use crate::commands::{CommandError, CommandResult};
 use crate::config::BatAuditorConfig;
@@ -26,42 +27,26 @@ pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> Comm
         "Error spawning a child process for parameters: \n command: {} \n args: {:#?}",
         command, args
     );
-    let mut output = Command::new(command)
+
+    let output = Command::new(command)
         .args(args)
-        .stdout(Stdio::piped())
-        .spawn()
+        .output()
         .into_report()
         .change_context(CommandError)
         .attach_printable(message)?;
 
     let message = format!(
-        "Error waiting a child process for parameters: \n command: {} \n args: {:#?}",
-        command, args
-    );
-
-    output
-        .wait()
-        .into_report()
-        .change_context(CommandError)
-        .attach_printable(message)?;
-
-    let message = format!(
-        "Error reading output of child process for child_output: \n {:#?}",
+        "Error reading parsing output to string: \n {:#?}",
         output.stdout
     );
 
-    let mut output_string = String::new();
+    let output_string = from_utf8(output.stdout.as_slice())
+        .into_report()
+        .change_context(CommandError)
+        .attach_printable(message)?
+        .to_string();
 
-    output
-        .stdout
-        .ok_or(CommandError)
-        .into_report()
-        .attach_printable(message.clone())?
-        .read_to_string(&mut output_string)
-        .ok()
-        .ok_or(CommandError)
-        .into_report()
-        .attach_printable(message.clone())?;
+    log::debug!("output_string: \n{}", output_string);
 
     if print_output {
         println!("{}", output_string);
