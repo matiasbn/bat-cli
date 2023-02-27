@@ -2,7 +2,7 @@ use crate::batbelt::command_line::{execute_command, CodeEditor};
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::{BatAuditorConfig, BatConfig};
-use clap::builder::Str;
+
 use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 use inflector::Inflector;
 use serde::{Deserialize, Serialize};
@@ -51,7 +51,7 @@ impl BatFile {
         let path = match self {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
-            BatFile::Batlog => format!("Batlog.log"),
+            BatFile::Batlog => "Batlog.log".to_string(),
             BatFile::PackageJson { for_init } => {
                 format!(
                     "{}/package.json",
@@ -202,7 +202,7 @@ impl BatFile {
     }
 
     pub fn write_content(&self, canonicalize: bool, content: &str) -> BatPathResult<()> {
-        fs::write(&self.get_path(canonicalize)?, content)
+        fs::write(self.get_path(canonicalize)?, content)
             .into_report()
             .change_context(BatPathError)
             .attach_printable(format!(
@@ -213,7 +213,7 @@ impl BatFile {
 
     pub fn remove_file(&self) -> BatPathResult<()> {
         if self.file_exists()? {
-            fs::remove_file(&self.get_path(false)?)
+            fs::remove_file(self.get_path(false)?)
                 .into_report()
                 .change_context(BatPathError)
                 .attach_printable(format!(
@@ -415,7 +415,7 @@ impl BatFolder {
             .collect::<Vec<_>>();
         if sorted {
             dir_entries.sort_by(|dir_entry_a, dir_entry_b| {
-                dir_entry_a.file_name().cmp(&dir_entry_b.file_name())
+                dir_entry_a.file_name().cmp(dir_entry_b.file_name())
             });
         }
         Ok(dir_entries)
@@ -464,11 +464,11 @@ impl BatFolder {
 }
 
 pub fn get_file_path(file_type: BatFile, canonicalize: bool) -> Result<String, BatPathError> {
-    Ok(file_type.get_path(canonicalize)?)
+    file_type.get_path(canonicalize)
 }
 
 pub fn get_folder_path(folder_type: BatFolder, canonicalize: bool) -> Result<String, BatPathError> {
-    Ok(folder_type.get_path(canonicalize)?)
+    folder_type.get_path(canonicalize)
 }
 
 pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, BatPathError> {

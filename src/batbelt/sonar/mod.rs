@@ -1,12 +1,10 @@
 use crate::batbelt;
 use crate::batbelt::path::BatFile;
-use colored::Colorize;
-use indicatif::{ProgressBar, ProgressStyle};
-use inflector::Inflector;
+
 use std::error::Error;
 use std::fmt::{self, Debug};
-use std::time::Duration;
-use std::{fs, thread};
+
+use std::fs;
 
 pub mod functions;
 pub mod sonar_interactive;
@@ -41,15 +39,15 @@ impl BatSonar {
         BatSonar {
             content: content.to_string(),
             results: vec![],
-            result_type: result_type.clone(),
-            open_filters: SonarFilter::Open(result_type.clone()),
-            end_of_open_filters: SonarFilter::EndOfOpen(result_type.clone()),
-            closure_filters: SonarFilter::Closure(result_type.clone()),
+            result_type,
+            open_filters: SonarFilter::Open(result_type),
+            end_of_open_filters: SonarFilter::EndOfOpen(result_type),
+            closure_filters: SonarFilter::Closure(result_type),
         }
     }
 
     pub fn new_scanned(content: &str, result_type: SonarResultType) -> Self {
-        let mut new_sonar = BatSonar::new(&content, result_type.clone());
+        let mut new_sonar = BatSonar::new(content, result_type);
         new_sonar.scan_content_to_get_results();
         new_sonar
     }
@@ -61,11 +59,10 @@ impl BatSonar {
     ) -> Self {
         let content = fs::read_to_string(path).unwrap();
 
-        let mut new_sonar = BatSonar::new(&content, result_type.clone());
+        let mut new_sonar = BatSonar::new(&content, result_type);
 
         if let Some(starting_content) = starting_line_content {
             let start_line_index = content
-                .clone()
                 .lines()
                 .position(|line| line.contains(starting_content))
                 .unwrap();
@@ -99,7 +96,7 @@ impl BatSonar {
         for (line_index, line) in content_lines.enumerate() {
             if self.check_is_opening(line) {
                 if self.result_type.test_last_char_is_semicolon() {
-                    let last_line_is_semicolon = line.chars().last().unwrap() == ';';
+                    let last_line_is_semicolon = line.ends_with(';');
                     if last_line_is_semicolon {
                         continue;
                     }
@@ -117,7 +114,7 @@ impl BatSonar {
                     "",
                     &result_content,
                     trailing_whitespaces,
-                    self.result_type.clone(),
+                    self.result_type,
                     start_line_index,
                     end_line_index,
                     true,
@@ -128,7 +125,7 @@ impl BatSonar {
                 // The context account filter duplicates the accouns starting with #[account(
                 if (self.result_type == SonarResultType::ContextAccountsAll
                     || self.result_type == SonarResultType::ContextAccountsNoValidation)
-                    && self.results.len() > 0
+                    && !self.results.is_empty()
                 {
                     let last_result = self.results.clone();
                     let last_result = last_result.last().unwrap();
@@ -185,7 +182,7 @@ impl BatSonar {
                 .any(|candidate| line.1 == candidate)
                 && line.0 > start_index
         });
-        return closing_index;
+        closing_index
     }
 
     fn starting_line_contains_closure_filter(&self, starting_line: &str) -> bool {
@@ -227,7 +224,7 @@ impl BatSonar {
         // Check if open is the preffix of the line
         for filter in open_filters {
             let suffix_strip = line.trim().strip_prefix(filter);
-            if let Some(_) = suffix_strip {
+            if suffix_strip.is_some() {
                 return true;
             }
         }
@@ -256,7 +253,7 @@ impl SonarResult {
         end_line_index: usize,
         is_public: bool,
     ) -> Self {
-        let new_result = SonarResult {
+        SonarResult {
             name: name.to_string(),
             content: content.to_string(),
             trailing_whitespaces,
@@ -264,8 +261,7 @@ impl SonarResult {
             start_line_index,
             end_line_index,
             is_public,
-        };
-        new_result
+        }
     }
 
     pub fn is_valid_result(&self) -> bool {
@@ -301,17 +297,17 @@ impl SonarResult {
             SonarResultType::Function | SonarResultType::Struct | SonarResultType::Module => {
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
-                let mut first_line_tokenized = first_line.trim().split(" ");
+                let mut first_line_tokenized = first_line.trim().split(' ');
                 let is_public = first_line_tokenized.next().unwrap().contains("pub");
                 if is_public {
                     first_line_tokenized.next().unwrap();
                 }
                 let name_candidate = first_line_tokenized.next().unwrap();
                 let name = name_candidate
-                    .split("<")
+                    .split('<')
                     .next()
                     .unwrap()
-                    .split("(")
+                    .split('(')
                     .next()
                     .unwrap();
                 self.name = name.to_string();
@@ -320,20 +316,20 @@ impl SonarResult {
             SonarResultType::Trait => {
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
-                let mut first_line_tokenized = first_line.trim().split(" ");
+                let mut first_line_tokenized = first_line.trim().split(' ');
                 let is_public = first_line_tokenized.next().unwrap().contains("pub");
                 if is_public {
                     first_line_tokenized.next().unwrap();
                 }
                 let name_candidate = first_line_tokenized.next().unwrap();
                 let name = name_candidate
-                    .split("<")
+                    .split('<')
                     .next()
                     .unwrap()
-                    .split(":")
+                    .split(':')
                     .next()
                     .unwrap()
-                    .split("{")
+                    .split('{')
                     .next()
                     .unwrap();
                 self.name = name.to_string();
@@ -360,10 +356,10 @@ impl SonarResult {
             SonarResultType::ContextAccountsAll
             | SonarResultType::ContextAccountsOnlyValidation => {
                 let content = self.content.clone();
-                let mut last_line = content.lines().last().unwrap().trim().split(" ");
+                let mut last_line = content.lines().last().unwrap().trim().split(' ');
                 last_line.next().unwrap();
-                let name = last_line.next().unwrap().replace(":", "");
-                self.name = name.to_string();
+                let name = last_line.next().unwrap().replace(':', "");
+                self.name = name;
             }
             _ => {}
         }
@@ -372,13 +368,13 @@ impl SonarResult {
     fn format_ca_only_validations(&mut self) {
         let content = self.content.clone();
         // single line, only filter the first line
-        if content.clone().lines().count() == 2 {
+        if content.lines().count() == 2 {
             let first_line = content.lines().next().unwrap();
             let first_line_formatted = first_line
                 .trim_start()
                 .trim_start_matches("#[account(")
                 .trim_end_matches(")]");
-            let first_line_tokenized = first_line_formatted.split(",");
+            let first_line_tokenized = first_line_formatted.split(',');
             let first_line_filtered = first_line_tokenized
                 .filter(|token| {
                     self.result_type
@@ -434,13 +430,13 @@ impl SonarResult {
             return;
         }
         // single line, only filter the first line
-        if content.clone().lines().count() == 2 {
+        if content.lines().count() == 2 {
             let first_line = content.lines().next().unwrap();
             let first_line_formatted = first_line
                 .trim_start()
                 .trim_start_matches("#[account(")
                 .trim_end_matches(")]");
-            let first_line_tokenized = first_line_formatted.split(",");
+            let first_line_tokenized = first_line_formatted.split(',');
             let first_line_filtered = first_line_tokenized
                 .filter(|token| {
                     !self
@@ -451,7 +447,7 @@ impl SonarResult {
                 })
                 .collect::<Vec<_>>();
             let last_line = content.lines().last().unwrap();
-            if first_line_filtered.len() == 0 {
+            if first_line_filtered.is_empty() {
                 self.content = last_line.to_string();
             } else {
                 let result_filtered = first_line_filtered.join(",");
@@ -480,14 +476,14 @@ impl SonarResult {
                 .collect::<Vec<String>>();
             let first_line = content.lines().next().unwrap();
             let last_line = content.lines().last().unwrap();
-            if filtered_lines.len() == 0 {
+            if filtered_lines.is_empty() {
                 self.content = last_line.to_string();
             } else if filtered_lines.len() == 1 {
                 // only 1 line, convert multiline to single line
                 let formatted_content = format!(
                     "{}{})]\n{}",
-                    first_line.trim_end_matches("\n"),
-                    filtered_lines[0].trim().trim_end_matches("\n"),
+                    first_line.trim_end_matches('\n'),
+                    filtered_lines[0].trim().trim_end_matches('\n'),
                     last_line
                 );
                 self.content = formatted_content
@@ -615,12 +611,11 @@ impl SonarFilter {
 
 #[test]
 fn test_get_functions() {
-    let expected_second_function = format!(
-        "        pub fn create_game_2<'info>(
-        ) -> Result<()> {{
+    let expected_second_function = "        pub fn create_game_2<'info>(
+        ) -> Result<()> {
             handle_create_game_2(&ctx, key_index, free_create)
-        }}"
-    );
+        }"
+    .to_string();
     let expected_first_function = format!(
         "{}\n{}\n{}\n{}",
         "       pub fn create_game_1<'info>() -> Result<()> {",
@@ -628,13 +623,12 @@ fn test_get_functions() {
         "           handle_create_game_1(&ctx, key_index, free_create)",
         "       }"
     );
-    let expected_third_function = format!(
-        "        pub fn create_fleet(
+    let expected_third_function = "        pub fn create_fleet(
             sector: [i64; 2],
-        ) -> Result<()> {{
+        ) -> Result<()> {
             handle_create_fleet(&ctx, key_index, stats.into(), sector)
-        }}"
-    );
+        }"
+    .to_string();
 
     let content = format!("{}\n\n{}", expected_first_function, expected_third_function);
     let mut bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Function);
@@ -652,11 +646,10 @@ fn test_get_functions() {
 
 #[test]
 fn test_get_structs() {
-    let expected_first_struct = format!(
-        "            pub struct StructName {{
+    let expected_first_struct = "            pub struct StructName {
                 handle_create_game_2(&ctx, key_index, free_create)
-            }}"
-    );
+            }"
+    .to_string();
     let expected_first_function = format!(
         "{}\n{}\n{}\n{}",
         "       pub fn create_game_1<'info>() -> Result<()> {",
@@ -664,13 +657,12 @@ fn test_get_structs() {
         "           handle_create_game_1(&ctx, key_index, free_create)",
         "       }"
     );
-    let expected_second_struct = format!(
-        "        struct create_fleet {{
+    let expected_second_struct = "        struct create_fleet {
             sector: [i64; 2],
-        ) -> Result<()> {{
+        ) -> Result<()> {
             handle_create_fleet(&ctx, key_index, stats.into(), sector)
-        }}"
-    );
+        }"
+    .to_string();
 
     let content = format!("{}\n\n{}", expected_first_function, expected_second_struct);
     let mut bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Struct);
@@ -684,11 +676,10 @@ fn test_get_structs() {
 }
 #[test]
 fn test_get_modules() {
-    let expected_first_mod = format!(
-        "            pub mod modName {{
+    let expected_first_mod = "            pub mod modName {
                 handle_create_game_2(&ctx, key_index, free_create)
-            }}"
-    );
+            }"
+    .to_string();
     let expected_first_function = format!(
         "{}\n{}\n{}\n{}",
         "       pub fn create_game_1<'info>() -> Result<()> {",
@@ -696,13 +687,12 @@ fn test_get_modules() {
         "           handle_create_game_1(&ctx, key_index, free_create)",
         "       }"
     );
-    let expected_second_mod = format!(
-        "        mod create_fleet {{
+    let expected_second_mod = "        mod create_fleet {
             sector: [i64; 2],
-        ) -> Result<()> {{
+        ) -> Result<()> {
             handle_create_fleet(&ctx, key_index, stats.into(), sector)
-        }}"
-    );
+        }"
+    .to_string();
 
     let content = format!("{}\n\n{}", expected_first_function, expected_second_mod);
     let bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Module);
@@ -718,8 +708,8 @@ fn test_get_modules() {
 fn test_get_function_body() {
     // let function_signature = "pub fn cancel_impulse<'info>(ctx: Context<'_, '_, '_, 'info, CancelImpulse<'info>>, key_index: Option<u16>)";
     let function = "pub fn cancel_impulse<'info>()->Result<String, String> { body }";
-    let body = function.split("{").collect::<Vec<_>>()[1]
-        .split("}")
+    let body = function.split('{').collect::<Vec<_>>()[1]
+        .split('}')
         .next()
         .unwrap();
     println!("body {:#?}", body)

@@ -1,22 +1,17 @@
-use std::cell::{RefCell, RefMut};
-use std::fs::{self};
-
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::rc::Rc;
-use std::str::from_utf8;
+
 use std::string::String;
 
 use colored::Colorize;
 
-use crate::batbelt::command_line::{execute_command, CodeEditor};
+use crate::batbelt;
 use crate::batbelt::miro::frame::{
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::commands::CommandError;
 use crate::config::{BatAuditorConfig, BatConfig};
-use crate::{batbelt, config};
 
 use crate::batbelt::git::{GitAction, GitCommit};
 use crate::batbelt::miro::frame::MiroFrame;
@@ -26,7 +21,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::TemplateGenerator;
-use crate::batbelt::{BatEnumerator, ShareableData};
+use crate::batbelt::ShareableData;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
@@ -185,7 +180,7 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
         if !frame_already_deployed {
             println!("Creating frame in Miro for {}", entrypoint_name.green());
             let mut miro_frame =
-                MiroFrame::new(&entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
+                MiroFrame::new(entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
             miro_frame.deploy().await.change_context(CommandError)?;
             let x_modifier = entrypoint_index as i64 % MIRO_BOARD_COLUMNS;
             let y_modifier = entrypoint_index as i64 / MIRO_BOARD_COLUMNS;

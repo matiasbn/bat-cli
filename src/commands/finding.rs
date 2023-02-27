@@ -6,15 +6,12 @@ use crate::batbelt::{
     path::{BatFile, BatFolder},
 };
 use colored::Colorize;
-use console::Term;
-use dialoguer::{console, theme::ColorfulTheme, Select};
+
 use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
 use std::{
-    fs::{self, File},
+    fs::File,
     io::{self, BufRead},
-    path::Path,
-    process::Command,
     string::String,
 };
 
@@ -183,11 +180,8 @@ fn prepare_all() -> Result<(), CommandError> {
                         )));
                     }
                 };
-                let finding_file_name = format!(
-                    "{}-{}",
-                    severity.to_string(),
-                    finding_name.replace(".md", "").as_str()
-                );
+                let finding_file_name =
+                    format!("{}-{}", severity, finding_name.replace(".md", "").as_str());
                 // let to_path = utils::path::get_auditor_findings_to_review_path(Some())?;
                 let to_path = BatFile::FindingToReview {
                     file_name: finding_file_name,
@@ -246,7 +240,7 @@ fn validate_finished_finding_file(file_name: String) -> Result<(), CommandError>
             .change_context(CommandError)?;
         return Err(Report::new(CommandError).attach_printable(format!(
             "Please complete the Description section of the {} file",
-            file_name.clone()
+            file_name
         )));
     }
     if file_data.contains("Fill the impact") {
@@ -255,7 +249,7 @@ fn validate_finished_finding_file(file_name: String) -> Result<(), CommandError>
             .change_context(CommandError)?;
         return Err(Report::new(CommandError).attach_printable(format!(
             "Please complete the Impact section of the {} file",
-            file_name.clone()
+            file_name
         )));
     }
     if file_data.contains("Add recommendations") {
@@ -264,7 +258,7 @@ fn validate_finished_finding_file(file_name: String) -> Result<(), CommandError>
             .change_context(CommandError)?;
         return Err(Report::new(CommandError).attach_printable(format!(
             "Please complete the Recommendations section of the {} file",
-            file_name.clone()
+            file_name
         )));
     }
     Ok(())

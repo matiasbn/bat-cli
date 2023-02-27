@@ -76,14 +76,14 @@ impl MiroStickyNote {
         api_response: reqwest::Response,
     ) -> Result<(), MiroError> {
         let response_string = api_response.text().await.unwrap();
-        let value: Value = serde_json::from_str(&&response_string.as_str()).unwrap();
+        let value: Value = serde_json::from_str(response_string.as_str()).unwrap();
         self.parse_value(value)?;
         Ok(())
     }
 
     fn parse_value(&mut self, value: Value) -> Result<(), MiroError> {
-        self.item_id = value["id"].to_string().replace("\"", "");
-        self.content = value["data"]["content"].to_string().replace("\"", "");
+        self.item_id = value["id"].to_string().replace('\"', "");
+        self.content = value["data"]["content"].to_string().replace('\"', "");
         let _height = value["geometry"]["height"].as_f64().ok_or(MiroError)? as u64;
         self.width = value["geometry"]["width"]
             .as_f64()

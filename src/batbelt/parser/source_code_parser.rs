@@ -152,7 +152,7 @@ impl SourceCodeParser {
         let content_vec = content_lines
             .filter_map(|line| {
                 if options.filter_comments {
-                    let starts_with_comment = line.trim().split(" ").next().unwrap().contains("//");
+                    let starts_with_comment = line.trim().split(' ').next().unwrap().contains("//");
                     if starts_with_comment {
                         return Some("".to_string());
                     }
@@ -162,7 +162,7 @@ impl SourceCodeParser {
                         return Some(line.split("//").next().unwrap().to_string());
                     }
                 }
-                return Some(line.to_string());
+                Some(line.to_string())
             })
             .filter_map(|line| {
                 if let Some(filters) = options.filters.clone() {
@@ -187,7 +187,7 @@ impl SourceCodeParser {
             let path = self.path.split(&splitter).last().unwrap();
             log::debug!("splitted_path_lasth: {}", path);
             let path_to_include = format!("{}{}", splitter, path)
-                .trim_start_matches("/")
+                .trim_start_matches('/')
                 .to_string();
             log::debug!("path_to_include: {}", path_to_include);
             content = format!("// {}\n\n{}", path_to_include, content);
@@ -249,7 +249,7 @@ impl SourceCodeParser {
             .unwrap();
             if !filters_to_include.is_empty() {
                 let filters: Vec<String> = filters_to_include
-                    .split(",")
+                    .split(',')
                     .map(|filter| filter.trim().to_string())
                     .collect();
                 Some(filters)
@@ -259,15 +259,15 @@ impl SourceCodeParser {
         } else {
             None
         };
-        let screenshot_options = SourceCodeScreenshotOptions {
+
+        SourceCodeScreenshotOptions {
             include_path,
             offset_to_start_line,
             filter_comments,
             show_line_number,
             filters,
             font_size: Some(20),
-        };
-        screenshot_options
+        }
     }
 
     pub async fn deploy_screenshot_to_miro_frame(
@@ -331,7 +331,7 @@ fn test_filter_comments() {
     let filtered_lines = test_text_lines
         .filter_map(|line| {
             if !line.is_empty() {
-                let starts_with_comment = line.trim().split(" ").next().unwrap().contains("//");
+                let starts_with_comment = line.trim().split(' ').next().unwrap().contains("//");
                 if starts_with_comment {
                     return None;
                 }
@@ -341,7 +341,7 @@ fn test_filter_comments() {
                     return Some(line.split("//").next().unwrap());
                 }
             }
-            return Some(line);
+            Some(line)
         })
         .collect::<Vec<_>>()
         .join("\n");

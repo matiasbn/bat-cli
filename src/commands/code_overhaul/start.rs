@@ -1,8 +1,7 @@
 use error_stack::{Report, Result, ResultExt};
 
-use crate::batbelt;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::command_line::{execute_command, CodeEditor};
+use crate::batbelt::command_line::CodeEditor;
 use crate::batbelt::git::GitCommit;
 
 use crate::batbelt::path::{BatFile, BatFolder};

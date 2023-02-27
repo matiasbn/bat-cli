@@ -42,7 +42,7 @@ fn co_counter() -> error_stack::Result<(usize, usize, usize), CommandError> {
 }
 
 pub fn open_co() -> Result<(), CommandError> {
-    let bat_config = BatConfig::get_config().change_context(CommandError)?;
+    let _bat_config = BatConfig::get_config().change_context(CommandError)?;
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     // list to start
     if bat_auditor_config.use_code_editor {
@@ -88,8 +88,8 @@ pub fn open_co() -> Result<(), CommandError> {
                 .change_context(CommandError)?;
             if ep_parser.handler.is_some() {
                 let handler_metadata = ep_parser.handler.unwrap();
-                let instruction_file_path = handler_metadata.path;
-                let start_line_index = handler_metadata.start_line_index;
+                let _instruction_file_path = handler_metadata.path;
+                let _start_line_index = handler_metadata.start_line_index;
                 // BatAuditorConfig::get_config()
                 //     .change_context(CommandError)?
                 //     .code_editor::;

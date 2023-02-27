@@ -2,21 +2,16 @@ use std::error::Error;
 use std::fmt;
 
 use std::cell::RefCell;
-use std::io::Read;
+
 use std::rc::Rc;
 use std::str::from_utf8;
 use std::{process::Command, str};
-
-use colored::Colorize;
 
 use super::path::BatFolder;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::BatAuditorConfig;
-use crate::{
-    batbelt::{self, path::BatFile},
-    config::BatConfig,
-};
+use crate::{batbelt::path::BatFile, config::BatConfig};
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 
@@ -64,7 +59,7 @@ impl GitAction {
                 .change_context(GitError)?;
             }
             GitAction::CreateBranch { branch_name } => {
-                execute_command("git", &["checkout", "-b", &branch_name], false)
+                execute_command("git", &["checkout", "-b", branch_name], false)
                     .change_context(GitError)?;
             }
             GitAction::AddAll => {
@@ -89,7 +84,7 @@ impl GitAction {
                 );
                 *is_initialized.borrow_mut() = is_initialized_result;
             }
-            GitAction::CheckBranchDontExist { branch_name } => {}
+            GitAction::CheckBranchDontExist { branch_name: _ } => {}
         }
         Ok(())
     }
@@ -137,7 +132,7 @@ pub fn check_files_not_commited() -> Result<bool, String> {
 
 pub fn get_local_branches() -> Result<String, GitError> {
     let branches_list = Command::new("git")
-        .args(&["branch", "--list"])
+        .args(["branch", "--list"])
         .output()
         .into_report()
         .change_context(GitError)?;
@@ -149,7 +144,7 @@ pub fn get_local_branches() -> Result<String, GitError> {
 
 pub fn get_remote_branches() -> Result<String, GitError> {
     let branches_list = Command::new("git")
-        .args(&["branch", "-r", "--list"])
+        .args(["branch", "-r", "--list"])
         .output()
         .into_report()
         .change_context(GitError)?;
@@ -343,10 +338,10 @@ impl GitCommit {
         let commit_string = match self {
             GitCommit::Init => "initial commit".to_string(),
             GitCommit::InitAuditor => {
-                (format!(
+                format!(
                     "co: project {} initialized for {}",
                     bat_config.project_name, bat_auditor_config.auditor_name
-                ))
+                )
             }
             GitCommit::StartCO { entrypoint_name } => {
                 format!("co: {} started", entrypoint_name)

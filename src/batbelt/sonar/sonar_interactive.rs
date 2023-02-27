@@ -1,4 +1,3 @@
-use crate::batbelt;
 use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
@@ -6,14 +5,13 @@ use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::sonar::{BatSonarError, SonarResultType};
-use crate::batbelt::{BatEnumerator, ShareableData};
-use crate::commands::CommandError;
+use crate::batbelt::BatEnumerator;
+
 use colored::Colorize;
 use dialoguer::console::{style, Emoji};
 use error_stack::{Result, ResultExt};
 use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
-use inflector::Inflector;
-use rand::Rng;
+
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -105,9 +103,9 @@ impl BatSonarInteractive {
                 let mut functions_result = vec![];
                 let mut traits_result = vec![];
                 let program_dir_clone = program_dir_entries.clone();
-                let metadata_type = metadata_types_vec[i].clone();
+                let metadata_type = metadata_types_vec[i];
                 let metadata_type_color = metadata_types_colored[i].clone();
-                let pb = m.add(ProgressBar::new(program_dir_clone.clone().len() as u64));
+                let pb = m.add(ProgressBar::new(program_dir_clone.len() as u64));
                 let mut total = 0;
                 pb.set_style(spinner_style.clone());
                 thread::spawn(move || {
@@ -186,7 +184,7 @@ impl BatSonarInteractive {
 #[cfg(test)]
 mod sonar_interactive_test {
     use super::*;
-    use crate::batbelt::sonar::{BatSonar, SonarResultType};
+
     use dialoguer::console::{style, Emoji, Style, Term};
     use indicatif::{
         HumanDuration, MultiProgress, ProgressBar, ProgressIterator, ProgressState, ProgressStyle,

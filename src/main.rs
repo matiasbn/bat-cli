@@ -3,7 +3,7 @@ extern crate log;
 
 extern crate confy;
 
-use batbelt::git::{check_correct_branch, GitCommit};
+use batbelt::git::GitCommit;
 use clap::{Parser, Subcommand};
 
 use crate::batbelt::metadata::BatMetadata;
@@ -11,16 +11,15 @@ use crate::batbelt::path::BatFile;
 use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::CommandResult;
-use colored::Colorize;
+
 use commands::CommandError;
+use error_stack::ResultExt;
 use error_stack::{FutureExt, IntoReport, Result};
-use error_stack::{Report, ResultExt};
 use log::LevelFilter;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
-use std::process;
 
 mod batbelt;
 mod commands;
@@ -177,7 +176,10 @@ fn init_log() -> CommandResult<()> {
 async fn main() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
     match cli.command {
-        Commands::Package(..) | Commands::Create => Ok(env_logger::init()),
+        Commands::Package(..) | Commands::Create => {
+            env_logger::init();
+            Ok(())
+        }
         _ => init_log(),
     }?;
 
@@ -241,7 +243,7 @@ async fn main() -> CommandResult<()> {
             log::info!("{} script executed correctly", cli.command.to_string())
         }
         Err(error) => {
-            eprintln!("{} script finished with error", cli.command.to_string());
+            eprintln!("{} script finished with error", cli.command);
             log::error!("error output:\n {:#?}", error)
         }
     }

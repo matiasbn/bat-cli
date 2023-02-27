@@ -1,15 +1,12 @@
 use colored::Colorize;
 
-use crate::batbelt;
-use crate::batbelt::git::{check_correct_branch, GitCommit};
+use crate::batbelt::git::GitCommit;
 
 use crate::batbelt::path::BatFolder;
 use crate::commands::CommandError;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use error_stack::{Report, Result, ResultExt};
-use std::fs;
-use std::string::String;
 
 pub fn update_co_file() -> Result<(), CommandError> {
     println!("Select the code-overhaul file to finish:");

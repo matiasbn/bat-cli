@@ -100,12 +100,7 @@ pub fn multiselect<T>(
 where
     T: ToString + Clone,
 {
-    Ok(BatDialoguer::multiselect(
-        prompt_text.to_string(),
-        items,
-        default,
-        false,
-    )?)
+    BatDialoguer::multiselect(prompt_text.to_string(), items, default, false)
 }
 
 pub fn select<T>(
@@ -116,17 +111,13 @@ pub fn select<T>(
 where
     T: ToString + Clone,
 {
-    Ok(BatDialoguer::select(
-        prompt_text.to_string(),
-        items,
-        default,
-    )?)
+    BatDialoguer::select(prompt_text.to_string(), items, default)
 }
 
 pub fn select_yes_or_no(prompt_text: &str) -> Result<bool, CommandError> {
-    Ok(BatDialoguer::select_yes_or_no(prompt_text.to_string())?)
+    BatDialoguer::select_yes_or_no(prompt_text.to_string())
 }
 
 pub fn input(prompt_text: &str) -> Result<String, CommandError> {
-    Ok(BatDialoguer::input(prompt_text.to_string())?)
+    BatDialoguer::input(prompt_text.to_string())
 }

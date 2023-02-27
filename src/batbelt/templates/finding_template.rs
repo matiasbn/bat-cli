@@ -1,8 +1,7 @@
 use crate::batbelt::path::BatFile;
 use crate::batbelt::templates::TemplateError;
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use inflector::Inflector;
-use std::fs;
 
 pub struct FindingTemplate;
 
@@ -70,7 +69,7 @@ Add recommendations
 "#,
             finding_title
         );
-        content.to_string()
+        content
     }
     pub fn get_informational_content(finding_title: &str) -> String {
         let content = format!(
@@ -109,7 +108,7 @@ Add some recomendations
 "#,
             finding_title
         );
-        content.to_string()
+        content
     }
 }
 
