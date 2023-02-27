@@ -144,8 +144,8 @@ mod command_line_tester {
     #[test]
     fn test_executed_piped() {
         env_logger::init();
-        let ls_result = execute_child_process("cargo", &["clean"]).unwrap();
-        let ls_result = execute_child_process("cargo", &["install"]).unwrap();
+        let ls_result = execute_child_process("gflfs", &["2.0.0"]).unwrap();
+        // let ls_result = execute_child_process("cargo", &["install"]).unwrap();
         println!("ls_rrsuylt {}", ls_result)
         // let ls_result = execute_piped_process("ls", &["-la"], true).unwrap();
     }

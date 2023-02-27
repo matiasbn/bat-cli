@@ -1,4 +1,4 @@
-use crate::batbelt::command_line::execute_command;
+use crate::batbelt::command_line::{execute_child_process, execute_command};
 use crate::batbelt::{self, git::check_files_not_committed};
 use error_stack::{Result, ResultExt};
 use std::fs;
@@ -28,8 +28,8 @@ pub fn release() -> PackageResult<()> {
     tag(&version)?;
     release_finish(&version)?;
     push_origin_all()?;
-    publish()?;
-    install()?;
+    // publish()?;
+    // install()?;
     Ok(())
 }
 
@@ -62,13 +62,13 @@ fn release_finish(version: &str) -> PackageResult<()> {
 
 fn publish() -> PackageResult<()> {
     println!("Publishing a new bat-cli version ");
-    execute_command("cargo", &["publish"], true).change_context(PackageError)?;
+    execute_child_process("cargo", &["publish"]).change_context(PackageError)?;
     Ok(())
 }
 
 fn install() -> PackageResult<()> {
     println!("Installing the published version");
-    execute_command("cargo", &["install", "bat-cli"], true).change_context(PackageError)?;
+    execute_child_process("cargo", &["install", "bat-cli"]).change_context(PackageError)?;
     Ok(())
 }
 
