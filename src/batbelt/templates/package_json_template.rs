@@ -46,16 +46,21 @@ impl PackageJsonTemplate {
         serde_json::to_string_pretty(&package_json).unwrap()
     }
 }
+#[cfg(test)]
+mod template_test {
+    use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+    use std::fs;
 
-#[test]
-fn test_get_package_json_content() {
-    let json_content = PackageJsonTemplate::get_package_json_content();
-    println!("{}", json_content);
-}
+    #[test]
+    fn test_get_package_json_content() {
+        let json_content = PackageJsonTemplate::get_package_json_content();
+        println!("{}", json_content);
+    }
 
-#[test]
-fn test_update_package_json_content() {
-    let json_content = PackageJsonTemplate::get_package_json_content();
-    println!("{}", json_content);
-    fs::write("./package_test.json", json_content).unwrap();
+    #[test]
+    fn test_update_package_json_content() {
+        let json_content = PackageJsonTemplate::get_package_json_content();
+        println!("{}", json_content);
+        fs::write("./package_test.json", json_content).unwrap();
+    }
 }

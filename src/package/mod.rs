@@ -1,5 +1,5 @@
 use crate::batbelt::command_line::execute_command;
-use crate::batbelt::{self, git::check_files_not_commited};
+use crate::batbelt::{self, git::check_files_not_committed};
 use error_stack::{Result, ResultExt};
 use std::fs;
 
@@ -16,8 +16,10 @@ impl fmt::Display for PackageError {
 
 impl Error for PackageError {}
 
-pub fn release() -> Result<(), PackageError> {
-    assert!(check_files_not_commited().unwrap());
+pub type PackageResult<T> = Result<T, PackageError>;
+
+pub fn release() -> PackageResult<()> {
+    check_files_not_committed().change_context(PackageError)?;
     println!("Starting the release process");
     let version = bump()?;
     release_start(&version)?;
@@ -25,38 +27,48 @@ pub fn release() -> Result<(), PackageError> {
     tag(&version)?;
     release_finish(&version)?;
     push_origin_all()?;
+    publish()?;
+    install()?;
     Ok(())
 }
 
-pub fn format() -> Result<(), PackageError> {
+pub fn format() -> PackageResult<()> {
+    check_files_not_committed().change_context(PackageError)?;
     println!("Executing cargo clippy --fix");
-    execute_command("cargo", &["clippy", "--fix"], false).change_context(PackageError)?;
+    execute_command("cargo", &["clippy", "--fix"], true).change_context(PackageError)?;
     println!("Executing cargo fix");
-    execute_command("cargo", &["fix", "--all"], false).change_context(PackageError)?;
+    execute_command("cargo", &["fix", "--all"], true).change_context(PackageError)?;
     println!("Executing cargo fmt --all");
-    execute_command("cargo", &["fmt", "--all"], false).change_context(PackageError)?;
+    execute_command("cargo", &["fmt", "--all"], true).change_context(PackageError)?;
     println!("Commiting format changes");
     create_commit(PackageCommit::Format, None)?;
     Ok(())
 }
 
-fn release_start(version: &str) -> Result<(), PackageError> {
-    assert!(check_files_not_commited().unwrap());
+fn release_start(version: &str) -> PackageResult<()> {
     println!("Starting release for version {}", version);
     execute_command("git", &["flow", "release", "start", version], false)
         .change_context(PackageError)?;
     Ok(())
 }
 
-fn release_finish(version: &str) -> Result<(), PackageError> {
-    assert!(check_files_not_commited().unwrap());
+fn publish() -> PackageResult<()> {
+    execute_command("cargo", &["publish"], true).change_context(PackageError)?;
+    Ok(())
+}
+
+fn install() -> PackageResult<()> {
+    execute_command("cargo", &["install", "bat-cli"], true).change_context(PackageError)?;
+    Ok(())
+}
+
+fn release_finish(version: &str) -> PackageResult<()> {
     println!("Finishing release for version {}", version);
     execute_command("git", &["flow", "release", "finish"], false).change_context(PackageError)?;
     Ok(())
 }
 
-fn tag(version: &str) -> Result<(), PackageError> {
-    assert!(check_files_not_commited().unwrap());
+fn tag(version: &str) -> PackageResult<()> {
     println!("Creating tag for version {}", version);
     execute_command("git", &["tag", version], false).change_context(PackageError)?;
     Ok(())
@@ -117,7 +129,7 @@ fn bump() -> Result<String, PackageError> {
     Ok(new_version)
 }
 
-fn push_origin_all() -> Result<(), PackageError> {
+fn push_origin_all() -> PackageResult<()> {
     execute_command("git", &["push", "origin", "--all"], false).change_context(PackageError)?;
     execute_command("git", &["push", "origin", "--tags"], false).change_context(PackageError)?;
     Ok(())
@@ -131,7 +143,7 @@ enum PackageCommit {
 fn create_commit(
     commit_type: PackageCommit,
     commit_options: Option<Vec<&str>>,
-) -> Result<(), PackageError> {
+) -> PackageResult<()> {
     match commit_type {
         PackageCommit::CommitCargo => {
             let version = commit_options.unwrap()[0];

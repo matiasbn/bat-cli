@@ -320,7 +320,7 @@ fn test_get_account_attribute_info() {
     assert!(result_8.is_mut, "incorrect is_mut");
     assert!(!result_8.is_pda, "incorrect is_pda");
     assert!(!result_8.is_init, "incorrect is_init");
-    assert!(!result_8.seeds.is_some(), "incorrect seeds Option");
+    assert!(result_8.seeds.is_none(), "incorrect seeds Option");
     if result_8.seeds.is_some() {
         assert_eq!(result_8.seeds.unwrap().len(), 3, "incorrect seeds len");
     }
@@ -331,7 +331,7 @@ fn test_get_account_attribute_info() {
     assert!(result_9.is_mut, "incorrect is_mut");
     assert!(!result_9.is_pda, "incorrect is_pda");
     assert!(result_9.is_init, "incorrect is_init");
-    assert!(!result_9.seeds.is_some(), "incorrect seeds Option");
+    assert!(result_9.seeds.is_none(), "incorrect seeds Option");
     if result_9.seeds.is_some() {
         assert_eq!(result_9.seeds.unwrap().len(), 3, "incorrect seeds len");
     }
@@ -342,7 +342,7 @@ fn test_get_account_attribute_info() {
     assert!(result_10.is_mut, "incorrect is_mut");
     assert!(!result_10.is_pda, "incorrect is_pda");
     assert!(result_10.is_init, "incorrect is_init");
-    assert!(!result_10.seeds.is_some(), "incorrect seeds Option");
+    assert!(result_10.seeds.is_none(), "incorrect seeds Option");
     if result_10.seeds.is_some() {
         assert_eq!(result_10.seeds.unwrap().len(), 3, "incorrect seeds len");
     }
@@ -352,7 +352,7 @@ fn test_get_account_attribute_info() {
     assert!(!result_11.is_mut, "incorrect is_mut");
     assert!(!result_11.is_pda, "incorrect is_pda");
     assert!(!result_11.is_init, "incorrect is_init");
-    assert!(!result_11.seeds.is_some(), "incorrect seeds Option");
+    assert!(result_11.seeds.is_none(), "incorrect seeds Option");
 }
 
 #[test]
