@@ -43,7 +43,7 @@ pub fn open_co() -> Result<(), CommandError> {
     let bat_config = BatConfig::get_config().change_context(CommandError)?;
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     // list to start
-    if bat_auditor_config.editor_integration {
+    if bat_auditor_config.use_code_editor {
         let options = vec!["started".green(), "finished".yellow()];
         let prompt_text = format!(
             "Do you want to open a {} or a {} file?",

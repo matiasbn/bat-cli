@@ -21,9 +21,9 @@ use crate::config::BatAuditorConfig;
 )]
 pub enum CodeEditor {
     #[default]
-    None,
-    VSCode,
     CLion,
+    VSCode,
+    None,
 }
 
 impl CodeEditor {
@@ -42,7 +42,7 @@ impl BatEnumerator for CodeEditor {}
 pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), CommandError> {
     let vs_code_integration = BatAuditorConfig::get_config()
         .change_context(CommandError)?
-        .editor_integration;
+        .use_code_editor;
     if vs_code_integration {
         println!(
             "Opening {} in VS Code",

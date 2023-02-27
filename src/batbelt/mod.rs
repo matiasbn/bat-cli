@@ -19,7 +19,6 @@ pub mod sonar;
 pub mod templates;
 
 pub type ShareableDataType<T> = Rc<RefCell<T>>;
-
 pub struct ShareableData<T>
 where
     T: Sized,
@@ -68,10 +67,15 @@ where
         Self::iter().collect::<Vec<_>>()
     }
 
-    fn get_colored_name(&self) -> ColoredString {
-        let self_name = self.to_string().to_plural();
+    fn get_colored_name(&self, to_plural: bool) -> ColoredString {
+        let self_name = if to_plural {
+            self.to_string().to_plural()
+        } else {
+            self.to_string()
+        };
+
         log::debug!("self_name_for_colorized: {}", self_name);
-        let colorized_vec = Self::get_colorized_type_vec();
+        let colorized_vec = Self::get_colorized_type_vec(to_plural);
         log::debug!("colorized_vec: {:#?}", colorized_vec.clone());
         let self_colorized = colorized_vec
             .into_iter()
@@ -91,20 +95,23 @@ where
         }
     }
 
-    fn get_colorized_type_vec() -> Vec<ColoredString> {
+    fn get_colorized_type_vec(to_plural: bool) -> Vec<ColoredString> {
         let metadata_type_vec = Self::get_metadata_type_vec();
         let metadata_type_colorized = metadata_type_vec
             .iter()
             .enumerate()
             .map(|metadata_type| {
-                Self::colored_from_index(
-                    &(*metadata_type.1)
-                        .to_string()
-                        .to_plural()
-                        .to_sentence_case()
-                        .clone(),
-                    metadata_type.0,
-                )
+                if to_plural {
+                    Self::colored_from_index(
+                        &(*metadata_type.1).to_string().to_plural().clone(),
+                        metadata_type.0,
+                    )
+                } else {
+                    Self::colored_from_index(
+                        &(*metadata_type.1).to_string().clone(),
+                        metadata_type.0,
+                    )
+                }
             })
             .collect::<Vec<_>>();
         metadata_type_colorized

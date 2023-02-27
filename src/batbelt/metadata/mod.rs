@@ -120,7 +120,7 @@ impl BatMetadataType {
     }
     pub fn prompt_metadata_type_selection() -> Result<Self, MetadataError> {
         let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
-        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec();
+        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
         // Choose metadata section selection
         let prompt_text = format!("Please select the {}", "Metadata type".bright_purple());
         let selection =
@@ -335,7 +335,7 @@ where
             Self::metadata_name().blue(),
             "type".blue()
         );
-        let selection = BatDialoguer::select(prompt_text, U::get_colorized_type_vec(), None)
+        let selection = BatDialoguer::select(prompt_text, U::get_colorized_type_vec(true), None)
             .change_context(MetadataError)?;
         let selected_sub_type = U::get_metadata_type_vec()[selection].clone();
         let metadata_vec_filtered = Self::get_filtered_metadata(None, Some(selected_sub_type))
