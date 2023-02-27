@@ -28,8 +28,8 @@ pub fn release() -> PackageResult<()> {
     tag(&version)?;
     release_finish(&version)?;
     push_origin_all()?;
-    // publish()?;
-    // install()?;
+    publish()?;
+    install()?;
     Ok(())
 }
 
