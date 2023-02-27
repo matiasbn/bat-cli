@@ -40,8 +40,12 @@ pub async fn finish_co_file() -> Result<(), CommandError> {
     .get_path(true)
     .change_context(CommandError)?;
     check_code_overhaul_file_completed(started_co_file_path.clone())?;
-    execute_command("mv", &[&started_co_file_path, &finished_co_folder_path])
-        .change_context(CommandError)?;
+    execute_command(
+        "mv",
+        &[&started_co_file_path, &finished_co_folder_path],
+        false,
+    )
+    .change_context(CommandError)?;
     GitCommit::FinishCO {
         entrypoint_name: finished_endpoint.clone(),
     }

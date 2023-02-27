@@ -14,14 +14,14 @@ pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), Com
             "Opening {} in VS Code",
             path_to_file.split("/").last().unwrap()
         );
-        execute_command("code", &["-a", path_to_file]).change_context(CommandError)?;
+        execute_command("code", &["-a", path_to_file], false).change_context(CommandError)?;
     } else {
         println!("Path to file: {:#?}", path_to_file);
     }
     Ok(())
 }
 
-pub fn execute_command(command: &str, args: &[&str]) -> Result<Option<ChildStdout>, CommandError> {
+pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> CommandResult<String> {
     let message = format!(
         "Error spawning a child process for parameters: \n command: {} \n args: {:#?}",
         command, args
@@ -47,21 +47,15 @@ pub fn execute_command(command: &str, args: &[&str]) -> Result<Option<ChildStdou
 
     log::debug!("child_output: \n{:#?}", output.stdout);
 
-    Ok(output.stdout)
-}
-
-pub fn parse_child_output(child_output: Option<ChildStdout>) -> CommandResult<String> {
-    // if child_output.is_none() {
-    //     return Err(Report::new(CommandError).attach_printable("Child output is None"));
-    // }
-
     let message = format!(
         "Error reading output of child process for child_output: \n {:#?}",
-        child_output
+        output.stdout
     );
 
     let mut output_string = String::new();
-    child_output
+
+    output
+        .stdout
         .ok_or(CommandError)
         .into_report()
         .attach_printable(message.clone())?
@@ -70,6 +64,10 @@ pub fn parse_child_output(child_output: Option<ChildStdout>) -> CommandResult<St
         .ok_or(CommandError)
         .into_report()
         .attach_printable(message.clone())?;
+
+    if print_output {
+        println!("{}", output_string);
+    }
 
     Ok(output_string)
 }

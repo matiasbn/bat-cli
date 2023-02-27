@@ -193,7 +193,7 @@ impl BatFile {
     }
 
     pub fn create_empty(&self, canonicalize: bool) -> BatPathResult<()> {
-        execute_command("touch", &[&self.get_path(canonicalize)?])
+        execute_command("touch", &[&self.get_path(canonicalize)?], false)
             .change_context(BatPathError)
             .attach_printable(format!(
                 "Error creating empty file in path:\n {}",
@@ -203,7 +203,7 @@ impl BatFile {
     }
 
     pub fn move_file(&self, destination_path: &str) -> BatPathResult<()> {
-        execute_command("mv", &[&self.get_path(true)?, destination_path])
+        execute_command("mv", &[&self.get_path(true)?, destination_path], false)
             .change_context(BatPathError)
             .attach_printable(format!(
                 "Error moving file :\n{} \nto path:\n {}",

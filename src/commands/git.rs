@@ -37,7 +37,7 @@ impl GitCommand {
         for branch_name in branches_list {
             log::debug!("branch_name: {}", branch_name);
             let message = format!("Merge branch '{}' into develop", branch_name);
-            execute_command("git", &["merge", &branch_name, "-m", &message])
+            execute_command("git", &["merge", &branch_name, "-m", &message], false)
                 .change_context(CommandError)?;
         }
         Ok(())
@@ -79,6 +79,7 @@ impl GitCommand {
             execute_command(
                 "git",
                 &["checkout", selected_branch.trim_start_matches("origin/")],
+                false,
             )
             .change_context(CommandError)?;
         }
@@ -100,7 +101,7 @@ impl GitCommand {
             let selected_branch = &branches_list.clone()[selection];
             println!("Deleting {}", selected_branch.green());
             log::debug!("selected_branch to delete: {}", selected_branch);
-            execute_command("git", &["branch", "-D", selected_branch])
+            execute_command("git", &["branch", "-D", selected_branch], false)
                 .change_context(CommandError)?;
         }
         Ok(())
@@ -158,7 +159,7 @@ impl GitCommand {
     }
 
     fn checkout_branch(&self, branch_name: &str) -> Result<(), CommandError> {
-        execute_command("git", &["checkout", branch_name]).change_context(CommandError)?;
+        execute_command("git", &["checkout", branch_name], false).change_context(CommandError)?;
         Ok(())
     }
 }

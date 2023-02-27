@@ -17,7 +17,7 @@ pub fn create_project() -> Result<(), CommandError> {
     let bat_config = create_bat_config_file().change_context(CommandError)?;
     println!("Creating {:#?} project", bat_config);
     TemplateGenerator::create_project().change_context(CommandError)?;
-    execute_command("mv", &["Bat.toml", &bat_config.project_name])?;
+    execute_command("mv", &["Bat.toml", &bat_config.project_name], false)?;
 
     println!("Project {} succesfully created", bat_config.project_name);
     Ok(())

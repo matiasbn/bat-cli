@@ -143,7 +143,7 @@ audit_result/02_findings_result.md
             .collect::<Result<Vec<_>, MetadataError>>()
             .change_context(TemplateError)?;
         for metadata_path in metadata_types_path {
-            execute_command("touch", &[&metadata_path]).change_context(TemplateError)?;
+            execute_command("touch", &[&metadata_path], false).change_context(TemplateError)?;
         }
         Ok(())
     }
@@ -182,7 +182,7 @@ audit_result/02_findings_result.md
 
     fn create_gitkeep(path: &str) -> Result<(), TemplateError> {
         let gitkeep_path = format!("{}/.gitkeep", path);
-        execute_command("touch", &[&gitkeep_path]).change_context(TemplateError)?;
+        execute_command("touch", &[&gitkeep_path], false).change_context(TemplateError)?;
         Ok(())
     }
 

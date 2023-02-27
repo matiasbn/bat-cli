@@ -10,7 +10,7 @@ use std::{process::Command, str};
 use colored::Colorize;
 
 use super::path::BatFolder;
-use crate::batbelt::command_line::{execute_command, parse_child_output};
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::BatAuditorConfig;
 use crate::{
@@ -49,7 +49,7 @@ impl GitAction {
         let bat_config = BatConfig::get_config().change_context(GitError)?;
         match self {
             GitAction::Init => {
-                execute_command("git", &["init"]).change_context(GitError)?;
+                execute_command("git", &["init"], false).change_context(GitError)?;
             }
             GitAction::RemoteAddProjectRepo => {
                 execute_command(
@@ -60,42 +60,36 @@ impl GitAction {
                         "origin",
                         &bat_config.project_repository_url,
                     ],
+                    false,
                 )
                 .change_context(GitError)?;
             }
             GitAction::CreateBranch { branch_name } => {
-                execute_command("git", &["checkout", "-b", &branch_name])
+                execute_command("git", &["checkout", "-b", &branch_name], false)
                     .change_context(GitError)?;
             }
             GitAction::AddAll => {
-                execute_command("git", &["add", "-A"]).change_context(GitError)?;
+                execute_command("git", &["add", "-A"], false).change_context(GitError)?;
             }
             GitAction::AddRemote => {}
             GitAction::CheckGitIsInitialized { is_initialized } => {
-                let output_child = execute_command("git", &["rev-parse", "--is-inside-work-tree"])
-                    .change_context(GitError)
-                    .attach_printable(
-                        "Error checking if the project is already on a git project",
-                    )?;
-                let output_exec = parse_child_output(output_child).change_context(GitError);
-                match output_exec {
-                    Ok(output) => {
-                        log::debug!("output {} {}", self.to_string(), output);
+                let output_child =
+                    execute_command("git", &["rev-parse", "--is-inside-work-tree"], false)
+                        .change_context(GitError)
+                        .attach_printable(
+                            "Error checking if the project is already on a git project",
+                        )?;
 
-                        let is_initialized_result = output == "true\n";
+                log::debug!("output {} {}", self.to_string(), output_child);
 
-                        log::debug!(
-                            "is_initialized {} {}",
-                            self.to_string(),
-                            is_initialized_result
-                        );
-                        *is_initialized.borrow_mut() = is_initialized_result;
-                    }
-                    Err(err) => {
-                        log::error!("error checking git init:\n{:#?}", err);
-                        *is_initialized.borrow_mut() = true;
-                    }
-                }
+                let is_initialized_result = output_child == "true\n";
+
+                log::debug!(
+                    "is_initialized {} {}",
+                    self.to_string(),
+                    is_initialized_result
+                );
+                *is_initialized.borrow_mut() = is_initialized_result;
             }
             GitAction::CheckBranchDontExist { branch_name } => {}
         }
@@ -204,9 +198,10 @@ impl GitCommit {
         let commit_message = self.get_commit_message()?;
         let commit_files = self.get_commit_files()?;
         for commit_file in commit_files {
-            execute_command("git", &["add", commit_file.as_str()]).change_context(GitError)?;
+            execute_command("git", &["add", commit_file.as_str()], false)
+                .change_context(GitError)?;
         }
-        execute_command("git", &["commit", "-m", commit_message.as_str()])
+        execute_command("git", &["commit", "-m", commit_message.as_str()], false)
             .change_context(GitError)?;
         Ok(())
     }

@@ -27,6 +27,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::TemplateGenerator;
+use crate::batbelt::ShareableData;
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
@@ -36,12 +37,16 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
     }
     println!("creating project for the next config: ");
     println!("{:#?}", bat_config);
-    let is_initialized = Rc::new(RefCell::new(false));
-    let cloned_is_init = Rc::clone(&is_initialized);
-    GitAction::CheckGitIsInitialized { is_initialized }
-        .execute_action()
-        .change_context(CommandError)?;
-    if !*cloned_is_init.borrow() {
+
+    let shared_initialized = ShareableData::new(false);
+
+    GitAction::CheckGitIsInitialized {
+        is_initialized: shared_initialized.original,
+    }
+    .execute_action()
+    .change_context(CommandError)?;
+
+    if !*shared_initialized.cloned.borrow() {
         println!("Initializing project repository");
         initialize_project_repository()?;
         println!("Project repository successfully initialized");

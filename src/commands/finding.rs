@@ -72,6 +72,7 @@ pub fn accept_all() -> Result<(), CommandError> {
                 to_review_file.path().to_str().unwrap(),
                 &accepted_path.clone(),
             ],
+            false,
         )?;
     }
     GitCommit::AcceptFindings
@@ -197,6 +198,7 @@ fn prepare_all() -> Result<(), CommandError> {
                 execute_command(
                     "mv",
                     &[file.path().as_os_str().to_str().unwrap(), to_path.as_str()],
+                    false,
                 )?;
             }
         }

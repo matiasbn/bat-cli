@@ -109,8 +109,8 @@ pub fn open_co() -> Result<(), CommandError> {
 pub fn update_co_templates() -> Result<(), CommandError> {
     let co_to_review_path = batbelt::path::get_folder_path(BatFolder::CodeOverhaulToReview, true)
         .change_context(CommandError)?;
-    execute_command("rm", &["-rf", &co_to_review_path]).change_context(CommandError)?;
-    execute_command("mkdir", &[&co_to_review_path]).change_context(CommandError)?;
+    execute_command("rm", &["-rf", &co_to_review_path], false).change_context(CommandError)?;
+    execute_command("mkdir", &[&co_to_review_path], false).change_context(CommandError)?;
     commands::init::initialize_code_overhaul_files().unwrap();
     Ok(())
 }

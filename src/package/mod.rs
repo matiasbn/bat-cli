@@ -30,11 +30,11 @@ pub fn release() -> Result<(), PackageError> {
 
 pub fn format() -> Result<(), PackageError> {
     println!("Executing cargo clippy --fix");
-    execute_command("cargo", &["clippy", "--fix"]).change_context(PackageError)?;
+    execute_command("cargo", &["clippy", "--fix"], false).change_context(PackageError)?;
     println!("Executing cargo fix");
-    execute_command("cargo", &["fix", "--all"]).change_context(PackageError)?;
+    execute_command("cargo", &["fix", "--all"], false).change_context(PackageError)?;
     println!("Executing cargo fmt --all");
-    execute_command("cargo", &["fmt", "--all"]).change_context(PackageError)?;
+    execute_command("cargo", &["fmt", "--all"], false).change_context(PackageError)?;
     println!("Commiting format changes");
     create_commit(PackageCommit::Format, None)?;
     Ok(())
@@ -43,21 +43,22 @@ pub fn format() -> Result<(), PackageError> {
 fn release_start(version: &str) -> Result<(), PackageError> {
     assert!(check_files_not_commited().unwrap());
     println!("Starting release for version {}", version);
-    execute_command("git", &["flow", "release", "start", version]).change_context(PackageError)?;
+    execute_command("git", &["flow", "release", "start", version], false)
+        .change_context(PackageError)?;
     Ok(())
 }
 
 fn release_finish(version: &str) -> Result<(), PackageError> {
     assert!(check_files_not_commited().unwrap());
     println!("Finishing release for version {}", version);
-    execute_command("git", &["flow", "release", "finish"]).change_context(PackageError)?;
+    execute_command("git", &["flow", "release", "finish"], false).change_context(PackageError)?;
     Ok(())
 }
 
 fn tag(version: &str) -> Result<(), PackageError> {
     assert!(check_files_not_commited().unwrap());
     println!("Creating tag for version {}", version);
-    execute_command("git", &["tag", version]).change_context(PackageError)?;
+    execute_command("git", &["tag", version], false).change_context(PackageError)?;
     Ok(())
 }
 
@@ -117,8 +118,8 @@ fn bump() -> Result<String, PackageError> {
 }
 
 fn push_origin_all() -> Result<(), PackageError> {
-    execute_command("git", &["push", "origin", "--all"]).change_context(PackageError)?;
-    execute_command("git", &["push", "origin", "--tags"]).change_context(PackageError)?;
+    execute_command("git", &["push", "origin", "--all"], false).change_context(PackageError)?;
+    execute_command("git", &["push", "origin", "--tags"], false).change_context(PackageError)?;
     Ok(())
 }
 
@@ -135,7 +136,7 @@ fn create_commit(
         PackageCommit::CommitCargo => {
             let version = commit_options.unwrap()[0];
             // git add Cargo.toml
-            execute_command("git", &["add", "Cargo.toml"]).change_context(PackageError)?;
+            execute_command("git", &["add", "Cargo.toml"], false).change_context(PackageError)?;
 
             execute_command(
                 "git",
@@ -144,14 +145,15 @@ fn create_commit(
                     "-m",
                     format!("package: version bump {version}").as_str(),
                 ],
+                false,
             )
             .change_context(PackageError)?;
             Ok(())
         }
         PackageCommit::Format => {
             // commit all files
-            execute_command("git", &["add", "--all"]).change_context(PackageError)?;
-            execute_command("git", &["commit", "-m", "package: format commit"])
+            execute_command("git", &["add", "--all"], false).change_context(PackageError)?;
+            execute_command("git", &["commit", "-m", "package: format commit"], false)
                 .change_context(PackageError)?;
             Ok(())
         }
