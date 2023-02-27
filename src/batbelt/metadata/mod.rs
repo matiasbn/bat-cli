@@ -6,6 +6,7 @@ use colored::{ColoredString, Colorize};
 use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display};
+use std::path::Path;
 
 use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
 
@@ -56,6 +57,16 @@ impl BatMetadata {
 
     pub fn check_metadata_is_initialized() -> Result<(), MetadataError> {
         let metadata_types = BatMetadataType::get_metadata_type_vec();
+        // check file exists
+        for metadata_type in metadata_types.clone() {
+            if !Path::new(&metadata_type.get_path()?).is_file() {
+                return Err(Report::new(MetadataError).attach_printable(format!(
+                    "Metadata file not found: {}",
+                    metadata_type.get_path()?
+                )));
+            }
+        }
+        // check markdown exists
         for metadata_type in metadata_types {
             metadata_type.check_is_initialized()?;
         }
@@ -89,7 +100,7 @@ impl BatMetadataType {
     pub fn get_markdown(&self) -> Result<MarkdownFile, MetadataError> {
         let file_path = self.get_path()?;
         log::debug!("markdown file path: {}", file_path);
-        let markdown_file = MarkdownFile::new(&file_path);
+        let markdown_file = MarkdownFile::new(&file_path).change_context(MetadataError)?;
         Ok(markdown_file)
     }
 

@@ -1,6 +1,5 @@
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::execute_command;
-use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::templates::finding_template::FindingTemplate;
 use crate::batbelt::{
     git::GitCommit,
@@ -101,7 +100,7 @@ pub fn start_finding() -> Result<(), CommandError> {
     BatFile::FindingToReview {
         file_name: finding_name,
     }
-    .open_in_vs_code()
+    .open_in_editor(true, None)
     .change_context(CommandError)?;
 
     Ok(())
@@ -242,21 +241,27 @@ fn validate_finished_finding_file(file_name: String) -> Result<(), CommandError>
     };
     let file_data = bat_file.read_content(true).change_context(CommandError)?;
     if file_data.contains("Fill the description") {
-        bat_file.open_in_vs_code().change_context(CommandError)?;
+        bat_file
+            .open_in_editor(true, None)
+            .change_context(CommandError)?;
         return Err(Report::new(CommandError).attach_printable(format!(
             "Please complete the Description section of the {} file",
             file_name.clone()
         )));
     }
     if file_data.contains("Fill the impact") {
-        bat_file.open_in_vs_code().change_context(CommandError)?;
+        bat_file
+            .open_in_editor(true, None)
+            .change_context(CommandError)?;
         return Err(Report::new(CommandError).attach_printable(format!(
             "Please complete the Impact section of the {} file",
             file_name.clone()
         )));
     }
     if file_data.contains("Add recommendations") {
-        bat_file.open_in_vs_code().change_context(CommandError)?;
+        bat_file
+            .open_in_editor(true, None)
+            .change_context(CommandError)?;
         return Err(Report::new(CommandError).attach_printable(format!(
             "Please complete the Recommendations section of the {} file",
             file_name.clone()

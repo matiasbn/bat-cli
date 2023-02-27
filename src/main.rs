@@ -6,6 +6,7 @@ extern crate confy;
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 
+use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::BatFile;
 use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
@@ -165,11 +166,7 @@ async fn main() -> CommandResult<()> {
 
         let config = Config::builder()
             .appender(Appender::builder().build("logfile", Box::new(logfile)))
-            .build(
-                Root::builder()
-                    .appender("logfile")
-                    .build(LevelFilter::Debug),
-            )
+            .build(Root::builder().appender("logfile").build(LevelFilter::Info))
             .ok()
             .ok_or(CommandError)?;
 
@@ -180,24 +177,23 @@ async fn main() -> CommandResult<()> {
         env_logger::init();
     }
 
-    let branch_checked = match cli.command {
+    match cli.command {
         Commands::Init { .. }
         | Commands::Create
         | Commands::Package(..)
         | Commands::Git(..)
         | Commands::Miro(..) => Ok(()),
-        _ => check_correct_branch(),
-    };
+        _ => check_correct_branch().change_context(CommandError),
+    }?;
 
-    if let Err(error) = branch_checked {
-        println!(
-            "{} script finished with error",
-            cli.command.to_string().bright_red()
-        );
-        log::error!("error output:\n {:#?}", error);
-        process::exit(1);
-        // return Ok(());
-    };
+    match cli.command {
+        Commands::Init { .. }
+        | Commands::Create
+        | Commands::Package(..)
+        | Commands::Git(..)
+        | Commands::Sonar(SonarCommand::Run) => Ok(()),
+        _ => BatMetadata::check_metadata_is_initialized().change_context(CommandError),
+    }?;
 
     let result = match cli.command {
         Commands::Git(GitCommand::UpdateBranches) => {

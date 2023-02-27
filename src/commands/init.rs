@@ -9,7 +9,6 @@ use std::string::String;
 
 use colored::Colorize;
 
-use crate::batbelt::command_line::vs_code_open_file_in_current_window;
 use crate::batbelt::command_line::{execute_command, CodeEditor};
 use crate::batbelt::miro::frame::{
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
@@ -111,12 +110,9 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
             .create_commit()
             .change_context(CommandError)?;
     }
-    // let lib_file_path = utils::path::get_program_lib_path()?;
-    let lib_file_path = BatFile::ProgramLib
-        .get_path(true)
-        .change_context(CommandError)?;
-    // Open lib.rs file in vscode
-    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())
+
+    BatFile::ProgramLib
+        .open_in_editor(true, None)
         .change_context(CommandError)?;
     Ok(())
 }

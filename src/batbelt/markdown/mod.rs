@@ -1,4 +1,4 @@
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::{error::Error, fmt, fs};
@@ -75,15 +75,17 @@ pub struct MarkdownFile {
 }
 
 impl MarkdownFile {
-    pub fn new(path: &str) -> Self {
-        let md_file_content = fs::read_to_string(path).unwrap();
+    pub fn new(path: &str) -> MarkdownResult<Self> {
+        let md_file_content = fs::read_to_string(path)
+            .into_report()
+            .change_context(MarkdownError)?;
         let mut md_file = MarkdownFile {
             path: path.to_string(),
             content: md_file_content.clone(),
             sections: vec![],
         };
         md_file.get_sections();
-        md_file
+        Ok(md_file)
     }
 
     pub fn new_from_path_and_content(path: &str, content: String) -> Self {
