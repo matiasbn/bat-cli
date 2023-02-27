@@ -3,7 +3,6 @@ use crate::batbelt::{self, git::check_files_not_committed};
 use error_stack::{Result, ResultExt};
 use std::fs;
 
-use std::process::Command;
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
