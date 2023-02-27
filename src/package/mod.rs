@@ -40,7 +40,7 @@ pub fn format() -> PackageResult<()> {
     execute_command("cargo", &["fix", "--all"], true).change_context(PackageError)?;
     println!("Executing cargo fmt --all");
     execute_command("cargo", &["fmt", "--all"], true).change_context(PackageError)?;
-    println!("Commiting format changes");
+    println!("Committing format changes");
     create_commit(PackageCommit::Format, None)?;
     Ok(())
 }
@@ -54,8 +54,7 @@ fn release_start(version: &str) -> PackageResult<()> {
 
 fn release_finish(version: &str) -> PackageResult<()> {
     println!("Finishing release for version {}", version);
-    execute_command("git", &["flow", "release", "finish", ""], false)
-        .change_context(PackageError)?;
+    execute_command("git", &["flow", "release", "finish"], false).change_context(PackageError)?;
     Ok(())
 }
 
