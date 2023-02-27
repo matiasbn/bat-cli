@@ -90,7 +90,7 @@ impl GitAction {
     }
 }
 
-pub fn check_correct_branch() -> Result<(), GitError> {
+pub fn check_correct_branch() -> GitResult<()> {
     let expected_auditor_branch = get_expected_current_branch()?;
     if get_branch_name()? != expected_auditor_branch {
         let message = format!(
@@ -102,7 +102,7 @@ pub fn check_correct_branch() -> Result<(), GitError> {
     Ok(())
 }
 
-pub fn get_expected_current_branch() -> Result<String, GitError> {
+pub fn get_expected_current_branch() -> GitResult<String> {
     let bat_config = BatConfig::get_config().change_context(GitError)?;
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(GitError)?;
     let expected_auditor_branch = format!(
@@ -112,7 +112,7 @@ pub fn get_expected_current_branch() -> Result<String, GitError> {
     Ok(expected_auditor_branch)
 }
 
-pub fn check_if_branch_exists(branch_name: &str) -> Result<bool, String> {
+pub fn check_if_branch_exists(branch_name: &str) -> GitResult<bool> {
     let git_check_branch_exists = Command::new("git")
         .args(["rev-parse", "--verify", branch_name])
         .output()
@@ -121,16 +121,13 @@ pub fn check_if_branch_exists(branch_name: &str) -> Result<bool, String> {
 }
 
 // returns false if there are files to commit
-pub fn check_files_not_commited() -> Result<bool, String> {
-    let output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .output()
-        .unwrap();
-    let output = from_utf8(output.stdout.as_slice()).unwrap().to_string();
+pub fn check_files_not_committed() -> GitResult<bool> {
+    let output =
+        execute_command("git", &["status", "--porcelain"], false).change_context(GitError)?;
     Ok(output.is_empty())
 }
 
-pub fn get_local_branches() -> Result<String, GitError> {
+pub fn get_local_branches() -> GitResult<String> {
     let branches_list = Command::new("git")
         .args(["branch", "--list"])
         .output()
@@ -142,7 +139,7 @@ pub fn get_local_branches() -> Result<String, GitError> {
     Ok(list.to_string())
 }
 
-pub fn get_remote_branches() -> Result<String, GitError> {
+pub fn get_remote_branches() -> GitResult<String> {
     let branches_list = Command::new("git")
         .args(["branch", "-r", "--list"])
         .output()
@@ -155,7 +152,7 @@ pub fn get_remote_branches() -> Result<String, GitError> {
 }
 
 // Git
-pub fn get_branch_name() -> Result<String, GitError> {
+pub fn get_branch_name() -> GitResult<String> {
     let git_symbolic = Command::new("git")
         .args(["symbolic-ref", "-q", "head"])
         .output();
@@ -384,4 +381,10 @@ impl GitCommit {
 #[test]
 fn test_get_branches_list() {
     let _branches_list = get_local_branches().unwrap();
+}
+
+#[test]
+fn test_check_files_not_committed() {
+    let result = check_files_not_committed().unwrap();
+    println!("{}", result);
 }
