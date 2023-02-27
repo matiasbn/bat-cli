@@ -155,7 +155,7 @@ async fn main() -> CommandResult<()> {
     if cli.command != Commands::Create {
         let logfile = FileAppender::builder()
             .encoder(Box::new(PatternEncoder::new(
-                "d(%Y-%m-%d %H:%M:%S) ]::{l} {f}:{L}:\n{m}\n",
+                "{d(%Y-%m-%d %H:%M:%S)} [{f}:{L}] {h({l})} {M}{n}{m}{n}",
             )))
             .build(
                 BatFile::Batlog

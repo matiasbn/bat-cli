@@ -51,7 +51,7 @@ impl BatFile {
         let path = match self {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
-            BatFile::Batlog => format!("Batlog.json"),
+            BatFile::Batlog => format!("Batlog.log"),
             BatFile::PackageJson { for_init } => {
                 format!(
                     "{}/package.json",
