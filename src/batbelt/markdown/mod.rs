@@ -101,39 +101,33 @@ impl MarkdownFile {
         Ok(())
     }
 
-    pub fn sort_sections_by_title(&mut self, save_markdown: bool) -> MarkdownResult<()> {
-        self.sections.sort_by(|section_a, section_b| {
-            section_a
-                .section_header
-                .title
-                .cmp(&section_b.section_header.title)
-        });
-        if save_markdown {
-            self.save()?;
-        }
-        Ok(())
-    }
-
-    pub fn update_content_from_sections(&mut self, save_markdown: bool) -> MarkdownResult<()> {
-        let content = self
-            .sections
-            .iter()
-            .fold("".to_string(), |mut result, current| {
-                if result.is_empty() {
-                    result = current.content.clone();
-                } else {
-                    result = format!("{}\n\n{}", result, current.content);
-                }
-                result
-            });
-        self.content = content;
-
-        if save_markdown {
-            self.save()?;
-        }
-
-        Ok(())
-    }
+    // pub fn sort_sections_by_title(&mut self, save_markdown: bool) -> MarkdownResult<()> {
+    //     self.sections
+    //         .sort_by_key(|md| md.section_header.title.clone());
+    //     self.update_content_from_sections(save_markdown)?;
+    //     Ok(())
+    // }
+    //
+    // pub fn update_content_from_sections(&mut self, save_markdown: bool) -> MarkdownResult<()> {
+    //     let content = self
+    //         .sections
+    //         .iter()
+    //         .fold("".to_string(), |mut result, current| {
+    //             if result.is_empty() {
+    //                 result = current.content.clone();
+    //             } else {
+    //                 result = format!("{}\n\n{}", result, current.content);
+    //             }
+    //             result
+    //         });
+    //     self.content = content;
+    //
+    //     if save_markdown {
+    //         self.save()?;
+    //     }
+    //
+    //     Ok(())
+    // }
 
     pub fn get_section(&self, title: &str) -> Result<MarkdownSection, MarkdownError> {
         let mut section = self

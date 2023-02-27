@@ -82,7 +82,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
         let mut metadata_result: Vec<FunctionMetadata> = vec![];
         let entry_path = entry.path().to_str().unwrap().to_string();
-        // println!("starting the review of the {} file", entry_path.blue());
         let file_content = fs::read_to_string(entry.path()).unwrap();
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
         for result in bat_sonar.results {
@@ -103,8 +102,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
             );
             metadata_result.push(function_metadata);
         }
-
-        Self::update_markdown_from_metadata_vec(metadata_result.clone())?;
 
         Ok(metadata_result)
     }

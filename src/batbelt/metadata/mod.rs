@@ -175,7 +175,11 @@ where
         s
     }
 
-    fn update_markdown_from_metadata_vec(metadata_vec: Vec<Self>) -> MetadataResult<()> {
+    fn update_markdown_from_metadata_vec(metadata_vec: &mut Vec<Self>) -> MetadataResult<()> {
+        if metadata_vec.is_empty() {
+            return Ok(());
+        }
+        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
         let metadata_bat_file = Self::get_bat_file();
         let metadata_markdown_content = metadata_bat_file
             .read_content(true)
@@ -187,19 +191,19 @@ where
             .collect::<Vec<_>>()
             .join("\n\n");
 
-        let new_content = format!("{}\n\n{}", metadata_markdown_content, new_markdown_content);
+        let result_metadata_content = if metadata_markdown_content.is_empty() {
+            new_markdown_content.clone()
+        } else {
+            format!("{}\n\n{}", metadata_markdown_content, new_markdown_content)
+        };
 
-        metadata_bat_file
-            .write_content(true, &new_content)
-            .change_context(MetadataError)?;
+        log::debug!("metadata_markdown_content:\n{}", metadata_markdown_content);
+        log::debug!("new_markdown_content:\n{}", new_markdown_content);
+        log::debug!("result_metadata_content:\n{}", result_metadata_content);
 
-        let mut metadata_markdown = Self::get_bat_metadata_type()
-            .get_markdown()
-            .change_context(MetadataError)?;
-
-        metadata_markdown
-            .sort_sections_by_title(true)
-            .change_context(MetadataError)?;
+        let mut markdown_file = Self::get_bat_metadata_type().get_markdown()?;
+        markdown_file.content = result_metadata_content;
+        markdown_file.save().change_context(MetadataError)?;
 
         Ok(())
     }
@@ -425,10 +429,13 @@ where
     }
 
     fn get_colored_name(&self) -> ColoredString {
+        let self_name = self.to_string().to_plural();
+        log::debug!("self_name_for_colorized: {}", self_name);
         let colorized_vec = Self::get_colorized_type_vec();
+        log::debug!("colorized_vec: {:#?}", colorized_vec.clone());
         let self_colorized = colorized_vec
             .into_iter()
-            .find(|color| color.to_string() == self.to_string())
+            .find(|color| color.contains(&self_name))
             .unwrap();
         self_colorized
     }

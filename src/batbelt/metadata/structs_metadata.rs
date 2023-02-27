@@ -85,9 +85,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
             let struct_type =
                 if Self::assert_struct_is_solana_account(&file_content, result.clone()) {
                     StructMetadataType::SolanaAccount
-                } else if Self::assert_struct_is_context_accounts(&file_content, result.clone())
-                    .unwrap()
-                {
+                } else if Self::assert_struct_is_context_accounts(&file_content, result.clone())? {
                     StructMetadataType::ContextAccounts
                 } else {
                     StructMetadataType::Other
@@ -101,9 +99,6 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
             );
             metadata_result.push(struct_metadata);
         }
-
-        Self::update_markdown_from_metadata_vec(metadata_result.clone())?;
-
 
         Ok(metadata_result)
     }

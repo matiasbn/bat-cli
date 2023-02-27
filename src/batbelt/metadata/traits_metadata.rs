@@ -105,8 +105,6 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
             metadata_result.push(function_metadata);
         }
 
-        Self::update_markdown_from_metadata_vec(metadata_result.clone())?;
-
         Ok(metadata_result)
     }
 }

@@ -6,6 +6,7 @@ use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, BatMetadataTypeParser};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::sonar::{BatSonarError, SonarResultType};
+use crate::batbelt::ShareableData;
 use crate::commands::CommandError;
 use colored::Colorize;
 use dialoguer::console::{style, Emoji};
@@ -40,6 +41,12 @@ impl BatSonarInteractive {
 
     fn sonar_start(&self, sonar_result_type: SonarResultType) -> Result<(), BatSonarError> {
         let pb = ProgressBar::new_spinner();
+        let result_type_colorized = match sonar_result_type {
+            SonarResultType::Function => BatMetadataType::Function.get_colored_name(),
+            SonarResultType::Struct => BatMetadataType::Struct.get_colored_name(),
+            SonarResultType::Trait => BatMetadataType::Trait.get_colored_name(),
+            _ => sonar_result_type.to_string().bright_cyan(),
+        };
         pb.enable_steady_tick(Duration::from_millis(100));
         pb.set_style(
             ProgressStyle::with_template("{spinner:.blue} {msg}")
@@ -69,14 +76,11 @@ impl BatSonarInteractive {
         );
         pb.set_message(format!(
             "Looking for {} with {}...",
-            sonar_result_type.to_string().to_plural().green(),
+            result_type_colorized,
             "BatSonar".red(),
         ));
         thread::sleep(Duration::from_millis(1800));
-        pb.finish_with_message(format!(
-            "{} search finished ",
-            sonar_result_type.to_string().to_plural().green(),
-        ));
+        pb.finish_with_message(format!("{} search finished ", result_type_colorized,));
         Ok(())
     }
 
@@ -95,6 +99,18 @@ impl BatSonarInteractive {
         let m = MultiProgress::new();
         let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
         let metadata_types_colored = BatMetadataType::get_colorized_type_vec();
+        let ShareableData {
+            original: structs_original,
+            cloned: structs_cloned,
+        }: ShareableData<Vec<StructMetadata>> = ShareableData::new(vec![]);
+        let ShareableData {
+            original: functions_original,
+            cloned: functions_cloned,
+        }: ShareableData<Vec<FunctionMetadata>> = ShareableData::new(vec![]);
+        let ShareableData {
+            original: traits_original,
+            cloned: traits_cloned,
+        }: ShareableData<Vec<TraitMetadata>> = ShareableData::new(vec![]);
         let handles: Vec<_> = (0..metadata_types_vec.len())
             .map(|i| {
                 let mut structs_result = vec![];
@@ -114,35 +130,38 @@ impl BatSonarInteractive {
                             metadata_type_color.clone(),
                             entry.clone().path().to_str().unwrap().clone()
                         ));
-                        let result = match metadata_type {
+                        match metadata_type {
                             BatMetadataType::Struct => {
                                 let mut struct_res =
                                     StructMetadata::get_metadata_from_dir_entry(entry.clone())
                                         .unwrap();
+                                total += struct_res.len();
                                 structs_result.append(&mut struct_res);
-                                struct_res.len()
                             }
                             BatMetadataType::Function => {
                                 let mut func_res =
                                     FunctionMetadata::get_metadata_from_dir_entry(entry.clone())
                                         .unwrap();
+                                total += func_res.len();
                                 functions_result.append(&mut func_res);
-                                func_res.len()
                             }
                             BatMetadataType::Trait => {
                                 let mut trait_res =
                                     TraitMetadata::get_metadata_from_dir_entry(entry.clone())
                                         .unwrap();
 
+                                total += trait_res.len();
                                 traits_result.append(&mut trait_res);
-                                trait_res.len()
                             }
                         };
-                        total += result;
                         pb.inc(1);
                         thread::sleep(Duration::from_millis(200));
                     }
                     pb.finish_with_message(format!("{} {} found", total, metadata_type_color));
+                    StructMetadata::update_markdown_from_metadata_vec(&mut structs_result).unwrap();
+                    FunctionMetadata::update_markdown_from_metadata_vec(&mut functions_result)
+                        .unwrap();
+                    TraitMetadata::update_markdown_from_metadata_vec(&mut traits_result).unwrap();
                 })
             })
             .collect();
@@ -173,7 +192,7 @@ impl BatSonarInteractive {
 
         Ok(())
     }
-    // 
+    //
     // fn functions(&self) -> Result<(), BatSonarError> {
     //     let mut functions_metadata_markdown = BatMetadataType::Function
     //         .get_markdown()
@@ -198,7 +217,7 @@ impl BatSonarInteractive {
     //     .unwrap();
     //     Ok(())
     // }
-    // 
+    //
     // fn structs(&self) -> Result<(), BatSonarError> {
     //     let mut structs_metadata_markdown = BatMetadataType::Struct
     //         .get_markdown()

@@ -39,7 +39,6 @@ pub enum GitAction {
     Init,
     RemoteAddProjectRepo,
     AddAll,
-    AddRemote,
     CheckGitIsInitialized { is_initialized: Rc<RefCell<bool>> },
     CheckBranchDontExist { branch_name: String },
 }
@@ -71,7 +70,6 @@ impl GitAction {
             GitAction::AddAll => {
                 execute_command("git", &["add", "-A"], false).change_context(GitError)?;
             }
-            GitAction::AddRemote => {}
             GitAction::CheckGitIsInitialized { is_initialized } => {
                 let output_child =
                     execute_command("git", &["rev-parse", "--is-inside-work-tree"], false)
