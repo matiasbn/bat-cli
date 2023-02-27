@@ -3,9 +3,7 @@ use crate::batbelt;
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::{
-    BatMetadataParser, BatMetadataType, BatMetadataTypeParser, MetadataError,
-};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataError};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -20,6 +18,7 @@ use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
+use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
@@ -622,7 +621,7 @@ impl MiroCommand {
         let selected_miro_frame = self.prompt_select_frame().await?;
         let mut continue_selection = true;
         let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
-        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec();
+        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
         while continue_selection {
             // Choose metadata section selection
             let prompt_text = format!("Please enter the {}", "metadata type".green());
@@ -641,7 +640,7 @@ impl MiroCommand {
                     // Choose metadata subsection selection
                     let prompt_text =
                         format!("Please enter the {}", "struct type to deploy".green());
-                    let struct_types_colorized = StructMetadataType::get_colorized_type_vec();
+                    let struct_types_colorized = StructMetadataType::get_colorized_type_vec(true);
                     let selection = batbelt::bat_dialoguer::select(
                         &prompt_text,
                         struct_types_colorized.clone(),
@@ -710,7 +709,8 @@ impl MiroCommand {
                     // Choose metadata subsection selection
                     let prompt_text =
                         format!("Please enter the {}", "function type to deploy".green());
-                    let function_types_colorized = FunctionMetadataType::get_colorized_type_vec();
+                    let function_types_colorized =
+                        FunctionMetadataType::get_colorized_type_vec(true);
                     let selection = batbelt::bat_dialoguer::select(
                         &prompt_text,
                         function_types_colorized.clone(),

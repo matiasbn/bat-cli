@@ -8,8 +8,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::{
-    BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType, BatMetadataTypeParser,
-    MetadataResult,
+    BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType, MetadataResult,
 };
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
@@ -17,6 +16,7 @@ use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
 
+use crate::batbelt::BatEnumerator;
 use std::{fs, vec};
 use walkdir::DirEntry;
 
@@ -179,7 +179,7 @@ pub enum FunctionMetadataType {
     Other,
 }
 
-impl BatMetadataTypeParser for FunctionMetadataType {}
+impl BatEnumerator for FunctionMetadataType {}
 
 pub fn get_function_parameters(function_content: String) -> Vec<String> {
     let content_lines = function_content.lines();

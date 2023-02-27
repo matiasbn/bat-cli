@@ -5,10 +5,11 @@ pub mod package_json_template;
 
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
-use crate::batbelt::metadata::{BatMetadataType, BatMetadataTypeParser, MetadataError};
+use crate::batbelt::metadata::{BatMetadataType, MetadataError};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+use crate::batbelt::BatEnumerator;
 use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;

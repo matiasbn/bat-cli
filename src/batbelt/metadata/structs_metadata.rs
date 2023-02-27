@@ -7,11 +7,10 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use colored::Colorize;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::{
-    BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType, BatMetadataTypeParser,
-};
+use crate::batbelt::metadata::{BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType};
 
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::BatEnumerator;
 use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
 use std::{fs, vec};
@@ -177,4 +176,4 @@ pub enum StructMetadataType {
     Other,
 }
 
-impl BatMetadataTypeParser for StructMetadataType {}
+impl BatEnumerator for StructMetadataType {}

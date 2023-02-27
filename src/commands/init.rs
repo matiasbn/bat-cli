@@ -9,15 +9,14 @@ use std::string::String;
 
 use colored::Colorize;
 
-use crate::batbelt;
-use crate::batbelt::command_line::execute_command;
-use crate::batbelt::command_line::vs_code_open_file_in_current_window;
+use crate::batbelt::command_line::{execute_command, CodeEditor};
 use crate::batbelt::miro::frame::{
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::commands::CommandError;
 use crate::config::{BatAuditorConfig, BatConfig};
+use crate::{batbelt, config};
 
 use crate::batbelt::git::{GitAction, GitCommit};
 use crate::batbelt::miro::frame::MiroFrame;
@@ -27,13 +26,13 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::TemplateGenerator;
-use crate::batbelt::ShareableData;
+use crate::batbelt::{BatEnumerator, ShareableData};
 use error_stack::{Report, Result, ResultExt};
 
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
     let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
     if !Path::new("BatAuditor.toml").is_file() {
-        prompt_auditor_options()?;
+        BatAuditorConfig::new_with_prompt().change_context(CommandError)?;
     }
     println!("creating project for the next config: ");
     println!("{:#?}", bat_config);
@@ -111,44 +110,10 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
             .create_commit()
             .change_context(CommandError)?;
     }
-    // let lib_file_path = utils::path::get_program_lib_path()?;
-    let lib_file_path = BatFile::ProgramLib
-        .get_path(true)
-        .change_context(CommandError)?;
-    // Open lib.rs file in vscode
-    vs_code_open_file_in_current_window(PathBuf::from(lib_file_path).to_str().unwrap())
-        .change_context(CommandError)?;
-    Ok(())
-}
 
-fn prompt_auditor_options() -> Result<(), CommandError> {
-    let bat_config = BatConfig::get_config().change_context(CommandError)?;
-    let auditor_names = bat_config.auditor_names;
-    let prompt_text = format!("Select your name:");
-    let selection = BatDialoguer::select(prompt_text, auditor_names.clone(), None)?;
-    let auditor_name = auditor_names.get(selection).unwrap().clone();
-    println!(
-        "Is great to have you here {}!",
-        format!("{}", auditor_name).green()
-    );
-    let prompt_text = "Do you want to use the Miro integration?";
-    let include_miro =
-        BatDialoguer::select_yes_or_no(prompt_text.to_string()).change_context(CommandError)?;
-    let moat = if include_miro {
-        let prompt_text = "Miro OAuth access token";
-        BatDialoguer::input(prompt_text.to_string()).change_context(CommandError)?
-    } else {
-        "".to_string()
-    };
-    let prompt_text = "Do you want to use the VS Code integration?";
-    let include_vs_code =
-        BatDialoguer::select_yes_or_no(prompt_text.to_string()).change_context(CommandError)?;
-    let bat_auditor_config = BatAuditorConfig {
-        auditor_name: auditor_name.to_string(),
-        vs_code_integration: include_vs_code,
-        miro_oauth_access_token: moat,
-    };
-    bat_auditor_config.save().change_context(CommandError)?;
+    BatFile::ProgramLib
+        .open_in_editor(true, None)
+        .change_context(CommandError)?;
     Ok(())
 }
 

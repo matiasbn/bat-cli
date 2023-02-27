@@ -1,4 +1,4 @@
-use crate::batbelt::command_line::{execute_command, vs_code_open_file_in_current_window};
+use crate::batbelt::command_line::{execute_command, CodeEditor};
 use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::{BatAuditorConfig, BatConfig};
@@ -212,13 +212,16 @@ impl BatFile {
     }
 
     pub fn remove_file(&self) -> BatPathResult<()> {
-        fs::remove_file(&self.get_path(false)?)
-            .into_report()
-            .change_context(BatPathError)
-            .attach_printable(format!(
-                "Error removing file in path:\n {}",
-                self.get_path(false)?
-            ))
+        if self.file_exists()? {
+            fs::remove_file(&self.get_path(false)?)
+                .into_report()
+                .change_context(BatPathError)
+                .attach_printable(format!(
+                    "Error removing file in path:\n {}",
+                    self.get_path(false)?
+                ))?;
+        }
+        Ok(())
     }
 
     pub fn create_empty(&self, canonicalize: bool) -> BatPathResult<()> {
@@ -242,9 +245,13 @@ impl BatFile {
         Ok(())
     }
 
-    pub fn open_in_vs_code(&self) -> BatPathResult<()> {
-        vs_code_open_file_in_current_window(&self.get_path(true)?).change_context(BatPathError)?;
-        Ok(())
+    pub fn open_in_editor(
+        &self,
+        canonicalize: bool,
+        line_index: Option<usize>,
+    ) -> BatPathResult<()> {
+        CodeEditor::open_file_in_editor(&self.get_path(canonicalize)?, line_index)
+            .change_context(BatPathError)
     }
 
     pub fn file_exists(&self) -> BatPathResult<bool> {

@@ -1,26 +1,68 @@
-use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::io::Read;
 use std::process::{ChildStdout, Command, Stdio};
 use std::str::from_utf8;
 
+use error_stack::{IntoReport, Report, Result, ResultExt};
+use serde::{Deserialize, Serialize};
+
+use crate::batbelt::BatEnumerator;
 use crate::commands::{CommandError, CommandResult};
 use crate::config::BatAuditorConfig;
 
-pub fn vs_code_open_file_in_current_window(path_to_file: &str) -> Result<(), CommandError> {
-    let vs_code_integration = BatAuditorConfig::get_config()
-        .change_context(CommandError)?
-        .vs_code_integration;
-    if vs_code_integration {
-        println!(
-            "Opening {} in VS Code",
-            path_to_file.split("/").last().unwrap()
-        );
-        execute_command("code", &["-a", path_to_file], false).change_context(CommandError)?;
-    } else {
-        println!("Path to file: {:#?}", path_to_file);
-    }
-    Ok(())
+#[derive(
+    Default,
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    strum_macros::EnumIter,
+    strum_macros::Display,
+    PartialOrd,
+    PartialEq,
+)]
+pub enum CodeEditor {
+    #[default]
+    CLion,
+    VSCode,
+    None,
 }
+
+impl CodeEditor {
+    pub fn open_file_in_editor(path: &str, line_index: Option<usize>) -> CommandResult<()> {
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+        if !bat_auditor_config.use_code_editor {
+            log::warn!("Code editor disabled");
+            println!("Path to file: {:#?}:{}", path, line_index.unwrap_or(0));
+            return Ok(());
+        }
+        let starting_line = line_index.unwrap_or(0);
+        match bat_auditor_config.code_editor {
+            CodeEditor::CLion => {
+                execute_command(
+                    "clion",
+                    &["--line", &format!("{}", starting_line), path],
+                    false,
+                )
+                .change_context(CommandError)?;
+            }
+            CodeEditor::VSCode => {
+                let formatted_path = if starting_line == 0 {
+                    path.to_string()
+                } else {
+                    format!("{};{}", path, starting_line)
+                };
+                execute_command("code", &["-a", &formatted_path], false)
+                    .change_context(CommandError)?;
+            }
+            _ => {
+                println!("Path to file: {:#?}:{}", path, starting_line);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl BatEnumerator for CodeEditor {}
 
 pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> CommandResult<String> {
     let message = format!(

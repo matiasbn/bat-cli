@@ -3,10 +3,10 @@ use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, BatMetadataTypeParser};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::sonar::{BatSonarError, SonarResultType};
-use crate::batbelt::ShareableData;
+use crate::batbelt::{BatEnumerator, ShareableData};
 use crate::commands::CommandError;
 use colored::Colorize;
 use dialoguer::console::{style, Emoji};
@@ -42,9 +42,9 @@ impl BatSonarInteractive {
     fn sonar_start(&self, sonar_result_type: SonarResultType) -> Result<(), BatSonarError> {
         let pb = ProgressBar::new_spinner();
         let result_type_colorized = match sonar_result_type {
-            SonarResultType::Function => BatMetadataType::Function.get_colored_name(),
-            SonarResultType::Struct => BatMetadataType::Struct.get_colored_name(),
-            SonarResultType::Trait => BatMetadataType::Trait.get_colored_name(),
+            SonarResultType::Function => BatMetadataType::Function.get_colored_name(true),
+            SonarResultType::Struct => BatMetadataType::Struct.get_colored_name(true),
+            SonarResultType::Trait => BatMetadataType::Trait.get_colored_name(true),
             _ => sonar_result_type.to_string().bright_cyan(),
         };
         pb.enable_steady_tick(Duration::from_millis(100));
@@ -98,19 +98,7 @@ impl BatSonarInteractive {
         );
         let m = MultiProgress::new();
         let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
-        let metadata_types_colored = BatMetadataType::get_colorized_type_vec();
-        let ShareableData {
-            original: structs_original,
-            cloned: structs_cloned,
-        }: ShareableData<Vec<StructMetadata>> = ShareableData::new(vec![]);
-        let ShareableData {
-            original: functions_original,
-            cloned: functions_cloned,
-        }: ShareableData<Vec<FunctionMetadata>> = ShareableData::new(vec![]);
-        let ShareableData {
-            original: traits_original,
-            cloned: traits_cloned,
-        }: ShareableData<Vec<TraitMetadata>> = ShareableData::new(vec![]);
+        let metadata_types_colored = BatMetadataType::get_colorized_type_vec(true);
         let handles: Vec<_> = (0..metadata_types_vec.len())
             .map(|i| {
                 let mut structs_result = vec![];
@@ -192,79 +180,6 @@ impl BatSonarInteractive {
 
         Ok(())
     }
-    //
-    // fn functions(&self) -> Result<(), BatSonarError> {
-    //     let mut functions_metadata_markdown = BatMetadataType::Function
-    //         .get_markdown()
-    //         .change_context(BatSonarError)?;
-    //     let functions_metadata =
-    //         FunctionMetadata::get_metadata_from_program_files().change_context(BatSonarError)?;
-    //     let functions_markdown_content = functions_metadata
-    //         .into_iter()
-    //         .map(|function_metadata| function_metadata.get_markdown_section_content_string())
-    //         .collect::<Vec<_>>()
-    //         .join("\n\n");
-    //     functions_metadata_markdown.content = functions_markdown_content;
-    //     functions_metadata_markdown
-    //         .save()
-    //         .change_context(BatSonarError)?;
-    //     batbelt::git::create_git_commit(
-    //         GitCommit::UpdateMetadata {
-    //             metadata_type: BatMetadataType::Function,
-    //         },
-    //         None,
-    //     )
-    //     .unwrap();
-    //     Ok(())
-    // }
-    //
-    // fn structs(&self) -> Result<(), BatSonarError> {
-    //     let mut structs_metadata_markdown = BatMetadataType::Struct
-    //         .get_markdown()
-    //         .change_context(BatSonarError)?;
-    //     let structs_metadata =
-    //         StructMetadata::get_metadata_from_program_files().change_context(BatSonarError)?;
-    //     let structs_markdown_content = structs_metadata
-    //         .into_iter()
-    //         .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
-    //         .collect::<Vec<_>>()
-    //         .join("\n\n");
-    //     structs_metadata_markdown.content = structs_markdown_content;
-    //     structs_metadata_markdown
-    //         .save()
-    //         .change_context(BatSonarError)?;
-    //     batbelt::git::create_git_commit(
-    //         GitCommit::UpdateMetadata {
-    //             metadata_type: BatMetadataType::Struct,
-    //         },
-    //         None,
-    //     )
-    //     .unwrap();
-    //     Ok(())
-    // }
-    // fn traits(&self) -> Result<(), BatSonarError> {
-    //     let mut traits_metadata_markdown = BatMetadataType::Trait
-    //         .get_markdown()
-    //         .change_context(BatSonarError)?;
-    //     let traits_metadata =
-    //         TraitMetadata::get_metadata_from_program_files().change_context(BatSonarError)?;
-    //     let traits_markdown_content = traits_metadata
-    //         .into_iter()
-    //         .map(|struct_metadata| struct_metadata.get_markdown_section_content_string())
-    //         .collect::<Vec<_>>()
-    //         .join("\n\n");
-    //     traits_metadata_markdown.content = traits_markdown_content;
-    //     traits_metadata_markdown
-    //         .save()
-    //         .change_context(BatSonarError)?;
-    //     batbelt::git::create_git_commit(
-    //         GitCommit::UpdateMetadata {
-    //             metadata_type: BatMetadataType::Trait,
-    //         },
-    //         None,
-    //     )
-    //     .unwrap();
-    //     Ok(())
     // }
 }
 

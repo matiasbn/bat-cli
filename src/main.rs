@@ -6,6 +6,7 @@ extern crate confy;
 use batbelt::git::{check_correct_branch, GitCommit};
 use clap::{Parser, Subcommand};
 
+use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::BatFile;
 use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
@@ -153,25 +154,19 @@ enum PackageCommand {
 async fn main() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
     if cli.command != Commands::Create {
+        let bat_log_file = BatFile::Batlog;
+        bat_log_file.remove_file().change_context(CommandError)?;
         let logfile = FileAppender::builder()
             .encoder(Box::new(PatternEncoder::new(
                 "{d(%Y-%m-%d %H:%M:%S)} [{f}:{L}] {h({l})} {M}{n}{m}{n}",
             )))
-            .build(
-                BatFile::Batlog
-                    .get_path(false)
-                    .change_context(CommandError)?,
-            )
+            .build(bat_log_file.get_path(false).change_context(CommandError)?)
             .ok()
             .ok_or(CommandError)?;
 
         let config = Config::builder()
             .appender(Appender::builder().build("logfile", Box::new(logfile)))
-            .build(
-                Root::builder()
-                    .appender("logfile")
-                    .build(LevelFilter::Debug),
-            )
+            .build(Root::builder().appender("logfile").build(LevelFilter::Info))
             .ok()
             .ok_or(CommandError)?;
 
@@ -182,24 +177,23 @@ async fn main() -> CommandResult<()> {
         env_logger::init();
     }
 
-    let branch_checked = match cli.command {
+    match cli.command {
         Commands::Init { .. }
         | Commands::Create
         | Commands::Package(..)
         | Commands::Git(..)
         | Commands::Miro(..) => Ok(()),
-        _ => check_correct_branch(),
-    };
+        _ => check_correct_branch().change_context(CommandError),
+    }?;
 
-    if let Err(error) = branch_checked {
-        println!(
-            "{} script finished with error",
-            cli.command.to_string().bright_red()
-        );
-        log::error!("error output:\n {:#?}", error);
-        process::exit(1);
-        // return Ok(());
-    };
+    match cli.command {
+        Commands::Init { .. }
+        | Commands::Create
+        | Commands::Package(..)
+        | Commands::Git(..)
+        | Commands::Sonar(SonarCommand::Run) => Ok(()),
+        _ => BatMetadata::check_metadata_is_initialized().change_context(CommandError),
+    }?;
 
     let result = match cli.command {
         Commands::Git(GitCommand::UpdateBranches) => {

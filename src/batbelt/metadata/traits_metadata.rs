@@ -7,13 +7,14 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, BatMetadataTypeParser};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 
 use crate::batbelt::parser::parse_formatted_path;
 
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use error_stack::{Report, Result, ResultExt};
 
+use crate::batbelt::BatEnumerator;
 use std::{fs, vec};
 use walkdir::DirEntry;
 
@@ -138,4 +139,4 @@ pub enum TraitMetadataType {
     Implementation,
 }
 
-impl BatMetadataTypeParser for TraitMetadataType {}
+impl BatEnumerator for TraitMetadataType {}
