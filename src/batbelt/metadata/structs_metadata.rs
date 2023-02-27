@@ -3,16 +3,14 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use std::fmt::Debug;
 
 use crate::batbelt;
-use crate::batbelt::path::{BatFile, BatFolder};
-use colored::Colorize;
+use crate::batbelt::path::BatFile;
 
-use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::{BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::BatEnumerator;
-use error_stack::{Report, Result, ResultExt};
-use inflector::Inflector;
+use error_stack::{Result, ResultExt};
+
 use std::{fs, vec};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
@@ -146,7 +144,7 @@ impl StructMetadata {
         if entrypoints_context_accounts_names.any(|name| name == sonar_result.name) {
             return Ok(true);
         }
-        return Ok(false);
+        Ok(false)
     }
 
     fn assert_struct_is_solana_account(file_info_content: &str, sonar_result: SonarResult) -> bool {
@@ -165,7 +163,7 @@ impl StructMetadata {
             }
         }
 
-        return false;
+        false
     }
 }
 

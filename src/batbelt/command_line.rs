@@ -1,8 +1,7 @@
-use std::io::Read;
-use std::process::{ChildStdout, Command, Stdio};
+use std::process::Command;
 use std::str::from_utf8;
 
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{IntoReport, ResultExt};
 use serde::{Deserialize, Serialize};
 
 use crate::batbelt::BatEnumerator;

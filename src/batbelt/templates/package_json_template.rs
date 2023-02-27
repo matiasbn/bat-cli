@@ -1,9 +1,8 @@
 use crate::batbelt::path::BatFile;
 use crate::batbelt::templates::TemplateError;
-use crate::config::BatConfig;
-use error_stack::{IntoReport, Result, ResultExt};
+
+use error_stack::{Result, ResultExt};
 use serde_json::json;
-use std::fs;
 
 pub struct PackageJsonTemplate;
 
@@ -43,8 +42,8 @@ impl PackageJsonTemplate {
         "author": "",
         "license": "ISC"
         });
-        let content = serde_json::to_string_pretty(&package_json).unwrap();
-        content
+
+        serde_json::to_string_pretty(&package_json).unwrap()
     }
 }
 

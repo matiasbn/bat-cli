@@ -34,8 +34,8 @@ impl CodeOverhaulTemplate {
         })
     }
     pub fn to_markdown_file(&self, file_path: &str) -> Result<MarkdownFile, TemplateError> {
-        let content = self.get_markdown_content().clone();
-        let template = MarkdownFile::new_from_path_and_content(&file_path, content);
+        let content = self.get_markdown_content();
+        let template = MarkdownFile::new_from_path_and_content(file_path, content);
         Ok(template)
     }
 
@@ -167,7 +167,6 @@ impl CodeOverhaulSection {
 
         // any if that contains an if validation is considered a validation
         let mut filtered_if_validations = handler_if_validations
-            .clone()
             .results
             .iter()
             .filter(|if_est| {
@@ -204,7 +203,7 @@ impl CodeOverhaulSection {
         };
 
         let ca_accounts_only_validations = BatSonar::new_scanned(
-            &context_source_code.clone().get_source_code_content(),
+            &context_source_code.get_source_code_content(),
             SonarResultType::ContextAccountsOnlyValidation,
         );
 
@@ -260,7 +259,7 @@ impl CodeOverhaulSection {
                 continue;
             }
             let signer_name = content.clone().last().unwrap().trim().replace("pub ", "");
-            let signer_name = signer_name.split(":").next().unwrap();
+            let signer_name = signer_name.split(':').next().unwrap();
             // delete last line
             content.pop().unwrap();
             let signer_comments = content
@@ -268,13 +267,13 @@ impl CodeOverhaulSection {
                 .filter(|line| {
                     line.clone()
                         .trim()
-                        .split(" ")
+                        .split(' ')
                         .next()
                         .unwrap()
                         .contains("//")
                 })
                 .collect::<Vec<_>>();
-            if signer_comments.len() == 0 {
+            if signer_comments.is_empty() {
                 let signer_description = format!(
                     "- {}: {}",
                     signer_name,
@@ -374,7 +373,7 @@ impl CodeOverhaulSection {
         let context_filtered = format!(
             "{}\n{}\n{}",
             first_line,
-            accounts_string.trim_start_matches("\n"),
+            accounts_string.trim_start_matches('\n'),
             last_line,
         );
         let formatted = context_filtered
@@ -415,9 +414,9 @@ impl CodeOverhaulSection {
                         return result;
                     }
                     if result.is_empty() {
-                        format!("- {}", parameter.trim_end_matches(","))
+                        format!("- {}", parameter.trim_end_matches(','))
                     } else {
-                        format!("{}\n- {}", result, parameter.trim_end_matches(","))
+                        format!("{}\n- {}", result, parameter.trim_end_matches(','))
                     }
                 })
         };

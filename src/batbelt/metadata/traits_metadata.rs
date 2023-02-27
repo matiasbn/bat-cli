@@ -1,18 +1,12 @@
-use crate::batbelt::path::{BatFile, BatFolder};
-
-use colored::Colorize;
-use strum::IntoEnumIterator;
+use crate::batbelt::path::BatFile;
 
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
-use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 
-use crate::batbelt::parser::parse_formatted_path;
-
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 
 use crate::batbelt::BatEnumerator;
 use std::{fs, vec};
@@ -115,10 +109,8 @@ impl TraitMetadata {
         &self,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
     ) -> Result<TraitImplParser, MetadataError> {
-        Ok(
-            TraitImplParser::new_from_metadata(self.clone(), optional_function_metadata_vec)
-                .change_context(MetadataError)?,
-        )
+        TraitImplParser::new_from_metadata(self.clone(), optional_function_metadata_vec)
+            .change_context(MetadataError)
     }
 
     pub fn get_trait_parser_vec(

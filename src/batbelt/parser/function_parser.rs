@@ -1,6 +1,6 @@
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, MetadataError};
+use crate::batbelt::metadata::BatMetadataParser;
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use crate::batbelt::parser::ParserError;
 
@@ -70,13 +70,13 @@ impl FunctionParser {
         let content = function_metadata
             .to_source_code_parser(None)
             .get_source_code_content();
-        Ok(Self::new(
+        Self::new(
             name,
             function_metadata,
             content,
             optional_function_metadata_vec,
             optional_trait_impl_parser_vec,
-        )?)
+        )
     }
 
     fn get_function_dependencies(
@@ -84,14 +84,14 @@ impl FunctionParser {
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
         optional_trait_impl_parser_vec: Option<Vec<TraitImplParser>>,
     ) -> Result<(), ParserError> {
-        let function_metadata = if optional_function_metadata_vec.clone().is_some() {
-            optional_function_metadata_vec.clone().unwrap()
+        let function_metadata = if optional_function_metadata_vec.is_some() {
+            optional_function_metadata_vec.unwrap()
         } else {
             FunctionMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
         };
 
-        let trait_impl_parser_vec = if optional_trait_impl_parser_vec.clone().is_some() {
-            optional_trait_impl_parser_vec.clone().unwrap()
+        let trait_impl_parser_vec = if optional_trait_impl_parser_vec.is_some() {
+            optional_trait_impl_parser_vec.unwrap()
         } else {
             TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata.clone()))
                 .change_context(ParserError)?
@@ -118,10 +118,9 @@ impl FunctionParser {
                     .clone()
                     .into_iter()
                     .find_map(|impl_parser| {
-                        if impl_parser.impl_to.contains(&impl_match_to) {
+                        if impl_parser.impl_to.contains(impl_match_to) {
                             let f_metadata = impl_parser
                                 .impl_functions
-                                .clone()
                                 .into_iter()
                                 .find(|impl_fn| impl_fn.name == impl_match_function_name);
                             if f_metadata.is_some() {
@@ -212,7 +211,7 @@ impl FunctionParser {
     fn get_function_signature(&mut self) {
         let function_signature = self.content.clone();
         let function_signature = function_signature
-            .split("{")
+            .split('{')
             .next()
             .unwrap()
             .split("->")
@@ -232,15 +231,15 @@ impl FunctionParser {
 
         //Function parameters
         // single line function
-        let parameters = if content_lines.clone().next().unwrap().contains("{") {
+        let parameters = if content_lines.clone().next().unwrap().contains('{') {
             let function_signature_tokenized = function_signature
                 .trim_start_matches("pub (crate) fn ")
                 .trim_start_matches("pub fn ")
-                .split("(")
+                .split('(')
                 .last()
                 .unwrap()
-                .trim_end_matches(")")
-                .split(" ")
+                .trim_end_matches(')')
+                .split(' ')
                 .collect::<Vec<_>>();
             if function_signature_tokenized.is_empty() || function_signature_tokenized[0].is_empty()
             {
@@ -250,7 +249,7 @@ impl FunctionParser {
             function_signature_tokenized.iter().enumerate().fold(
                 "".to_string(),
                 |total, current| {
-                    if current.1.contains(":") {
+                    if current.1.contains(':') {
                         if !total.is_empty() {
                             parameters.push(total);
                         }
@@ -270,11 +269,11 @@ impl FunctionParser {
             let filtered: Vec<String> = function_signature
                 .lines()
                 .filter(|line| {
-                    line.contains(":")
+                    line.contains(':')
                         && !line.contains("pub fn")
                         && !line.contains("pub (crate) fn")
                 })
-                .map(|line| line.trim().trim_end_matches(",").to_string())
+                .map(|line| line.trim().trim_end_matches(',').to_string())
                 .collect();
             filtered
         };
@@ -294,10 +293,10 @@ impl FunctionParser {
 
     fn get_function_body(&mut self) {
         let function_body = self.content.clone();
-        let mut body = function_body.split("{");
+        let mut body = function_body.split('{');
         body.next();
         let body = body.collect::<Vec<_>>().join("{");
-        self.body = body.trim_end_matches("}").trim().to_string();
+        self.body = body.trim_end_matches('}').trim().to_string();
     }
 
     pub fn get_function_name_from_signature(function_signature: &str) -> String {
@@ -305,10 +304,10 @@ impl FunctionParser {
             .trim_start_matches("pub ")
             .trim_start_matches("(crate) ")
             .trim_start_matches("fn ")
-            .split("(")
+            .split('(')
             .next()
             .unwrap()
-            .split("<")
+            .split('<')
             .next()
             .unwrap()
             .to_string()

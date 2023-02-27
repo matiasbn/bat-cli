@@ -2,7 +2,7 @@ pub mod functions_metadata;
 pub mod structs_metadata;
 pub mod traits_metadata;
 
-use colored::{ColoredString, Colorize};
+use colored::Colorize;
 use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display};
@@ -16,9 +16,6 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
@@ -135,9 +132,9 @@ impl BatMetadataType {
         // Choose metadata section selection
         let prompt_text = format!("Please select the {}", "Metadata type".bright_purple());
         let selection =
-            BatDialoguer::select(prompt_text, metadata_types_colorized_vec.clone(), None).unwrap();
+            BatDialoguer::select(prompt_text, metadata_types_colorized_vec, None).unwrap();
         let metadata_type_selected = &metadata_types_vec[selection];
-        Ok(metadata_type_selected.clone())
+        Ok(*metadata_type_selected)
     }
 
     fn get_metadata_vec_from_markdown<T: BatMetadataParser<BatMetadataType>>(
@@ -146,7 +143,7 @@ impl BatMetadataType {
             BatMetadataType::Trait.get_markdown_sections_from_metadata_file()?;
         let metadata_vec = metadata_markdown_file
             .into_iter()
-            .map(|markdown_section| T::from_markdown_section(markdown_section.clone()))
+            .map(|markdown_section| T::from_markdown_section(markdown_section))
             .collect::<Result<Vec<T>, _>>()?;
         Ok(metadata_vec)
     }
@@ -196,13 +193,13 @@ where
             .change_context(MetadataError)?;
 
         let new_markdown_content = metadata_vec
-            .into_iter()
+            .iter_mut()
             .map(|metadata| metadata.get_markdown_section_content_string())
             .collect::<Vec<_>>()
             .join("\n\n");
 
         let result_metadata_content = if metadata_markdown_content.is_empty() {
-            new_markdown_content.clone()
+            new_markdown_content
         } else {
             format!("{}\n\n{}", metadata_markdown_content, new_markdown_content)
         };
@@ -263,7 +260,7 @@ where
             &md_section.content,
             BatMetadataMarkdownContent::EndLineIndex,
         )
-        .attach_printable(message.clone())?;
+        .attach_printable(message)?;
         Ok(Self::new(
             path,
             name,
@@ -280,14 +277,14 @@ where
             .change_context(MetadataError)?;
         let mut metadata_vec: Vec<Self> = program_dir_entries
             .into_iter()
-            .map(|entry| Self::get_metadata_from_dir_entry(entry.clone()))
+            .map(|entry| Self::get_metadata_from_dir_entry(entry))
             .collect::<Result<Vec<_>, MetadataError>>()?
             .into_iter()
             .fold(vec![], |mut result_vec, mut entry| {
                 result_vec.append(&mut entry);
                 result_vec
             });
-        metadata_vec.sort_by(|function_a, function_b| function_a.name().cmp(&function_b.name()));
+        metadata_vec.sort_by_key(|function_a| function_a.name());
         Ok(metadata_vec)
     }
 
@@ -319,7 +316,7 @@ where
         let (metadata_vec, metadata_names) = Self::prompt_types()?;
         let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
         let selections = BatDialoguer::multiselect(
-            prompt_text.clone(),
+            prompt_text,
             metadata_names.clone(),
             Some(&vec![select_all; metadata_names.len()]),
             force_select,
@@ -337,7 +334,7 @@ where
                 }
             })
             .collect::<Vec<_>>();
-        return Ok(filtered_vec);
+        Ok(filtered_vec)
     }
 
     fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
@@ -355,9 +352,9 @@ where
             .iter()
             .map(|metadata| {
                 parse_formatted_path(
-                    metadata.name().clone(),
-                    metadata.path().clone(),
-                    metadata.start_line_index().clone(),
+                    metadata.name(),
+                    metadata.path(),
+                    metadata.start_line_index(),
                 )
             })
             .collect::<Vec<_>>();
@@ -374,8 +371,7 @@ where
         let filtered_sections = markdown_sections
             .into_iter()
             .filter(|section| {
-                if metadata_name.is_some()
-                    && metadata_name.clone().unwrap() != section.section_header.title
+                if metadata_name.is_some() && metadata_name.unwrap() != section.section_header.title
                 {
                     return false;
                 };
@@ -387,7 +383,7 @@ where
                         return false;
                     }
                 };
-                return true;
+                true
             })
             .collect::<Vec<_>>();
         log::debug!("metadata_name\n{:#?}", metadata_name);

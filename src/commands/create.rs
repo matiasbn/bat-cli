@@ -39,13 +39,13 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
             let file_names = dir
                 .map(|f| f.unwrap().file_name().to_str().unwrap().to_string())
                 .collect::<Vec<_>>();
-            let is_anchor_project = file_names.contains(&"Anchor.toml".to_string());
-            is_anchor_project
+
+            file_names.contains(&"Anchor.toml".to_string())
         })
         .map(|f| f.path().to_str().unwrap().to_string())
         .collect::<Vec<_>>();
     if local_anchor_project_folders.is_empty() {
-        let message = format!("No Anchor projects were found on the current working directory");
+        let message = "No Anchor projects were found on the current working directory".to_string();
         return Err(Report::new(CommandError).attach_printable(message));
     }
     // Folder with the program to audit selection
@@ -83,11 +83,11 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
     let selected_program_path = &cargo_programs_paths[selection];
     log::debug!("selected_program: {:#?}", selected_program_path);
     let program_name = selected_program_path
-        .split("/")
+        .split('/')
         .last()
         .unwrap()
         .to_string()
-        .replace("_", "-");
+        .replace('_', "-");
     log::debug!("program_name: {:#?}", program_name);
     let program_lib_path = format!("{}/src/lib.rs", selected_program_path);
     log::debug!("program_lib_path: {:#?}", program_lib_path);
@@ -100,10 +100,10 @@ fn create_bat_config_file() -> Result<BatConfig, CommandError> {
     }
 
     // Project name selection
-    let mut project_name: String = program_name.replace("_", "-").to_owned() + "-audit";
+    let mut project_name: String = program_name.replace('_', "-") + "-audit";
     let prompt_text = format!(
         "Do you want to use the name {} for this project?",
-        format!("{project_name}").yellow()
+        project_name.yellow()
     );
 
     let use_default = if !cfg!(debug_assertions) {

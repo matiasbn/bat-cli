@@ -59,7 +59,7 @@ impl MarkdownSectionHeader {
         section_hash: String,
         start_line_index: usize,
     ) -> Self {
-        let mut header_split = header.trim().split(" ");
+        let mut header_split = header.trim().split(' ');
         let prefix = header_split.next().unwrap().to_string();
         let title = header_split.collect::<Vec<&str>>().join(" ");
         let level = MarkdownSectionLevel::from_prefix(&prefix);
@@ -81,7 +81,7 @@ impl MarkdownFile {
             .change_context(MarkdownError)?;
         let mut md_file = MarkdownFile {
             path: path.to_string(),
-            content: md_file_content.clone(),
+            content: md_file_content,
             sections: vec![],
         };
         md_file.get_sections();
@@ -91,7 +91,7 @@ impl MarkdownFile {
     pub fn new_from_path_and_content(path: &str, content: String) -> Self {
         let mut md_file = MarkdownFile {
             path: path.to_string(),
-            content: content.to_string(),
+            content,
             sections: vec![],
         };
         md_file.get_sections();
@@ -147,10 +147,8 @@ impl MarkdownFile {
             )));
         }
         if section_count == 0 {
-            return Err(Report::new(MarkdownError).attach_printable(format!(
-                "no H1 sections detected with name {}",
-                title.to_string()
-            )));
+            return Err(Report::new(MarkdownError)
+                .attach_printable(format!("no H1 sections detected with name {}", title)));
         }
         Ok(section.next().unwrap())
     }
@@ -160,11 +158,10 @@ impl MarkdownFile {
         let sections: Vec<MarkdownSection> = section_headers
             .iter()
             .map(|section_header| {
-                let new_section = MarkdownSection::new_from_md_content_and_header(
+                MarkdownSection::new_from_md_content_and_header(
                     section_header.clone(),
                     &self.content.clone(),
-                );
-                new_section
+                )
             })
             .collect();
         self.sections = sections;
@@ -181,7 +178,7 @@ impl MarkdownFile {
                 };
                 let trailing_ws = Self::get_trailing_whitespaces(line.1);
                 if trailing_ws == 0 {
-                    if line.1.trim().split(" ").next().unwrap().contains("#") {
+                    if line.1.trim().split(' ').next().unwrap().contains('#') {
                         Some((line.1.to_string(), line.0))
                     } else {
                         None
@@ -195,16 +192,16 @@ impl MarkdownFile {
         let headers = headers_string
             .iter()
             .map(|header_string| {
-                let header_id = header_string.0.trim().split(" ").next().unwrap();
+                let header_id = header_string.0.trim().split(' ').next().unwrap();
                 if header_id == "#" {
                     section_hash = get_section_hash();
                 }
-                let header = MarkdownSectionHeader::new_from_header_and_hash(
+
+                MarkdownSectionHeader::new_from_header_and_hash(
                     header_string.0.clone(),
                     section_hash.clone(),
                     header_string.1,
-                );
-                header
+                )
             })
             .collect();
         headers
@@ -362,7 +359,7 @@ impl MarkdownSection {
         let content_lines = md_file_content.lines();
         let start_line_index = header.start_line_index;
         let end_line_index_sec = content_lines.clone().enumerate().position(|line| {
-            (line.1.trim().split(" ").next().unwrap().contains("#") && line.0 > start_line_index)
+            (line.1.trim().split(' ').next().unwrap().contains('#') && line.0 > start_line_index)
                 && !line.1.contains("#[account")
         });
         let md_section = if let Some(end_line_index) = end_line_index_sec {

@@ -1,20 +1,18 @@
-use clap::Parser;
 use figment::{
-    error,
     providers::{Format, Toml},
-    Figment, Profile,
+    Figment,
 };
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
+
 use std::{error::Error, fmt, str};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::CodeEditor;
 use crate::batbelt::path::BatFile;
 use crate::batbelt::BatEnumerator;
-use crate::commands::CommandError;
+
 use colored::Colorize;
-use error_stack::{Frame, FutureExt, IntoReport, Result, ResultExt};
+use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 use figment::error::Kind;
 
 #[derive(Debug)]
@@ -56,7 +54,7 @@ impl BatAuditorConfig {
     fn prompt_auditor_name(&mut self) -> BatConfigResult<()> {
         let bat_config = BatConfig::get_config()?;
         let auditor_names = bat_config.auditor_names;
-        let prompt_text = format!("Select your name:");
+        let prompt_text = "Select your name:".to_string();
         let selection = BatDialoguer::select(prompt_text, auditor_names.clone(), None)
             .change_context(BatConfigError)?;
         let auditor_name = auditor_names.get(selection).unwrap().clone();
@@ -84,9 +82,8 @@ impl BatAuditorConfig {
             CodeEditor::None.get_colored_name(false)
         );
         let editor_colorized_vec = CodeEditor::get_colorized_type_vec(false);
-        let editor_integration =
-            BatDialoguer::select(prompt_text.to_string(), editor_colorized_vec, None)
-                .change_context(BatConfigError)?;
+        let editor_integration = BatDialoguer::select(prompt_text, editor_colorized_vec, None)
+            .change_context(BatConfigError)?;
         self.code_editor = CodeEditor::from_index(editor_integration);
         self.use_code_editor = self.code_editor != CodeEditor::None;
         Ok(())
@@ -137,9 +134,9 @@ impl BatAuditorConfig {
         let path = BatFile::BatAuditorToml
             .get_path(false)
             .change_context(BatConfigError)?;
-        Ok(confy::store_path(path, self)
+        confy::store_path(path, self)
             .into_report()
-            .change_context(BatConfigError)?)
+            .change_context(BatConfigError)
     }
 }
 
@@ -175,8 +172,8 @@ impl BatConfig {
         let path = BatFile::BatToml
             .get_path(false)
             .change_context(BatConfigError)?;
-        Ok(confy::store_path(path, self)
+        confy::store_path(path, self)
             .into_report()
-            .change_context(BatConfigError)?)
+            .change_context(BatConfigError)
     }
 }

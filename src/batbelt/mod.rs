@@ -1,4 +1,3 @@
-use crate::batbelt::metadata::BatMetadataType;
 use colored::{ColoredString, Colorize};
 use inflector::Inflector;
 use std::cell::RefCell;
@@ -32,7 +31,7 @@ where
     T: Sized,
 {
     pub fn new(data_to_share: T) -> Self {
-        let original = Rc::new(RefCell::new((data_to_share)));
+        let original = Rc::new(RefCell::new(data_to_share));
         let cloned = Rc::clone(&original);
         Self { original, cloned }
     }
@@ -52,11 +51,11 @@ where
 
     fn from_str(type_str: &str) -> Self {
         let structs_type_vec = Self::get_metadata_type_vec();
-        let struct_type = structs_type_vec
+
+        structs_type_vec
             .into_iter()
             .find(|struct_type| struct_type.to_snake_case() == type_str.to_snake_case())
-            .unwrap();
-        struct_type.clone()
+            .unwrap()
     }
 
     fn from_index(index: usize) -> Self {
@@ -76,12 +75,12 @@ where
 
         log::debug!("self_name_for_colorized: {}", self_name);
         let colorized_vec = Self::get_colorized_type_vec(to_plural);
-        log::debug!("colorized_vec: {:#?}", colorized_vec.clone());
-        let self_colorized = colorized_vec
+        log::debug!("colorized_vec: {:#?}", colorized_vec);
+
+        colorized_vec
             .into_iter()
             .find(|color| color.contains(&self_name))
-            .unwrap();
-        self_colorized
+            .unwrap()
     }
 
     fn colored_from_index(type_str: &str, idx: usize) -> ColoredString {
@@ -103,14 +102,11 @@ where
             .map(|metadata_type| {
                 if to_plural {
                     Self::colored_from_index(
-                        &(*metadata_type.1).to_string().to_plural().clone(),
+                        &(*metadata_type.1).to_string().to_plural(),
                         metadata_type.0,
                     )
                 } else {
-                    Self::colored_from_index(
-                        &(*metadata_type.1).to_string().clone(),
-                        metadata_type.0,
-                    )
+                    Self::colored_from_index(&(*metadata_type.1).to_string(), metadata_type.0)
                 }
             })
             .collect::<Vec<_>>();

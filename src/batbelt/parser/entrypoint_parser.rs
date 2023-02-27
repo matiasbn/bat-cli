@@ -53,9 +53,10 @@ impl EntrypointParser {
 
         if entrypoint_section.len() != 1 {
             return Err(Report::new(ParserError)
-                .attach_printable(format!(
+                .attach_printable(
                     "Incorrect amount of results looking for entrypoint function section"
-                ))
+                        .to_string(),
+                )
                 .attach_printable(format!("expected: 1,  got: {}", entrypoint_section.len()))
                 .attach_printable(format!("sections_filtered:\n{:#?}", entrypoint_section)))?;
         }
@@ -75,7 +76,7 @@ impl EntrypointParser {
         let handler = handlers.into_iter().find(|function_metadata| {
             let function_source_code = function_metadata.to_source_code_parser(None);
             let function_content = function_source_code.get_source_code_content();
-            let function_parameters = get_function_parameters(function_content.clone());
+            let function_parameters = get_function_parameters(function_content);
             !function_parameters.is_empty()
                 && function_parameters[0].contains("Context<")
                 && function_parameters[0].contains(&context_name)
@@ -97,9 +98,9 @@ impl EntrypointParser {
             ))?;
         Ok(Self {
             name: entrypoint_name.to_string(),
-            handler: handler.clone(),
+            handler,
             context_accounts: context_accounts.clone(),
-            entrypoint_function: entrypoint_function.clone(),
+            entrypoint_function,
         })
     }
 
@@ -126,11 +127,11 @@ impl EntrypointParser {
 
     pub fn get_all_contexts_names() -> Vec<String> {
         let entrypoints_names = Self::get_entrypoints_names(false).unwrap();
-        let context_accounts_names = entrypoints_names
+
+        entrypoints_names
             .into_iter()
             .map(|ep_name| Self::get_context_name(&ep_name).unwrap())
-            .collect::<Vec<_>>();
-        context_accounts_names
+            .collect::<Vec<_>>()
     }
 
     pub fn get_context_name(entrypoint_name: &str) -> Result<String, ParserError> {

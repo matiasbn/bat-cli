@@ -3,7 +3,7 @@ use crate::batbelt;
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataError};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -557,7 +557,7 @@ impl MiroCommand {
                         (grid_amount - handler_multiplier) * height_grid,
                     )
                 };
-            let selected_entrypoint = &entrypoints_names[selected_ep_index.clone()];
+            let selected_entrypoint = &entrypoints_names[*selected_ep_index];
             // get context_accounts name
             let entrypoint = EntrypointParser::new_from_name(selected_entrypoint.as_str())
                 .change_context(CommandError)?;
@@ -819,7 +819,7 @@ impl MiroCommand {
                     self.get_formatted_path(
                         f_meta.name.clone(),
                         f_meta.path.clone(),
-                        f_meta.start_line_index.clone(),
+                        f_meta.start_line_index,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -914,7 +914,7 @@ impl MiroCommand {
                 .deploy_screenshot_to_miro_frame(
                     selected_miro_frame.clone(),
                     (selected_miro_frame.height as i64) / 2,
-                    -1 * (selected_miro_frame.width as i64) / 2,
+                    -(selected_miro_frame.width as i64) / 2,
                     function_sc_options.clone(),
                 )
                 .await
@@ -936,7 +936,7 @@ impl MiroCommand {
         let dependencies_names_vec = function_dependencies
             .clone()
             .into_iter()
-            .map(|dp| dp.name.clone())
+            .map(|dp| dp.name)
             .collect::<Vec<_>>();
 
         let selected_function_content = parent_function
@@ -994,7 +994,7 @@ impl MiroCommand {
                 .clone()
                 .into_iter()
                 .find(|dep| dep.1 == selected_dependency.function_metadata);
-            if !already_deployed.is_some() {
+            if already_deployed.is_none() {
                 pending_to_deploy.push(selected_dependency.function_metadata.clone());
             } else {
                 pending_to_connect.push(already_deployed.unwrap().0);
@@ -1079,8 +1079,7 @@ impl MiroCommand {
             "{}::frame={}",
             name,
             frame_title
-                .replace(" ", "_")
-                .replace("-", "_")
+                .replace([' ', '-'], "_")
                 .to_screaming_snake_case()
         )
     }

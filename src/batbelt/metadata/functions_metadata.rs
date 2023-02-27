@@ -1,20 +1,16 @@
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::path::BatFile;
 use crate::config::BatConfig;
-use colored::Colorize;
+
 use strum::IntoEnumIterator;
 
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 
-use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::{
-    BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType, MetadataResult,
-};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataResult};
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
-use error_stack::{Report, Result, ResultExt};
-use inflector::Inflector;
+use error_stack::{Result, ResultExt};
 
 use crate::batbelt::BatEnumerator;
 use std::{fs, vec};
@@ -113,12 +109,12 @@ impl FunctionMetadata {
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
         optional_trait_impl_parser_vec: Option<Vec<TraitImplParser>>,
     ) -> Result<FunctionParser, MetadataError> {
-        Ok(FunctionParser::new_from_metadata(
+        FunctionParser::new_from_metadata(
             self.clone(),
             optional_function_metadata_vec,
             optional_trait_impl_parser_vec,
         )
-        .change_context(MetadataError)?)
+        .change_context(MetadataError)
     }
 
     fn assert_function_is_entrypoint(
@@ -128,7 +124,6 @@ impl FunctionMetadata {
         let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
         if entry_path == BatConfig::get_config().unwrap().program_lib_path {
             if entrypoints_names
-                .clone()
                 .into_iter()
                 .any(|ep_name| ep_name == sonar_result.name)
             {
@@ -148,17 +143,16 @@ impl FunctionMetadata {
         let context_names = EntrypointParser::get_all_contexts_names();
         let result_source_code = SourceCodeParser::new(
             sonar_result.name.clone(),
-            entry_path.clone(),
-            sonar_result.start_line_index.clone() + 1,
-            sonar_result.end_line_index.clone() + 1,
+            entry_path,
+            sonar_result.start_line_index + 1,
+            sonar_result.end_line_index + 1,
         );
         let result_content = result_source_code.get_source_code_content();
-        let result_parameters = get_function_parameters(result_content.clone());
+        let result_parameters = get_function_parameters(result_content);
         if !result_parameters.is_empty() {
             let first_parameter = result_parameters[0].clone();
             if first_parameter.contains("Context")
                 && context_names
-                    .clone()
                     .into_iter()
                     .any(|cx_name| first_parameter.contains(&cx_name))
             {
@@ -187,15 +181,15 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
     //Function parameters
     // single line function
     // info!("function content: \n {}", function_content);
-    if content_lines.clone().next().unwrap().contains("{") {
+    if content_lines.clone().next().unwrap().contains('{') {
         let function_signature_tokenized = function_signature
             .trim_start_matches("pub (crate) fn ")
             .trim_start_matches("pub fn ")
-            .split("(")
+            .split('(')
             .last()
             .unwrap()
-            .trim_end_matches(")")
-            .split(" ")
+            .trim_end_matches(')')
+            .split(' ')
             .collect::<Vec<_>>();
         if function_signature_tokenized.is_empty() || function_signature_tokenized[0].is_empty() {
             return vec![];
@@ -205,7 +199,7 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
             .iter()
             .enumerate()
             .fold("".to_string(), |total, current| {
-                if current.1.contains(":") {
+                if current.1.contains(':') {
                     if !total.is_empty() {
                         parameters.push(total);
                     }
@@ -223,8 +217,8 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
         // parameters contains :
         let filtered: Vec<String> = function_signature
             .lines()
-            .filter(|line| line.contains(":"))
-            .map(|line| line.trim().trim_end_matches(",").to_string())
+            .filter(|line| line.contains(':'))
+            .map(|line| line.trim().trim_end_matches(',').to_string())
             .collect();
         filtered
     }
@@ -233,7 +227,7 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
 pub fn get_function_signature(function_content: &str) -> String {
     let function_signature = function_content.clone();
     let function_signature = function_signature
-        .split("{")
+        .split('{')
         .next()
         .unwrap()
         .split("->")
@@ -244,10 +238,10 @@ pub fn get_function_signature(function_content: &str) -> String {
 
 pub fn get_function_body(function_content: &str) -> String {
     let function_body = function_content.clone();
-    let mut body = function_body.split("{");
+    let mut body = function_body.split('{');
     body.next();
     let body = body.collect::<Vec<_>>().join("{");
-    body.trim_end_matches("}").trim().to_string()
+    body.trim_end_matches('}').trim().to_string()
 }
 
 #[test]

@@ -1,17 +1,10 @@
-use std::error::Error;
-use std::fmt;
-use std::fs;
-
-use error_stack::{Result, ResultExt};
+use error_stack::ResultExt;
 
 use crate::batbelt::path::BatFile::GitIgnore;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::batbelt::templates::TemplateGenerator;
-use crate::batbelt::{
-    git::GitCommit,
-    path::{BatFile, BatFolder},
-};
+use crate::batbelt::{git::GitCommit, path::BatFolder};
 use crate::commands::{CommandError, CommandResult};
 
 pub fn update_repository() -> CommandResult<()> {

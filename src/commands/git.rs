@@ -22,10 +22,10 @@ impl GitCommand {
                 self.merge_develop_to_all()?;
             }
             GitCommand::FetchRemoteBranches { select_all } => {
-                self.fetch_remote_branches(select_all.clone())?
+                self.fetch_remote_branches(*select_all)?
             }
             GitCommand::DeleteLocalBranches { select_all } => {
-                self.delete_local_branches(select_all.clone())?
+                self.delete_local_branches(*select_all)?
             }
         }
         Ok(())
@@ -69,7 +69,7 @@ impl GitCommand {
         let selections = batbelt::bat_dialoguer::multiselect(
             &prompt_test,
             branches_list.clone(),
-            Some(&vec![select_all; branches_list.clone().len()]),
+            Some(&vec![select_all; branches_list.len()]),
         )
         .change_context(CommandError)?;
         for selection in selections {
@@ -94,7 +94,7 @@ impl GitCommand {
         let selections = batbelt::bat_dialoguer::multiselect(
             &prompt_test,
             branches_list.clone(),
-            Some(&vec![select_all; branches_list.clone().len()]),
+            Some(&vec![select_all; branches_list.len()]),
         )
         .change_context(CommandError)?;
         for selection in selections {
@@ -111,7 +111,7 @@ impl GitCommand {
         let branches_list = batbelt::git::get_local_branches().change_context(CommandError)?;
         if !branches_list
             .lines()
-            .any(|line| line.trim_start_matches("*").trim_start() == "develop")
+            .any(|line| line.trim_start_matches('*').trim_start() == "develop")
         {
             log::debug!("branches_list:\n{}", branches_list);
             return Err(Report::new(CommandError).attach_printable("develop branch not found"));
@@ -125,7 +125,7 @@ impl GitCommand {
         let list = branches_list
             .lines()
             .filter_map(|branch| {
-                let branch_name = branch.trim().trim_start_matches("*").trim();
+                let branch_name = branch.trim().trim_start_matches('*').trim();
                 if branch_name != "main" && branch_name != "develop" {
                     Some(branch_name.to_string())
                 } else {
@@ -143,7 +143,7 @@ impl GitCommand {
         let list = branches_list
             .lines()
             .filter_map(|branch| {
-                let branch_name = branch.trim().trim_start_matches("*").trim();
+                let branch_name = branch.trim().trim_start_matches('*').trim();
                 if branch_name != "origin/main"
                     && branch_name != "origin/develop"
                     && branch_name.split(" ->").next().unwrap() != "origin/HEAD"
