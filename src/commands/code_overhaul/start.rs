@@ -1,9 +1,10 @@
 use error_stack::{Report, Result, ResultExt};
 
 use crate::batbelt;
+use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::command_line::vs_code_open_file_in_current_window;
-use crate::batbelt::git::{create_git_commit, GitCommit};
+use crate::batbelt::git::GitCommit;
 
 use crate::batbelt::path::{BatFile, BatFolder};
 
@@ -12,27 +13,25 @@ use crate::commands::CommandError;
 
 pub fn start_co_file() -> Result<(), CommandError> {
     let review_files = BatFolder::CodeOverhaulToReview
-        .get_all_files_dir_entries(true, None, None)
-        .change_context(CommandError)?
-        .into_iter()
-        .map(|entry| entry.file_name().to_str().unwrap().to_string())
-        .collect::<Vec<_>>();
+        .get_all_files_names(true, None, None)
+        .change_context(CommandError)?;
 
     if review_files.is_empty() {
         return Err(Report::new(CommandError)
             .attach_printable("no to-review files in code-overhaul folder"));
     }
     let prompt_text = "Select the code-overhaul file to start:";
-    let selection = batbelt::bat_dialoguer::select(prompt_text, review_files.clone(), None)
+    let selection = BatDialoguer::select(prompt_text.to_string(), review_files.clone(), None)
         .change_context(CommandError)?;
 
     // user select file
     let to_start_file_name = &review_files[selection].clone();
     let entrypoint_name = to_start_file_name.trim_end_matches(".md");
-    let to_review_file_path = BatFile::CodeOverhaulToReview {
+
+    BatFile::CodeOverhaulToReview {
         file_name: to_start_file_name.clone(),
     }
-    .get_path(true)
+    .remove_file()
     .change_context(CommandError)?;
 
     let started_path = BatFile::CodeOverhaulStarted {
@@ -49,14 +48,12 @@ pub fn start_co_file() -> Result<(), CommandError> {
 
     started_markdown.save().change_context(CommandError)?;
 
-    execute_command("rm", &[&to_review_file_path]).change_context(CommandError)?;
-
     println!("{to_start_file_name} file moved to started");
 
-    create_git_commit(
-        GitCommit::StartCO,
-        Some(vec![to_start_file_name.to_string()]),
-    )
+    GitCommit::StartCO {
+        entrypoint_name: to_start_file_name.clone(),
+    }
+    .create_commit()
     .change_context(CommandError)?;
 
     // open co file in VSCode

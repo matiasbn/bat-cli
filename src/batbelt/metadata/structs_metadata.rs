@@ -49,9 +49,11 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
     fn metadata_sub_type(&self) -> StructMetadataType {
         self.struct_type
     }
-
-    fn match_bat_metadata_type() -> BatMetadataType {
+    fn get_bat_metadata_type() -> BatMetadataType {
         BatMetadataType::Struct
+    }
+    fn get_bat_file() -> BatFile {
+        BatFile::StructsMetadataFile
     }
     fn metadata_name() -> String {
         "Struct".to_string()
@@ -78,37 +80,18 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Struct);
-        let mut result_vec = vec![];
+        let mut metadata_result = vec![];
         for result in bat_sonar.results {
-            let is_context_accounts =
-                Self::assert_struct_is_context_accounts(&file_content, result.clone()).unwrap();
-            if is_context_accounts {
-                let struct_type = StructMetadataType::ContextAccounts;
-                let struct_metadata = StructMetadata::new(
-                    entry_path.clone(),
-                    result.name.to_string(),
-                    struct_type,
-                    result.start_line_index + 1,
-                    result.end_line_index + 1,
-                );
-                result_vec.push(struct_metadata);
-                continue;
-            }
-            let is_solana_account =
-                Self::assert_struct_is_solana_account(&file_content, result.clone());
-            if is_solana_account {
-                let struct_type = StructMetadataType::SolanaAccount;
-                let struct_metadata = StructMetadata::new(
-                    entry_path.clone(),
-                    result.name.to_string(),
-                    struct_type,
-                    result.start_line_index + 1,
-                    result.end_line_index + 1,
-                );
-                result_vec.push(struct_metadata);
-                continue;
-            }
-            let struct_type = StructMetadataType::Other;
+            let struct_type =
+                if Self::assert_struct_is_solana_account(&file_content, result.clone()) {
+                    StructMetadataType::SolanaAccount
+                } else if Self::assert_struct_is_context_accounts(&file_content, result.clone())
+                    .unwrap()
+                {
+                    StructMetadataType::ContextAccounts
+                } else {
+                    StructMetadataType::Other
+                };
             let struct_metadata = StructMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
@@ -116,9 +99,13 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
                 result.start_line_index + 1,
                 result.end_line_index + 1,
             );
-            result_vec.push(struct_metadata);
+            metadata_result.push(struct_metadata);
         }
-        Ok(result_vec)
+
+        Self::update_markdown_from_metadata_vec(metadata_result.clone())?;
+
+
+        Ok(metadata_result)
     }
 }
 

@@ -204,14 +204,14 @@ async fn main() {
         //     default,
         //     select_all,
         // }) => commands::miro::deploy_metadata_screenshot_to_frame(default, select_all).await,
-        Commands::Finding(FindingCommand::Create) => commands::finding::create_finding(),
+        Commands::Finding(FindingCommand::Create) => commands::finding::start_finding(),
         Commands::Finding(FindingCommand::Finish) => commands::finding::finish_finding(),
         Commands::Finding(FindingCommand::Update) => commands::finding::update_finding(),
         Commands::Finding(FindingCommand::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingCommand::Reject) => commands::finding::reject(),
         Commands::Update => commands::update::update_repository().change_context(CommandError),
         Commands::Notes => {
-            batbelt::git::create_git_commit(GitCommit::Notes, None).change_context(CommandError)
+            GitCommit::Notes.create_commit().change_context(CommandError)
         }
         // Commands::Result(ResultActions::Findings { html }) => {
         //     commands::result::findings_result(html)

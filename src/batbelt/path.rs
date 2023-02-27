@@ -1,9 +1,12 @@
+use crate::batbelt::command_line::{execute_command, vs_code_open_file_in_current_window};
+use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::{BatAuditorConfig, BatConfig};
-use error_stack::{IntoReport, Result, ResultExt};
+use clap::builder::Str;
+use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 use inflector::Inflector;
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt, path::Path};
+use std::{error::Error, fmt, fs, path::Path};
 use walkdir::{DirEntry, WalkDir};
 
 #[derive(Debug)]
@@ -17,6 +20,8 @@ impl fmt::Display for BatPathError {
 
 impl Error for BatPathError {}
 
+type BatPathResult<T> = Result<T, BatPathError>;
+
 pub enum BatFile {
     BatToml,
     BatAuditorToml,
@@ -24,10 +29,6 @@ pub enum BatFile {
     StructsMetadataFile,
     TraitsMetadataFile,
     ThreatModeling,
-    AuditResult,
-    FindingsResult,
-    FindingsRobotResult,
-    CodeOverhaulResult,
     FindingCandidates,
     OpenQuestions,
     ProgramLib,
@@ -40,10 +41,11 @@ pub enum BatFile {
     FindingToReview { file_name: String },
     FindingAccepted { file_name: String },
     FindingRejected { file_name: String },
+    Generic { file_path: String },
 }
 
 impl BatFile {
-    pub fn get_path(&self, canonicalize: bool) -> Result<String, BatPathError> {
+    pub fn get_path(&self, canonicalize: bool) -> BatPathResult<String> {
         let path = match self {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
@@ -53,44 +55,35 @@ impl BatFile {
                     .change_context(BatPathError)?
                     .program_lib_path
             }
-            BatFile::AuditResult => {
-                format!("./audit_result.md")
-            }
-            BatFile::FindingsResult => {
-                format!("./audit_result/findings_result.md")
-            }
-            BatFile::FindingsRobotResult => {
-                format!("./audit_result/02_findings_result.md")
-            }
-            BatFile::CodeOverhaulResult => {
-                format!("./audit_result/co_result.md")
-            }
             BatFile::Readme => {
                 format!("./README.md")
             }
-            BatFile::RobotFile => format!("{}/robot.md", BatFolder::AuditorNotes.get_path(false)?),
+            BatFile::RobotFile => format!(
+                "{}/robot.md",
+                BatFolder::AuditorNotes.get_path(canonicalize)?
+            ),
             BatFile::FindingCandidates => {
                 format!(
                     "{}/finding_candidates.md",
-                    BatFolder::AuditorNotes.get_path(false)?
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
             BatFile::OpenQuestions => {
                 format!(
                     "{}/open_questions.md",
-                    BatFolder::AuditorNotes.get_path(false)?
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
             BatFile::ThreatModeling => {
                 format!(
                     "{}/threat_modeling.md",
-                    BatFolder::AuditorNotes.get_path(false)?
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
             BatFile::StructsMetadataFile => {
                 format!(
                     "{}/{}.md",
-                    BatFolder::Metadata.get_path(false)?,
+                    BatFolder::Metadata.get_path(canonicalize)?,
                     BatMetadataType::Struct
                         .to_string()
                         .to_lowercase()
@@ -100,7 +93,7 @@ impl BatFile {
             BatFile::FunctionsMetadataFile => {
                 format!(
                     "{}/{}.md",
-                    BatFolder::Metadata.get_path(false)?,
+                    BatFolder::Metadata.get_path(canonicalize)?,
                     BatMetadataType::Function
                         .to_string()
                         .to_lowercase()
@@ -110,7 +103,7 @@ impl BatFile {
             BatFile::TraitsMetadataFile => {
                 format!(
                     "{}/{}.md",
-                    BatFolder::Metadata.get_path(false)?,
+                    BatFolder::Metadata.get_path(canonicalize)?,
                     BatMetadataType::Trait
                         .to_string()
                         .to_lowercase()
@@ -121,44 +114,45 @@ impl BatFile {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulToReview.get_path(false)?
+                    BatFolder::CodeOverhaulToReview.get_path(canonicalize)?
                 )
             }
             BatFile::CodeOverhaulStarted { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulStarted.get_path(false)?
+                    BatFolder::CodeOverhaulStarted.get_path(canonicalize)?
                 )
             }
             BatFile::CodeOverhaulFinished { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulFinished.get_path(false)?
+                    BatFolder::CodeOverhaulFinished.get_path(canonicalize)?
                 )
             }
             BatFile::FindingToReview { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::FindingsToReview.get_path(false)?
+                    BatFolder::FindingsToReview.get_path(canonicalize)?
                 )
             }
             BatFile::FindingAccepted { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::FindingsAccepted.get_path(false)?
+                    BatFolder::FindingsAccepted.get_path(canonicalize)?
                 )
             }
             BatFile::FindingRejected { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::FindingsRejected.get_path(false)?
+                    BatFolder::FindingsRejected.get_path(canonicalize)?
                 )
             }
+            BatFile::Generic { file_path } => file_path.clone(),
         };
 
         if canonicalize {
@@ -167,14 +161,88 @@ impl BatFile {
 
         Ok(path)
     }
+
+    pub fn read_content(&self, canonicalize: bool) -> BatPathResult<String> {
+        fs::read_to_string(self.get_path(canonicalize)?)
+            .into_report()
+            .change_context(BatPathError)
+            .attach_printable(format!(
+                "Error reading content for file in path:\n {}",
+                self.get_path(canonicalize)?
+            ))
+    }
+
+    pub fn write_content(&self, canonicalize: bool, content: &str) -> BatPathResult<()> {
+        fs::write(&self.get_path(canonicalize)?, content)
+            .into_report()
+            .change_context(BatPathError)
+            .attach_printable(format!(
+                "Error writing content for file in path:\n {}",
+                self.get_path(canonicalize)?
+            ))
+    }
+
+    pub fn remove_file(&self) -> BatPathResult<()> {
+        fs::remove_file(&self.get_path(true)?)
+            .into_report()
+            .change_context(BatPathError)
+            .attach_printable(format!(
+                "Error removing file in path:\n {}",
+                self.get_path(true)?
+            ))
+    }
+
+    pub fn create_empty(&self, canonicalize: bool) -> BatPathResult<()> {
+        execute_command("touch", &[&self.get_path(canonicalize)?])
+            .change_context(BatPathError)
+            .attach_printable(format!(
+                "Error creating empty file in path:\n {}",
+                self.get_path(canonicalize)?
+            ))?;
+        Ok(())
+    }
+
+    pub fn move_file(&self, destination_path: &str) -> BatPathResult<()> {
+        execute_command("mv", &[&self.get_path(true)?, destination_path])
+            .change_context(BatPathError)
+            .attach_printable(format!(
+                "Error moving file :\n{} \nto path:\n {}",
+                self.get_path(true)?,
+                destination_path
+            ))?;
+        Ok(())
+    }
+
+    pub fn open_in_vs_code(&self) -> BatPathResult<()> {
+        vs_code_open_file_in_current_window(&self.get_path(true)?).change_context(BatPathError)?;
+        Ok(())
+    }
+
+    pub fn file_exists(&self) -> BatPathResult<bool> {
+        Ok(Path::new(&self.get_path(false)?).is_file())
+    }
+
+    pub fn get_file_name(&self) -> BatPathResult<String> {
+        Ok(Path::new(&self.get_path(true)?)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string())
+    }
+
+    pub fn to_markdown_file(&self, content: String) -> BatPathResult<MarkdownFile> {
+        Ok(MarkdownFile::new_from_path_and_content(
+            &self.get_path(false)?,
+            content,
+        ))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum BatFolder {
     Metadata,
     ProgramPath,
-    Templates,
-    NotesTemplate,
     FindingsToReview,
     FindingsAccepted,
     FindingsRejected,
@@ -184,9 +252,6 @@ pub enum BatFolder {
     AuditorNotes,
     AuditorFigures,
     Notes,
-    AuditResult,
-    AuditResultFigures,
-    AuditResultTemp,
 }
 
 impl BatFolder {
@@ -201,9 +266,6 @@ impl BatFolder {
 
         let path = match self {
             BatFolder::Notes => "./notes".to_string(),
-            BatFolder::AuditResult => "./audit_result".to_string(),
-            BatFolder::AuditResultFigures => "./audit_result/figures".to_string(),
-            BatFolder::AuditResultTemp => "./audit_result/temp".to_string(),
             BatFolder::AuditorNotes => auditor_notes_folder_path,
             BatFolder::AuditorFigures => format!("{auditor_notes_folder_path}/figures"),
             BatFolder::Metadata => format!("{auditor_notes_folder_path}/metadata"),
@@ -211,12 +273,6 @@ impl BatFolder {
                 .program_lib_path
                 .trim_end_matches("/lib.rs")
                 .to_string(),
-            BatFolder::Templates => {
-                format!("./templates")
-            }
-            BatFolder::NotesTemplate => {
-                format!("./templates/notes-folder-template")
-            }
             BatFolder::FindingsToReview => {
                 format!("{}/to-review", findings_path)
             }
@@ -302,6 +358,30 @@ impl BatFolder {
             .into_iter()
             .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
             .collect::<Vec<_>>())
+    }
+
+    pub fn get_all_bat_files(
+        &self,
+        sorted: bool,
+        file_name_to_exclude_filters: Option<Vec<String>>,
+        file_extension_to_include_filters: Option<Vec<String>>,
+    ) -> BatPathResult<Vec<BatFile>> {
+        let generic_vec = self
+            .get_all_files_dir_entries(
+                sorted,
+                file_name_to_exclude_filters,
+                file_extension_to_include_filters,
+            )?
+            .into_iter()
+            .map(|entry| BatFile::Generic {
+                file_path: entry.path().to_str().unwrap().to_string(),
+            })
+            .collect::<Vec<_>>();
+        Ok(generic_vec)
+    }
+
+    pub fn folder_exists(&self) -> BatPathResult<bool> {
+        Ok(Path::new(&self.get_path(false)?).is_dir())
     }
 }
 

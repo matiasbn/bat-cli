@@ -1,14 +1,15 @@
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::BatFolder;
+use crate::batbelt::path::{BatFile, BatFolder};
 use crate::config::BatConfig;
 use colored::Colorize;
 use strum::IntoEnumIterator;
 
-use crate::batbelt::sonar::{BatSonar, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::{
     BatMetadataMarkdownContent, BatMetadataParser, BatMetadataType, BatMetadataTypeParser,
+    MetadataResult,
 };
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
@@ -50,9 +51,12 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     fn metadata_sub_type(&self) -> FunctionMetadataType {
         self.function_type
     }
-
-    fn match_bat_metadata_type() -> BatMetadataType {
+    fn get_bat_metadata_type() -> BatMetadataType {
         BatMetadataType::Function
+    }
+
+    fn get_bat_file() -> BatFile {
+        BatFile::FunctionsMetadataFile
     }
     fn metadata_name() -> String {
         "Function".to_string()
@@ -76,61 +80,20 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     }
 
     fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
-        let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
-        let context_names = EntrypointParser::get_all_contexts_names();
         let mut metadata_result: Vec<FunctionMetadata> = vec![];
         let entry_path = entry.path().to_str().unwrap().to_string();
         // println!("starting the review of the {} file", entry_path.blue());
         let file_content = fs::read_to_string(entry.path()).unwrap();
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
         for result in bat_sonar.results {
-            if entry_path == BatConfig::get_config().unwrap().program_lib_path {
-                if entrypoints_names
-                    .clone()
-                    .into_iter()
-                    .any(|ep_name| ep_name == result.name)
-                {
-                    let function_type = FunctionMetadataType::EntryPoint;
-                    let function_metadata = FunctionMetadata::new(
-                        entry_path.clone(),
-                        result.name.to_string(),
-                        function_type,
-                        result.start_line_index + 1,
-                        result.end_line_index + 1,
-                    );
-                    metadata_result.push(function_metadata);
-                    continue;
-                }
-            }
-            let result_source_code = SourceCodeParser::new(
-                result.name.clone(),
-                entry_path.clone(),
-                result.start_line_index.clone() + 1,
-                result.end_line_index.clone() + 1,
-            );
-            let result_content = result_source_code.get_source_code_content();
-            let result_parameters = get_function_parameters(result_content.clone());
-            if !result_parameters.is_empty() {
-                let first_parameter = result_parameters[0].clone();
-                if first_parameter.contains("Context")
-                    && context_names
-                        .clone()
-                        .into_iter()
-                        .any(|cx_name| first_parameter.contains(&cx_name))
-                {
-                    let function_type = FunctionMetadataType::Handler;
-                    let function_metadata = FunctionMetadata::new(
-                        entry_path.clone(),
-                        result.name.to_string(),
-                        function_type,
-                        result.start_line_index + 1,
-                        result.end_line_index + 1,
-                    );
-                    metadata_result.push(function_metadata);
-                    continue;
-                }
-            }
-            let function_type = FunctionMetadataType::Other;
+            let function_type = if Self::assert_function_is_entrypoint(&entry_path, result.clone())?
+            {
+                FunctionMetadataType::EntryPoint
+            } else if Self::assert_function_is_handler(entry_path.clone(), result.clone())? {
+                FunctionMetadataType::Handler
+            } else {
+                FunctionMetadataType::Other
+            };
             let function_metadata = FunctionMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
@@ -140,7 +103,9 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
             );
             metadata_result.push(function_metadata);
         }
-        metadata_result.sort_by(|function_a, function_b| function_a.name.cmp(&function_b.name));
+
+        Self::update_markdown_from_metadata_vec(metadata_result.clone())?;
+
         Ok(metadata_result)
     }
 }
@@ -157,6 +122,56 @@ impl FunctionMetadata {
             optional_trait_impl_parser_vec,
         )
         .change_context(MetadataError)?)
+    }
+
+    fn assert_function_is_entrypoint(
+        entry_path: &str,
+        sonar_result: SonarResult,
+    ) -> MetadataResult<bool> {
+        let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
+        if entry_path == BatConfig::get_config().unwrap().program_lib_path {
+            if entrypoints_names
+                .clone()
+                .into_iter()
+                .any(|ep_name| ep_name == sonar_result.name)
+            {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn assert_function_is_handler(
+        entry_path: String,
+        sonar_result: SonarResult,
+    ) -> MetadataResult<bool> {
+        let context_names = EntrypointParser::get_all_contexts_names();
+        let result_source_code = SourceCodeParser::new(
+            sonar_result.name.clone(),
+            entry_path.clone(),
+            sonar_result.start_line_index.clone() + 1,
+            sonar_result.end_line_index.clone() + 1,
+        );
+        let result_content = result_source_code.get_source_code_content();
+        let result_parameters = get_function_parameters(result_content.clone());
+        if !result_parameters.is_empty() {
+            let first_parameter = result_parameters[0].clone();
+            if first_parameter.contains("Context")
+                && context_names
+                    .clone()
+                    .into_iter()
+                    .any(|cx_name| first_parameter.contains(&cx_name))
+            {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        } else {
+            Ok(false)
+        }
     }
 }
 

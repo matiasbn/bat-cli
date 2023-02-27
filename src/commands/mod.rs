@@ -20,3 +20,5 @@ impl fmt::Display for CommandError {
 }
 
 impl Error for CommandError {}
+
+pub type CommandResult<T> = error_stack::Result<T, CommandError>;

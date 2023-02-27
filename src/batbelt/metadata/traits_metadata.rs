@@ -1,4 +1,4 @@
-use crate::batbelt::path::BatFolder;
+use crate::batbelt::path::{BatFile, BatFolder};
 
 use colored::Colorize;
 use strum::IntoEnumIterator;
@@ -48,9 +48,11 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
     fn metadata_sub_type(&self) -> TraitMetadataType {
         self.trait_type
     }
-
-    fn match_bat_metadata_type() -> BatMetadataType {
+    fn get_bat_metadata_type() -> BatMetadataType {
         BatMetadataType::Trait
+    }
+    fn get_bat_file() -> BatFile {
+        BatFile::TraitsMetadataFile
     }
     fn metadata_name() -> String {
         "Trait".to_string()
@@ -73,11 +75,13 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
         }
     }
 
+    //noinspection DuplicatedCode
     fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
+
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::TraitImpl);
-        let mut result_vec = vec![];
+        let mut metadata_result = vec![];
         for result in bat_sonar.results {
             let function_metadata = TraitMetadata::new(
                 entry_path.clone(),
@@ -86,8 +90,9 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
                 result.start_line_index + 1,
                 result.end_line_index + 1,
             );
-            result_vec.push(function_metadata);
+            metadata_result.push(function_metadata);
         }
+
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Trait);
         for result in bat_sonar.results {
             let function_metadata = TraitMetadata::new(
@@ -97,9 +102,12 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
                 result.start_line_index + 1,
                 result.end_line_index + 1,
             );
-            result_vec.push(function_metadata);
+            metadata_result.push(function_metadata);
         }
-        Ok(result_vec)
+
+        Self::update_markdown_from_metadata_vec(metadata_result.clone())?;
+
+        Ok(metadata_result)
     }
 }
 

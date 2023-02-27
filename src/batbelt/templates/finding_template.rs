@@ -17,14 +17,11 @@ impl FindingTemplate {
         } else {
             Self::get_finding_content(&finding_title)
         };
-        let finding_path = BatFile::FindingToReview {
+        BatFile::FindingToReview {
             file_name: finding_name.to_string(),
         }
-        .get_path(false)
+        .write_content(false, &content)
         .change_context(TemplateError)?;
-        fs::write(&finding_path, content)
-            .into_report()
-            .change_context(TemplateError)?;
         Ok(())
     }
 

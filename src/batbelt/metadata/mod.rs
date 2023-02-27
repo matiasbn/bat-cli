@@ -39,6 +39,8 @@ impl Error for MetadataError {}
 
 pub struct BatMetadata;
 
+pub type MetadataResult<T> = Result<T, MetadataError>;
+
 impl BatMetadata {
     pub fn metadata_is_initialized() -> Result<bool, MetadataError> {
         let mut metadata_initialized = true;
@@ -142,7 +144,7 @@ impl BatMetadataType {
 
 pub trait BatMetadataParser<U>
 where
-    Self: Sized,
+    Self: Sized + Clone,
     U: BatMetadataTypeParser,
 {
     fn name(&self) -> String;
@@ -151,7 +153,8 @@ where
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
     fn metadata_sub_type(&self) -> U;
-    fn match_bat_metadata_type() -> BatMetadataType;
+    fn get_bat_metadata_type() -> BatMetadataType;
+    fn get_bat_file() -> BatFile;
 
     fn metadata_name() -> String;
 
@@ -170,6 +173,35 @@ where
             .map(char::from)
             .collect();
         s
+    }
+
+    fn update_markdown_from_metadata_vec(metadata_vec: Vec<Self>) -> MetadataResult<()> {
+        let metadata_bat_file = Self::get_bat_file();
+        let metadata_markdown_content = metadata_bat_file
+            .read_content(true)
+            .change_context(MetadataError)?;
+
+        let new_markdown_content = metadata_vec
+            .into_iter()
+            .map(|metadata| metadata.get_markdown_section_content_string())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let new_content = format!("{}\n\n{}", metadata_markdown_content, new_markdown_content);
+
+        metadata_bat_file
+            .write_content(true, &new_content)
+            .change_context(MetadataError)?;
+
+        let mut metadata_markdown = Self::get_bat_metadata_type()
+            .get_markdown()
+            .change_context(MetadataError)?;
+
+        metadata_markdown
+            .sort_sections_by_title(true)
+            .change_context(MetadataError)?;
+
+        Ok(())
     }
 
     fn to_source_code_parser(&self, optional_name: Option<String>) -> SourceCodeParser {
@@ -327,7 +359,7 @@ where
         metadata_type: Option<U>,
     ) -> Result<Vec<Self>, MetadataError> {
         let markdown_sections =
-            Self::match_bat_metadata_type().get_markdown_sections_from_metadata_file()?;
+            Self::get_bat_metadata_type().get_markdown_sections_from_metadata_file()?;
 
         let filtered_sections = markdown_sections
             .into_iter()
@@ -392,6 +424,15 @@ where
         Self::iter().collect::<Vec<_>>()
     }
 
+    fn get_colored_name(&self) -> ColoredString {
+        let colorized_vec = Self::get_colorized_type_vec();
+        let self_colorized = colorized_vec
+            .into_iter()
+            .find(|color| color.to_string() == self.to_string())
+            .unwrap();
+        self_colorized
+    }
+
     fn colored_from_index(type_str: &str, idx: usize) -> ColoredString {
         match idx {
             0 => type_str.bright_green(),
@@ -410,7 +451,11 @@ where
             .enumerate()
             .map(|metadata_type| {
                 Self::colored_from_index(
-                    &(*metadata_type.1).to_sentence_case().clone(),
+                    &(*metadata_type.1)
+                        .to_string()
+                        .to_plural()
+                        .to_sentence_case()
+                        .clone(),
                     metadata_type.0,
                 )
             })
