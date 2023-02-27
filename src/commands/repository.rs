@@ -1,34 +1,59 @@
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
 
-use crate::commands::CommandError;
+use crate::batbelt::git::GitCommit;
+use crate::batbelt::path::BatFile::GitIgnore;
+use crate::batbelt::path::BatFolder;
+use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
+use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+use crate::batbelt::templates::TemplateGenerator;
+use crate::commands::{CommandError, CommandResult};
+use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, Result, ResultExt};
-
 use std::process::Command;
 
-pub enum GitCommand {
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
+pub enum RepositoryCommand {
+    /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
     UpdateBranches,
-    FetchRemoteBranches { select_all: bool },
-    DeleteLocalBranches { select_all: bool },
+    /// Delete local branches
+    DeleteLocalBranches {
+        /// select all options as true
+        #[arg(short, long)]
+        select_all: bool,
+    },
+    /// Fetch remote branches
+    FetchRemoteBranches {
+        /// select all options as true
+        #[arg(short, long)]
+        select_all: bool,
+    },
+    /// Commits the open_questions, finding_candidate and threat_modeling notes
+    CommitNotes,
+    /// Updates the templates to the last version
+    UpdateTemplates,
 }
 
-impl GitCommand {
-    pub fn execute(&self) -> Result<(), CommandError> {
+impl RepositoryCommand {
+    pub fn execute_command(&self) -> Result<(), CommandError> {
         self.check_develop_exists()?;
         match self {
-            GitCommand::UpdateBranches => {
+            RepositoryCommand::UpdateBranches => {
                 self.merge_all_to_develop()?;
-                self.merge_develop_to_all()?;
+                self.merge_develop_to_all()
             }
-            GitCommand::FetchRemoteBranches { select_all } => {
-                self.fetch_remote_branches(*select_all)?
+            RepositoryCommand::FetchRemoteBranches { select_all } => {
+                self.fetch_remote_branches(*select_all)
             }
-            GitCommand::DeleteLocalBranches { select_all } => {
-                self.delete_local_branches(*select_all)?
+            RepositoryCommand::DeleteLocalBranches { select_all } => {
+                self.delete_local_branches(*select_all)
             }
+            RepositoryCommand::CommitNotes => GitCommit::Notes
+                .create_commit()
+                .change_context(CommandError),
+            RepositoryCommand::UpdateTemplates => self.update_templates(),
         }
-        Ok(())
     }
 
     fn merge_all_to_develop(&self) -> Result<(), CommandError> {
@@ -162,18 +187,54 @@ impl GitCommand {
         execute_command("git", &["checkout", branch_name], false).change_context(CommandError)?;
         Ok(())
     }
+
+    fn update_templates(&self) -> CommandResult<()> {
+        println!("Updating to-review files in code-overhaul folder");
+        // move new templates to to-review in the auditor notes folder
+        // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
+        let to_review_file_names = BatFolder::CodeOverhaulToReview
+            .get_all_bat_files(false, None, None)
+            .change_context(CommandError)?;
+        // if the auditor to-review code overhaul folder exists
+        for bat_file in to_review_file_names {
+            bat_file.remove_file().change_context(CommandError)?;
+            let file_path = bat_file.get_path(false).change_context(CommandError)?;
+            let co_template = CodeOverhaulTemplate::new(
+                &bat_file.get_file_name().change_context(CommandError)?,
+                false,
+            )
+            .change_context(CommandError)?;
+            let mut co_markdown = co_template
+                .to_markdown_file(&file_path)
+                .change_context(CommandError)?;
+            co_markdown.save().change_context(CommandError)?;
+        }
+
+        // replace package.json
+        println!("Updating package.json");
+        PackageJsonTemplate::update_package_json().change_context(CommandError)?;
+        GitIgnore { for_init: false }
+            .write_content(true, &TemplateGenerator::get_git_ignore_content())
+            .change_context(CommandError)?;
+        GitCommit::UpdateTemplates
+            .create_commit()
+            .change_context(CommandError)?;
+        println!("Templates successfully updated");
+        Ok(())
+    }
 }
 
 #[test]
 fn test_get_remote_branches_filtered() {
     let remote_branches =
-        GitCommand::get_remote_branches_filtered(&GitCommand::UpdateBranches).unwrap();
+        RepositoryCommand::get_remote_branches_filtered(&RepositoryCommand::UpdateBranches)
+            .unwrap();
     println!("remote_branches:\n{:#?}", remote_branches)
 }
 
 #[test]
 fn test_get_local_branches_filtered() {
     let local_branches =
-        GitCommand::get_local_branches_filtered(&GitCommand::UpdateBranches).unwrap();
+        RepositoryCommand::get_local_branches_filtered(&RepositoryCommand::UpdateBranches).unwrap();
     println!("local_branches:\n{:#?}", local_branches)
 }

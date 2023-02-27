@@ -4,9 +4,8 @@ pub mod finding;
 pub mod init;
 pub mod miro_commands;
 // pub mod result;
-pub mod git;
+pub mod repository;
 pub mod sonar_commands;
-pub mod update;
 
 use std::{error::Error, fmt};
 

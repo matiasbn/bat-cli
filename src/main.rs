@@ -12,6 +12,8 @@ use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::CommandResult;
 
+use crate::batbelt::git::check_correct_branch;
+use crate::commands::repository::RepositoryCommand;
 use commands::CommandError;
 use error_stack::ResultExt;
 use error_stack::{FutureExt, IntoReport, Result};
@@ -61,11 +63,9 @@ enum Commands {
     Sonar(SonarCommand),
     /// Git actions to manage repository
     #[command(subcommand)]
-    Git(GitCommand),
+    Repo(RepositoryCommand),
     /// Update the templates folder and the package.json of the audit repository
     Update,
-    /// Commits the open_questions, smellies and threat_modeling notes
-    Notes,
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageCommand),
@@ -79,34 +79,15 @@ impl Commands {
             | Commands::CO(_)
             | Commands::Finding(_)
             | Commands::Update
-            | Commands::Notes
-            | Commands::Git(_)
             | Commands::Package(_) => {
                 unimplemented!()
             }
             Commands::Miro(command) => command.execute_command().await?,
             Commands::Sonar(command) => command.execute_command()?,
+            Commands::Repo(command) => command.execute_command()?,
         }
         Ok(())
     }
-}
-
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
-enum GitCommand {
-    /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
-    UpdateBranches,
-    /// Delete local branches
-    DeleteLocalBranches {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-    },
-    /// Fetch remote branches
-    FetchRemoteBranches {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-    },
 }
 
 #[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
@@ -175,6 +156,8 @@ fn init_log() -> CommandResult<()> {
 #[tokio::main]
 async fn main() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
+
+    // env_logger selectively
     match cli.command {
         Commands::Package(..) | Commands::Create => {
             env_logger::init();
@@ -183,25 +166,27 @@ async fn main() -> CommandResult<()> {
         _ => init_log(),
     }?;
 
+    // check_correct_branch
     match cli.command {
         Commands::Init { .. }
         | Commands::Create
         | Commands::Package(..)
-        | Commands::Git(..)
+        | Commands::Repo(..)
+        | Commands::Miro(..) => Ok(()),
+        _ => check_correct_branch().change_context(CommandError),
+    }?;
+
+    // check metadata
+    match cli.command {
+        Commands::Init { .. }
+        | Commands::Create
+        | Commands::Package(..)
+        | Commands::Repo(..)
         | Commands::Sonar(SonarCommand::Run) => Ok(()),
         _ => BatMetadata::check_metadata_is_initialized().change_context(CommandError),
     }?;
 
     let result = match cli.command {
-        Commands::Git(GitCommand::UpdateBranches) => {
-            commands::git::GitCommand::UpdateBranches.execute()
-        }
-        Commands::Git(GitCommand::DeleteLocalBranches { select_all }) => {
-            commands::git::GitCommand::DeleteLocalBranches { select_all }.execute()
-        }
-        Commands::Git(GitCommand::FetchRemoteBranches { select_all }) => {
-            commands::git::GitCommand::FetchRemoteBranches { select_all }.execute()
-        }
         Commands::Create => commands::create::create_project(),
         Commands::Init {
             skip_initial_commit,
@@ -220,15 +205,12 @@ async fn main() -> CommandResult<()> {
         }
         Commands::Sonar(..) => cli.command.execute().await,
         Commands::Miro(..) => cli.command.execute().await,
+        Commands::Repo(..) => cli.command.execute().await,
         Commands::Finding(FindingCommand::Create) => commands::finding::start_finding(),
         Commands::Finding(FindingCommand::Finish) => commands::finding::finish_finding(),
         Commands::Finding(FindingCommand::Update) => commands::finding::update_finding(),
         Commands::Finding(FindingCommand::AcceptAll) => commands::finding::accept_all(),
         Commands::Finding(FindingCommand::Reject) => commands::finding::reject(),
-        Commands::Update => commands::update::update_repository().change_context(CommandError),
-        Commands::Notes => GitCommit::Notes
-            .create_commit()
-            .change_context(CommandError),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageCommand::Format) => package::format().change_context(CommandError),
