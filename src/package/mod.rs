@@ -27,38 +27,48 @@ pub fn release() -> PackageResult<()> {
     tag(&version)?;
     release_finish(&version)?;
     push_origin_all()?;
+    publish()?;
+    install()?;
     Ok(())
 }
 
 pub fn format() -> PackageResult<()> {
+    check_files_not_committed().change_context(PackageError)?;
     println!("Executing cargo clippy --fix");
-    execute_command("cargo", &["clippy", "--fix"], false).change_context(PackageError)?;
+    execute_command("cargo", &["clippy", "--fix"], true).change_context(PackageError)?;
     println!("Executing cargo fix");
-    execute_command("cargo", &["fix", "--all"], false).change_context(PackageError)?;
+    execute_command("cargo", &["fix", "--all"], true).change_context(PackageError)?;
     println!("Executing cargo fmt --all");
-    execute_command("cargo", &["fmt", "--all"], false).change_context(PackageError)?;
+    execute_command("cargo", &["fmt", "--all"], true).change_context(PackageError)?;
     println!("Commiting format changes");
     create_commit(PackageCommit::Format, None)?;
     Ok(())
 }
 
 fn release_start(version: &str) -> PackageResult<()> {
-    assert!(check_files_not_committed().unwrap());
     println!("Starting release for version {}", version);
     execute_command("git", &["flow", "release", "start", version], false)
         .change_context(PackageError)?;
     Ok(())
 }
 
+fn publish() -> PackageResult<()> {
+    execute_command("cargo", &["publish"], true).change_context(PackageError)?;
+    Ok(())
+}
+
+fn install() -> PackageResult<()> {
+    execute_command("cargo", &["install", "bat-cli"], true).change_context(PackageError)?;
+    Ok(())
+}
+
 fn release_finish(version: &str) -> PackageResult<()> {
-    assert!(check_files_not_committed().unwrap());
     println!("Finishing release for version {}", version);
     execute_command("git", &["flow", "release", "finish"], false).change_context(PackageError)?;
     Ok(())
 }
 
 fn tag(version: &str) -> PackageResult<()> {
-    assert!(check_files_not_committed().unwrap());
     println!("Creating tag for version {}", version);
     execute_command("git", &["tag", version], false).change_context(PackageError)?;
     Ok(())

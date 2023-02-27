@@ -121,10 +121,21 @@ pub fn check_if_branch_exists(branch_name: &str) -> GitResult<bool> {
 }
 
 // returns false if there are files to commit
-pub fn check_files_not_committed() -> GitResult<bool> {
+pub fn check_files_not_committed() -> GitResult<()> {
     let output =
         execute_command("git", &["status", "--porcelain"], false).change_context(GitError)?;
-    Ok(output.is_empty())
+    let modified_files = output
+        .lines()
+        .map(|line| line.trim().trim_start_matches("M ").to_string())
+        .collect::<Vec<_>>();
+    if !modified_files.is_empty() {
+        let message = format!(
+            "There are modified files that needs to be committed:\n{:#?}",
+            modified_files
+        );
+        return Err(Report::new(GitError).attach_printable(message));
+    }
+    Ok(())
 }
 
 pub fn get_local_branches() -> GitResult<String> {
@@ -385,6 +396,6 @@ fn test_get_branches_list() {
 
 #[test]
 fn test_check_files_not_committed() {
-    let result = check_files_not_committed().unwrap();
-    println!("{}", result);
+    env_logger::init();
+    check_files_not_committed().unwrap();
 }
