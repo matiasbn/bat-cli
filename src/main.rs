@@ -5,6 +5,7 @@ extern crate confy;
 
 use batbelt::git::GitCommit;
 use clap::{Parser, Subcommand};
+use inflector::Inflector;
 
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::BatFile;
@@ -13,7 +14,9 @@ use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::CommandResult;
 
 use crate::batbelt::git::check_correct_branch;
+use crate::batbelt::BatEnumerator;
 use crate::commands::repository_commands::RepositoryCommand;
+use crate::BatCommands::Repo;
 use commands::co_commands::CodeOverhaulCommand;
 use commands::finding_commands::FindingCommand;
 use commands::CommandError;
@@ -26,12 +29,12 @@ use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
 use package::PackageCommand;
 
-mod batbelt;
-mod commands;
-mod config;
-mod package;
+pub mod batbelt;
+pub mod commands;
+pub mod config;
+pub mod package;
 
-// pub type BatDerive = #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)];
+// pub type BatDerive = #[derive(Debug, PartialEq, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
@@ -39,12 +42,15 @@ struct Cli {
     #[clap(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
     #[command(subcommand)]
-    command: Commands,
+    command: BatCommands,
 }
 
-#[derive(strum_macros::Display, Subcommand, Debug, PartialEq, Clone)]
-enum Commands {
+#[derive(
+    Default, strum_macros::Display, Subcommand, Debug, PartialEq, Clone, strum_macros::EnumIter,
+)]
+enum BatCommands {
     /// Creates a Bat project
+    #[default]
     Create,
     /// Initializes the project from the Bat.toml config file
     Init {
@@ -72,21 +78,78 @@ enum Commands {
     Package(PackageCommand),
 }
 
-impl Commands {
+impl BatEnumerator for BatCommands {}
+
+impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         match self {
-            Commands::Create
-            | Commands::Init { .. }
-            | Commands::CO(_)
-            | Commands::Finding(_)
-            | Commands::Package(_) => {
+            BatCommands::Create
+            | BatCommands::Init { .. }
+            | BatCommands::CO(_)
+            | BatCommands::Finding(_)
+            | BatCommands::Package(_) => {
                 unimplemented!()
             }
-            Commands::Miro(command) => command.execute_command().await?,
-            Commands::Sonar(command) => command.execute_command()?,
-            Commands::Repo(command) => command.execute_command()?,
+            BatCommands::Miro(command) => command.execute_command().await?,
+            BatCommands::Sonar(command) => command.execute_command()?,
+            BatCommands::Repo(command) => command.execute_command()?,
         }
         Ok(())
+    }
+
+    pub fn get_kebab_commands() -> Vec<(Vec<String>, String)> {
+        let result = BatCommands::get_type_vec()
+            .into_iter()
+            .filter_map(|command| match command {
+                BatCommands::CO(_) => {
+                    return Some((
+                        CodeOverhaulCommand::get_type_vec()
+                            .into_iter()
+                            .map(|command_type| command_type.to_string().to_kebab_case())
+                            .collect::<Vec<_>>(),
+                        command.to_string().to_kebab_case(),
+                    ));
+                }
+                BatCommands::Finding(_) => {
+                    return Some((
+                        FindingCommand::get_type_vec()
+                            .into_iter()
+                            .map(|command_type| command_type.to_string().to_kebab_case())
+                            .collect::<Vec<_>>(),
+                        command.to_string().to_kebab_case(),
+                    ));
+                }
+                BatCommands::Miro(_) => {
+                    return Some((
+                        MiroCommand::get_type_vec()
+                            .into_iter()
+                            .map(|command_type| command_type.to_string().to_kebab_case())
+                            .collect::<Vec<_>>(),
+                        command.to_string().to_kebab_case(),
+                    ));
+                }
+                BatCommands::Sonar(_) => {
+                    return Some((
+                        SonarCommand::get_type_vec()
+                            .into_iter()
+                            .map(|command_type| command_type.to_string().to_kebab_case())
+                            .collect::<Vec<_>>(),
+                        command.to_string().to_kebab_case(),
+                    ));
+                }
+                BatCommands::Repo(_) => {
+                    return Some((
+                        RepositoryCommand::get_type_vec()
+                            .into_iter()
+                            .map(|command_type| command_type.to_string().to_kebab_case())
+                            .collect::<Vec<_>>(),
+                        command.to_string().to_kebab_case(),
+                    ));
+                }
+                _ => None,
+            })
+            .collect::<Vec<(Vec<_>, String)>>();
+        result
     }
 }
 
@@ -123,7 +186,7 @@ async fn main() -> CommandResult<()> {
 
     // env_logger selectively
     match cli.command {
-        Commands::Package(..) | Commands::Create => {
+        BatCommands::Package(..) | BatCommands::Create => {
             env_logger::init();
             Ok(())
         }
@@ -132,47 +195,55 @@ async fn main() -> CommandResult<()> {
 
     // check_correct_branch
     match cli.command {
-        Commands::Init { .. }
-        | Commands::Create
-        | Commands::Package(..)
-        | Commands::Repo(..)
-        | Commands::Miro(..) => Ok(()),
+        BatCommands::Init { .. }
+        | BatCommands::Create
+        | BatCommands::Package(..)
+        | BatCommands::Repo(..)
+        | BatCommands::Miro(..) => Ok(()),
         _ => check_correct_branch().change_context(CommandError),
     }?;
 
     // check metadata
     match cli.command {
-        Commands::Init { .. }
-        | Commands::Create
-        | Commands::Package(..)
-        | Commands::Repo(..)
-        | Commands::Sonar(SonarCommand::Run) => Ok(()),
+        BatCommands::Init { .. }
+        | BatCommands::Create
+        | BatCommands::Package(..)
+        | BatCommands::Repo(..)
+        | BatCommands::Sonar(SonarCommand::Run) => Ok(()),
         _ => BatMetadata::check_metadata_is_initialized().change_context(CommandError),
     }?;
 
     let result = match cli.command {
-        Commands::Create => commands::project_commands::create_project(),
-        Commands::Init {
+        BatCommands::Create => commands::project_commands::create_project(),
+        BatCommands::Init {
             skip_initial_commit,
         } => commands::project_commands::initialize_bat_project(skip_initial_commit).await,
-        Commands::CO(CodeOverhaulCommand::Start) => commands::co_commands::start_co_file(),
-        Commands::CO(CodeOverhaulCommand::Finish) => commands::co_commands::finish_co_file().await,
-        Commands::CO(CodeOverhaulCommand::Update) => commands::co_commands::update_co_file(),
-        Commands::CO(CodeOverhaulCommand::Count) => commands::co_commands::count_co_files(),
-        Commands::CO(CodeOverhaulCommand::Open) => commands::co_commands::open_co(),
-        Commands::Sonar(..) => cli.command.execute().await,
-        Commands::Miro(..) => cli.command.execute().await,
-        Commands::Repo(..) => cli.command.execute().await,
-        Commands::Finding(FindingCommand::Create) => commands::finding_commands::start_finding(),
-        Commands::Finding(FindingCommand::Finish) => commands::finding_commands::finish_finding(),
-        Commands::Finding(FindingCommand::Update) => commands::finding_commands::update_finding(),
-        Commands::Finding(FindingCommand::AcceptAll) => commands::finding_commands::accept_all(),
-        Commands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
+        BatCommands::CO(CodeOverhaulCommand::Start) => commands::co_commands::start_co_file(),
+        BatCommands::CO(CodeOverhaulCommand::Finish) => {
+            commands::co_commands::finish_co_file().await
+        }
+        BatCommands::CO(CodeOverhaulCommand::Update) => commands::co_commands::update_co_file(),
+        BatCommands::CO(CodeOverhaulCommand::Count) => commands::co_commands::count_co_files(),
+        BatCommands::CO(CodeOverhaulCommand::Open) => commands::co_commands::open_co(),
+        BatCommands::Sonar(..) => cli.command.execute().await,
+        BatCommands::Miro(..) => cli.command.execute().await,
+        BatCommands::Repo(..) => cli.command.execute().await,
+        BatCommands::Finding(FindingCommand::Create) => commands::finding_commands::start_finding(),
+        BatCommands::Finding(FindingCommand::Finish) => {
+            commands::finding_commands::finish_finding()
+        }
+        BatCommands::Finding(FindingCommand::Update) => {
+            commands::finding_commands::update_finding()
+        }
+        BatCommands::Finding(FindingCommand::AcceptAll) => commands::finding_commands::accept_all(),
+        BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
         // only for dev
         #[cfg(debug_assertions)]
-        Commands::Package(PackageCommand::Format) => package::format().change_context(CommandError),
+        BatCommands::Package(PackageCommand::Format) => {
+            package::format().change_context(CommandError)
+        }
         #[cfg(debug_assertions)]
-        Commands::Package(PackageCommand::Release) => {
+        BatCommands::Package(PackageCommand::Release) => {
             package::release().change_context(CommandError)
         }
         _ => unimplemented!("Command only implemented for dev operations"),

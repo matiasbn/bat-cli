@@ -7,16 +7,21 @@ use crate::batbelt::path::BatFolder;
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::batbelt::templates::TemplateGenerator;
+use crate::batbelt::BatEnumerator;
 use crate::commands::{CommandError, CommandResult};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::process::Command;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
 pub enum RepositoryCommand {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
+    #[default]
     UpdateBranches,
+
     /// Delete local branches
     DeleteLocalBranches {
         /// select all options as true
@@ -34,6 +39,8 @@ pub enum RepositoryCommand {
     /// Updates the templates to the last version
     UpdateTemplates,
 }
+
+impl BatEnumerator for RepositoryCommand {}
 
 impl RepositoryCommand {
     pub fn execute_command(&self) -> Result<(), CommandError> {

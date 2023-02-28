@@ -43,7 +43,7 @@ pub type MetadataResult<T> = Result<T, MetadataError>;
 impl BatMetadata {
     pub fn metadata_is_initialized() -> Result<bool, MetadataError> {
         let mut metadata_initialized = true;
-        for metadata_type in BatMetadataType::get_metadata_type_vec() {
+        for metadata_type in BatMetadataType::get_type_vec() {
             let section_initialized = metadata_type.is_initialized()?;
             if !section_initialized {
                 metadata_initialized = false;
@@ -53,7 +53,7 @@ impl BatMetadata {
     }
 
     pub fn check_metadata_is_initialized() -> Result<(), MetadataError> {
-        let metadata_types = BatMetadataType::get_metadata_type_vec();
+        let metadata_types = BatMetadataType::get_type_vec();
         // check file exists
         for metadata_type in metadata_types.clone() {
             if !Path::new(&metadata_type.get_path()?).is_file() {
@@ -127,7 +127,7 @@ impl BatMetadataType {
         Ok(())
     }
     pub fn prompt_metadata_type_selection() -> Result<Self, MetadataError> {
-        let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
+        let metadata_types_vec = BatMetadataType::get_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
         // Choose metadata section selection
         let prompt_text = format!("Please select the {}", "Metadata type".bright_purple());
@@ -345,7 +345,7 @@ where
         );
         let selection = BatDialoguer::select(prompt_text, U::get_colorized_type_vec(true), None)
             .change_context(MetadataError)?;
-        let selected_sub_type = U::get_metadata_type_vec()[selection].clone();
+        let selected_sub_type = U::get_type_vec()[selection].clone();
         let metadata_vec_filtered = Self::get_filtered_metadata(None, Some(selected_sub_type))
             .change_context(MetadataError)?;
         let metadata_names = metadata_vec_filtered
