@@ -1,8 +1,7 @@
 pub mod co_commands;
-pub mod create;
 pub mod finding_commands;
-pub mod init;
 pub mod miro_commands;
+pub mod project_commands;
 pub mod repository_commands;
 pub mod sonar_commands;
 

@@ -147,10 +147,10 @@ async fn main() -> CommandResult<()> {
     }?;
 
     let result = match cli.command {
-        Commands::Create => commands::create::create_project(),
+        Commands::Create => commands::project_commands::create_project(),
         Commands::Init {
             skip_initial_commit,
-        } => commands::init::initialize_bat_project(skip_initial_commit).await,
+        } => commands::project_commands::initialize_bat_project(skip_initial_commit).await,
         Commands::CO(CodeOverhaulCommand::Start) => commands::co_commands::start_co_file(),
         Commands::CO(CodeOverhaulCommand::Finish) => commands::co_commands::finish_co_file().await,
         Commands::CO(CodeOverhaulCommand::Update) => commands::co_commands::update_co_file(),
