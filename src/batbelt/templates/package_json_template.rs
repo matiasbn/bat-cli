@@ -1,20 +1,12 @@
-use std::collections::BTreeMap;
-use std::string::ToString;
-
 use error_stack::{FutureExt, Result, ResultExt};
-use inflector::Inflector;
+
 use serde_json::Map;
 use serde_json::{json, Value};
-use strum::IntoEnumIterator;
-use strum_macros::Display;
 
 use crate::batbelt::path::BatFile;
 use crate::batbelt::templates::{TemplateError, TemplateResult};
-use crate::batbelt::BatEnumerator;
-use crate::commands::co_commands::CodeOverhaulCommand;
-use crate::BatCommands;
 
-use super::*;
+use crate::BatCommands;
 
 pub struct PackageJsonTemplate;
 
@@ -82,19 +74,8 @@ impl PackageJsonTemplate {
 
 #[cfg(test)]
 mod template_test {
-    use std::fs;
-
-    use inflector::Inflector;
-    use serde_json::*;
 
     use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
-    use crate::batbelt::BatEnumerator;
-    use crate::commands::co_commands::CodeOverhaulCommand;
-    use crate::commands::finding_commands::FindingCommand;
-    use crate::commands::miro_commands::MiroCommand;
-    use crate::commands::repository_commands::RepositoryCommand;
-    use crate::commands::sonar_commands::SonarCommand;
-    use serde_json::{Map, Value};
 
     #[test]
     fn test_get_package_json_content() {

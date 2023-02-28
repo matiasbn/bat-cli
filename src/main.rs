@@ -3,7 +3,6 @@ extern crate log;
 
 extern crate confy;
 
-use batbelt::git::GitCommit;
 use clap::{Parser, Subcommand};
 use inflector::Inflector;
 
@@ -16,13 +15,13 @@ use crate::commands::CommandResult;
 use crate::batbelt::git::check_correct_branch;
 use crate::batbelt::BatEnumerator;
 use crate::commands::repository_commands::RepositoryCommand;
-use crate::BatCommands::Repo;
+
 use commands::co_commands::CodeOverhaulCommand;
 use commands::finding_commands::FindingCommand;
 use commands::CommandError;
 use error_stack::ResultExt;
 use error_stack::{FutureExt, IntoReport, Result};
-use log::LevelFilter;
+
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
@@ -98,58 +97,47 @@ impl BatCommands {
     }
 
     pub fn get_kebab_commands() -> Vec<(Vec<String>, String)> {
-        let result = BatCommands::get_type_vec()
+        BatCommands::get_type_vec()
             .into_iter()
             .filter_map(|command| match command {
-                BatCommands::CO(_) => {
-                    return Some((
-                        CodeOverhaulCommand::get_type_vec()
-                            .into_iter()
-                            .map(|command_type| command_type.to_string().to_kebab_case())
-                            .collect::<Vec<_>>(),
-                        command.to_string().to_kebab_case(),
-                    ));
-                }
-                BatCommands::Finding(_) => {
-                    return Some((
-                        FindingCommand::get_type_vec()
-                            .into_iter()
-                            .map(|command_type| command_type.to_string().to_kebab_case())
-                            .collect::<Vec<_>>(),
-                        command.to_string().to_kebab_case(),
-                    ));
-                }
-                BatCommands::Miro(_) => {
-                    return Some((
-                        MiroCommand::get_type_vec()
-                            .into_iter()
-                            .map(|command_type| command_type.to_string().to_kebab_case())
-                            .collect::<Vec<_>>(),
-                        command.to_string().to_kebab_case(),
-                    ));
-                }
-                BatCommands::Sonar(_) => {
-                    return Some((
-                        SonarCommand::get_type_vec()
-                            .into_iter()
-                            .map(|command_type| command_type.to_string().to_kebab_case())
-                            .collect::<Vec<_>>(),
-                        command.to_string().to_kebab_case(),
-                    ));
-                }
-                BatCommands::Repo(_) => {
-                    return Some((
-                        RepositoryCommand::get_type_vec()
-                            .into_iter()
-                            .map(|command_type| command_type.to_string().to_kebab_case())
-                            .collect::<Vec<_>>(),
-                        command.to_string().to_kebab_case(),
-                    ));
-                }
+                BatCommands::CO(_) => Some((
+                    CodeOverhaulCommand::get_type_vec()
+                        .into_iter()
+                        .map(|command_type| command_type.to_string().to_kebab_case())
+                        .collect::<Vec<_>>(),
+                    command.to_string().to_kebab_case(),
+                )),
+                BatCommands::Finding(_) => Some((
+                    FindingCommand::get_type_vec()
+                        .into_iter()
+                        .map(|command_type| command_type.to_string().to_kebab_case())
+                        .collect::<Vec<_>>(),
+                    command.to_string().to_kebab_case(),
+                )),
+                BatCommands::Miro(_) => Some((
+                    MiroCommand::get_type_vec()
+                        .into_iter()
+                        .map(|command_type| command_type.to_string().to_kebab_case())
+                        .collect::<Vec<_>>(),
+                    command.to_string().to_kebab_case(),
+                )),
+                BatCommands::Sonar(_) => Some((
+                    SonarCommand::get_type_vec()
+                        .into_iter()
+                        .map(|command_type| command_type.to_string().to_kebab_case())
+                        .collect::<Vec<_>>(),
+                    command.to_string().to_kebab_case(),
+                )),
+                BatCommands::Repo(_) => Some((
+                    RepositoryCommand::get_type_vec()
+                        .into_iter()
+                        .map(|command_type| command_type.to_string().to_kebab_case())
+                        .collect::<Vec<_>>(),
+                    command.to_string().to_kebab_case(),
+                )),
                 _ => None,
             })
-            .collect::<Vec<(Vec<_>, String)>>();
-        result
+            .collect::<Vec<(Vec<_>, String)>>()
     }
 }
 
