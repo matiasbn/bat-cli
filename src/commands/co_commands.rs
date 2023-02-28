@@ -7,6 +7,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{
     CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
 };
+use crate::batbelt::BatEnumerator;
 use crate::commands::CommandError;
 use crate::config::{BatAuditorConfig, BatConfig};
 use clap::Subcommand;
@@ -14,9 +15,12 @@ use colored::Colorize;
 use error_stack::{Report, ResultExt};
 use std::fs;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
 pub enum CodeOverhaulCommand {
     /// Starts a code-overhaul file audit
+    #[default]
     Start,
     /// Moves the code-overhaul file from to-review to finished
     Finish,
@@ -27,6 +31,8 @@ pub enum CodeOverhaulCommand {
     /// Opens the co file and the instruction of a started entrypoint
     Open,
 }
+
+impl BatEnumerator for CodeOverhaulCommand {}
 
 pub fn count_co_files() -> error_stack::Result<(), CommandError> {
     let (to_review_count, started_count, finished_count) = co_counter()?;

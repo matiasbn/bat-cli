@@ -6,6 +6,7 @@ use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::path::BatFolder;
+use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{Result, ResultExt};
@@ -16,9 +17,12 @@ use crate::batbelt::templates::TemplateGenerator;
 
 use super::CommandError;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
 pub enum SonarCommand {
     /// Updates the functions.md and structs.md files with data
+    #[default]
     Run,
     /// Gets the path to a metadata information from metadata files
     PrintPath {
@@ -27,6 +31,8 @@ pub enum SonarCommand {
         select_all: bool,
     },
 }
+
+impl BatEnumerator for SonarCommand {}
 
 impl SonarCommand {
     pub fn execute_command(&self) -> Result<(), CommandError> {

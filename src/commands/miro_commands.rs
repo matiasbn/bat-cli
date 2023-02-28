@@ -25,9 +25,12 @@ use inflector::Inflector;
 
 use super::CommandError;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
 pub enum MiroCommand {
     /// Deploy or updates a code-overhaul frame
+    #[default]
     CodeOverhaul,
     /// Deploys the entrypoint, context accounts and handler to a Miro frame
     Entrypoint {
@@ -51,6 +54,8 @@ pub enum MiroCommand {
         select_all: bool,
     },
 }
+
+impl BatEnumerator for MiroCommand {}
 
 impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {

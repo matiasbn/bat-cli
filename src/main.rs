@@ -13,6 +13,7 @@ use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::CommandResult;
 
 use crate::batbelt::git::check_correct_branch;
+use crate::batbelt::BatEnumerator;
 use crate::commands::repository_commands::RepositoryCommand;
 use commands::co_commands::CodeOverhaulCommand;
 use commands::finding_commands::FindingCommand;
@@ -31,7 +32,7 @@ mod commands;
 mod config;
 mod package;
 
-// pub type BatDerive = #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)];
+// pub type BatDerive = #[derive(Debug, PartialEq, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
@@ -42,9 +43,12 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(strum_macros::Display, Subcommand, Debug, PartialEq, Clone)]
+#[derive(
+    Default, strum_macros::Display, Subcommand, Debug, PartialEq, Clone, strum_macros::EnumIter,
+)]
 enum Commands {
     /// Creates a Bat project
+    #[default]
     Create,
     /// Initializes the project from the Bat.toml config file
     Init {
@@ -71,6 +75,8 @@ enum Commands {
     #[command(subcommand)]
     Package(PackageCommand),
 }
+
+impl BatEnumerator for Commands {}
 
 impl Commands {
     pub async fn execute(&self) -> Result<(), CommandError> {

@@ -33,9 +33,12 @@ pub fn release() -> PackageResult<()> {
     Ok(())
 }
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
 pub enum PackageCommand {
     /// run cargo clippy and commit the changes
+    #[default]
     Format,
     /// Creates a git flow release, bumps the version, formats the code and publish
     Release,

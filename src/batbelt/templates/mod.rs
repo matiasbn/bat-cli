@@ -27,6 +27,8 @@ impl fmt::Display for TemplateError {
 
 impl Error for TemplateError {}
 
+pub type TemplateResult<T> = Result<T, TemplateError>;
+
 pub struct TemplateGenerator;
 
 impl TemplateGenerator {

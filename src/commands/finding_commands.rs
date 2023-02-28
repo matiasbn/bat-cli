@@ -4,6 +4,7 @@ use crate::batbelt::templates::finding_template::FindingTemplate;
 use crate::batbelt::{
     git::GitCommit,
     path::{BatFile, BatFolder},
+    BatEnumerator,
 };
 use colored::Colorize;
 
@@ -18,9 +19,12 @@ use std::{
 
 use super::CommandError;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
 pub enum FindingCommand {
     /// Creates a finding file
+    #[default]
     Create,
     /// Finish a finding file by creating a commit
     Finish,
@@ -31,6 +35,8 @@ pub enum FindingCommand {
     /// Moves a finding from to-review to rejected
     Reject,
 }
+
+impl BatEnumerator for FindingCommand {}
 
 pub fn reject() -> Result<(), CommandError> {
     prepare_all()?;
