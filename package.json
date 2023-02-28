@@ -1,11 +1,10 @@
 {
   "name": "bat-cli",
   "description": "Blockchain auditor toolkit",
+  "gola": "chao",
   "scripts": {
-    "bat-cli::package::format": "cargo run package format",
-    "bat-cli::package::release": "cargo run package release",
-    "cargo::install::bat-cli": "cargo install bat-cli",
-    "cargo::publish::bat-cli": "cargo publish",
+    "cargo::run::package::format": "cargo run package format",
+    "cargo::run::package::release": "cargo run package release",
     "git-pull": "git pull",
     "open-cargo-toml": "code -a Cargo.toml"
   },

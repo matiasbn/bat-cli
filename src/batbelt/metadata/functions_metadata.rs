@@ -1,7 +1,7 @@
+use super::*;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile;
 use crate::config::BatConfig;
-
 use strum::IntoEnumIterator;
 
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};

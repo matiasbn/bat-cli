@@ -1,12 +1,9 @@
-pub mod code_overhaul;
-pub mod create;
-pub mod finding;
-pub mod init;
+pub mod co_commands;
+pub mod finding_commands;
 pub mod miro_commands;
-// pub mod result;
-pub mod git;
+pub mod project_commands;
+pub mod repository_commands;
 pub mod sonar_commands;
-pub mod update;
 
 use std::{error::Error, fmt};
 

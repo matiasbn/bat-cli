@@ -95,7 +95,7 @@ impl BatSonarInteractive {
             style(format!("{}", program_dir_entries.len())).bold().dim(),
         );
         let m = MultiProgress::new();
-        let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
+        let metadata_types_vec = BatMetadataType::get_type_vec();
         let metadata_types_colored = BatMetadataType::get_colorized_type_vec(true);
         let handles: Vec<_> = (0..metadata_types_vec.len())
             .map(|i| {

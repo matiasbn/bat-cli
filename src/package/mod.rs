@@ -3,6 +3,7 @@ use crate::batbelt::{self, git::check_files_not_committed};
 use error_stack::{Result, ResultExt};
 use std::fs;
 
+use clap::Subcommand;
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
@@ -32,6 +33,17 @@ pub fn release() -> PackageResult<()> {
     Ok(())
 }
 
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
+pub enum PackageCommand {
+    /// run cargo clippy and commit the changes
+    #[default]
+    Format,
+    /// Creates a git flow release, bumps the version, formats the code and publish
+    Release,
+}
+
 pub fn format() -> PackageResult<()> {
     check_files_not_committed().change_context(PackageError)?;
     println!("Executing cargo clippy --fix");
@@ -40,7 +52,7 @@ pub fn format() -> PackageResult<()> {
     execute_command("cargo", &["fix", "--all"], true).change_context(PackageError)?;
     println!("Executing cargo fmt --all");
     execute_command("cargo", &["fmt", "--all"], true).change_context(PackageError)?;
-    println!("Commiting format changes");
+    println!("Committing format changes");
     create_commit(PackageCommit::Format, None)?;
     Ok(())
 }
@@ -54,8 +66,7 @@ fn release_start(version: &str) -> PackageResult<()> {
 
 fn release_finish(version: &str) -> PackageResult<()> {
     println!("Finishing release for version {}", version);
-    execute_command("git", &["flow", "release", "finish", ""], false)
-        .change_context(PackageError)?;
+    execute_command("git", &["flow", "release", "finish"], false).change_context(PackageError)?;
     Ok(())
 }
 
