@@ -13,7 +13,7 @@ use colored::Colorize;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::process::Command;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
 pub enum RepositoryCommand {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
     UpdateBranches,

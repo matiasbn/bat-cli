@@ -33,16 +33,16 @@ mod package;
 
 // pub type BatDerive = #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
-#[derive(Parser, Debug, PartialEq)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
 struct Cli {
-    // #[clap(flatten)]
-    // verbose: clap_verbosity_flag::Verbosity,
+    #[clap(flatten)]
+    verbose: clap_verbosity_flag::Verbosity,
     #[command(subcommand)]
     command: Commands,
 }
 
-#[derive(strum_macros::Display, Subcommand, Debug, PartialEq)]
+#[derive(strum_macros::Display, Subcommand, Debug, PartialEq, Clone)]
 enum Commands {
     /// Creates a Bat project
     Create,
@@ -90,7 +90,7 @@ impl Commands {
     }
 }
 
-fn init_log() -> CommandResult<()> {
+fn init_log(cli: Cli) -> CommandResult<()> {
     let bat_log_file = BatFile::Batlog;
     bat_log_file.remove_file().change_context(CommandError)?;
     let logfile = FileAppender::builder()
@@ -103,7 +103,11 @@ fn init_log() -> CommandResult<()> {
 
     let config = Config::builder()
         .appender(Appender::builder().build("logfile", Box::new(logfile)))
-        .build(Root::builder().appender("logfile").build(LevelFilter::Info))
+        .build(
+            Root::builder()
+                .appender("logfile")
+                .build(cli.verbose.log_level_filter()),
+        )
         .ok()
         .ok_or(CommandError)?;
 
@@ -123,7 +127,7 @@ async fn main() -> CommandResult<()> {
             env_logger::init();
             Ok(())
         }
-        _ => init_log(),
+        _ => init_log(cli.clone()),
     }?;
 
     // check_correct_branch

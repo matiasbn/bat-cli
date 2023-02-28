@@ -33,7 +33,7 @@ pub fn release() -> PackageResult<()> {
     Ok(())
 }
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
 pub enum PackageCommand {
     /// run cargo clippy and commit the changes
     Format,

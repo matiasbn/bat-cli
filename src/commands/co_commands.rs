@@ -14,7 +14,7 @@ use colored::Colorize;
 use error_stack::{Report, ResultExt};
 use std::fs;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
 pub enum CodeOverhaulCommand {
     /// Starts a code-overhaul file audit
     Start,

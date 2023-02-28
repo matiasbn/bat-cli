@@ -18,7 +18,7 @@ use std::{
 
 use super::CommandError;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
 pub enum FindingCommand {
     /// Creates a finding file
     Create,

@@ -25,7 +25,7 @@ use inflector::Inflector;
 
 use super::CommandError;
 
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone)]
 pub enum MiroCommand {
     /// Deploy or updates a code-overhaul frame
     CodeOverhaul,
