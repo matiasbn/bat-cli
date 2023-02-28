@@ -13,7 +13,9 @@ use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::CommandResult;
 
 use crate::batbelt::git::check_correct_branch;
-use crate::commands::repository::RepositoryCommand;
+use crate::commands::repository_commands::RepositoryCommand;
+use commands::co_commands::CodeOverhaulCommand;
+use commands::finding_commands::FindingCommand;
 use commands::CommandError;
 use error_stack::ResultExt;
 use error_stack::{FutureExt, IntoReport, Result};
@@ -22,6 +24,7 @@ use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
+use package::PackageCommand;
 
 mod batbelt;
 mod commands;
@@ -64,8 +67,6 @@ enum Commands {
     /// Git actions to manage repository
     #[command(subcommand)]
     Repo(RepositoryCommand),
-    /// Update the templates folder and the package.json of the audit repository
-    Update,
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageCommand),
@@ -78,7 +79,6 @@ impl Commands {
             | Commands::Init { .. }
             | Commands::CO(_)
             | Commands::Finding(_)
-            | Commands::Update
             | Commands::Package(_) => {
                 unimplemented!()
             }
@@ -88,46 +88,6 @@ impl Commands {
         }
         Ok(())
     }
-}
-
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
-enum FindingCommand {
-    /// Creates a finding file
-    Create,
-    /// Finish a finding file by creating a commit
-    Finish,
-    /// Update a finding file by creating a commit
-    Update,
-    /// Moves all the to-review findings to accepted
-    AcceptAll,
-    /// Moves a finding from to-review to rejected
-    Reject,
-}
-
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
-enum CodeOverhaulCommand {
-    /// Starts a code-overhaul file audit
-    Start,
-    /// Moves the code-overhaul file from to-review to finished
-    Finish,
-    /// Update a code-overhaul file by creating a commit
-    Update,
-    /// Copies the images to the co Miro frame
-    Miro,
-    /// Counts the to-review, started, finished and total co files
-    Count,
-    /// Opens the co file and the instruction of a started entrypoint
-    Open,
-    /// Updates the templates in to-review folder
-    Templates,
-}
-
-#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
-enum PackageCommand {
-    /// run cargo clippy and commit the changes
-    Format,
-    /// Creates a git flow release, bumps the version, formats the code and publish
-    Release,
 }
 
 fn init_log() -> CommandResult<()> {
@@ -191,26 +151,19 @@ async fn main() -> CommandResult<()> {
         Commands::Init {
             skip_initial_commit,
         } => commands::init::initialize_bat_project(skip_initial_commit).await,
-        Commands::CO(CodeOverhaulCommand::Start) => commands::code_overhaul::start::start_co_file(),
-        Commands::CO(CodeOverhaulCommand::Finish) => {
-            commands::code_overhaul::finish::finish_co_file().await
-        }
-        Commands::CO(CodeOverhaulCommand::Update) => {
-            commands::code_overhaul::update::update_co_file()
-        }
-        Commands::CO(CodeOverhaulCommand::Count) => commands::code_overhaul::count_co_files(),
-        Commands::CO(CodeOverhaulCommand::Open) => commands::code_overhaul::open_co(),
-        Commands::CO(CodeOverhaulCommand::Templates) => {
-            commands::code_overhaul::update_co_templates()
-        }
+        Commands::CO(CodeOverhaulCommand::Start) => commands::co_commands::start_co_file(),
+        Commands::CO(CodeOverhaulCommand::Finish) => commands::co_commands::finish_co_file().await,
+        Commands::CO(CodeOverhaulCommand::Update) => commands::co_commands::update_co_file(),
+        Commands::CO(CodeOverhaulCommand::Count) => commands::co_commands::count_co_files(),
+        Commands::CO(CodeOverhaulCommand::Open) => commands::co_commands::open_co(),
         Commands::Sonar(..) => cli.command.execute().await,
         Commands::Miro(..) => cli.command.execute().await,
         Commands::Repo(..) => cli.command.execute().await,
-        Commands::Finding(FindingCommand::Create) => commands::finding::start_finding(),
-        Commands::Finding(FindingCommand::Finish) => commands::finding::finish_finding(),
-        Commands::Finding(FindingCommand::Update) => commands::finding::update_finding(),
-        Commands::Finding(FindingCommand::AcceptAll) => commands::finding::accept_all(),
-        Commands::Finding(FindingCommand::Reject) => commands::finding::reject(),
+        Commands::Finding(FindingCommand::Create) => commands::finding_commands::start_finding(),
+        Commands::Finding(FindingCommand::Finish) => commands::finding_commands::finish_finding(),
+        Commands::Finding(FindingCommand::Update) => commands::finding_commands::update_finding(),
+        Commands::Finding(FindingCommand::AcceptAll) => commands::finding_commands::accept_all(),
+        Commands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
         // only for dev
         #[cfg(debug_assertions)]
         Commands::Package(PackageCommand::Format) => package::format().change_context(CommandError),
@@ -225,7 +178,7 @@ async fn main() -> CommandResult<()> {
             log::info!("{} script executed correctly", cli.command.to_string())
         }
         Err(error) => {
-            eprintln!("{} script finished with error", cli.command);
+            eprintln!("{:#?} script finished with error", cli.command);
             log::error!("error output:\n {:#?}", error)
         }
     }

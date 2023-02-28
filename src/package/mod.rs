@@ -3,6 +3,7 @@ use crate::batbelt::{self, git::check_files_not_committed};
 use error_stack::{Result, ResultExt};
 use std::fs;
 
+use clap::Subcommand;
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
@@ -30,6 +31,14 @@ pub fn release() -> PackageResult<()> {
     publish()?;
     install()?;
     Ok(())
+}
+
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
+pub enum PackageCommand {
+    /// run cargo clippy and commit the changes
+    Format,
+    /// Creates a git flow release, bumps the version, formats the code and publish
+    Release,
 }
 
 pub fn format() -> PackageResult<()> {

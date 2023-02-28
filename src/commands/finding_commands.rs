@@ -7,6 +7,7 @@ use crate::batbelt::{
 };
 use colored::Colorize;
 
+use clap::Subcommand;
 use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
 use std::{
@@ -16,6 +17,20 @@ use std::{
 };
 
 use super::CommandError;
+
+#[derive(Subcommand, Debug, strum_macros::Display, PartialEq)]
+pub enum FindingCommand {
+    /// Creates a finding file
+    Create,
+    /// Finish a finding file by creating a commit
+    Finish,
+    /// Update a finding file by creating a commit
+    Update,
+    /// Moves all the to-review findings to accepted
+    AcceptAll,
+    /// Moves a finding from to-review to rejected
+    Reject,
+}
 
 pub fn reject() -> Result<(), CommandError> {
     prepare_all()?;
