@@ -22,6 +22,7 @@ use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
+use strum_macros::Display;
 
 use super::CommandError;
 
@@ -625,7 +626,7 @@ impl MiroCommand {
     async fn metadata_action(&self, select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
         let mut continue_selection = true;
-        let metadata_types_vec = BatMetadataType::get_metadata_type_vec();
+        let metadata_types_vec = BatMetadataType::get_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
         while continue_selection {
             // Choose metadata section selection
@@ -652,8 +653,7 @@ impl MiroCommand {
                         None,
                     )
                     .unwrap();
-                    let selected_struct_type =
-                        StructMetadataType::get_metadata_type_vec()[selection];
+                    let selected_struct_type = StructMetadataType::get_type_vec()[selection];
                     let struct_metadata_vec =
                         StructMetadata::get_filtered_metadata(None, Some(selected_struct_type))
                             .change_context(CommandError)?;
@@ -722,8 +722,7 @@ impl MiroCommand {
                         None,
                     )
                     .unwrap();
-                    let selected_function_type =
-                        FunctionMetadataType::get_metadata_type_vec()[selection];
+                    let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
                     let function_metadata_vec =
                         FunctionMetadata::get_filtered_metadata(None, Some(selected_function_type))
                             .change_context(CommandError)?;

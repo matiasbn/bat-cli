@@ -50,7 +50,7 @@ where
     }
 
     fn from_str(type_str: &str) -> Self {
-        let structs_type_vec = Self::get_metadata_type_vec();
+        let structs_type_vec = Self::get_type_vec();
 
         structs_type_vec
             .into_iter()
@@ -59,10 +59,10 @@ where
     }
 
     fn from_index(index: usize) -> Self {
-        Self::get_metadata_type_vec()[index].clone()
+        Self::get_type_vec()[index].clone()
     }
 
-    fn get_metadata_type_vec() -> Vec<Self> {
+    fn get_type_vec() -> Vec<Self> {
         Self::iter().collect::<Vec<_>>()
     }
 
@@ -95,7 +95,7 @@ where
     }
 
     fn get_colorized_type_vec(to_plural: bool) -> Vec<ColoredString> {
-        let metadata_type_vec = Self::get_metadata_type_vec();
+        let metadata_type_vec = Self::get_type_vec();
         let metadata_type_colorized = metadata_type_vec
             .iter()
             .enumerate()

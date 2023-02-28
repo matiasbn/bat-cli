@@ -14,6 +14,7 @@ use error_stack::{Result, ResultExt};
 use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
 use crate::batbelt::sonar::SonarResultType;
 use crate::batbelt::templates::TemplateGenerator;
+use inflector::Inflector;
 
 use super::CommandError;
 

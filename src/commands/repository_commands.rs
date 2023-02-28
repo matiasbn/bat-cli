@@ -21,6 +21,7 @@ pub enum RepositoryCommand {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
     #[default]
     UpdateBranches,
+
     /// Delete local branches
     DeleteLocalBranches {
         /// select all options as true

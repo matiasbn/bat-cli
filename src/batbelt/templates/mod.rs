@@ -3,6 +3,7 @@ pub mod finding_template;
 pub mod notes_template;
 pub mod package_json_template;
 
+use super::*;
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::metadata::{BatMetadataType, MetadataError};
@@ -133,7 +134,7 @@ impl TemplateGenerator {
 
     pub fn create_auditor_metadata_files() -> Result<(), TemplateError> {
         // metadata files
-        let metadata_types_path = BatMetadataType::get_metadata_type_vec()
+        let metadata_types_path = BatMetadataType::get_type_vec()
             .into_iter()
             .map(|meta_type| meta_type.get_path())
             .collect::<Result<Vec<_>, MetadataError>>()
