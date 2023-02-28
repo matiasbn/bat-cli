@@ -22,7 +22,6 @@ use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
-use strum_macros::Display;
 
 use super::CommandError;
 

@@ -13,7 +13,7 @@ use crate::config::{BatAuditorConfig, BatConfig};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{Report, ResultExt};
-use inflector::Inflector;
+
 use std::fs;
 
 #[derive(
