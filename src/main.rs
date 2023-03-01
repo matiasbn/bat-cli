@@ -4,6 +4,7 @@ extern crate log;
 extern crate confy;
 
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use inflector::Inflector;
 
 use crate::batbelt::metadata::BatMetadata;
@@ -19,12 +20,18 @@ use crate::commands::repository_commands::RepositoryCommand;
 use commands::co_commands::CodeOverhaulCommand;
 use commands::finding_commands::FindingCommand;
 use commands::CommandError;
-use error_stack::ResultExt;
+use error_stack::fmt::{Charset, ColorMode};
 use error_stack::{FutureExt, IntoReport, Result};
+use error_stack::{Report, ResultExt};
+use log4rs::append::console::{ConsoleAppender, Target};
 
+use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+use crate::commands::project_commands::ProjectCommands;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
+use log4rs::filter::threshold::ThresholdFilter;
 use log4rs::Config;
 use package::PackageCommand;
 
@@ -57,6 +64,8 @@ enum BatCommands {
         #[arg(short, long)]
         skip_initial_commit: bool,
     },
+    /// Refresh the project
+    Refresh,
     /// code-overhaul files management
     #[command(subcommand)]
     CO(CodeOverhaulCommand),
@@ -82,16 +91,10 @@ impl BatEnumerator for BatCommands {}
 impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         match self {
-            BatCommands::Create
-            | BatCommands::Init { .. }
-            | BatCommands::CO(_)
-            | BatCommands::Finding(_)
-            | BatCommands::Package(_) => {
-                unimplemented!()
-            }
             BatCommands::Miro(command) => command.execute_command().await?,
             BatCommands::Sonar(command) => command.execute_command()?,
             BatCommands::Repo(command) => command.execute_command()?,
+            _ => unimplemented!(),
         }
         Ok(())
     }
@@ -135,6 +138,9 @@ impl BatCommands {
                         .collect::<Vec<_>>(),
                     command.to_string().to_kebab_case(),
                 )),
+                BatCommands::Refresh => {
+                    Some((vec![], BatCommands::Refresh.to_string().to_kebab_case()))
+                }
                 _ => None,
             })
             .collect::<Vec<(Vec<_>, String)>>()
@@ -148,8 +154,8 @@ fn init_log(cli: Cli) -> CommandResult<()> {
             "{d(%Y-%m-%d %H:%M:%S)} [{f}:{L}] {h({l})} {M}{n}{m}{n}",
         )))
         .build(bat_log_file.get_path(false).change_context(CommandError)?)
-        .ok()
-        .ok_or(CommandError)?;
+        .into_report()
+        .change_context(CommandError)?;
 
     let config = Config::builder()
         .appender(Appender::builder().build("logfile", Box::new(logfile)))
@@ -158,8 +164,8 @@ fn init_log(cli: Cli) -> CommandResult<()> {
                 .appender("logfile")
                 .build(cli.verbose.log_level_filter()),
         )
-        .ok()
-        .ok_or(CommandError)?;
+        .into_report()
+        .change_context(CommandError)?;
 
     log4rs::init_config(config)
         .into_report()
@@ -167,9 +173,22 @@ fn init_log(cli: Cli) -> CommandResult<()> {
     Ok(())
 }
 
+pub struct Suggestion(String);
+
+impl Suggestion {
+    pub fn set_report() {
+        Report::set_charset(Charset::Utf8);
+        Report::set_color_mode(ColorMode::Color);
+        Report::install_debug_hook::<Self>(|Self(value), context| {
+            context.push_body(format!("{}: {value}", "suggestion".yellow()))
+        });
+    }
+}
+
 async fn run() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
 
+    Suggestion::set_report();
     // env_logger selectively
     match cli.command {
         BatCommands::Package(..) | BatCommands::Create => {
@@ -185,6 +204,7 @@ async fn run() -> CommandResult<()> {
         | BatCommands::Create
         | BatCommands::Package(..)
         | BatCommands::Repo(..)
+        // | BatCommands::Refresh
         | BatCommands::Miro(..) => Ok(()),
         _ => check_correct_branch().change_context(CommandError),
     }?;
@@ -192,6 +212,7 @@ async fn run() -> CommandResult<()> {
     // check metadata
     match cli.command {
         BatCommands::Init { .. }
+        | BatCommands::Refresh
         | BatCommands::Create
         | BatCommands::Package(..)
         | BatCommands::Repo(..)
@@ -199,11 +220,12 @@ async fn run() -> CommandResult<()> {
         _ => BatMetadata::check_metadata_is_initialized().change_context(CommandError),
     }?;
 
-    let result = match cli.command {
-        BatCommands::Create => commands::project_commands::create_project(),
+    return match cli.command {
+        BatCommands::Create => commands::project_commands::create_bat_project(),
         BatCommands::Init {
             skip_initial_commit,
         } => commands::project_commands::initialize_bat_project(skip_initial_commit).await,
+        BatCommands::Refresh => ProjectCommands::Refresh.execute_command(),
         BatCommands::CO(CodeOverhaulCommand::Start) => commands::co_commands::start_co_file(),
         BatCommands::CO(CodeOverhaulCommand::Finish) => {
             commands::co_commands::finish_co_file().await
@@ -211,9 +233,6 @@ async fn run() -> CommandResult<()> {
         BatCommands::CO(CodeOverhaulCommand::Update) => commands::co_commands::update_co_file(),
         BatCommands::CO(CodeOverhaulCommand::Count) => commands::co_commands::count_co_files(),
         BatCommands::CO(CodeOverhaulCommand::Open) => commands::co_commands::open_co(),
-        BatCommands::Sonar(..) => cli.command.execute().await,
-        BatCommands::Miro(..) => cli.command.execute().await,
-        BatCommands::Repo(..) => cli.command.execute().await,
         BatCommands::Finding(FindingCommand::Create) => commands::finding_commands::start_finding(),
         BatCommands::Finding(FindingCommand::Finish) => {
             commands::finding_commands::finish_finding()
@@ -223,6 +242,9 @@ async fn run() -> CommandResult<()> {
         }
         BatCommands::Finding(FindingCommand::AcceptAll) => commands::finding_commands::accept_all(),
         BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
+        BatCommands::Sonar(..) => cli.command.execute().await,
+        BatCommands::Miro(..) => cli.command.execute().await,
+        BatCommands::Repo(..) => cli.command.execute().await,
         // only for dev
         #[cfg(debug_assertions)]
         BatCommands::Package(PackageCommand::Format) => {
@@ -234,24 +256,29 @@ async fn run() -> CommandResult<()> {
         }
         _ => unimplemented!("Command only implemented for dev operations"),
     };
+}
 
-    return match result {
+#[tokio::main]
+async fn main() -> CommandResult<()> {
+    let cli: Cli = Cli::parse();
+    return match run().await {
         Ok(_) => {
-            println!("{:#?} script finished with error", cli.command);
+            println!("{:#?}\n script finished successfully", cli.command);
             Ok(())
         }
         Err(error) => {
-            eprintln!("{:#?} script finished with error", cli.command);
-            log::error!("error output:\n {:#?}", error);
+            eprintln!("{:#?}\n script finished with error", cli.command);
+            log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)
         }
     };
 }
 
-#[tokio::main]
-async fn main() {
-    match run().await {
-        Ok(_) => std::process::exit(0),
-        Err(_) => std::process::exit(0),
-    };
+#[cfg(debug_assertions)]
+mod test_bat_main {
+
+    #[test]
+    fn test_main() {
+        super::main();
+    }
 }

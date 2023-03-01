@@ -36,8 +36,6 @@ pub enum RepositoryCommand {
     },
     /// Commits the open_questions, finding_candidate and threat_modeling notes
     CommitNotes,
-    /// Updates the templates to the last version
-    UpdateTemplates,
 }
 
 impl BatEnumerator for RepositoryCommand {}
@@ -59,7 +57,6 @@ impl RepositoryCommand {
             RepositoryCommand::CommitNotes => GitCommit::Notes
                 .create_commit()
                 .change_context(CommandError),
-            RepositoryCommand::UpdateTemplates => self.update_templates(),
         }
     }
 
@@ -192,41 +189,6 @@ impl RepositoryCommand {
 
     fn checkout_branch(&self, branch_name: &str) -> Result<(), CommandError> {
         execute_command("git", &["checkout", branch_name], false).change_context(CommandError)?;
-        Ok(())
-    }
-
-    fn update_templates(&self) -> CommandResult<()> {
-        println!("Updating to-review files in code-overhaul folder");
-        // move new templates to to-review in the auditor notes folder
-        // let to_review_path = utils::path::get_auditor_code_overhaul_to_review_path(None)?;
-        let to_review_file_names = BatFolder::CodeOverhaulToReview
-            .get_all_bat_files(false, None, None)
-            .change_context(CommandError)?;
-        // if the auditor to-review code overhaul folder exists
-        for bat_file in to_review_file_names {
-            bat_file.remove_file().change_context(CommandError)?;
-            let file_path = bat_file.get_path(false).change_context(CommandError)?;
-            let co_template = CodeOverhaulTemplate::new(
-                &bat_file.get_file_name().change_context(CommandError)?,
-                false,
-            )
-            .change_context(CommandError)?;
-            let mut co_markdown = co_template
-                .to_markdown_file(&file_path)
-                .change_context(CommandError)?;
-            co_markdown.save().change_context(CommandError)?;
-        }
-
-        // replace package.json
-        println!("Updating package.json");
-        PackageJsonTemplate::update_package_json().change_context(CommandError)?;
-        GitIgnore { for_init: false }
-            .write_content(true, &TemplateGenerator::get_git_ignore_content())
-            .change_context(CommandError)?;
-        GitCommit::UpdateTemplates
-            .create_commit()
-            .change_context(CommandError)?;
-        println!("Templates successfully updated");
         Ok(())
     }
 }

@@ -51,6 +51,12 @@ impl PackageJsonTemplate {
         let mut scripts_map = Map::new();
         for kebab_comand in kebab_commands_vec {
             let (kebab_options_vec, kebab_command_name) = kebab_comand;
+            if kebab_options_vec.is_empty() {
+                let script_key = format!("{}::{}", script_key_prefix, kebab_command_name);
+                let script_value = format!("{} {}", script_value_prefix, kebab_command_name);
+                scripts_map.insert(script_key, script_value.into());
+                continue;
+            }
             for kebab_option in kebab_options_vec {
                 let script_key = format!(
                     "{}::{}::{}",

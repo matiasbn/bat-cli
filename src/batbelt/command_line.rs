@@ -88,7 +88,7 @@ pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> Comm
         .attach_printable(message)?
         .to_string();
 
-    log::debug!("output_string: \n{}", output_string);
+    log::debug!(target:"execute_command",  "command: {}\n args: {:#?}\noutput: \n{}", command, args, output_string);
 
     if print_output {
         println!("{}", output_string);
@@ -97,7 +97,7 @@ pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> Comm
     Ok(output_string)
 }
 
-pub fn execute_child_process(command: &str, args: &[&str]) -> CommandResult<String> {
+pub fn execute_command_with_child_process(command: &str, args: &[&str]) -> CommandResult<String> {
     let message = format!(
         "Error spawning a child process for parameters: \n command: {} \n args: {:#?}",
         command, args
@@ -131,7 +131,7 @@ pub fn execute_child_process(command: &str, args: &[&str]) -> CommandResult<Stri
         .into_report()
         .change_context(CommandError)?;
 
-    log::debug!("output_string: \n{:#?}", output_string);
+    log::debug!(target:"execute_command_with_child_process",  "command: {}\n args: {:#?}\noutput: \n{}", command, args, output_string);
 
     Ok(output_string)
     // Ok("output_string".to_string())
@@ -139,12 +139,12 @@ pub fn execute_child_process(command: &str, args: &[&str]) -> CommandResult<Stri
 
 #[cfg(test)]
 mod command_line_tester {
-    use crate::batbelt::command_line::execute_child_process;
+    use crate::batbelt::command_line::execute_command_with_child_process;
 
     #[test]
     fn test_executed_piped() {
         env_logger::init();
-        let ls_result = execute_child_process("gflfs", &["2.0.0"]).unwrap();
+        let ls_result = execute_command_with_child_process("gflfs", &["2.0.0"]).unwrap();
         // let ls_result = execute_child_process("cargo", &["install"]).unwrap();
         println!("ls_rrsuylt {}", ls_result)
         // let ls_result = execute_piped_process("ls", &["-la"], true).unwrap();

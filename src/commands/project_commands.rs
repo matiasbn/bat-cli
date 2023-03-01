@@ -1,7 +1,7 @@
 use super::CommandError;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::templates::TemplateGenerator;
-use crate::batbelt::{bat_dialoguer, ShareableData};
+use crate::batbelt::{bat_dialoguer, BatEnumerator, ShareableData};
 use crate::config::{BatAuditorConfig, BatConfig};
 use colored::Colorize;
 use error_stack::Result;
@@ -15,15 +15,97 @@ use crate::batbelt::miro::frame::{
     MIRO_INITIAL_Y,
 };
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use crate::batbelt::path::BatFile::GitIgnore;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
+use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+use crate::commands::CommandResult;
+use clap::Subcommand;
 use normalize_url::normalizer;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 use walkdir::WalkDir;
 
-pub fn create_project() -> Result<(), CommandError> {
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
+pub enum ProjectCommands {
+    #[default]
+    Create,
+    Refresh,
+}
+impl BatEnumerator for ProjectCommands {}
+
+impl ProjectCommands {
+    pub fn execute_command(&self) -> Result<(), CommandError> {
+        match self {
+            ProjectCommands::Create => unimplemented!(),
+            ProjectCommands::Refresh => self.refresh_bat_project(),
+        }
+    }
+
+    fn refresh_bat_project(&self) -> CommandResult<()> {
+        let bat_auditor_toml_file = BatFile::BatAuditorToml;
+        log::debug!("here");
+        if !bat_auditor_toml_file
+            .file_exists()
+            .change_context(CommandError)?
+        {
+            BatAuditorConfig::new_with_prompt().change_context(CommandError)?;
+        }
+        GitAction::CheckoutAuditorBranch
+            .execute_action()
+            .change_context(CommandError)?;
+
+        self.update_co_to_review()?;
+        self.update_package_json()?;
+        self.update_git_ignore()?;
+
+        GitCommit::UpdateTemplates
+            .create_commit()
+            .change_context(CommandError)?;
+
+        println!("Templates successfully updated");
+        Ok(())
+    }
+
+    fn update_co_to_review(&self) -> CommandResult<()> {
+        println!("Updating to-review files in code-overhaul folder");
+        let to_review_file_names = BatFolder::CodeOverhaulToReview
+            .get_all_bat_files(false, None, None)
+            .change_context(CommandError)?;
+        // if the auditor to-review code overhaul folder exists
+        for bat_file in to_review_file_names {
+            bat_file.remove_file().change_context(CommandError)?;
+            let file_path = bat_file.get_path(false).change_context(CommandError)?;
+            let co_template = CodeOverhaulTemplate::new(
+                &bat_file.get_file_name().change_context(CommandError)?,
+                false,
+            )
+            .change_context(CommandError)?;
+            let mut co_markdown = co_template
+                .to_markdown_file(&file_path)
+                .change_context(CommandError)?;
+            co_markdown.save().change_context(CommandError)?;
+        }
+        Ok(())
+    }
+
+    fn update_package_json(&self) -> CommandResult<()> {
+        println!("Updating package.json");
+        PackageJsonTemplate::update_package_json().change_context(CommandError)
+    }
+
+    fn update_git_ignore(&self) -> CommandResult<()> {
+        println!("Updating .gitignore");
+        GitIgnore { for_init: false }
+            .write_content(true, &TemplateGenerator::get_git_ignore_content())
+            .change_context(CommandError)
+    }
+}
+
+pub fn create_bat_project() -> Result<(), CommandError> {
     // get project config
     let bat_config = create_bat_config_file().change_context(CommandError)?;
     println!("Creating {:#?} project", bat_config);
@@ -204,17 +286,6 @@ fn normalize_miro_board_url(url_to_normalize: &str) -> Result<String, CommandErr
     Ok(url)
 }
 
-#[test]
-fn test_normalize_url() {
-    let test_url =
-        "https://miro.com/app/board/uXjVPqatu4c=/?moveToWidget=3458764546015336005&cot=14";
-    let normalized = normalizer::UrlNormalizer::new(test_url)
-        .unwrap()
-        .normalize(Some(&["moveToWidget", "cot"]))
-        .unwrap();
-    println!("normalized: \n{}", normalized)
-}
-
 pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), CommandError> {
     let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
     if !Path::new("BatAuditor.toml").is_file() {
@@ -257,7 +328,7 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
         }
     }
     let auditor_project_branch_name =
-        batbelt::git::get_expected_current_branch().change_context(CommandError)?;
+        batbelt::git::get_auditor_branch_name().change_context(CommandError)?;
     println!("Checking out {:?} branch", auditor_project_branch_name);
     // checkout auditor branch
     Command::new("git")
@@ -332,7 +403,7 @@ fn initialize_project_repository() -> Result<(), CommandError> {
     Ok(())
 }
 
-pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {
+fn initialize_code_overhaul_files() -> Result<(), CommandError> {
     let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
 
     for entrypoint_name in entrypoints_names {
@@ -341,7 +412,7 @@ pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {
     Ok(())
 }
 
-pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
+async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
     if bat_auditor_config.miro_oauth_access_token.is_empty() {
         return Ok(());
@@ -387,7 +458,7 @@ pub async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
     Ok(())
 }
 
-pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
+fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
     let code_overhaul_file_path = BatFile::CodeOverhaulToReview {
         file_name: entrypoint_name.clone(),
     }
