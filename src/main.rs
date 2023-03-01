@@ -204,7 +204,7 @@ async fn run() -> CommandResult<()> {
         | BatCommands::Create
         | BatCommands::Package(..)
         | BatCommands::Repo(..)
-        // | BatCommands::Refresh
+        | BatCommands::Refresh
         | BatCommands::Miro(..) => Ok(()),
         _ => check_correct_branch().change_context(CommandError),
     }?;
@@ -263,11 +263,19 @@ async fn main() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
     return match run().await {
         Ok(_) => {
-            println!("{:#?}\n script finished successfully", cli.command);
+            println!(
+                "{} {} script executed successfully!",
+                "bat-cli".green(),
+                cli.command.to_string().to_kebab_case().green()
+            );
             Ok(())
         }
         Err(error) => {
-            eprintln!("{:#?}\n script finished with error", cli.command);
+            eprintln!(
+                "{} {} script finished with error",
+                "bat-cli".red(),
+                cli.command.to_string().to_kebab_case().green()
+            );
             log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)
         }
