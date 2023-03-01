@@ -288,7 +288,7 @@ async fn main() -> CommandResult<()> {
     return match run().await {
         Ok(_) => {
             println!(
-                "{} {} script executed successfully!",
+                "{} {} script successfully executed!",
                 "bat-cli".green(),
                 cli.command.to_string().to_kebab_case().green()
             );
