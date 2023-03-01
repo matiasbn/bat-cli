@@ -167,8 +167,7 @@ fn init_log(cli: Cli) -> CommandResult<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> CommandResult<()> {
+async fn run() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
 
     // env_logger selectively
@@ -235,14 +234,24 @@ async fn main() -> CommandResult<()> {
         }
         _ => unimplemented!("Command only implemented for dev operations"),
     };
-    match result {
+
+    return match result {
         Ok(_) => {
-            log::info!("{} script executed correctly", cli.command.to_string())
+            println!("{:#?} script finished with error", cli.command);
+            Ok(())
         }
         Err(error) => {
             eprintln!("{:#?} script finished with error", cli.command);
-            log::error!("error output:\n {:#?}", error)
+            log::error!("error output:\n {:#?}", error);
+            Err(error)
         }
-    }
-    Ok(())
+    };
+}
+
+#[tokio::main]
+async fn main() {
+    match run().await {
+        Ok(_) => std::process::exit(0),
+        Err(_) => std::process::exit(0),
+    };
 }
