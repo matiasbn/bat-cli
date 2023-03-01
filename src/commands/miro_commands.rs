@@ -3,7 +3,7 @@ use crate::batbelt;
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -16,9 +16,11 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::miro::image::MiroImage;
 
+use crate::batbelt::git::GitAction;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
 use crate::batbelt::BatEnumerator;
+use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
@@ -56,6 +58,20 @@ pub enum MiroCommand {
 }
 
 impl BatEnumerator for MiroCommand {}
+
+impl BatCommandEnumerator for MiroCommand {
+    fn execute_command(&self) -> CommandResult<()> {
+        unimplemented!()
+    }
+
+    fn check_metadata_is_initialized(&self) -> bool {
+        true
+    }
+
+    fn check_correct_branch(&self) -> bool {
+        false
+    }
+}
 
 impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {

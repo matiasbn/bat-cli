@@ -8,6 +8,9 @@ use crate::batbelt::{
 };
 use colored::Colorize;
 
+use crate::batbelt::git::{deprecated_check_correct_branch, GitAction};
+use crate::batbelt::metadata::BatMetadata;
+use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
@@ -37,6 +40,20 @@ pub enum FindingCommand {
 }
 
 impl BatEnumerator for FindingCommand {}
+
+impl BatCommandEnumerator for FindingCommand {
+    fn execute_command(&self) -> CommandResult<()> {
+        unimplemented!()
+    }
+
+    fn check_metadata_is_initialized(&self) -> bool {
+        true
+    }
+
+    fn check_correct_branch(&self) -> bool {
+        true
+    }
+}
 
 pub fn reject() -> Result<(), CommandError> {
     prepare_all()?;

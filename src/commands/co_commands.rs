@@ -1,19 +1,21 @@
-use crate::batbelt;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::{execute_command, CodeEditor};
-use crate::batbelt::git::{check_correct_branch, GitCommit};
+use crate::batbelt::git::{deprecated_check_correct_branch, GitAction, GitCommit};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{
     CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
 };
 use crate::batbelt::BatEnumerator;
-use crate::commands::CommandError;
+use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use crate::config::{BatAuditorConfig, BatConfig};
+use crate::{batbelt, BatCommands};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{Report, ResultExt};
 
+use crate::batbelt::metadata::BatMetadata;
+use inflector::Inflector;
 use std::fs;
 
 #[derive(
@@ -34,6 +36,20 @@ pub enum CodeOverhaulCommand {
 }
 
 impl BatEnumerator for CodeOverhaulCommand {}
+
+impl BatCommandEnumerator for CodeOverhaulCommand {
+    fn execute_command(&self) -> CommandResult<()> {
+        unimplemented!()
+    }
+
+    fn check_metadata_is_initialized(&self) -> bool {
+        true
+    }
+
+    fn check_correct_branch(&self) -> bool {
+        true
+    }
+}
 
 pub fn count_co_files() -> error_stack::Result<(), CommandError> {
     let (to_review_count, started_count, finished_count) = co_counter()?;
@@ -133,7 +149,7 @@ pub fn open_co() -> error_stack::Result<(), CommandError> {
 }
 
 pub async fn finish_co_file() -> error_stack::Result<(), CommandError> {
-    check_correct_branch().change_context(CommandError)?;
+    deprecated_check_correct_branch().change_context(CommandError)?;
     // get to-review files
     let started_entrypoints = BatFolder::CodeOverhaulStarted
         .get_all_files_dir_entries(true, None, None)

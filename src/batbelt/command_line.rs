@@ -1,3 +1,4 @@
+use colored::Colorize;
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::str::from_utf8;
@@ -27,6 +28,8 @@ pub enum CodeEditor {
     None,
 }
 
+impl BatEnumerator for CodeEditor {}
+
 impl CodeEditor {
     pub fn open_file_in_editor(path: &str, line_index: Option<usize>) -> CommandResult<()> {
         let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
@@ -36,6 +39,11 @@ impl CodeEditor {
             return Ok(());
         }
         let starting_line = line_index.unwrap_or(0);
+        println!(
+            "Opening {} on {}!",
+            path.trim_start_matches("../").green(),
+            bat_auditor_config.code_editor.get_colored_name(false)
+        );
         match bat_auditor_config.code_editor {
             CodeEditor::CLion => {
                 execute_command(
@@ -61,8 +69,6 @@ impl CodeEditor {
         Ok(())
     }
 }
-
-impl BatEnumerator for CodeEditor {}
 
 pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> CommandResult<String> {
     let message = format!(
