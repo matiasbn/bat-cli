@@ -377,6 +377,7 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
         create_miro_frames_for_entrypoints().await?;
     }
 
+    PackageJsonTemplate::update_package_json().change_context(CommandError)?;
     println!("Project successfully initialized");
     if !skip_initial_commit {
         GitCommit::InitAuditor

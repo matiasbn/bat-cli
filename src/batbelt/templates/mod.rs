@@ -40,7 +40,7 @@ impl TemplateGenerator {
             .write_content(false, &Self::get_git_ignore_content())
             .change_context(TemplateError)?;
         Self::create_readme()?;
-        PackageJsonTemplate::create_package_json()?;
+        // PackageJsonTemplate::create_package_json()?;
         BatFile::Batlog
             .create_empty(false)
             .change_context(TemplateError)?;
