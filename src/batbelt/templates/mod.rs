@@ -48,8 +48,9 @@ impl TemplateGenerator {
     }
     pub fn get_git_ignore_content() -> String {
         ".idea\n\
-            BatAuditor.toml\n\
-            Batlog.log"
+        ./package.json\n\
+        BatAuditor.toml\n\
+        Batlog.log"
             .to_string()
     }
 
@@ -294,5 +295,15 @@ pub enum TemplatePlaceholder {
 impl TemplatePlaceholder {
     pub fn to_placeholder(&self) -> String {
         self.to_string().to_screaming_snake_case()
+    }
+}
+
+#[cfg(debug_assertions)]
+mod template_test {
+    use crate::batbelt::templates::TemplateGenerator;
+
+    #[test]
+    fn test_get_gitignore_content() {
+        println!("{}", TemplateGenerator::get_git_ignore_content());
     }
 }

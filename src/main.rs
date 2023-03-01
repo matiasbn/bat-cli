@@ -143,7 +143,6 @@ impl BatCommands {
 
 fn init_log(cli: Cli) -> CommandResult<()> {
     let bat_log_file = BatFile::Batlog;
-    bat_log_file.remove_file().change_context(CommandError)?;
     let logfile = FileAppender::builder()
         .encoder(Box::new(PatternEncoder::new(
             "{d(%Y-%m-%d %H:%M:%S)} [{f}:{L}] {h({l})} {M}{n}{m}{n}",
