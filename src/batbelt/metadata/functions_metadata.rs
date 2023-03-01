@@ -24,7 +24,7 @@ use super::MetadataError;
 pub struct FunctionMetadata {
     pub path: String,
     pub name: String,
-    pub metadata_id: String,
+    pub metadata_id: MetadataId,
     pub function_type: FunctionMetadataType,
     pub start_line_index: usize,
     pub end_line_index: usize,
@@ -37,7 +37,7 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     fn path(&self) -> String {
         self.path.clone()
     }
-    fn metadata_id(&self) -> String {
+    fn metadata_id(&self) -> MetadataId {
         self.metadata_id.clone()
     }
     fn metadata_cache_type() -> MetadataCacheType {
@@ -69,18 +69,19 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
         metadata_sub_type: FunctionMetadataType,
         start_line_index: usize,
         end_line_index: usize,
+        metadata_id: MetadataId,
     ) -> Self {
         Self {
             path,
             name,
-            metadata_id: Self::create_metadata_id(),
+            metadata_id,
             function_type: metadata_sub_type,
             start_line_index,
             end_line_index,
         }
     }
 
-    fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
+    fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
         let mut metadata_result: Vec<FunctionMetadata> = vec![];
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
@@ -100,6 +101,7 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
                 function_type,
                 result.start_line_index + 1,
                 result.end_line_index + 1,
+                Self::create_metadata_id(),
             );
             metadata_result.push(function_metadata);
         }
@@ -167,6 +169,22 @@ impl FunctionMetadata {
             }
         } else {
             Ok(false)
+        }
+    }
+}
+#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+pub enum FunctionMetadataCacheType {
+    Dependency,
+    ExternalDependency,
+}
+
+impl BatEnumerator for FunctionMetadataCacheType {}
+
+impl FunctionMetadataCacheType {
+    pub fn to_metadata_cache_content(&self, cache_values: Vec<String>) -> MetadataCacheContent {
+        MetadataCacheContent {
+            metadata_cache_content_type: self.to_snake_case(),
+            cache_values,
         }
     }
 }

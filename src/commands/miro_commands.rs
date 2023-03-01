@@ -669,12 +669,9 @@ impl MiroCommand {
                     )
                     .unwrap();
                     let selected_struct_type = StructMetadataType::get_type_vec()[selection];
-                    let struct_metadata_vec = StructMetadata::get_filtered_metadata(
-                        None,
-                        Some(selected_struct_type),
-                        None,
-                    )
-                    .change_context(CommandError)?;
+                    let struct_metadata_vec =
+                        StructMetadata::get_filtered_metadata(None, Some(selected_struct_type))
+                            .change_context(CommandError)?;
                     let struct_metadata_names = struct_metadata_vec
                         .iter()
                         .map(|struct_metadata| {
@@ -741,12 +738,9 @@ impl MiroCommand {
                     )
                     .unwrap();
                     let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
-                    let function_metadata_vec = FunctionMetadata::get_filtered_metadata(
-                        None,
-                        Some(selected_function_type),
-                        None,
-                    )
-                    .change_context(CommandError)?;
+                    let function_metadata_vec =
+                        FunctionMetadata::get_filtered_metadata(None, Some(selected_function_type))
+                            .change_context(CommandError)?;
                     let function_metadata_names = function_metadata_vec
                         .iter()
                         .map(|function_metadata| {
@@ -828,8 +822,8 @@ impl MiroCommand {
 
     async fn function_action(&self, _select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
-        let function_metadata_vec = FunctionMetadata::get_filtered_metadata(None, None, None)
-            .change_context(CommandError)?;
+        let function_metadata_vec =
+            FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
         let trait_impl_parser_vec =
             TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata_vec.clone()))
                 .change_context(CommandError)?;
@@ -956,12 +950,18 @@ impl MiroCommand {
             return Ok(());
         }
 
-        let function_dependencies = function_parser.dependencies.clone();
+        let function_dependencies = function_parser
+            .dependencies
+            .clone()
+            .into_iter()
+            .map(|dp| FunctionMetadata::find_by_metadata_id(dp))
+            .collect::<Result<Vec<_>, _>>()
+            .change_context(CommandError)?;
 
         let dependencies_names_vec = function_dependencies
             .clone()
             .into_iter()
-            .map(|dp| dp.name)
+            .map(|metadata| metadata.name)
             .collect::<Vec<_>>();
 
         let selected_function_content = parent_function
@@ -994,13 +994,7 @@ impl MiroCommand {
         let formatted_option = function_dependencies
             .clone()
             .into_iter()
-            .map(|dep| {
-                self.get_formatted_path(
-                    dep.name,
-                    dep.function_metadata.path.clone(),
-                    dep.function_metadata.start_line_index,
-                )
-            })
+            .map(|dep| self.get_formatted_path(dep.name, dep.path.clone(), dep.start_line_index))
             .collect::<Vec<_>>();
 
         let multi_selection = BatDialoguer::multiselect(
@@ -1018,13 +1012,13 @@ impl MiroCommand {
             let already_deployed = deployed_dependencies
                 .clone()
                 .into_iter()
-                .find(|dep| dep.1 == selected_dependency.function_metadata);
+                .find(|dep| dep.1 == selected_dependency);
             if already_deployed.is_none() {
-                pending_to_deploy.push(selected_dependency.function_metadata.clone());
+                pending_to_deploy.push(selected_dependency.clone());
             } else {
                 pending_to_connect.push(already_deployed.unwrap().0);
             }
-            pending_to_check.push(selected_dependency.function_metadata.clone());
+            pending_to_check.push(selected_dependency.clone());
         }
 
         while !pending_to_deploy.is_empty() {

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use crate::batbelt;
 use crate::batbelt::path::BatFile;
 
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataId};
 
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::BatEnumerator;
@@ -35,7 +35,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
     fn path(&self) -> String {
         self.path.clone()
     }
-    fn metadata_id(&self) -> String {
+    fn metadata_id(&self) -> MetadataId {
         self.metadata_id.clone()
     }
     fn metadata_cache_type() -> MetadataCacheType {
@@ -66,18 +66,19 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
         metadata_sub_type: StructMetadataType,
         start_line_index: usize,
         end_line_index: usize,
+        metadata_id: MetadataId,
     ) -> Self {
         StructMetadata {
             path,
             name,
-            metadata_id: Self::create_metadata_id(),
+            metadata_id,
             struct_type: metadata_sub_type,
             start_line_index,
             end_line_index,
         }
     }
 
-    fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
+    fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Struct);
@@ -97,6 +98,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
                 struct_type,
                 result.start_line_index + 1,
                 result.end_line_index + 1,
+                Self::create_metadata_id(),
             );
             metadata_result.push(struct_metadata);
         }

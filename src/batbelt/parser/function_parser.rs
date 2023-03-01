@@ -1,9 +1,12 @@
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
+use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataCacheType};
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::BatMetadataParser;
+use crate::batbelt::metadata::{BatMetadataParser, MetadataId, MetadataResult};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::parser::ParserError;
 
+use crate::batbelt::metadata::metadata_cache::{
+    MetadataCache, MetadataCacheContent, MetadataCacheType,
+};
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
@@ -11,7 +14,7 @@ use regex::Regex;
 pub struct FunctionDependencyParser {
     pub is_external: bool,
     pub function_name: String,
-    pub dependency_metadata_matches: Vec<FunctionParser>,
+    pub dependency_metadata_matches: Vec<MetadataId>,
 }
 
 #[derive(Clone, Debug)]
@@ -28,7 +31,7 @@ pub struct FunctionParser {
     pub signature: String,
     pub body: String,
     pub parameters: Vec<FunctionParameterParser>,
-    pub dependencies: Vec<FunctionParser>,
+    pub dependencies: Vec<MetadataId>,
     pub external_dependencies: Vec<String>,
 }
 
@@ -63,6 +66,18 @@ impl FunctionParser {
             "new_function_parser_with_dependencies:\n{:#?}",
             new_function_parser
         );
+        let dependencies_metadata_cache_content = FunctionMetadataCacheType::Dependency
+            .to_metadata_cache_content(new_function_parser.dependencies.clone());
+        let extern_dep_metadata_cache_content = FunctionMetadataCacheType::Dependency
+            .to_metadata_cache_content(new_function_parser.external_dependencies.clone());
+        new_function_parser
+            .function_metadata
+            .insert_metadata_cache(dependencies_metadata_cache_content)
+            .change_context(ParserError)?;
+        new_function_parser
+            .function_metadata
+            .insert_metadata_cache(extern_dep_metadata_cache_content)
+            .change_context(ParserError)?;
         Ok(new_function_parser)
     }
 
@@ -92,7 +107,7 @@ impl FunctionParser {
         let function_metadata = if optional_function_metadata_vec.is_some() {
             optional_function_metadata_vec.unwrap()
         } else {
-            FunctionMetadata::get_filtered_metadata(None, None, None).change_context(ParserError)?
+            FunctionMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
         };
 
         let trait_impl_parser_vec = if optional_trait_impl_parser_vec.is_some() {
@@ -111,7 +126,7 @@ impl FunctionParser {
             .map(|impl_match| impl_match.as_str().to_string())
             .collect::<Vec<_>>();
 
-        let mut dependency_function_parser_vec = vec![];
+        let mut dependency_function_metadata_id_vec = vec![];
 
         for impl_match in impl_function_matches {
             let mut impl_match_split = impl_match.split("::");
@@ -138,15 +153,8 @@ impl FunctionParser {
                         }
                     });
             if impl_function_metadata.is_some() {
-                dependency_function_parser_vec.push(
-                    impl_function_metadata
-                        .unwrap()
-                        .to_function_parser(
-                            Some(function_metadata.clone()),
-                            Some(trait_impl_parser_vec.clone()),
-                        )
-                        .change_context(ParserError)?,
-                );
+                dependency_function_metadata_id_vec
+                    .push(impl_function_metadata.unwrap().metadata_id);
             }
         }
 
@@ -183,10 +191,10 @@ impl FunctionParser {
             .clone()
             .into_iter()
             .filter(|f_meta| {
-                !dependency_function_parser_vec
+                !dependency_function_metadata_id_vec
                     .clone()
                     .into_iter()
-                    .any(|dep_parser| dep_parser.function_metadata == f_meta.clone())
+                    .any(|dep_metadata_id| dep_metadata_id == f_meta.metadata_id.clone())
             })
             .collect::<Vec<_>>();
 
@@ -198,19 +206,33 @@ impl FunctionParser {
                 .collect::<Vec<_>>();
             if !dependency_function_metadata_vec.clone().is_empty() {
                 for dependency_metadata in dependency_function_metadata_vec.clone() {
-                    let function_parser = dependency_metadata
-                        .to_function_parser(
-                            Some(function_metadata.clone()),
-                            Some(trait_impl_parser_vec.clone()),
-                        )
-                        .change_context(ParserError)?;
-                    dependency_function_parser_vec.push(function_parser);
+                    let mut function_metadata_cache = MetadataCache::new(
+                        dependency_metadata.metadata_id.clone(),
+                        MetadataCacheType::Function,
+                    );
+                    match function_metadata_cache.read_cache_by_id() {
+                        // already
+                        Ok(_) => {
+                            dependency_function_metadata_id_vec
+                                .push(dependency_metadata.metadata_id);
+                        }
+                        Err(_) => {
+                            let function_parser = dependency_metadata
+                                .to_function_parser(
+                                    Some(function_metadata.clone()),
+                                    Some(trait_impl_parser_vec.clone()),
+                                )
+                                .change_context(ParserError)?;
+                            dependency_function_metadata_id_vec
+                                .push(function_parser.function_metadata.metadata_id);
+                        }
+                    }
                 }
             } else {
                 self.external_dependencies.push(dependency_function_name);
             }
         }
-        self.dependencies = dependency_function_parser_vec;
+        self.dependencies = dependency_function_metadata_id_vec;
         Ok(())
     }
 

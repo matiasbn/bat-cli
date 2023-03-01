@@ -1,4 +1,4 @@
-use crate::batbelt::metadata::{BatMetadataParser, MetadataError, MetadataResult};
+use crate::batbelt::metadata::{BatMetadataParser, MetadataError, MetadataId, MetadataResult};
 use crate::batbelt::path::BatFile;
 use crate::batbelt::BatEnumerator;
 use clap::builder::Str;
@@ -54,7 +54,7 @@ pub struct MetadataCache {
 }
 
 impl MetadataCache {
-    pub fn new(metadata_id: String, metadata_cache_type: MetadataCacheType) -> Self {
+    pub fn new(metadata_id: MetadataId, metadata_cache_type: MetadataCacheType) -> Self {
         Self {
             metadata_id,
             metadata_cache_type,
@@ -102,10 +102,20 @@ impl MetadataCache {
                 }) {
                     None => Ok(self.metadata_cache_content.push(cache_content)),
                     Some(match_index) => {
-                        let mut cloned_content = cache_content.clone();
+                        let mut cloned_cache_values = cache_content
+                            .clone()
+                            .cache_values
+                            .into_iter()
+                            .filter(|cache_vale| {
+                                self.metadata_cache_content[match_index]
+                                    .cache_values
+                                    .iter()
+                                    .any(|self_value| self_value == cache_vale)
+                            })
+                            .collect::<Vec<_>>();
                         self.metadata_cache_content[match_index]
                             .cache_values
-                            .append(&mut cloned_content.cache_values);
+                            .append(&mut cloned_cache_values);
                         return Ok(());
                     }
                 }

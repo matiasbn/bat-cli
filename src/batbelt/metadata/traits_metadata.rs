@@ -3,7 +3,7 @@ use crate::batbelt::path::BatFile;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataId};
 
 use crate::batbelt::parser::trait_parser::TraitParser;
 use error_stack::{Result, ResultExt};
@@ -32,7 +32,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
     fn path(&self) -> String {
         self.path.clone()
     }
-    fn metadata_id(&self) -> String {
+    fn metadata_id(&self) -> MetadataId {
         self.metadata_id.clone()
     }
     fn metadata_cache_type() -> MetadataCacheType {
@@ -63,11 +63,12 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
         metadata_sub_type: TraitMetadataType,
         start_line_index: usize,
         end_line_index: usize,
+        metadata_id: MetadataId,
     ) -> Self {
         Self {
             path,
             name,
-            metadata_id: Self::create_metadata_id(),
+            metadata_id,
             trait_type: metadata_sub_type,
             start_line_index,
             end_line_index,
@@ -75,7 +76,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
     }
 
     //noinspection DuplicatedCode
-    fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
+    fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
 
@@ -88,6 +89,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
                 TraitMetadataType::Implementation,
                 result.start_line_index + 1,
                 result.end_line_index + 1,
+                Self::create_metadata_id(),
             );
             metadata_result.push(function_metadata);
         }
@@ -100,6 +102,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
                 TraitMetadataType::Definition,
                 result.start_line_index + 1,
                 result.end_line_index + 1,
+                Self::create_metadata_id(),
             );
             metadata_result.push(function_metadata);
         }
@@ -122,7 +125,7 @@ impl TraitMetadata {
         trait_type: Option<TraitMetadataType>,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
     ) -> Result<Vec<TraitParser>, MetadataError> {
-        Self::get_filtered_metadata(trait_name, trait_type, None)?
+        Self::get_filtered_metadata(trait_name, trait_type)?
             .into_iter()
             .map(|impl_meta| impl_meta.to_trait_impl_parser(optional_function_metadata_vec.clone()))
             .collect::<Result<Vec<_>, MetadataError>>()

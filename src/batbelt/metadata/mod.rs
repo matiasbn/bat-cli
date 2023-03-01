@@ -49,6 +49,8 @@ pub struct BatMetadata;
 
 pub type MetadataResult<T> = Result<T, MetadataError>;
 
+pub type MetadataId = String;
+
 impl BatMetadata {
     pub fn metadata_is_initialized() -> Result<bool, MetadataError> {
         let mut metadata_initialized = true;
@@ -170,7 +172,7 @@ where
 {
     fn name(&self) -> String;
     fn path(&self) -> String;
-    fn metadata_id(&self) -> String;
+    fn metadata_id(&self) -> MetadataId;
     fn metadata_cache_type() -> MetadataCacheType;
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
@@ -240,6 +242,7 @@ where
         metadata_sub_type: U,
         start_line_index: usize,
         end_line_index: usize,
+        metadata_id: MetadataId,
     ) -> Self;
 
     fn create_metadata_id() -> String {
@@ -295,12 +298,13 @@ where
 
     fn get_markdown_section_content_string(&self) -> String {
         format!(
-            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
+            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}\n- metadata_id: {}",
             self.name(),
             self.metadata_sub_type().to_snake_case(),
             self.path(),
             self.start_line_index(),
-            self.end_line_index()
+            self.end_line_index(),
+            self.metadata_id()
         )
     }
 
@@ -329,6 +333,11 @@ where
             &md_section.content,
             BatMetadataMarkdownContent::EndLineIndex,
         )
+        .attach_printable(message.clone())?;
+        let metadata_id = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::MetadataId,
+        )
         .attach_printable(message)?;
         Ok(Self::new(
             path,
@@ -336,17 +345,18 @@ where
             U::from_str(&type_string),
             start_line_index.parse::<usize>().unwrap(),
             end_line_index.parse::<usize>().unwrap(),
+            metadata_id,
         ))
     }
-    fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError>;
+    fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError>;
 
-    fn get_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
+    fn create_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
         let program_dir_entries = BatFolder::ProgramPath
             .get_all_files_dir_entries(false, None, None)
             .change_context(MetadataError)?;
         let mut metadata_vec: Vec<Self> = program_dir_entries
             .into_iter()
-            .map(|entry| Self::get_metadata_from_dir_entry(entry))
+            .map(|entry| Self::create_metadata_from_dir_entry(entry))
             .collect::<Result<Vec<_>, MetadataError>>()?
             .into_iter()
             .fold(vec![], |mut result_vec, mut entry| {
@@ -424,9 +434,8 @@ where
         let selection = BatDialoguer::select(prompt_text, U::get_colorized_type_vec(true), None)
             .change_context(MetadataError)?;
         let selected_sub_type = U::get_type_vec()[selection].clone();
-        let metadata_vec_filtered =
-            Self::get_filtered_metadata(None, Some(selected_sub_type), None)
-                .change_context(MetadataError)?;
+        let metadata_vec_filtered = Self::get_filtered_metadata(None, Some(selected_sub_type))
+            .change_context(MetadataError)?;
         let metadata_names = metadata_vec_filtered
             .iter()
             .map(|metadata| {
@@ -440,10 +449,26 @@ where
         Ok((metadata_vec_filtered, metadata_names))
     }
 
+    fn find_by_metadata_id(metadata_id: MetadataId) -> MetadataResult<Self> {
+        let match_metadata = Self::get_bat_metadata_type()
+            .get_markdown_sections_from_metadata_file()?
+            .into_iter()
+            .map(|section| Self::from_markdown_section(section))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .find(|metadata| metadata.metadata_id() == metadata_id);
+        return match match_metadata {
+            None => Err(Report::new(MetadataError).attach_printable(format!(
+                "No match for metadata with metadata_id:{}",
+                metadata_id
+            ))),
+            Some(metadata) => Ok(metadata),
+        };
+    }
+
     fn get_filtered_metadata(
         metadata_name: Option<&str>,
         metadata_type: Option<U>,
-        metadata_id: Option<&str>,
     ) -> Result<Vec<Self>, MetadataError> {
         let markdown_sections =
             Self::get_bat_metadata_type().get_markdown_sections_from_metadata_file()?;
@@ -494,6 +519,7 @@ pub enum BatMetadataMarkdownContent {
     Type,
     StartLineIndex,
     EndLineIndex,
+    MetadataId,
 }
 
 impl BatMetadataMarkdownContent {

@@ -48,7 +48,6 @@ impl EntrypointParser {
         let entrypoint_section = FunctionMetadata::get_filtered_metadata(
             Some(entrypoint_name),
             Some(FunctionMetadataType::EntryPoint),
-            None,
         )
         .change_context(ParserError)?;
 
@@ -69,12 +68,9 @@ impl EntrypointParser {
             .get_source_code_content();
         let entrypoint_function_body = get_function_body(&entrypoint_content);
 
-        let handlers = FunctionMetadata::get_filtered_metadata(
-            None,
-            Some(FunctionMetadataType::Handler),
-            None,
-        )
-        .change_context(ParserError)?;
+        let handlers =
+            FunctionMetadata::get_filtered_metadata(None, Some(FunctionMetadataType::Handler))
+                .change_context(ParserError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
 
         let handler = handlers.into_iter().find(|function_metadata| {
@@ -89,7 +85,6 @@ impl EntrypointParser {
         let structs_metadata = StructMetadata::get_filtered_metadata(
             Some(&context_name),
             Some(StructMetadataType::ContextAccounts),
-            None,
         )
         .change_context(ParserError)?;
         let context_accounts = structs_metadata
