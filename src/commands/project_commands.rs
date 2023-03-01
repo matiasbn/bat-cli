@@ -385,7 +385,7 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
     }
 
     BatFile::ProgramLib
-        .open_in_editor(true, None)
+        .open_in_editor(false, None)
         .change_context(CommandError)?;
     Ok(())
 }
