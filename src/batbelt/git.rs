@@ -38,6 +38,7 @@ pub enum GitAction {
     AddAll,
     CheckGitIsInitialized { is_initialized: Rc<RefCell<bool>> },
     CheckBranchDontExist { branch_name: String },
+    CheckCorrectBranch,
 }
 
 impl GitAction {
@@ -93,7 +94,28 @@ impl GitAction {
                 }
                 return Ok(());
             }
+            GitAction::CheckCorrectBranch => self.check_correct_branch()?,
             GitAction::CheckBranchDontExist { branch_name: _ } => {}
+        }
+        Ok(())
+    }
+
+    fn check_correct_branch(&self) -> GitResult<()> {
+        let expected_auditor_branch = get_auditor_branch_name()?;
+        let current_branch = get_current_branch_name()?;
+        if current_branch != expected_auditor_branch {
+            let message = format!(
+                "Incorrect branch: \n -current: {}\n -expected: {}",
+                current_branch, expected_auditor_branch
+            );
+            return Err(Report::new(GitError).attach_printable(message)).attach(Suggestion(
+                format!(
+                    "run \"{} {}\" or \"{}\" to move to the correct branch",
+                    "git checkout".green(),
+                    expected_auditor_branch.green(),
+                    "bat-cli refresh".green()
+                ),
+            ));
         }
         Ok(())
     }
@@ -105,7 +127,7 @@ impl GitAction {
     }
 }
 
-pub fn check_correct_branch() -> GitResult<()> {
+pub fn deprecated_check_correct_branch() -> GitResult<()> {
     let expected_auditor_branch = get_auditor_branch_name()?;
     let current_branch = get_current_branch_name()?;
     if current_branch != expected_auditor_branch {

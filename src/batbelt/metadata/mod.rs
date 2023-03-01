@@ -16,6 +16,9 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
+use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
+use crate::batbelt::metadata::structs_metadata::StructMetadata;
+use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
@@ -307,6 +310,15 @@ where
             .trim()
             .to_string();
         Ok(data)
+    }
+
+    fn prompt_selection() -> Result<Self, MetadataError> {
+        let (metadata_vec, metadata_names) = Self::prompt_types()?;
+        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
+        let selection = BatDialoguer::select(prompt_text, metadata_names.clone(), None)
+            .change_context(MetadataError)?;
+
+        Ok(metadata_vec[selection].clone())
     }
 
     fn prompt_multiselection(

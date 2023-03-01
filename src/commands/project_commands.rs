@@ -19,7 +19,7 @@ use crate::batbelt::path::BatFile::GitIgnore;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
-use crate::commands::CommandResult;
+use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 use normalize_url::normalizer;
 use std::fs;
@@ -37,6 +37,23 @@ pub enum ProjectCommands {
 }
 impl BatEnumerator for ProjectCommands {}
 
+impl BatCommandEnumerator for ProjectCommands {
+    fn execute_command(&self) -> CommandResult<()> {
+        match self {
+            ProjectCommands::Create => unimplemented!(),
+            ProjectCommands::Refresh => self.refresh_bat_project(),
+        }
+    }
+
+    fn check_metadata_is_initialized(&self) -> bool {
+        false
+    }
+
+    fn check_correct_branch(&self) -> bool {
+        false
+    }
+}
+
 impl ProjectCommands {
     pub fn execute_command(&self) -> Result<(), CommandError> {
         match self {
@@ -47,7 +64,6 @@ impl ProjectCommands {
 
     fn refresh_bat_project(&self) -> CommandResult<()> {
         let bat_auditor_toml_file = BatFile::BatAuditorToml;
-        log::debug!("here");
         if !bat_auditor_toml_file
             .file_exists()
             .change_context(CommandError)?

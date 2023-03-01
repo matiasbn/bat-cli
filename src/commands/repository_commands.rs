@@ -8,7 +8,7 @@ use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::batbelt::templates::TemplateGenerator;
 use crate::batbelt::BatEnumerator;
-use crate::commands::{CommandError, CommandResult};
+use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -40,8 +40,8 @@ pub enum RepositoryCommand {
 
 impl BatEnumerator for RepositoryCommand {}
 
-impl RepositoryCommand {
-    pub fn execute_command(&self) -> Result<(), CommandError> {
+impl BatCommandEnumerator for RepositoryCommand {
+    fn execute_command(&self) -> CommandResult<()> {
         self.check_develop_exists()?;
         match self {
             RepositoryCommand::UpdateBranches => {
@@ -60,6 +60,19 @@ impl RepositoryCommand {
         }
     }
 
+    fn check_metadata_is_initialized(&self) -> bool {
+        false
+    }
+
+    fn check_correct_branch(&self) -> bool {
+        match self {
+            RepositoryCommand::CommitNotes => true,
+            _ => false,
+        }
+    }
+}
+
+impl RepositoryCommand {
     fn merge_all_to_develop(&self) -> Result<(), CommandError> {
         let branches_list = self.get_local_branches_filtered()?;
         self.checkout_branch("develop")?;

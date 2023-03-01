@@ -14,6 +14,7 @@ use error_stack::{Result, ResultExt};
 use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
 use crate::batbelt::sonar::SonarResultType;
 use crate::batbelt::templates::TemplateGenerator;
+use crate::commands::{BatCommandEnumerator, CommandResult};
 
 use super::CommandError;
 
@@ -24,77 +25,33 @@ pub enum SonarCommand {
     /// Updates the functions.md and structs.md files with data
     #[default]
     Run,
-    /// Gets the path to a metadata information from metadata files
-    PrintPath {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-    },
 }
 
 impl BatEnumerator for SonarCommand {}
+
+impl BatCommandEnumerator for SonarCommand {
+    fn execute_command(&self) -> CommandResult<()> {
+        todo!()
+    }
+
+    fn check_metadata_is_initialized(&self) -> bool {
+        match self {
+            SonarCommand::Run => false,
+        }
+    }
+
+    fn check_correct_branch(&self) -> bool {
+        match self {
+            SonarCommand::Run => true,
+        }
+    }
+}
 
 impl SonarCommand {
     pub fn execute_command(&self) -> Result<(), CommandError> {
         match self {
             SonarCommand::Run => self.execute_run(),
-            SonarCommand::PrintPath { select_all } => self.execute_print_path(*select_all),
         }
-    }
-
-    fn execute_print_path(&self, select_all: bool) -> Result<(), CommandError> {
-        let mut continue_printing = true;
-        while continue_printing {
-            let selected_bat_metadata_type =
-                BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
-            match selected_bat_metadata_type {
-                BatMetadataType::Struct => {
-                    let selections = StructMetadata::prompt_multiselection(select_all, true)
-                        .change_context(CommandError)?;
-                    for selection in selections {
-                        self.print_formatted_path(
-                            selection.name,
-                            selection.path,
-                            selection.start_line_index,
-                        )
-                    }
-                }
-                BatMetadataType::Function => {
-                    let selections = FunctionMetadata::prompt_multiselection(select_all, true)
-                        .change_context(CommandError)?;
-                    for selection in selections {
-                        self.print_formatted_path(
-                            selection.name,
-                            selection.path,
-                            selection.start_line_index,
-                        )
-                    }
-                }
-                BatMetadataType::Trait => {
-                    let selections = TraitMetadata::prompt_multiselection(select_all, true)
-                        .change_context(CommandError)?;
-                    for selection in selections {
-                        self.print_formatted_path(
-                            selection.name,
-                            selection.path,
-                            selection.start_line_index,
-                        )
-                    }
-                }
-            }
-            let prompt_text = format!("Do you want to continute {}", "printing paths?".yellow());
-            continue_printing = BatDialoguer::select_yes_or_no(prompt_text)?;
-        }
-        Ok(())
-    }
-
-    fn print_formatted_path(&self, name: String, path: String, start_line_index: usize) {
-        println!(
-            "{}: {}:{}",
-            name.blue(),
-            path.trim_start_matches("../"),
-            start_line_index
-        )
     }
 
     fn execute_run(&self) -> Result<(), CommandError> {
