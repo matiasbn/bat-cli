@@ -1,7 +1,7 @@
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::BatMetadataParser;
-use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
+use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::parser::ParserError;
 
 use error_stack::{Report, Result, ResultExt};
@@ -38,7 +38,7 @@ impl FunctionParser {
         function_metadata: FunctionMetadata,
         content: String,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitImplParser>>,
+        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<Self, ParserError> {
         let mut new_function_parser = Self {
             name,
@@ -53,18 +53,23 @@ impl FunctionParser {
         new_function_parser.get_function_signature();
         new_function_parser.get_function_body();
         new_function_parser.get_function_parameters()?;
+        log::debug!("new_function_parser:\n{:#?}", new_function_parser);
+        log::debug!("new_function_body:\n{}", new_function_parser.body);
         new_function_parser.get_function_dependencies(
             optional_function_metadata_vec,
             optional_trait_impl_parser_vec,
         )?;
-        log::debug!("new_function_parser:\n{:#?}", new_function_parser);
+        log::debug!(
+            "new_function_parser_with_dependencies:\n{:#?}",
+            new_function_parser
+        );
         Ok(new_function_parser)
     }
 
     pub fn new_from_metadata(
         function_metadata: FunctionMetadata,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitImplParser>>,
+        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<Self, ParserError> {
         let name = function_metadata.name.clone();
         let content = function_metadata
@@ -82,7 +87,7 @@ impl FunctionParser {
     fn get_function_dependencies(
         &mut self,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitImplParser>>,
+        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<(), ParserError> {
         let function_metadata = if optional_function_metadata_vec.is_some() {
             optional_function_metadata_vec.unwrap()
@@ -152,6 +157,7 @@ impl FunctionParser {
                 let match_str = reg_match.as_str().to_string();
                 log::debug!("match_str_regex {}", match_str);
                 let function_name = Self::get_function_name_from_signature(&match_str);
+                log::debug!("match_str_regex_function_name {}", function_name);
                 let matching_line = self
                     .body
                     .clone()

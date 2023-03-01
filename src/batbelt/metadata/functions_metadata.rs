@@ -9,7 +9,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataResult};
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
-use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
+use crate::batbelt::parser::trait_parser::TraitParser;
 use error_stack::{Result, ResultExt};
 
 use crate::batbelt::BatEnumerator;
@@ -107,7 +107,7 @@ impl FunctionMetadata {
     pub fn to_function_parser(
         &self,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitImplParser>>,
+        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<FunctionParser, MetadataError> {
         FunctionParser::new_from_metadata(
             self.clone(),

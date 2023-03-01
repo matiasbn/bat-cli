@@ -18,7 +18,7 @@ use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::git::GitAction;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
-use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
+use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
@@ -903,7 +903,7 @@ impl MiroCommand {
         parent_function_image: Option<MiroImage>,
         selected_miro_frame: MiroFrame,
         function_metadata_vec: Vec<FunctionMetadata>,
-        trait_impl_parser_vec: Vec<TraitImplParser>,
+        trait_impl_parser_vec: Vec<TraitParser>,
         deployed_dependencies: &mut Vec<(MiroImage, FunctionMetadata)>,
         pending_to_check: &mut Vec<FunctionMetadata>,
     ) -> Result<(), CommandError> {

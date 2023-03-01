@@ -5,7 +5,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 
-use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
+use crate::batbelt::parser::trait_parser::TraitParser;
 use error_stack::{Result, ResultExt};
 
 use crate::batbelt::BatEnumerator;
@@ -108,8 +108,8 @@ impl TraitMetadata {
     pub fn to_trait_impl_parser(
         &self,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-    ) -> Result<TraitImplParser, MetadataError> {
-        TraitImplParser::new_from_metadata(self.clone(), optional_function_metadata_vec)
+    ) -> Result<TraitParser, MetadataError> {
+        TraitParser::new_from_metadata(self.clone(), optional_function_metadata_vec)
             .change_context(MetadataError)
     }
 
@@ -117,7 +117,7 @@ impl TraitMetadata {
         trait_name: Option<&str>,
         trait_type: Option<TraitMetadataType>,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-    ) -> Result<Vec<TraitImplParser>, MetadataError> {
+    ) -> Result<Vec<TraitParser>, MetadataError> {
         Self::get_filtered_metadata(trait_name, trait_type)?
             .into_iter()
             .map(|impl_meta| impl_meta.to_trait_impl_parser(optional_function_metadata_vec.clone()))
