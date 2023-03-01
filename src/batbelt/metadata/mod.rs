@@ -364,8 +364,9 @@ where
         let selection = BatDialoguer::select(prompt_text, U::get_colorized_type_vec(true), None)
             .change_context(MetadataError)?;
         let selected_sub_type = U::get_type_vec()[selection].clone();
-        let metadata_vec_filtered = Self::get_filtered_metadata(None, Some(selected_sub_type))
-            .change_context(MetadataError)?;
+        let metadata_vec_filtered =
+            Self::get_filtered_metadata(None, Some(selected_sub_type), None)
+                .change_context(MetadataError)?;
         let metadata_names = metadata_vec_filtered
             .iter()
             .map(|metadata| {
@@ -382,6 +383,7 @@ where
     fn get_filtered_metadata(
         metadata_name: Option<&str>,
         metadata_type: Option<U>,
+        metadata_id: Option<&str>,
     ) -> Result<Vec<Self>, MetadataError> {
         let markdown_sections =
             Self::get_bat_metadata_type().get_markdown_sections_from_metadata_file()?;

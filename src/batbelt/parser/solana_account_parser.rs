@@ -35,9 +35,12 @@ impl SolanaAccountType {
             return Ok(Self::Mint);
         }
 
-        let solana_accounts_metadata =
-            StructMetadata::get_filtered_metadata(None, Some(StructMetadataType::SolanaAccount))
-                .change_context(ParserError)?;
+        let solana_accounts_metadata = StructMetadata::get_filtered_metadata(
+            None,
+            Some(StructMetadataType::SolanaAccount),
+            None,
+        )
+        .change_context(ParserError)?;
         if solana_accounts_metadata
             .into_iter()
             .any(|solana_account| last_line.contains(&solana_account.name))

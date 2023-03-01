@@ -92,7 +92,7 @@ impl FunctionParser {
         let function_metadata = if optional_function_metadata_vec.is_some() {
             optional_function_metadata_vec.unwrap()
         } else {
-            FunctionMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
+            FunctionMetadata::get_filtered_metadata(None, None, None).change_context(ParserError)?
         };
 
         let trait_impl_parser_vec = if optional_trait_impl_parser_vec.is_some() {

@@ -118,7 +118,7 @@ impl TraitMetadata {
         trait_type: Option<TraitMetadataType>,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
     ) -> Result<Vec<TraitParser>, MetadataError> {
-        Self::get_filtered_metadata(trait_name, trait_type)?
+        Self::get_filtered_metadata(trait_name, trait_type, None)?
             .into_iter()
             .map(|impl_meta| impl_meta.to_trait_impl_parser(optional_function_metadata_vec.clone()))
             .collect::<Result<Vec<_>, MetadataError>>()

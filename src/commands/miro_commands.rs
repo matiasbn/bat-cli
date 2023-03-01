@@ -669,9 +669,12 @@ impl MiroCommand {
                     )
                     .unwrap();
                     let selected_struct_type = StructMetadataType::get_type_vec()[selection];
-                    let struct_metadata_vec =
-                        StructMetadata::get_filtered_metadata(None, Some(selected_struct_type))
-                            .change_context(CommandError)?;
+                    let struct_metadata_vec = StructMetadata::get_filtered_metadata(
+                        None,
+                        Some(selected_struct_type),
+                        None,
+                    )
+                    .change_context(CommandError)?;
                     let struct_metadata_names = struct_metadata_vec
                         .iter()
                         .map(|struct_metadata| {
@@ -738,9 +741,12 @@ impl MiroCommand {
                     )
                     .unwrap();
                     let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
-                    let function_metadata_vec =
-                        FunctionMetadata::get_filtered_metadata(None, Some(selected_function_type))
-                            .change_context(CommandError)?;
+                    let function_metadata_vec = FunctionMetadata::get_filtered_metadata(
+                        None,
+                        Some(selected_function_type),
+                        None,
+                    )
+                    .change_context(CommandError)?;
                     let function_metadata_names = function_metadata_vec
                         .iter()
                         .map(|function_metadata| {
@@ -822,8 +828,8 @@ impl MiroCommand {
 
     async fn function_action(&self, _select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
-        let function_metadata_vec =
-            FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
+        let function_metadata_vec = FunctionMetadata::get_filtered_metadata(None, None, None)
+            .change_context(CommandError)?;
         let trait_impl_parser_vec =
             TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata_vec.clone()))
                 .change_context(CommandError)?;

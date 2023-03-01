@@ -41,7 +41,7 @@ impl TraitParser {
         let function_metadata_vec = if optional_function_metadata_vec.is_some() {
             optional_function_metadata_vec.unwrap()
         } else {
-            FunctionMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
+            FunctionMetadata::get_filtered_metadata(None, None, None).change_context(ParserError)?
         };
         let filtered_metadata_vec = function_metadata_vec
             .into_iter()
