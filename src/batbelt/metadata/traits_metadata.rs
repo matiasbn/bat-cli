@@ -8,6 +8,7 @@ use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use error_stack::{Result, ResultExt};
 
+use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
 use crate::batbelt::BatEnumerator;
 use std::{fs, vec};
 use walkdir::DirEntry;
@@ -33,6 +34,9 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
     }
     fn metadata_id(&self) -> String {
         self.metadata_id.clone()
+    }
+    fn metadata_cache_type() -> MetadataCacheType {
+        MetadataCacheType::Trait
     }
     fn start_line_index(&self) -> usize {
         self.start_line_index

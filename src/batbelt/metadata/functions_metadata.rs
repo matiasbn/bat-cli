@@ -10,9 +10,11 @@ use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataResul
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
-use error_stack::{Result, ResultExt};
+use error_stack::{FutureExt, Result, ResultExt};
 
+use crate::batbelt::metadata::metadata_cache::MetadataCache;
 use crate::batbelt::BatEnumerator;
+use serde_json::{json, Value};
 use std::{fs, vec};
 use walkdir::DirEntry;
 
@@ -37,6 +39,9 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     }
     fn metadata_id(&self) -> String {
         self.metadata_id.clone()
+    }
+    fn metadata_cache_type() -> MetadataCacheType {
+        MetadataCacheType::Function
     }
     fn start_line_index(&self) -> usize {
         self.start_line_index

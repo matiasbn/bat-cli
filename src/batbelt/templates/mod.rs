@@ -126,7 +126,7 @@ impl TemplateGenerator {
         Self::create_findings_folders()?;
 
         // metadata
-        let auditor_metadata_path = BatFolder::Metadata
+        let auditor_metadata_path = BatFolder::MetadataFolder
             .get_path(false)
             .change_context(TemplateError)?;
         Self::create_dir(&auditor_metadata_path, false)?;

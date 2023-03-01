@@ -3,6 +3,7 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::{BatAuditorConfig, BatConfig};
 
+use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
 use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 use inflector::Inflector;
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,9 @@ pub enum BatFile {
     BatToml,
     BatAuditorToml,
     Batlog,
+    MetadataCacheFile {
+        metadata_cache_type: MetadataCacheType,
+    },
     FunctionsMetadataFile,
     StructsMetadataFile,
     TraitsMetadataFile,
@@ -33,17 +37,37 @@ pub enum BatFile {
     FindingCandidates,
     OpenQuestions,
     ProgramLib,
-    Readme { to_create_project: bool },
-    GitIgnore { to_create_project: bool },
-    PackageJson { to_create_project: bool },
+    Readme {
+        to_create_project: bool,
+    },
+    GitIgnore {
+        to_create_project: bool,
+    },
+    PackageJson {
+        to_create_project: bool,
+    },
     RobotFile,
-    CodeOverhaulToReview { file_name: String },
-    CodeOverhaulStarted { file_name: String },
-    CodeOverhaulFinished { file_name: String },
-    FindingToReview { file_name: String },
-    FindingAccepted { file_name: String },
-    FindingRejected { file_name: String },
-    Generic { file_path: String },
+    CodeOverhaulToReview {
+        file_name: String,
+    },
+    CodeOverhaulStarted {
+        file_name: String,
+    },
+    CodeOverhaulFinished {
+        file_name: String,
+    },
+    FindingToReview {
+        file_name: String,
+    },
+    FindingAccepted {
+        file_name: String,
+    },
+    FindingRejected {
+        file_name: String,
+    },
+    Generic {
+        file_path: String,
+    },
 }
 
 impl BatFile {
@@ -118,7 +142,7 @@ impl BatFile {
             BatFile::StructsMetadataFile => {
                 format!(
                     "{}/{}.md",
-                    BatFolder::Metadata.get_path(canonicalize)?,
+                    BatFolder::MetadataFolder.get_path(canonicalize)?,
                     BatMetadataType::Struct
                         .to_string()
                         .to_lowercase()
@@ -128,7 +152,7 @@ impl BatFile {
             BatFile::FunctionsMetadataFile => {
                 format!(
                     "{}/{}.md",
-                    BatFolder::Metadata.get_path(canonicalize)?,
+                    BatFolder::MetadataFolder.get_path(canonicalize)?,
                     BatMetadataType::Function
                         .to_string()
                         .to_lowercase()
@@ -138,7 +162,7 @@ impl BatFile {
             BatFile::TraitsMetadataFile => {
                 format!(
                     "{}/{}.md",
-                    BatFolder::Metadata.get_path(canonicalize)?,
+                    BatFolder::MetadataFolder.get_path(canonicalize)?,
                     BatMetadataType::Trait
                         .to_string()
                         .to_lowercase()
@@ -188,6 +212,13 @@ impl BatFile {
                 )
             }
             BatFile::Generic { file_path } => file_path.clone(),
+            BatFile::MetadataCacheFile {
+                metadata_cache_type,
+            } => format!(
+                "{}/{}.json",
+                BatFolder::MetadataFolder.get_path(canonicalize)?,
+                metadata_cache_type.to_string().to_snake_case()
+            ),
         };
 
         if canonicalize {
@@ -283,7 +314,8 @@ impl BatFile {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum BatFolder {
-    Metadata,
+    MetadataFolder,
+    MetadataCacheFolder,
     ProgramPath,
     ProjectFolderPath,
     FindingsFolderPath,
@@ -320,10 +352,16 @@ impl BatFolder {
                     BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
-            BatFolder::Metadata => {
+            BatFolder::MetadataFolder => {
                 format!(
                     "{}/metadata",
                     BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
+            BatFolder::MetadataCacheFolder => {
+                format!(
+                    "{}/cache",
+                    BatFolder::MetadataFolder.get_path(canonicalize)?
                 )
             }
             BatFolder::ProgramPath => bat_config

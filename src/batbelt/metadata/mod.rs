@@ -1,4 +1,5 @@
 pub mod functions_metadata;
+pub mod metadata_cache;
 pub mod structs_metadata;
 pub mod traits_metadata;
 
@@ -17,6 +18,9 @@ use inflector::Inflector;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
+use crate::batbelt::metadata::metadata_cache::{
+    MetadataCache, MetadataCacheContent, MetadataCacheType,
+};
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::parser::parse_formatted_path;
@@ -26,6 +30,7 @@ use crate::Suggestion;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
+use serde_json::{json, Value};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
@@ -166,6 +171,7 @@ where
     fn name(&self) -> String;
     fn path(&self) -> String;
     fn metadata_id(&self) -> String;
+    fn metadata_cache_type() -> MetadataCacheType;
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
     fn metadata_sub_type(&self) -> U;
@@ -173,6 +179,60 @@ where
     fn get_bat_file() -> BatFile;
 
     fn metadata_name() -> String;
+
+    fn insert_metadata_cache(
+        &self,
+        metadata_cache_content: MetadataCacheContent,
+    ) -> MetadataResult<()> {
+        let cache_bat_file = Self::metadata_cache_type().get_bat_file();
+        let mut metadata_cache =
+            MetadataCache::new(self.metadata_id().clone(), Self::metadata_cache_type());
+        // metadata file does not exists or is empty
+        if !cache_bat_file.file_exists().change_context(MetadataError)?
+            || cache_bat_file
+                .read_content(false)
+                .change_context(MetadataError)?
+                .is_empty()
+        {
+            metadata_cache
+                .metadata_cache_content
+                .push(metadata_cache_content);
+            metadata_cache.save_to_file()?;
+            Ok(())
+        } else {
+            match metadata_cache.read_cache_by_id() {
+                // metadata exists for metadata_id
+                Ok(_) => metadata_cache.insert_cache(metadata_cache_content),
+                // metadata does not exists for metadata_id
+                Err(_) => {
+                    // read file
+                    let cache_content = Self::metadata_cache_type()
+                        .get_bat_file()
+                        .read_content(false)
+                        .change_context(MetadataError)?;
+                    // parse to value
+                    let cache_value: Value = serde_json::from_str(&cache_content)
+                        .into_report()
+                        .change_context(MetadataError)?;
+                    let value = cache_value.as_object().ok_or(MetadataError).into_report()?;
+                    let mut value_map = value.clone();
+                    value_map.insert(
+                        metadata_cache_content.metadata_cache_content_type.clone(),
+                        metadata_cache_content.cache_values.into(),
+                    );
+                    let content = json!(value_map);
+                    let pretty_content = serde_json::to_string_pretty(&content)
+                        .into_report()
+                        .change_context(MetadataError)?;
+                    Self::metadata_cache_type()
+                        .get_bat_file()
+                        .write_content(false, &pretty_content)
+                        .change_context(MetadataError)?;
+                    Ok(())
+                }
+            }
+        }
+    }
 
     fn new(
         path: String,

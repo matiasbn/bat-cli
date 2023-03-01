@@ -51,7 +51,7 @@ impl BatCommandEnumerator for SonarCommand {
 
 impl SonarCommand {
     fn execute_run(&self) -> Result<(), CommandError> {
-        let metadata_path = BatFolder::Metadata
+        let metadata_path = BatFolder::MetadataFolder
             .get_path(false)
             .change_context(CommandError)?;
         execute_command("rm", &["-rf", &metadata_path], false)?;

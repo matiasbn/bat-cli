@@ -11,6 +11,7 @@ use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::BatEnumerator;
 use error_stack::{Result, ResultExt};
 
+use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
 use std::{fs, vec};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
@@ -36,6 +37,9 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
     }
     fn metadata_id(&self) -> String {
         self.metadata_id.clone()
+    }
+    fn metadata_cache_type() -> MetadataCacheType {
+        MetadataCacheType::Struct
     }
     fn start_line_index(&self) -> usize {
         self.start_line_index

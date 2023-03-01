@@ -37,6 +37,7 @@ confy = "0.5.1"
 figment = { version = "0.10.8", features = ["toml"] }
 regex = "1.7.1"
 log4rs = "1.2.0"
+assert_fs = "1.0.10"
 
 [profile.dev]
 overflow-checks = true

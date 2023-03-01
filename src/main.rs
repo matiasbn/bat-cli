@@ -29,7 +29,6 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::project_commands::ProjectCommands;
 use crate::commands::utils_commands::ToolsCommands;
-use crate::BatCommands::Tools;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
