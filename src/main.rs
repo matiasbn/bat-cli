@@ -71,7 +71,6 @@ enum BatCommands {
     #[command(subcommand)]
     CO(CodeOverhaulCommand),
     /// Execute the bat sonar to create metadata files
-    #[command(subcommand)]
     Sonar,
     /// findings files management
     #[command(subcommand)]

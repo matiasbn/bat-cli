@@ -22,6 +22,7 @@ use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
+use crate::Suggestion;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
@@ -122,10 +123,15 @@ impl BatMetadataType {
 
     pub fn check_is_initialized(&self) -> Result<(), MetadataError> {
         if !self.is_initialized()? {
-            return Err(Report::new(MetadataError).attach_printable(format!(
-                "{} metadata is required to be initialized to execute this action",
-                self.to_string().red()
-            )));
+            return Err(Report::new(MetadataError)
+                .attach_printable(format!(
+                    "{} metadata is required to be initialized to execute this action",
+                    self.to_string().red()
+                ))
+                .attach(Suggestion(format!(
+                    "run {} to initialize the metadata file",
+                    "bat-cli sonar".green()
+                ))));
         }
         Ok(())
     }

@@ -31,7 +31,9 @@ impl BatEnumerator for SonarCommand {}
 
 impl BatCommandEnumerator for SonarCommand {
     fn execute_command(&self) -> CommandResult<()> {
-        todo!()
+        match self {
+            SonarCommand::Run => self.execute_run(),
+        }
     }
 
     fn check_metadata_is_initialized(&self) -> bool {
@@ -48,12 +50,6 @@ impl BatCommandEnumerator for SonarCommand {
 }
 
 impl SonarCommand {
-    pub fn execute_command(&self) -> Result<(), CommandError> {
-        match self {
-            SonarCommand::Run => self.execute_run(),
-        }
-    }
-
     fn execute_run(&self) -> Result<(), CommandError> {
         let metadata_path = BatFolder::Metadata
             .get_path(false)
