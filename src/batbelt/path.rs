@@ -33,9 +33,9 @@ pub enum BatFile {
     FindingCandidates,
     OpenQuestions,
     ProgramLib,
-    Readme { for_init: bool },
-    GitIgnore { for_init: bool },
-    PackageJson { for_init: bool },
+    Readme { to_create_project: bool },
+    GitIgnore { to_create_project: bool },
+    PackageJson { to_create_project: bool },
     RobotFile,
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
@@ -52,7 +52,9 @@ impl BatFile {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
             BatFile::Batlog => "Batlog.log".to_string(),
-            BatFile::PackageJson { for_init } => {
+            BatFile::PackageJson {
+                to_create_project: for_init,
+            } => {
                 format!(
                     "{}/package.json",
                     if *for_init {
@@ -62,7 +64,9 @@ impl BatFile {
                     }
                 )
             }
-            BatFile::GitIgnore { for_init } => {
+            BatFile::GitIgnore {
+                to_create_project: for_init,
+            } => {
                 format!(
                     "{}/.gitignore",
                     if *for_init {
@@ -77,7 +81,9 @@ impl BatFile {
                     .change_context(BatPathError)?
                     .program_lib_path
             }
-            BatFile::Readme { for_init } => {
+            BatFile::Readme {
+                to_create_project: for_init,
+            } => {
                 format!(
                     "{}/README.md",
                     if *for_init {

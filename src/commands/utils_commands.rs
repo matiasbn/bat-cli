@@ -19,40 +19,47 @@ use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::parse_formatted_path;
+use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+use log::Level;
 use std::fs;
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
 )]
-pub enum UtilsCommands {
+pub enum ToolsCommands {
     /// Opens a file from metadata to code editor. If code editor is None, then prints the path
     #[default]
     Open,
+    /// Customize the package.json according to certain log level
+    PackageJson,
 }
 
-impl BatEnumerator for UtilsCommands {}
+impl BatEnumerator for ToolsCommands {}
 
-impl BatCommandEnumerator for UtilsCommands {
+impl BatCommandEnumerator for ToolsCommands {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
-            UtilsCommands::Open => self.execute_open(),
+            ToolsCommands::Open => self.execute_open(),
+            ToolsCommands::PackageJson => self.execute_package_json(),
         }
     }
 
     fn check_metadata_is_initialized(&self) -> bool {
         match self {
-            UtilsCommands::Open => true,
+            ToolsCommands::Open => true,
+            ToolsCommands::PackageJson => false,
         }
     }
 
     fn check_correct_branch(&self) -> bool {
         match self {
-            UtilsCommands::Open => false,
+            ToolsCommands::Open => false,
+            ToolsCommands::PackageJson => false,
         }
     }
 }
 
-impl UtilsCommands {
+impl ToolsCommands {
     fn execute_open(&self) -> CommandResult<()> {
         let selected_bat_metadata_type =
             BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
@@ -85,5 +92,34 @@ impl UtilsCommands {
         CodeEditor::open_file_in_editor(&path, Some(start_line_index))
             .change_context(CommandError)?;
         Ok(())
+    }
+
+    fn execute_package_json(&self) -> CommandResult<()> {
+        let prompt_text = format!("Select the log level:");
+        let log_level_vec = vec![
+            Level::Warn,
+            Level::Info,
+            Level::Debug,
+            Level::Trace,
+            Level::Error,
+        ];
+        let selection = BatDialoguer::select(
+            prompt_text,
+            log_level_vec
+                .clone()
+                .into_iter()
+                .enumerate()
+                .map(|(idx, level)| ToolsCommands::colored_from_index(&level.to_string(), idx))
+                .collect::<Vec<_>>(),
+            None,
+        )?;
+        let level_selected = log_level_vec[selection].clone();
+        PackageJsonTemplate::create_package_json(Some(level_selected))
+            .change_context(CommandError)?;
+        BatFile::PackageJson {
+            to_create_project: false,
+        }
+        .open_in_editor(false, None)
+        .change_context(CommandError)
     }
 }

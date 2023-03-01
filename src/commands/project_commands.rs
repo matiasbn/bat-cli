@@ -110,14 +110,16 @@ impl ProjectCommands {
 
     fn update_package_json(&self) -> CommandResult<()> {
         println!("Updating package.json");
-        PackageJsonTemplate::update_package_json().change_context(CommandError)
+        PackageJsonTemplate::create_package_json(None).change_context(CommandError)
     }
 
     fn update_git_ignore(&self) -> CommandResult<()> {
         println!("Updating .gitignore");
-        GitIgnore { for_init: false }
-            .write_content(true, &TemplateGenerator::get_git_ignore_content())
-            .change_context(CommandError)
+        GitIgnore {
+            to_create_project: false,
+        }
+        .write_content(true, &TemplateGenerator::get_git_ignore_content())
+        .change_context(CommandError)
     }
 }
 
@@ -318,11 +320,21 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
     .execute_action()
     .change_context(CommandError)?;
 
+    // delete before commit
+    BatFile::PackageJson {
+        to_create_project: false,
+    }
+    .remove_file()
+    .change_context(CommandError)?;
+
     if !*shared_initialized.cloned.borrow() {
         println!("Initializing project repository");
         initialize_project_repository()?;
         println!("Project repository successfully initialized");
     }
+
+    // create with proper scripts
+    PackageJsonTemplate::create_package_json(None).change_context(CommandError)?;
 
     // create auditors branches from develop
     for auditor_name in bat_config.auditor_names {
@@ -377,7 +389,6 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
         create_miro_frames_for_entrypoints().await?;
     }
 
-    PackageJsonTemplate::update_package_json().change_context(CommandError)?;
     println!("Project successfully initialized");
     if !skip_initial_commit {
         GitCommit::InitAuditor
