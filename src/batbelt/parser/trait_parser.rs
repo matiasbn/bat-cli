@@ -25,7 +25,7 @@ impl TraitParser {
             name,
             impl_from: "".to_string(),
             impl_to: "".to_string(),
-            trait_metadata: trait_metadata,
+            trait_metadata,
             impl_functions: vec![],
         };
         log::debug!("new_trait_parser:\n{:#?}", new_parser);

@@ -1,6 +1,7 @@
+use crate::batbelt;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::{execute_command, CodeEditor};
-use crate::batbelt::git::{deprecated_check_correct_branch, GitAction, GitCommit};
+use crate::batbelt::git::{deprecated_check_correct_branch, GitCommit};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{
@@ -9,13 +10,10 @@ use crate::batbelt::templates::code_overhaul_template::{
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use crate::config::{BatAuditorConfig, BatConfig};
-use crate::{batbelt, BatCommands};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{Report, ResultExt};
 
-use crate::batbelt::metadata::BatMetadata;
-use inflector::Inflector;
 use std::fs;
 
 #[derive(

@@ -1,4 +1,3 @@
-use clap_verbosity_flag::LogLevel;
 use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 use log::Level;
 
@@ -81,22 +80,20 @@ impl PackageJsonTemplate {
         };
         let (script_key_prefix, script_value_prefix) = if cfg!(debug_assertions) {
             if verbosity_flag.is_empty() {
-                (format!("cargo::run"), format!("cargo run",))
+                ("cargo::run".to_string(), "cargo run".to_string())
             } else {
                 (
                     format!("cargo::run::{}", verbosity_level_name),
                     format!("cargo run -- -{}", verbosity_flag),
                 )
             }
+        } else if verbosity_flag.is_empty() {
+            ("bat-cli".to_string(), "bat-cli".to_string())
         } else {
-            if verbosity_flag.is_empty() {
-                (format!("bat-cli"), format!("bat-cli"))
-            } else {
-                (
-                    format!("bat-cli::{}", verbosity_level_name),
-                    format!("bat-cli -{}", verbosity_flag),
-                )
-            }
+            (
+                format!("bat-cli::{}", verbosity_level_name),
+                format!("bat-cli -{}", verbosity_flag),
+            )
         };
         let kebab_commands_vec = BatCommands::get_kebab_commands();
         let mut scripts_map = Map::new();

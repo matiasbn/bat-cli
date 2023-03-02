@@ -3,7 +3,6 @@ use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::{BatAuditorConfig, BatConfig};
 
-use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
 use crate::batbelt::BatEnumerator;
 use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 use inflector::Inflector;

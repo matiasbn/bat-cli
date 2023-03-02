@@ -5,9 +5,9 @@ pub mod traits_metadata;
 
 use colored::Colorize;
 use std::error::Error;
+use std::fmt;
 use std::fmt::{Debug, Display};
 use std::path::Path;
-use std::{fmt, fs};
 
 use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
 
@@ -17,12 +17,8 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::metadata_cache::{
-    MetadataCache, MetadataCacheContent, MetadataCacheType,
-};
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::metadata_cache::{MetadataCacheContent, MetadataCacheType};
+
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
@@ -31,7 +27,7 @@ use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
@@ -199,7 +195,7 @@ where
         value
             .as_array()
             .unwrap()
-            .into_iter()
+            .iter()
             .map(|val| val.as_str().unwrap().to_string())
             .collect::<Vec<String>>()
     }
@@ -228,10 +224,9 @@ where
         let new_value = serde_json::to_string_pretty(&file_value)
             .into_report()
             .change_context(MetadataError)?;
-        Ok(self
-            .get_cache_bat_file()
+        self.get_cache_bat_file()
             .write_content(false, &new_value)
-            .change_context(MetadataError)?)
+            .change_context(MetadataError)
     }
 
     fn new(
@@ -389,7 +384,7 @@ where
     fn prompt_selection() -> Result<Self, MetadataError> {
         let (metadata_vec, metadata_names) = Self::prompt_types()?;
         let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
-        let selection = BatDialoguer::select(prompt_text, metadata_names.clone(), None)
+        let selection = BatDialoguer::select(prompt_text, metadata_names, None)
             .change_context(MetadataError)?;
 
         Ok(metadata_vec[selection].clone())
@@ -455,13 +450,13 @@ where
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .find(|metadata| metadata.metadata_id() == metadata_id);
-        return match match_metadata {
+        match match_metadata {
             None => Err(Report::new(MetadataError).attach_printable(format!(
                 "No match for metadata with metadata_id:{}",
                 metadata_id
             ))),
             Some(metadata) => Ok(metadata),
-        };
+        }
     }
 
     fn get_filtered_metadata(

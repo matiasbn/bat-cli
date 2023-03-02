@@ -304,7 +304,6 @@ impl TemplatePlaceholder {
 
 #[cfg(debug_assertions)]
 mod template_test {
-    use crate::batbelt::templates::TemplateGenerator;
 
     #[test]
     fn test_get_gitignore_content() {
