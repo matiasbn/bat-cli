@@ -4,6 +4,7 @@ use crate::batbelt::metadata::BatMetadataType;
 use crate::config::{BatAuditorConfig, BatConfig};
 
 use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
+use crate::batbelt::BatEnumerator;
 use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 use inflector::Inflector;
 use serde::{Deserialize, Serialize};
@@ -23,12 +24,15 @@ impl Error for BatPathError {}
 
 type BatPathResult<T> = Result<T, BatPathError>;
 
+#[derive(
+    Debug, PartialEq, Clone, strum_macros::Display, strum_macros::EnumIter, Serialize, Deserialize,
+)]
 pub enum BatFile {
     BatToml,
     BatAuditorToml,
     Batlog,
     MetadataCacheFile {
-        metadata_cache_type: MetadataCacheType,
+        metadata_cache_type: BatMetadataType,
     },
     FunctionsMetadataFile,
     StructsMetadataFile,
@@ -69,6 +73,8 @@ pub enum BatFile {
         file_path: String,
     },
 }
+
+impl BatEnumerator for BatFile {}
 
 impl BatFile {
     pub fn get_path(&self, canonicalize: bool) -> BatPathResult<String> {
@@ -216,8 +222,8 @@ impl BatFile {
                 metadata_cache_type,
             } => format!(
                 "{}/{}.json",
-                BatFolder::MetadataFolder.get_path(canonicalize)?,
-                metadata_cache_type.to_string().to_snake_case()
+                BatFolder::MetadataCacheFolder.get_path(canonicalize)?,
+                metadata_cache_type.to_string().to_snake_case().to_plural()
             ),
         };
 
@@ -239,6 +245,7 @@ impl BatFile {
     }
 
     pub fn write_content(&self, canonicalize: bool, content: &str) -> BatPathResult<()> {
+        log::debug!("{}.write_content:\n{} ", self, content);
         fs::write(self.get_path(canonicalize)?, content)
             .into_report()
             .change_context(BatPathError)
@@ -312,7 +319,9 @@ impl BatFile {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(
+    Debug, PartialEq, Clone, strum_macros::Display, strum_macros::EnumIter, Serialize, Deserialize,
+)]
 pub enum BatFolder {
     MetadataFolder,
     MetadataCacheFolder,
@@ -330,6 +339,8 @@ pub enum BatFolder {
     AuditorFigures,
     Notes,
 }
+
+impl BatEnumerator for BatFolder {}
 
 impl BatFolder {
     pub fn get_path(&self, canonicalize: bool) -> Result<String, BatPathError> {

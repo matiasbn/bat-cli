@@ -81,7 +81,8 @@ impl MiroCommand {
                 self.entrypoint_action(*select_all, *sorted).await?
             }
             MiroCommand::Metadata { select_all } => self.metadata_action(*select_all).await?,
-            MiroCommand::Function { select_all } => self.function_action(*select_all).await?,
+            // MiroCommand::Function { select_all } => self.function_action(*select_all).await?,
+            MiroCommand::Function { select_all } => unimplemented!(),
         }
         Ok(())
     }

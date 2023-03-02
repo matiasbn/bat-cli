@@ -68,16 +68,16 @@ impl FunctionParser {
         );
         let dependencies_metadata_cache_content = FunctionMetadataCacheType::Dependency
             .to_metadata_cache_content(new_function_parser.dependencies.clone());
-        let extern_dep_metadata_cache_content = FunctionMetadataCacheType::Dependency
+        let extern_dep_metadata_cache_content = FunctionMetadataCacheType::ExternalDependency
             .to_metadata_cache_content(new_function_parser.external_dependencies.clone());
-        new_function_parser
-            .function_metadata
-            .insert_metadata_cache(dependencies_metadata_cache_content)
-            .change_context(ParserError)?;
-        new_function_parser
-            .function_metadata
-            .insert_metadata_cache(extern_dep_metadata_cache_content)
-            .change_context(ParserError)?;
+        // new_function_parser
+        //     .function_metadata
+        //     .save_cache(dependencies_metadata_cache_content)
+        //     .change_context(ParserError)?;
+        // new_function_parser
+        //     .function_metadata
+        //     .save_cache(extern_dep_metadata_cache_content)
+        //     .change_context(ParserError)?;
         Ok(new_function_parser)
     }
 

@@ -5,9 +5,9 @@ pub mod traits_metadata;
 
 use colored::Colorize;
 use std::error::Error;
-use std::fmt;
 use std::fmt::{Debug, Display};
 use std::path::Path;
+use std::{fmt, fs};
 
 use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
 
@@ -27,9 +27,10 @@ use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
 use crate::Suggestion;
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
@@ -82,8 +83,19 @@ impl BatMetadata {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    Default,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 pub enum BatMetadataType {
+    #[default]
     Struct,
     Function,
     Trait,
@@ -103,6 +115,12 @@ impl BatMetadataType {
                 .change_context(MetadataError)?,
         };
         Ok(path)
+    }
+
+    pub fn get_cache_file(&self) -> BatFile {
+        BatFile::MetadataCacheFile {
+            metadata_cache_type: *self,
+        }
     }
 
     pub fn get_markdown(&self) -> Result<MarkdownFile, MetadataError> {
@@ -152,17 +170,6 @@ impl BatMetadataType {
         let metadata_type_selected = &metadata_types_vec[selection];
         Ok(*metadata_type_selected)
     }
-
-    fn get_metadata_vec_from_markdown<T: BatMetadataParser<BatMetadataType>>(
-    ) -> Result<Vec<T>, MetadataError> {
-        let metadata_markdown_file =
-            BatMetadataType::Trait.get_markdown_sections_from_metadata_file()?;
-        let metadata_vec = metadata_markdown_file
-            .into_iter()
-            .map(|markdown_section| T::from_markdown_section(markdown_section))
-            .collect::<Result<Vec<T>, _>>()?;
-        Ok(metadata_vec)
-    }
 }
 
 pub trait BatMetadataParser<U>
@@ -180,60 +187,51 @@ where
     fn get_bat_metadata_type() -> BatMetadataType;
     fn get_bat_file() -> BatFile;
 
+    fn get_cache_bat_file(&self) -> BatFile {
+        BatFile::MetadataCacheFile {
+            metadata_cache_type: Self::get_bat_metadata_type(),
+        }
+    }
+
     fn metadata_name() -> String;
 
-    fn insert_metadata_cache(
-        &self,
-        metadata_cache_content: MetadataCacheContent,
-    ) -> MetadataResult<()> {
-        let cache_bat_file = Self::metadata_cache_type().get_bat_file();
-        let mut metadata_cache =
-            MetadataCache::new(self.metadata_id().clone(), Self::metadata_cache_type());
-        // metadata file does not exists or is empty
-        if !cache_bat_file.file_exists().change_context(MetadataError)?
-            || cache_bat_file
-                .read_content(false)
-                .change_context(MetadataError)?
-                .is_empty()
-        {
-            metadata_cache
-                .metadata_cache_content
-                .push(metadata_cache_content);
-            metadata_cache.save_to_file()?;
-            Ok(())
-        } else {
-            match metadata_cache.read_cache_by_id() {
-                // metadata exists for metadata_id
-                Ok(_) => metadata_cache.insert_cache(metadata_cache_content),
-                // metadata does not exists for metadata_id
-                Err(_) => {
-                    // read file
-                    let cache_content = Self::metadata_cache_type()
-                        .get_bat_file()
-                        .read_content(false)
-                        .change_context(MetadataError)?;
-                    // parse to value
-                    let cache_value: Value = serde_json::from_str(&cache_content)
-                        .into_report()
-                        .change_context(MetadataError)?;
-                    let value = cache_value.as_object().ok_or(MetadataError).into_report()?;
-                    let mut value_map = value.clone();
-                    value_map.insert(
-                        metadata_cache_content.metadata_cache_content_type.clone(),
-                        metadata_cache_content.cache_values.into(),
-                    );
-                    let content = json!(value_map);
-                    let pretty_content = serde_json::to_string_pretty(&content)
-                        .into_report()
-                        .change_context(MetadataError)?;
-                    Self::metadata_cache_type()
-                        .get_bat_file()
-                        .write_content(false, &pretty_content)
-                        .change_context(MetadataError)?;
-                    Ok(())
-                }
-            }
-        }
+    fn value_to_vec_string(value: Value) -> Vec<String> {
+        value
+            .as_array()
+            .unwrap()
+            .into_iter()
+            .map(|val| val.as_str().unwrap().to_string())
+            .collect::<Vec<String>>()
+    }
+
+    fn read_cache_key(&self, cache_key: &str) -> MetadataResult<Value> {
+        let file_content = self
+            .get_cache_bat_file()
+            .read_content(false)
+            .change_context(MetadataError)?;
+        let file_value: Value = serde_json::from_str(&file_content)
+            .into_report()
+            .change_context(MetadataError)?;
+        let value = file_value[cache_key].clone();
+        Ok(value)
+    }
+
+    fn save_cache_key(&self, cache_key: &str, cache_value: Value) -> MetadataResult<()> {
+        let file_content = self
+            .get_cache_bat_file()
+            .read_content(false)
+            .change_context(MetadataError)?;
+        let mut file_value: Value = serde_json::from_str(&file_content)
+            .into_report()
+            .change_context(MetadataError)?;
+        file_value[cache_key] = cache_value;
+        let new_value = serde_json::to_string_pretty(&file_value)
+            .into_report()
+            .change_context(MetadataError)?;
+        Ok(self
+            .get_cache_bat_file()
+            .write_content(false, &new_value)
+            .change_context(MetadataError)?)
     }
 
     fn new(
@@ -535,3 +533,38 @@ impl BatMetadataMarkdownContent {
         format!("- {}: {}", self.to_snake_case(), content_value)
     }
 }
+
+// #[cfg(debug_assertions)]
+// mod metadata_test {
+//     use assert_fs::prelude::FileWriteStr;
+//     use serde_json::{json, Value};
+//     use std::fs;
+//
+//     const TEMP_PATH: &'static str = "./test.json";
+//
+//     // #[test]
+//     // fn test_metadata() {
+//     //     //save to json
+//     //     let key = "hello";
+//     //     let value = vec!["world".to_string()];
+//     //     let json_content = json!({ key: value });
+//     //
+//     //     let pretty_content = serde_json::to_string_pretty(&json_content).unwrap();
+//     //     assert_fs::NamedTempFile::new(TEMP_PATH).unwrap();
+//     //     fs::write(TEMP_PATH, &pretty_content).unwrap();
+//     //
+//     //     let vec_value = read_key(key);
+//     //     let vec_read = value_to_vec_string(vec_value);
+//     //
+//     //     assert_eq!(value, vec_read);
+//     //
+//     //     let value_2 = vec!["chai".to_string()];
+//     //     let vec_value = json!(value_2);
+//     //     save_key(key, vec_value);
+//     //
+//     //     let vec_value_read = read_key(key);
+//     //     let vec_read = value_to_vec_string(vec_value_read);
+//     //
+//     //     assert_eq!(vec_read, value_2);
+//     // }
+// }

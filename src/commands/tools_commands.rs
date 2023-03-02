@@ -17,7 +17,7 @@ use error_stack::{Report, ResultExt};
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use log::Level;
@@ -32,6 +32,8 @@ pub enum ToolsCommands {
     Open,
     /// Customize the package.json according to certain log level
     PackageJson,
+    /// Search metadata by id and type and opens on code editor
+    GetMetadataById,
 }
 
 impl BatEnumerator for ToolsCommands {}
@@ -41,6 +43,7 @@ impl BatCommandEnumerator for ToolsCommands {
         match self {
             ToolsCommands::Open => self.execute_open(),
             ToolsCommands::PackageJson => self.execute_package_json(),
+            ToolsCommands::GetMetadataById => self.execute_get_metadata(),
         }
     }
 
@@ -48,6 +51,7 @@ impl BatCommandEnumerator for ToolsCommands {
         match self {
             ToolsCommands::Open => true,
             ToolsCommands::PackageJson => false,
+            ToolsCommands::GetMetadataById => true,
         }
     }
 
@@ -55,6 +59,7 @@ impl BatCommandEnumerator for ToolsCommands {
         match self {
             ToolsCommands::Open => false,
             ToolsCommands::PackageJson => false,
+            ToolsCommands::GetMetadataById => false,
         }
     }
 }
@@ -121,5 +126,44 @@ impl ToolsCommands {
         }
         .open_in_editor(false, None)
         .change_context(CommandError)
+    }
+
+    fn execute_get_metadata(&self) -> CommandResult<()> {
+        let selected_bat_metadata_type =
+            BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
+        let metadata_id = BatDialoguer::input("Metadata id:".to_string())?;
+        match selected_bat_metadata_type {
+            BatMetadataType::Struct => {
+                let selected_metadata = StructMetadata::find_by_metadata_id(metadata_id)
+                    .change_context(CommandError)?;
+                println!("Selected metadata: {:#?}", selected_metadata);
+                CodeEditor::open_file_in_editor(
+                    &selected_metadata.path,
+                    Some(selected_metadata.start_line_index),
+                )
+                .change_context(CommandError)?;
+            }
+            BatMetadataType::Function => {
+                let selected_metadata = FunctionMetadata::find_by_metadata_id(metadata_id)
+                    .change_context(CommandError)?;
+                println!("Selected metadata: {:#?}", selected_metadata);
+                CodeEditor::open_file_in_editor(
+                    &selected_metadata.path,
+                    Some(selected_metadata.start_line_index),
+                )
+                .change_context(CommandError)?;
+            }
+            BatMetadataType::Trait => {
+                let selected_metadata =
+                    TraitMetadata::find_by_metadata_id(metadata_id).change_context(CommandError)?;
+                println!("Selected metadata: {:#?}", selected_metadata);
+                CodeEditor::open_file_in_editor(
+                    &selected_metadata.path,
+                    Some(selected_metadata.start_line_index),
+                )
+                .change_context(CommandError)?;
+            }
+        };
+        Ok(())
     }
 }

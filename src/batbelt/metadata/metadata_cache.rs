@@ -1,4 +1,6 @@
-use crate::batbelt::metadata::{BatMetadataParser, MetadataError, MetadataId, MetadataResult};
+use crate::batbelt::metadata::{
+    BatMetadataParser, BatMetadataType, MetadataError, MetadataId, MetadataResult,
+};
 use crate::batbelt::path::BatFile;
 use crate::batbelt::BatEnumerator;
 use clap::builder::Str;
@@ -36,7 +38,7 @@ impl MetadataCacheType {
 
     pub fn get_bat_file(&self) -> BatFile {
         BatFile::MetadataCacheFile {
-            metadata_cache_type: *self,
+            metadata_cache_type: BatMetadataType::Struct,
         }
     }
 }
@@ -91,6 +93,7 @@ impl MetadataCache {
             .get_bat_file()
             .write_content(false, &json_content)
             .change_context(MetadataError)?;
+        // log::debug!("new_file_created:\n metadata_id: {}\n{}")
         Ok(())
     }
 
@@ -165,6 +168,7 @@ mod metadata_cache_test {
     use crate::batbelt::metadata::metadata_cache::{
         MetadataCache, MetadataCacheContent, MetadataCacheType,
     };
+    use crate::batbelt::metadata::BatMetadataType;
     use crate::batbelt::path::{BatFile, BatFolder};
     use crate::config::{BatAuditorConfig, BatConfig};
     use assert_fs;
@@ -208,7 +212,7 @@ mod metadata_cache_test {
         fs::create_dir_all(metadata_bat_folder.get_path(false).unwrap()).unwrap();
 
         let metadata_bat_file = BatFile::MetadataCacheFile {
-            metadata_cache_type: MetadataCacheType::Function,
+            metadata_cache_type: BatMetadataType::Struct,
         };
 
         let bat_path = metadata_bat_file.get_path(false).unwrap();
@@ -265,7 +269,7 @@ mod metadata_cache_test {
         // println!("{:#?}", metadata_cache);
         // assert_eq!(metadata_cache_struct, metadata_content);
         let metadata_bat_file = BatFile::MetadataCacheFile {
-            metadata_cache_type: MetadataCacheType::Function,
+            metadata_cache_type: BatMetadataType::Struct,
         };
         metadata_bat_file.remove_file().unwrap();
         let metadata_bat_folder = BatFolder::MetadataFolder;
