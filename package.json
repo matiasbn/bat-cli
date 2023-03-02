@@ -2,8 +2,8 @@
   "name": "bat-cli",
   "description": "Blockchain auditor toolkit",
   "scripts": {
-    "cargo::run::package::format": "cargo run package format",
-    "cargo::run::package::release": "cargo run package release"
+    "format": "cargo run package format",
+    "release": "cargo run package release"
   },
   "author": "",
   "license": "ISC"

@@ -123,7 +123,16 @@ impl BatCommands {
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tools(command) => command.execute_command(),
             BatCommands::Repo(command) => command.execute_command(),
-            _ => unimplemented!(),
+            // only for dev
+            #[cfg(debug_assertions)]
+            BatCommands::Package(PackageCommand::Format) => {
+                package::format().change_context(CommandError)
+            }
+            #[cfg(debug_assertions)]
+            BatCommands::Package(PackageCommand::Release) => {
+                package::release().change_context(CommandError)
+            }
+            _ => unimplemented!("Command only implemented for dev operations"),
         };
     }
 
