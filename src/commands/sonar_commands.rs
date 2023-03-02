@@ -1,19 +1,16 @@
-use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::execute_command;
 
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::BatMetadataParser;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
-use colored::Colorize;
+
 use error_stack::{Result, ResultExt};
 
 use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
 use crate::batbelt::sonar::SonarResultType;
 use crate::batbelt::templates::TemplateGenerator;
+use crate::commands::{BatCommandEnumerator, CommandResult};
 
 use super::CommandError;
 
@@ -24,85 +21,41 @@ pub enum SonarCommand {
     /// Updates the functions.md and structs.md files with data
     #[default]
     Run,
-    /// Gets the path to a metadata information from metadata files
-    PrintPath {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-    },
 }
 
 impl BatEnumerator for SonarCommand {}
 
-impl SonarCommand {
-    pub fn execute_command(&self) -> Result<(), CommandError> {
+impl BatCommandEnumerator for SonarCommand {
+    fn execute_command(&self) -> CommandResult<()> {
         match self {
             SonarCommand::Run => self.execute_run(),
-            SonarCommand::PrintPath { select_all } => self.execute_print_path(*select_all),
         }
     }
 
-    fn execute_print_path(&self, select_all: bool) -> Result<(), CommandError> {
-        let mut continue_printing = true;
-        while continue_printing {
-            let selected_bat_metadata_type =
-                BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
-            match selected_bat_metadata_type {
-                BatMetadataType::Struct => {
-                    let selections = StructMetadata::prompt_multiselection(select_all, true)
-                        .change_context(CommandError)?;
-                    for selection in selections {
-                        self.print_formatted_path(
-                            selection.name,
-                            selection.path,
-                            selection.start_line_index,
-                        )
-                    }
-                }
-                BatMetadataType::Function => {
-                    let selections = FunctionMetadata::prompt_multiselection(select_all, true)
-                        .change_context(CommandError)?;
-                    for selection in selections {
-                        self.print_formatted_path(
-                            selection.name,
-                            selection.path,
-                            selection.start_line_index,
-                        )
-                    }
-                }
-                BatMetadataType::Trait => {
-                    let selections = TraitMetadata::prompt_multiselection(select_all, true)
-                        .change_context(CommandError)?;
-                    for selection in selections {
-                        self.print_formatted_path(
-                            selection.name,
-                            selection.path,
-                            selection.start_line_index,
-                        )
-                    }
-                }
-            }
-            let prompt_text = format!("Do you want to continute {}", "printing paths?".yellow());
-            continue_printing = BatDialoguer::select_yes_or_no(prompt_text)?;
+    fn check_metadata_is_initialized(&self) -> bool {
+        match self {
+            SonarCommand::Run => false,
         }
-        Ok(())
     }
 
-    fn print_formatted_path(&self, name: String, path: String, start_line_index: usize) {
-        println!(
-            "{}: {}:{}",
-            name.blue(),
-            path.trim_start_matches("../"),
-            start_line_index
-        )
+    fn check_correct_branch(&self) -> bool {
+        match self {
+            SonarCommand::Run => true,
+        }
     }
+}
 
+impl SonarCommand {
     fn execute_run(&self) -> Result<(), CommandError> {
-        let metadata_path = BatFolder::Metadata
+        let metadata_path = BatFolder::MetadataFolder
+            .get_path(false)
+            .change_context(CommandError)?;
+        let metadata_cache_path = BatFolder::MetadataCacheFolder
             .get_path(false)
             .change_context(CommandError)?;
         execute_command("rm", &["-rf", &metadata_path], false)?;
         execute_command("mkdir", &[&metadata_path], false)?;
+        execute_command("mkdir", &[&metadata_cache_path], false)?;
         TemplateGenerator::create_auditor_metadata_files().change_context(CommandError)?;
         BatSonarInteractive::SonarStart {
             sonar_result_type: SonarResultType::Struct,

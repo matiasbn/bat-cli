@@ -36,11 +36,13 @@ impl TemplateGenerator {
     pub fn create_project() -> Result<(), TemplateError> {
         Self::create_project_folder()?;
         Self::create_init_notes_folder()?;
-        BatFile::GitIgnore { for_init: true }
-            .write_content(false, &Self::get_git_ignore_content())
-            .change_context(TemplateError)?;
+        BatFile::GitIgnore {
+            to_create_project: true,
+        }
+        .write_content(false, &Self::get_git_ignore_content())
+        .change_context(TemplateError)?;
         Self::create_readme()?;
-        PackageJsonTemplate::create_package_json()?;
+        PackageJsonTemplate::create_package_with_init_script()?;
         BatFile::Batlog
             .create_empty(false)
             .change_context(TemplateError)?;
@@ -48,8 +50,9 @@ impl TemplateGenerator {
     }
     pub fn get_git_ignore_content() -> String {
         ".idea\n\
-            BatAuditor.toml\n\
-            Batlog.log"
+        ./package.json\n\
+        BatAuditor.toml\n\
+        Batlog.log"
             .to_string()
     }
 
@@ -123,7 +126,7 @@ impl TemplateGenerator {
         Self::create_findings_folders()?;
 
         // metadata
-        let auditor_metadata_path = BatFolder::Metadata
+        let auditor_metadata_path = BatFolder::MetadataFolder
             .get_path(false)
             .change_context(TemplateError)?;
         Self::create_dir(&auditor_metadata_path, false)?;
@@ -204,7 +207,9 @@ impl TemplateGenerator {
         }
         let ending_date =
             batbelt::bat_dialoguer::input("Ending date").change_context(TemplateError)?;
-        let bat_readme = BatFile::Readme { for_init: false };
+        let bat_readme = BatFile::Readme {
+            to_create_project: false,
+        };
         let readme_content = bat_readme
             .read_content(true)
             .change_context(TemplateError)?;
@@ -294,5 +299,14 @@ pub enum TemplatePlaceholder {
 impl TemplatePlaceholder {
     pub fn to_placeholder(&self) -> String {
         self.to_string().to_screaming_snake_case()
+    }
+}
+
+#[cfg(debug_assertions)]
+mod template_test {
+
+    #[test]
+    fn test_get_gitignore_content() {
+        println!("{}", TemplateGenerator::get_git_ignore_content());
     }
 }

@@ -4,30 +4,34 @@ extern crate log;
 extern crate confy;
 
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use inflector::Inflector;
 
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::BatFile;
 use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
-use crate::commands::CommandResult;
+use crate::commands::{BatCommandEnumerator, CommandResult};
 
-use crate::batbelt::git::check_correct_branch;
+use crate::batbelt::git::GitAction;
 use crate::batbelt::BatEnumerator;
 use crate::commands::repository_commands::RepositoryCommand;
 
 use commands::co_commands::CodeOverhaulCommand;
 use commands::finding_commands::FindingCommand;
 use commands::CommandError;
-use error_stack::ResultExt;
+use error_stack::fmt::{Charset, ColorMode};
 use error_stack::{FutureExt, IntoReport, Result};
+use error_stack::{Report, ResultExt};
 
+use crate::commands::project_commands::ProjectCommands;
+use crate::commands::tools_commands::ToolsCommands;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
+
 use log4rs::Config;
 use package::PackageCommand;
-
 pub mod batbelt;
 pub mod commands;
 pub mod config;
@@ -57,18 +61,22 @@ enum BatCommands {
         #[arg(short, long)]
         skip_initial_commit: bool,
     },
+    /// Refresh the project
+    Refresh,
     /// code-overhaul files management
     #[command(subcommand)]
     CO(CodeOverhaulCommand),
+    /// Execute the bat sonar to create metadata files
+    Sonar,
     /// findings files management
     #[command(subcommand)]
     Finding(FindingCommand),
+    /// utils tools
+    #[command(subcommand)]
+    Tools(ToolsCommands),
     /// Miro integration
     #[command(subcommand)]
     Miro(MiroCommand),
-    /// Sonar actions
-    #[command(subcommand)]
-    Sonar(SonarCommand),
     /// Git actions to manage repository
     #[command(subcommand)]
     Repo(RepositoryCommand),
@@ -81,17 +89,96 @@ impl BatEnumerator for BatCommands {}
 
 impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
+        self.validate_command()?;
         match self {
-            BatCommands::Create
-            | BatCommands::Init { .. }
-            | BatCommands::CO(_)
-            | BatCommands::Finding(_)
-            | BatCommands::Package(_) => {
-                unimplemented!()
+            BatCommands::Create => commands::project_commands::create_bat_project(),
+            BatCommands::Init {
+                skip_initial_commit,
+            } => commands::project_commands::initialize_bat_project(*skip_initial_commit).await,
+            BatCommands::Refresh => ProjectCommands::Refresh.execute_command(),
+            BatCommands::CO(CodeOverhaulCommand::Start) => commands::co_commands::start_co_file(),
+            BatCommands::CO(CodeOverhaulCommand::Finish) => {
+                commands::co_commands::finish_co_file().await
             }
-            BatCommands::Miro(command) => command.execute_command().await?,
-            BatCommands::Sonar(command) => command.execute_command()?,
-            BatCommands::Repo(command) => command.execute_command()?,
+            BatCommands::CO(CodeOverhaulCommand::Update) => commands::co_commands::update_co_file(),
+            BatCommands::CO(CodeOverhaulCommand::Count) => commands::co_commands::count_co_files(),
+            BatCommands::CO(CodeOverhaulCommand::Open) => commands::co_commands::open_co(),
+            BatCommands::Finding(FindingCommand::Create) => {
+                commands::finding_commands::start_finding()
+            }
+            BatCommands::Finding(FindingCommand::Finish) => {
+                commands::finding_commands::finish_finding()
+            }
+            BatCommands::Finding(FindingCommand::Update) => {
+                commands::finding_commands::update_finding()
+            }
+            BatCommands::Finding(FindingCommand::AcceptAll) => {
+                commands::finding_commands::accept_all()
+            }
+            BatCommands::Sonar => SonarCommand::Run.execute_command(),
+            BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
+            BatCommands::Miro(command) => command.execute_command().await,
+            BatCommands::Tools(command) => command.execute_command(),
+            BatCommands::Repo(command) => command.execute_command(),
+            // only for dev
+            #[cfg(debug_assertions)]
+            BatCommands::Package(PackageCommand::Format) => {
+                package::format().change_context(CommandError)
+            }
+            #[cfg(debug_assertions)]
+            BatCommands::Package(PackageCommand::Release) => {
+                package::release().change_context(CommandError)
+            }
+            _ => unimplemented!("Command only implemented for dev operations"),
+        }
+    }
+
+    fn validate_command(&self) -> CommandResult<()> {
+        let (check_metadata, check_branch) = match self {
+            BatCommands::Create => {
+                return Ok(());
+            }
+            BatCommands::Init { .. } => {
+                return Ok(());
+            }
+            BatCommands::Refresh => {
+                return Ok(());
+            }
+            BatCommands::Sonar => {
+                return Ok(());
+            }
+            BatCommands::Package(_) => {
+                return Ok(());
+            }
+            BatCommands::Tools(command) => (
+                command.check_metadata_is_initialized(),
+                command.check_correct_branch(),
+            ),
+            BatCommands::CO(command) => (
+                command.check_metadata_is_initialized(),
+                command.check_correct_branch(),
+            ),
+            BatCommands::Finding(command) => (
+                command.check_metadata_is_initialized(),
+                command.check_correct_branch(),
+            ),
+            BatCommands::Miro(command) => (
+                command.check_metadata_is_initialized(),
+                command.check_correct_branch(),
+            ),
+            BatCommands::Repo(command) => (
+                command.check_metadata_is_initialized(),
+                command.check_correct_branch(),
+            ),
+        };
+        if check_metadata {
+            BatMetadata::check_metadata_is_initialized().change_context(CommandError)?;
+        }
+
+        if check_branch {
+            GitAction::CheckCorrectBranch
+                .execute_action()
+                .change_context(CommandError)?;
         }
         Ok(())
     }
@@ -114,6 +201,13 @@ impl BatCommands {
                         .collect::<Vec<_>>(),
                     command.to_string().to_kebab_case(),
                 )),
+                BatCommands::Tools(_) => Some((
+                    ToolsCommands::get_type_vec()
+                        .into_iter()
+                        .map(|command_type| command_type.to_string().to_kebab_case())
+                        .collect::<Vec<_>>(),
+                    command.to_string().to_kebab_case(),
+                )),
                 BatCommands::Miro(_) => Some((
                     MiroCommand::get_type_vec()
                         .into_iter()
@@ -121,13 +215,7 @@ impl BatCommands {
                         .collect::<Vec<_>>(),
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Sonar(_) => Some((
-                    SonarCommand::get_type_vec()
-                        .into_iter()
-                        .map(|command_type| command_type.to_string().to_kebab_case())
-                        .collect::<Vec<_>>(),
-                    command.to_string().to_kebab_case(),
-                )),
+                BatCommands::Sonar => Some((vec![], command.to_string().to_kebab_case())),
                 BatCommands::Repo(_) => Some((
                     RepositoryCommand::get_type_vec()
                         .into_iter()
@@ -135,6 +223,9 @@ impl BatCommands {
                         .collect::<Vec<_>>(),
                     command.to_string().to_kebab_case(),
                 )),
+                BatCommands::Refresh => {
+                    Some((vec![], BatCommands::Refresh.to_string().to_kebab_case()))
+                }
                 _ => None,
             })
             .collect::<Vec<(Vec<_>, String)>>()
@@ -143,14 +234,13 @@ impl BatCommands {
 
 fn init_log(cli: Cli) -> CommandResult<()> {
     let bat_log_file = BatFile::Batlog;
-    bat_log_file.remove_file().change_context(CommandError)?;
     let logfile = FileAppender::builder()
         .encoder(Box::new(PatternEncoder::new(
             "{d(%Y-%m-%d %H:%M:%S)} [{f}:{L}] {h({l})} {M}{n}{m}{n}",
         )))
         .build(bat_log_file.get_path(false).change_context(CommandError)?)
-        .ok()
-        .ok_or(CommandError)?;
+        .into_report()
+        .change_context(CommandError)?;
 
     let config = Config::builder()
         .appender(Appender::builder().build("logfile", Box::new(logfile)))
@@ -159,8 +249,8 @@ fn init_log(cli: Cli) -> CommandResult<()> {
                 .appender("logfile")
                 .build(cli.verbose.log_level_filter()),
         )
-        .ok()
-        .ok_or(CommandError)?;
+        .into_report()
+        .change_context(CommandError)?;
 
     log4rs::init_config(config)
         .into_report()
@@ -168,10 +258,22 @@ fn init_log(cli: Cli) -> CommandResult<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> CommandResult<()> {
+pub struct Suggestion(String);
+
+impl Suggestion {
+    pub fn set_report() {
+        Report::set_charset(Charset::Utf8);
+        Report::set_color_mode(ColorMode::Color);
+        Report::install_debug_hook::<Self>(|Self(value), context| {
+            context.push_body(format!("{}: {value}", "suggestion".yellow()))
+        });
+    }
+}
+
+async fn run() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
 
+    Suggestion::set_report();
     // env_logger selectively
     match cli.command {
         BatCommands::Package(..) | BatCommands::Create => {
@@ -181,69 +283,39 @@ async fn main() -> CommandResult<()> {
         _ => init_log(cli.clone()),
     }?;
 
-    // check_correct_branch
-    match cli.command {
-        BatCommands::Init { .. }
-        | BatCommands::Create
-        | BatCommands::Package(..)
-        | BatCommands::Repo(..)
-        | BatCommands::Miro(..) => Ok(()),
-        _ => check_correct_branch().change_context(CommandError),
-    }?;
+    cli.command.execute().await
+}
 
-    // check metadata
-    match cli.command {
-        BatCommands::Init { .. }
-        | BatCommands::Create
-        | BatCommands::Package(..)
-        | BatCommands::Repo(..)
-        | BatCommands::Sonar(SonarCommand::Run) => Ok(()),
-        _ => BatMetadata::check_metadata_is_initialized().change_context(CommandError),
-    }?;
+#[tokio::main]
+async fn main() -> CommandResult<()> {
+    let cli: Cli = Cli::parse();
 
-    let result = match cli.command {
-        BatCommands::Create => commands::project_commands::create_project(),
-        BatCommands::Init {
-            skip_initial_commit,
-        } => commands::project_commands::initialize_bat_project(skip_initial_commit).await,
-        BatCommands::CO(CodeOverhaulCommand::Start) => commands::co_commands::start_co_file(),
-        BatCommands::CO(CodeOverhaulCommand::Finish) => {
-            commands::co_commands::finish_co_file().await
-        }
-        BatCommands::CO(CodeOverhaulCommand::Update) => commands::co_commands::update_co_file(),
-        BatCommands::CO(CodeOverhaulCommand::Count) => commands::co_commands::count_co_files(),
-        BatCommands::CO(CodeOverhaulCommand::Open) => commands::co_commands::open_co(),
-        BatCommands::Sonar(..) => cli.command.execute().await,
-        BatCommands::Miro(..) => cli.command.execute().await,
-        BatCommands::Repo(..) => cli.command.execute().await,
-        BatCommands::Finding(FindingCommand::Create) => commands::finding_commands::start_finding(),
-        BatCommands::Finding(FindingCommand::Finish) => {
-            commands::finding_commands::finish_finding()
-        }
-        BatCommands::Finding(FindingCommand::Update) => {
-            commands::finding_commands::update_finding()
-        }
-        BatCommands::Finding(FindingCommand::AcceptAll) => commands::finding_commands::accept_all(),
-        BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
-        // only for dev
-        #[cfg(debug_assertions)]
-        BatCommands::Package(PackageCommand::Format) => {
-            package::format().change_context(CommandError)
-        }
-        #[cfg(debug_assertions)]
-        BatCommands::Package(PackageCommand::Release) => {
-            package::release().change_context(CommandError)
-        }
-        _ => unimplemented!("Command only implemented for dev operations"),
-    };
-    match result {
+    match run().await {
         Ok(_) => {
-            log::info!("{} script executed correctly", cli.command.to_string())
+            println!(
+                "{} {} script successfully executed!",
+                "bat-cli".green(),
+                cli.command.to_string().to_kebab_case().green()
+            );
+            Ok(())
         }
         Err(error) => {
-            eprintln!("{:#?} script finished with error", cli.command);
-            log::error!("error output:\n {:#?}", error)
+            eprintln!(
+                "{} {} script finished with error",
+                "bat-cli".red(),
+                cli.command.to_string().to_kebab_case().green()
+            );
+            log::error!("{:#?} error report:\n {:#?}", cli.command, error);
+            Err(error)
         }
     }
-    Ok(())
+}
+
+#[cfg(debug_assertions)]
+mod test_bat_main {
+
+    #[test]
+    fn test_main() {
+        super::main();
+    }
 }

@@ -3,15 +3,16 @@ use std::fmt;
 
 use std::cell::RefCell;
 
+use colored::Colorize;
 use std::rc::Rc;
 use std::str::from_utf8;
 use std::{process::Command, str};
 
 use super::path::BatFolder;
-use crate::batbelt::command_line::execute_command;
+use crate::batbelt::command_line::{execute_command, execute_command_with_child_process};
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::BatAuditorConfig;
-use crate::{batbelt::path::BatFile, config::BatConfig};
+use crate::{batbelt::path::BatFile, config::BatConfig, Suggestion};
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 
@@ -31,11 +32,13 @@ type GitResult<T> = Result<T, GitError>;
 #[derive(Debug, PartialEq, strum_macros::Display)]
 pub enum GitAction {
     CreateBranch { branch_name: String },
+    CheckoutAuditorBranch,
     Init,
     RemoteAddProjectRepo,
     AddAll,
     CheckGitIsInitialized { is_initialized: Rc<RefCell<bool>> },
     CheckBranchDontExist { branch_name: String },
+    CheckCorrectBranch,
 }
 
 impl GitAction {
@@ -84,25 +87,65 @@ impl GitAction {
                 );
                 *is_initialized.borrow_mut() = is_initialized_result;
             }
+            GitAction::CheckoutAuditorBranch => {
+                let auditor_branch_name = get_auditor_branch_name()?;
+                if get_current_branch_name()? != auditor_branch_name {
+                    self.checkout_branch(&auditor_branch_name)?
+                }
+                return Ok(());
+            }
+            GitAction::CheckCorrectBranch => self.check_correct_branch()?,
             GitAction::CheckBranchDontExist { branch_name: _ } => {}
         }
         Ok(())
     }
+
+    fn check_correct_branch(&self) -> GitResult<()> {
+        let expected_auditor_branch = get_auditor_branch_name()?;
+        let current_branch = get_current_branch_name()?;
+        if current_branch != expected_auditor_branch {
+            let message = format!(
+                "Incorrect branch: \n -current: {}\n -expected: {}",
+                current_branch, expected_auditor_branch
+            );
+            return Err(Report::new(GitError).attach_printable(message)).attach(Suggestion(
+                format!(
+                    "run \"{} {}\" or \"{}\" to move to the correct branch",
+                    "git checkout".green(),
+                    expected_auditor_branch.green(),
+                    "bat-cli refresh".green()
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn checkout_branch(&self, branch_name: &str) -> GitResult<()> {
+        execute_command_with_child_process("git", &["checkout", branch_name])
+            .change_context(GitError)?;
+        Ok(())
+    }
 }
 
-pub fn check_correct_branch() -> GitResult<()> {
-    let expected_auditor_branch = get_expected_current_branch()?;
-    if get_branch_name()? != expected_auditor_branch {
+pub fn deprecated_check_correct_branch() -> GitResult<()> {
+    let expected_auditor_branch = get_auditor_branch_name()?;
+    let current_branch = get_current_branch_name()?;
+    if current_branch != expected_auditor_branch {
         let message = format!(
-            "You are in an incorrect branch, please run \"git checkout {}\"",
-            expected_auditor_branch
+            "Incorrect branch: \n -current: {}\n -expected: {}",
+            current_branch, expected_auditor_branch
         );
-        return Err(Report::new(GitError).attach_printable(message));
+        return Err(Report::new(GitError).attach_printable(message)).attach(Suggestion(format!(
+            "run \"{} {}\" or \"{}\" to move to the correct branch",
+            "git checkout".green(),
+            expected_auditor_branch.green(),
+            "bat-cli refresh".green()
+        )));
     }
     Ok(())
 }
 
-pub fn get_expected_current_branch() -> GitResult<String> {
+pub fn get_auditor_branch_name() -> GitResult<String> {
     let bat_config = BatConfig::get_config().change_context(GitError)?;
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(GitError)?;
     let expected_auditor_branch = format!(
@@ -163,7 +206,7 @@ pub fn get_remote_branches() -> GitResult<String> {
 }
 
 // Git
-pub fn get_branch_name() -> GitResult<String> {
+pub fn get_current_branch_name() -> GitResult<String> {
     let git_symbolic = Command::new("git")
         .args(["symbolic-ref", "-q", "head"])
         .output();
@@ -312,15 +355,14 @@ impl GitCommit {
             }
             GitCommit::UpdateTemplates => {
                 vec![
-                    BatFile::PackageJson { for_init: false }
-                        .get_path(true)
-                        .change_context(GitError)?,
                     BatFolder::CodeOverhaulToReview
                         .get_path(true)
                         .change_context(GitError)?,
-                    BatFile::GitIgnore { for_init: false }
-                        .get_path(true)
-                        .change_context(GitError)?,
+                    BatFile::GitIgnore {
+                        to_create_project: false,
+                    }
+                    .get_path(true)
+                    .change_context(GitError)?,
                 ]
             }
             GitCommit::Notes => {

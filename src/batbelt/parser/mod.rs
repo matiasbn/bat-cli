@@ -7,7 +7,7 @@ pub mod entrypoint_parser;
 pub mod function_parser;
 pub mod solana_account_parser;
 pub mod source_code_parser;
-pub mod trait_impl_parser;
+pub mod trait_parser;
 
 #[derive(Debug)]
 pub struct ParserError;

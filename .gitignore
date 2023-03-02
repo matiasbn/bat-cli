@@ -1,4 +1,3 @@
 target
 Bat.toml
 BatAuditor.toml
-!/src/batbelt/command_line.rs

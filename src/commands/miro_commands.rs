@@ -17,8 +17,9 @@ use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
-use crate::batbelt::parser::trait_impl_parser::TraitImplParser;
+use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::BatEnumerator;
+use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
@@ -57,6 +58,20 @@ pub enum MiroCommand {
 
 impl BatEnumerator for MiroCommand {}
 
+impl BatCommandEnumerator for MiroCommand {
+    fn execute_command(&self) -> CommandResult<()> {
+        unimplemented!()
+    }
+
+    fn check_metadata_is_initialized(&self) -> bool {
+        true
+    }
+
+    fn check_correct_branch(&self) -> bool {
+        false
+    }
+}
+
 impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
         match self {
@@ -65,7 +80,8 @@ impl MiroCommand {
                 self.entrypoint_action(*select_all, *sorted).await?
             }
             MiroCommand::Metadata { select_all } => self.metadata_action(*select_all).await?,
-            MiroCommand::Function { select_all } => self.function_action(*select_all).await?,
+            // MiroCommand::Function { select_all } => self.function_action(*select_all).await?,
+            MiroCommand::Function { select_all: _ } => unimplemented!(),
         }
         Ok(())
     }
@@ -887,7 +903,7 @@ impl MiroCommand {
         parent_function_image: Option<MiroImage>,
         selected_miro_frame: MiroFrame,
         function_metadata_vec: Vec<FunctionMetadata>,
-        trait_impl_parser_vec: Vec<TraitImplParser>,
+        trait_impl_parser_vec: Vec<TraitParser>,
         deployed_dependencies: &mut Vec<(MiroImage, FunctionMetadata)>,
         pending_to_check: &mut Vec<FunctionMetadata>,
     ) -> Result<(), CommandError> {
@@ -934,12 +950,18 @@ impl MiroCommand {
             return Ok(());
         }
 
-        let function_dependencies = function_parser.dependencies.clone();
+        let function_dependencies = function_parser
+            .dependencies
+            .clone()
+            .into_iter()
+            .map(FunctionMetadata::find_by_metadata_id)
+            .collect::<Result<Vec<_>, _>>()
+            .change_context(CommandError)?;
 
         let dependencies_names_vec = function_dependencies
             .clone()
             .into_iter()
-            .map(|dp| dp.name)
+            .map(|metadata| metadata.name)
             .collect::<Vec<_>>();
 
         let selected_function_content = parent_function
@@ -972,13 +994,7 @@ impl MiroCommand {
         let formatted_option = function_dependencies
             .clone()
             .into_iter()
-            .map(|dep| {
-                self.get_formatted_path(
-                    dep.name,
-                    dep.function_metadata.path.clone(),
-                    dep.function_metadata.start_line_index,
-                )
-            })
+            .map(|dep| self.get_formatted_path(dep.name, dep.path.clone(), dep.start_line_index))
             .collect::<Vec<_>>();
 
         let multi_selection = BatDialoguer::multiselect(
@@ -996,13 +1012,13 @@ impl MiroCommand {
             let already_deployed = deployed_dependencies
                 .clone()
                 .into_iter()
-                .find(|dep| dep.1 == selected_dependency.function_metadata);
+                .find(|dep| dep.1 == selected_dependency);
             if already_deployed.is_none() {
-                pending_to_deploy.push(selected_dependency.function_metadata.clone());
+                pending_to_deploy.push(selected_dependency.clone());
             } else {
                 pending_to_connect.push(already_deployed.unwrap().0);
             }
-            pending_to_check.push(selected_dependency.function_metadata.clone());
+            pending_to_check.push(selected_dependency.clone());
         }
 
         while !pending_to_deploy.is_empty() {

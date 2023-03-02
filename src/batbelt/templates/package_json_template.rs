@@ -1,4 +1,5 @@
-use error_stack::{FutureExt, Result, ResultExt};
+use error_stack::{FutureExt, IntoReport, Result, ResultExt};
+use log::Level;
 
 use serde_json::Map;
 use serde_json::{json, Value};
@@ -11,22 +12,47 @@ use crate::BatCommands;
 pub struct PackageJsonTemplate;
 
 impl PackageJsonTemplate {
-    pub fn update_package_json() -> Result<(), TemplateError> {
-        BatFile::PackageJson { for_init: false }
-            .write_content(false, &Self::get_package_json_content()?)
+    pub fn create_package_with_init_script() -> Result<(), TemplateError> {
+        let (script_key, script_value) = if cfg!(debug_assertions) {
+            ("cargo::run::init", "cargo run init")
+        } else {
+            ("bat-cli::init", "bat-cli init")
+        };
+        let package_json = json!({
+        "name": "bat_project",
+        "version": "1.0.0",
+        "description": "Bat project",
+        "main": "index.js",
+        "scripts":{
+              script_key: script_value
+            },
+        "author": "",
+        "license": "ISC"
+        });
+
+        let content = serde_json::to_string_pretty(&package_json)
+            .into_report()
             .change_context(TemplateError)?;
+
+        BatFile::PackageJson {
+            to_create_project: true,
+        }
+        .write_content(false, &content)
+        .change_context(TemplateError)?;
         Ok(())
     }
 
-    pub fn create_package_json() -> Result<(), TemplateError> {
-        BatFile::PackageJson { for_init: true }
-            .write_content(false, &Self::get_package_json_content()?)
-            .change_context(TemplateError)?;
+    pub fn create_package_json(log_level: Option<Level>) -> Result<(), TemplateError> {
+        BatFile::PackageJson {
+            to_create_project: false,
+        }
+        .write_content(false, &Self::get_package_json_content(log_level)?)
+        .change_context(TemplateError)?;
         Ok(())
     }
 
-    pub fn get_package_json_content() -> TemplateResult<String> {
-        let scripts_value = Self::get_scripts_serde_value()?;
+    fn get_package_json_content(log_level: Option<Level>) -> TemplateResult<String> {
+        let scripts_value = Self::get_scripts_serde_value(log_level)?;
         let package_json = json!({
         "name": "bat_project",
         "version": "1.0.0",
@@ -40,17 +66,45 @@ impl PackageJsonTemplate {
         Ok(serde_json::to_string_pretty(&package_json).unwrap())
     }
 
-    fn get_scripts_serde_value() -> TemplateResult<Value> {
-        let (script_key_prefix, script_value_prefix) = if cfg!(debug_assertions) {
-            ("cargo::run", "cargo run")
+    fn get_scripts_serde_value(log_level: Option<Level>) -> TemplateResult<Value> {
+        let (verbosity_flag, verbosity_level_name) = if let Some(level) = log_level {
+            match level {
+                Level::Warn => ("v".to_string(), level.to_string()),
+                Level::Info => ("vv".to_string(), level.to_string()),
+                Level::Debug => ("vvv".to_string(), level.to_string()),
+                Level::Trace => ("vvvv".to_string(), level.to_string()),
+                _ => ("".to_string(), "".to_string()),
+            }
         } else {
-            ("bat-cli", "bat-cli")
+            ("".to_string(), "".to_string())
         };
-        // println!("{}", cfg!());
+        let (script_key_prefix, script_value_prefix) = if cfg!(debug_assertions) {
+            if verbosity_flag.is_empty() {
+                ("cargo::run".to_string(), "cargo run".to_string())
+            } else {
+                (
+                    format!("cargo::run::{}", verbosity_level_name),
+                    format!("cargo run -- -{}", verbosity_flag),
+                )
+            }
+        } else if verbosity_flag.is_empty() {
+            ("bat-cli".to_string(), "bat-cli".to_string())
+        } else {
+            (
+                format!("bat-cli::{}", verbosity_level_name),
+                format!("bat-cli -{}", verbosity_flag),
+            )
+        };
         let kebab_commands_vec = BatCommands::get_kebab_commands();
         let mut scripts_map = Map::new();
         for kebab_comand in kebab_commands_vec {
             let (kebab_options_vec, kebab_command_name) = kebab_comand;
+            if kebab_options_vec.is_empty() {
+                let script_key = format!("{}::{}", script_key_prefix, kebab_command_name);
+                let script_value = format!("{} {}", script_value_prefix, kebab_command_name);
+                scripts_map.insert(script_key, script_value.into());
+                continue;
+            }
             for kebab_option in kebab_options_vec {
                 let script_key = format!(
                     "{}::{}::{}",
@@ -74,12 +128,11 @@ impl PackageJsonTemplate {
 
 #[cfg(test)]
 mod template_test {
-
     use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 
     #[test]
     fn test_get_package_json_content() {
-        let json_content = PackageJsonTemplate::get_package_json_content().unwrap();
+        let json_content = PackageJsonTemplate::get_package_json_content(None).unwrap();
         println!("{}", json_content);
     }
 

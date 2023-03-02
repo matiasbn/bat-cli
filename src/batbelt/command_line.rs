@@ -1,3 +1,4 @@
+use colored::Colorize;
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::str::from_utf8;
@@ -27,6 +28,8 @@ pub enum CodeEditor {
     None,
 }
 
+impl BatEnumerator for CodeEditor {}
+
 impl CodeEditor {
     pub fn open_file_in_editor(path: &str, line_index: Option<usize>) -> CommandResult<()> {
         let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
@@ -36,6 +39,11 @@ impl CodeEditor {
             return Ok(());
         }
         let starting_line = line_index.unwrap_or(0);
+        println!(
+            "Opening {} on {}!",
+            path.trim_start_matches("../").green(),
+            bat_auditor_config.code_editor.get_colored_name(false)
+        );
         match bat_auditor_config.code_editor {
             CodeEditor::CLion => {
                 execute_command(
@@ -62,8 +70,6 @@ impl CodeEditor {
     }
 }
 
-impl BatEnumerator for CodeEditor {}
-
 pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> CommandResult<String> {
     let message = format!(
         "Error executing a process for parameters: \n command: {} \n args: {:#?}",
@@ -88,7 +94,7 @@ pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> Comm
         .attach_printable(message)?
         .to_string();
 
-    log::debug!("output_string: \n{}", output_string);
+    log::debug!(target:"execute_command",  "command: {}\n args: {:#?}\noutput: \n{}", command, args, output_string);
 
     if print_output {
         println!("{}", output_string);
@@ -97,7 +103,7 @@ pub fn execute_command(command: &str, args: &[&str], print_output: bool) -> Comm
     Ok(output_string)
 }
 
-pub fn execute_child_process(command: &str, args: &[&str]) -> CommandResult<String> {
+pub fn execute_command_with_child_process(command: &str, args: &[&str]) -> CommandResult<String> {
     let message = format!(
         "Error spawning a child process for parameters: \n command: {} \n args: {:#?}",
         command, args
@@ -131,7 +137,7 @@ pub fn execute_child_process(command: &str, args: &[&str]) -> CommandResult<Stri
         .into_report()
         .change_context(CommandError)?;
 
-    log::debug!("output_string: \n{:#?}", output_string);
+    log::debug!(target:"execute_command_with_child_process",  "command: {}\n args: {:#?}\noutput: \n{}", command, args, output_string);
 
     Ok(output_string)
     // Ok("output_string".to_string())
@@ -139,12 +145,12 @@ pub fn execute_child_process(command: &str, args: &[&str]) -> CommandResult<Stri
 
 #[cfg(test)]
 mod command_line_tester {
-    use crate::batbelt::command_line::execute_child_process;
+    use crate::batbelt::command_line::execute_command_with_child_process;
 
     #[test]
     fn test_executed_piped() {
         env_logger::init();
-        let ls_result = execute_child_process("gflfs", &["2.0.0"]).unwrap();
+        let ls_result = execute_command_with_child_process("gflfs", &["2.0.0"]).unwrap();
         // let ls_result = execute_child_process("cargo", &["install"]).unwrap();
         println!("ls_rrsuylt {}", ls_result)
         // let ls_result = execute_piped_process("ls", &["-la"], true).unwrap();

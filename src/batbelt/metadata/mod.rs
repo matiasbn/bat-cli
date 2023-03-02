@@ -1,4 +1,5 @@
 pub mod functions_metadata;
+pub mod metadata_cache;
 pub mod structs_metadata;
 pub mod traits_metadata;
 
@@ -16,12 +17,17 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
+use crate::batbelt::metadata::metadata_cache::{MetadataCacheContent, MetadataCacheType};
+
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use crate::Suggestion;
+use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
@@ -39,6 +45,8 @@ impl Error for MetadataError {}
 pub struct BatMetadata;
 
 pub type MetadataResult<T> = Result<T, MetadataError>;
+
+pub type MetadataId = String;
 
 impl BatMetadata {
     pub fn metadata_is_initialized() -> Result<bool, MetadataError> {
@@ -71,8 +79,19 @@ impl BatMetadata {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    Default,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 pub enum BatMetadataType {
+    #[default]
     Struct,
     Function,
     Trait,
@@ -92,6 +111,12 @@ impl BatMetadataType {
                 .change_context(MetadataError)?,
         };
         Ok(path)
+    }
+
+    pub fn get_cache_file(&self) -> BatFile {
+        BatFile::MetadataCacheFile {
+            metadata_cache_type: *self,
+        }
     }
 
     pub fn get_markdown(&self) -> Result<MarkdownFile, MetadataError> {
@@ -119,10 +144,15 @@ impl BatMetadataType {
 
     pub fn check_is_initialized(&self) -> Result<(), MetadataError> {
         if !self.is_initialized()? {
-            return Err(Report::new(MetadataError).attach_printable(format!(
-                "{} metadata is required to be initialized to execute this action",
-                self.to_string().red()
-            )));
+            return Err(Report::new(MetadataError)
+                .attach_printable(format!(
+                    "{} metadata is required to be initialized to execute this action",
+                    self.to_string().red()
+                ))
+                .attach(Suggestion(format!(
+                    "run {} to initialize the metadata file",
+                    "bat-cli sonar".green()
+                ))));
         }
         Ok(())
     }
@@ -136,17 +166,6 @@ impl BatMetadataType {
         let metadata_type_selected = &metadata_types_vec[selection];
         Ok(*metadata_type_selected)
     }
-
-    fn get_metadata_vec_from_markdown<T: BatMetadataParser<BatMetadataType>>(
-    ) -> Result<Vec<T>, MetadataError> {
-        let metadata_markdown_file =
-            BatMetadataType::Trait.get_markdown_sections_from_metadata_file()?;
-        let metadata_vec = metadata_markdown_file
-            .into_iter()
-            .map(|markdown_section| T::from_markdown_section(markdown_section))
-            .collect::<Result<Vec<T>, _>>()?;
-        Ok(metadata_vec)
-    }
 }
 
 pub trait BatMetadataParser<U>
@@ -156,14 +175,59 @@ where
 {
     fn name(&self) -> String;
     fn path(&self) -> String;
-    fn metadata_id(&self) -> String;
+    fn metadata_id(&self) -> MetadataId;
+    fn metadata_cache_type() -> MetadataCacheType;
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
     fn metadata_sub_type(&self) -> U;
     fn get_bat_metadata_type() -> BatMetadataType;
     fn get_bat_file() -> BatFile;
 
+    fn get_cache_bat_file(&self) -> BatFile {
+        BatFile::MetadataCacheFile {
+            metadata_cache_type: Self::get_bat_metadata_type(),
+        }
+    }
+
     fn metadata_name() -> String;
+
+    fn value_to_vec_string(value: Value) -> Vec<String> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|val| val.as_str().unwrap().to_string())
+            .collect::<Vec<String>>()
+    }
+
+    fn read_cache_key(&self, cache_key: &str) -> MetadataResult<Value> {
+        let file_content = self
+            .get_cache_bat_file()
+            .read_content(false)
+            .change_context(MetadataError)?;
+        let file_value: Value = serde_json::from_str(&file_content)
+            .into_report()
+            .change_context(MetadataError)?;
+        let value = file_value[cache_key].clone();
+        Ok(value)
+    }
+
+    fn save_cache_key(&self, cache_key: &str, cache_value: Value) -> MetadataResult<()> {
+        let file_content = self
+            .get_cache_bat_file()
+            .read_content(false)
+            .change_context(MetadataError)?;
+        let mut file_value: Value = serde_json::from_str(&file_content)
+            .into_report()
+            .change_context(MetadataError)?;
+        file_value[cache_key] = cache_value;
+        let new_value = serde_json::to_string_pretty(&file_value)
+            .into_report()
+            .change_context(MetadataError)?;
+        self.get_cache_bat_file()
+            .write_content(false, &new_value)
+            .change_context(MetadataError)
+    }
 
     fn new(
         path: String,
@@ -171,6 +235,7 @@ where
         metadata_sub_type: U,
         start_line_index: usize,
         end_line_index: usize,
+        metadata_id: MetadataId,
     ) -> Self;
 
     fn create_metadata_id() -> String {
@@ -226,12 +291,13 @@ where
 
     fn get_markdown_section_content_string(&self) -> String {
         format!(
-            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}",
+            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}\n- metadata_id: {}",
             self.name(),
             self.metadata_sub_type().to_snake_case(),
             self.path(),
             self.start_line_index(),
-            self.end_line_index()
+            self.end_line_index(),
+            self.metadata_id()
         )
     }
 
@@ -260,6 +326,11 @@ where
             &md_section.content,
             BatMetadataMarkdownContent::EndLineIndex,
         )
+        .attach_printable(message.clone())?;
+        let metadata_id = Self::parse_metadata_info_section(
+            &md_section.content,
+            BatMetadataMarkdownContent::MetadataId,
+        )
         .attach_printable(message)?;
         Ok(Self::new(
             path,
@@ -267,17 +338,18 @@ where
             U::from_str(&type_string),
             start_line_index.parse::<usize>().unwrap(),
             end_line_index.parse::<usize>().unwrap(),
+            metadata_id,
         ))
     }
-    fn get_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError>;
+    fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError>;
 
-    fn get_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
+    fn create_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
         let program_dir_entries = BatFolder::ProgramPath
             .get_all_files_dir_entries(false, None, None)
             .change_context(MetadataError)?;
         let mut metadata_vec: Vec<Self> = program_dir_entries
             .into_iter()
-            .map(|entry| Self::get_metadata_from_dir_entry(entry))
+            .map(|entry| Self::create_metadata_from_dir_entry(entry))
             .collect::<Result<Vec<_>, MetadataError>>()?
             .into_iter()
             .fold(vec![], |mut result_vec, mut entry| {
@@ -307,6 +379,15 @@ where
             .trim()
             .to_string();
         Ok(data)
+    }
+
+    fn prompt_selection() -> Result<Self, MetadataError> {
+        let (metadata_vec, metadata_names) = Self::prompt_types()?;
+        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
+        let selection = BatDialoguer::select(prompt_text, metadata_names, None)
+            .change_context(MetadataError)?;
+
+        Ok(metadata_vec[selection].clone())
     }
 
     fn prompt_multiselection(
@@ -359,6 +440,23 @@ where
             })
             .collect::<Vec<_>>();
         Ok((metadata_vec_filtered, metadata_names))
+    }
+
+    fn find_by_metadata_id(metadata_id: MetadataId) -> MetadataResult<Self> {
+        let match_metadata = Self::get_bat_metadata_type()
+            .get_markdown_sections_from_metadata_file()?
+            .into_iter()
+            .map(|section| Self::from_markdown_section(section))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .find(|metadata| metadata.metadata_id() == metadata_id);
+        match match_metadata {
+            None => Err(Report::new(MetadataError).attach_printable(format!(
+                "No match for metadata with metadata_id:{}",
+                metadata_id
+            ))),
+            Some(metadata) => Ok(metadata),
+        }
     }
 
     fn get_filtered_metadata(
@@ -414,6 +512,7 @@ pub enum BatMetadataMarkdownContent {
     Type,
     StartLineIndex,
     EndLineIndex,
+    MetadataId,
 }
 
 impl BatMetadataMarkdownContent {
@@ -429,3 +528,38 @@ impl BatMetadataMarkdownContent {
         format!("- {}: {}", self.to_snake_case(), content_value)
     }
 }
+
+// #[cfg(debug_assertions)]
+// mod metadata_test {
+//     use assert_fs::prelude::FileWriteStr;
+//     use serde_json::{json, Value};
+//     use std::fs;
+//
+//     const TEMP_PATH: &'static str = "./test.json";
+//
+//     // #[test]
+//     // fn test_metadata() {
+//     //     //save to json
+//     //     let key = "hello";
+//     //     let value = vec!["world".to_string()];
+//     //     let json_content = json!({ key: value });
+//     //
+//     //     let pretty_content = serde_json::to_string_pretty(&json_content).unwrap();
+//     //     assert_fs::NamedTempFile::new(TEMP_PATH).unwrap();
+//     //     fs::write(TEMP_PATH, &pretty_content).unwrap();
+//     //
+//     //     let vec_value = read_key(key);
+//     //     let vec_read = value_to_vec_string(vec_value);
+//     //
+//     //     assert_eq!(value, vec_read);
+//     //
+//     //     let value_2 = vec!["chai".to_string()];
+//     //     let vec_value = json!(value_2);
+//     //     save_key(key, vec_value);
+//     //
+//     //     let vec_value_read = read_key(key);
+//     //     let vec_read = value_to_vec_string(vec_value_read);
+//     //
+//     //     assert_eq!(vec_read, value_2);
+//     // }
+// }
