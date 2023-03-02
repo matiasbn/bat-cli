@@ -119,21 +119,21 @@ impl BatSonarInteractive {
                         match metadata_type {
                             BatMetadataType::Struct => {
                                 let mut struct_res =
-                                    StructMetadata::get_metadata_from_dir_entry(entry.clone())
+                                    StructMetadata::create_metadata_from_dir_entry(entry.clone())
                                         .unwrap();
                                 total += struct_res.len();
                                 structs_result.append(&mut struct_res);
                             }
                             BatMetadataType::Function => {
                                 let mut func_res =
-                                    FunctionMetadata::get_metadata_from_dir_entry(entry.clone())
+                                    FunctionMetadata::create_metadata_from_dir_entry(entry.clone())
                                         .unwrap();
                                 total += func_res.len();
                                 functions_result.append(&mut func_res);
                             }
                             BatMetadataType::Trait => {
                                 let mut trait_res =
-                                    TraitMetadata::get_metadata_from_dir_entry(entry.clone())
+                                    TraitMetadata::create_metadata_from_dir_entry(entry.clone())
                                         .unwrap();
 
                                 total += trait_res.len();

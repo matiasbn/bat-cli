@@ -28,8 +28,7 @@ use log4rs::append::console::{ConsoleAppender, Target};
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::project_commands::ProjectCommands;
-use crate::commands::utils_commands::UtilsCommands;
-use crate::BatCommands::Tools;
+use crate::commands::tools_commands::ToolsCommands;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
@@ -71,14 +70,13 @@ enum BatCommands {
     #[command(subcommand)]
     CO(CodeOverhaulCommand),
     /// Execute the bat sonar to create metadata files
-    #[command(subcommand)]
     Sonar,
     /// findings files management
     #[command(subcommand)]
     Finding(FindingCommand),
-    /// findings files management
+    /// utils tools
     #[command(subcommand)]
-    Tools(UtilsCommands),
+    Tools(ToolsCommands),
     /// Miro integration
     #[command(subcommand)]
     Miro(MiroCommand),
@@ -198,7 +196,7 @@ impl BatCommands {
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Tools(_) => Some((
-                    UtilsCommands::get_type_vec()
+                    ToolsCommands::get_type_vec()
                         .into_iter()
                         .map(|command_type| command_type.to_string().to_kebab_case())
                         .collect::<Vec<_>>(),
@@ -285,6 +283,7 @@ async fn run() -> CommandResult<()> {
 #[tokio::main]
 async fn main() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
+
     return match run().await {
         Ok(_) => {
             println!(

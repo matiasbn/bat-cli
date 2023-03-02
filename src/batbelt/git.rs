@@ -358,9 +358,11 @@ impl GitCommit {
                     BatFolder::CodeOverhaulToReview
                         .get_path(true)
                         .change_context(GitError)?,
-                    BatFile::GitIgnore { for_init: false }
-                        .get_path(true)
-                        .change_context(GitError)?,
+                    BatFile::GitIgnore {
+                        to_create_project: false,
+                    }
+                    .get_path(true)
+                    .change_context(GitError)?,
                 ]
             }
             GitCommit::Notes => {
