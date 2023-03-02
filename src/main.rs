@@ -13,7 +13,7 @@ use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 
-use crate::batbelt::git::{deprecated_check_correct_branch, GitAction};
+use crate::batbelt::git::GitAction;
 use crate::batbelt::BatEnumerator;
 use crate::commands::repository_commands::RepositoryCommand;
 
@@ -23,16 +23,13 @@ use commands::CommandError;
 use error_stack::fmt::{Charset, ColorMode};
 use error_stack::{FutureExt, IntoReport, Result};
 use error_stack::{Report, ResultExt};
-use log4rs::append::console::{ConsoleAppender, Target};
 
-use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::project_commands::ProjectCommands;
 use crate::commands::tools_commands::ToolsCommands;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
-use log4rs::filter::threshold::ThresholdFilter;
+
 use log4rs::Config;
 use package::PackageCommand;
 pub mod batbelt;
@@ -93,7 +90,7 @@ impl BatEnumerator for BatCommands {}
 impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         self.validate_command()?;
-        return match self {
+        match self {
             BatCommands::Create => commands::project_commands::create_bat_project(),
             BatCommands::Init {
                 skip_initial_commit,
@@ -133,7 +130,7 @@ impl BatCommands {
                 package::release().change_context(CommandError)
             }
             _ => unimplemented!("Command only implemented for dev operations"),
-        };
+        }
     }
 
     fn validate_command(&self) -> CommandResult<()> {
@@ -286,14 +283,14 @@ async fn run() -> CommandResult<()> {
         _ => init_log(cli.clone()),
     }?;
 
-    return cli.command.execute().await;
+    cli.command.execute().await
 }
 
 #[tokio::main]
 async fn main() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
 
-    return match run().await {
+    match run().await {
         Ok(_) => {
             println!(
                 "{} {} script successfully executed!",
@@ -311,7 +308,7 @@ async fn main() -> CommandResult<()> {
             log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)
         }
-    };
+    }
 }
 
 #[cfg(debug_assertions)]

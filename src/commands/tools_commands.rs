@@ -1,27 +1,22 @@
-use crate::batbelt;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::command_line::{execute_command, CodeEditor};
-use crate::batbelt::git::{deprecated_check_correct_branch, GitCommit};
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::{BatFile, BatFolder};
-use crate::batbelt::templates::code_overhaul_template::{
-    CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
-};
+use crate::batbelt::command_line::CodeEditor;
+
+use crate::batbelt::path::BatFile;
+
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
-use crate::config::{BatAuditorConfig, BatConfig};
+
 use clap::Subcommand;
-use colored::Colorize;
-use error_stack::{Report, ResultExt};
+
+use error_stack::ResultExt;
 
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
-use crate::batbelt::parser::parse_formatted_path;
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use log::Level;
-use std::fs;
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -100,7 +95,7 @@ impl ToolsCommands {
     }
 
     fn execute_package_json(&self) -> CommandResult<()> {
-        let prompt_text = format!("Select the log level:");
+        let prompt_text = "Select the log level:".to_string();
         let log_level_vec = vec![
             Level::Warn,
             Level::Info,
@@ -118,7 +113,7 @@ impl ToolsCommands {
                 .collect::<Vec<_>>(),
             None,
         )?;
-        let level_selected = log_level_vec[selection].clone();
+        let level_selected = log_level_vec[selection];
         PackageJsonTemplate::create_package_json(Some(level_selected))
             .change_context(CommandError)?;
         BatFile::PackageJson {

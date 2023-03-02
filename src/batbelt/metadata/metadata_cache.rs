@@ -3,12 +3,11 @@ use crate::batbelt::metadata::{
 };
 use crate::batbelt::path::BatFile;
 use crate::batbelt::BatEnumerator;
-use clap::builder::Str;
+
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::mpsc::channel;
 
 #[derive(
     Default,
@@ -31,7 +30,7 @@ impl BatEnumerator for MetadataCacheType {}
 
 impl MetadataCacheType {
     pub fn get_metadata_cache_by_id(&self, metadata_id: String) -> MetadataResult<MetadataCache> {
-        let mut new_metadata = MetadataCache::new(metadata_id, self.clone());
+        let mut new_metadata = MetadataCache::new(metadata_id, *self);
         new_metadata.read_cache_by_id()?;
         Ok(new_metadata)
     }
@@ -65,7 +64,7 @@ impl MetadataCache {
     }
 
     pub fn read_cache_by_id(&mut self) -> MetadataResult<()> {
-        let content_values = Self::read_json_content(self.metadata_cache_type.clone())?;
+        let content_values = Self::read_json_content(self.metadata_cache_type)?;
         let metadata_cache_value = content_values[&self.metadata_id].clone();
 
         if !metadata_cache_value.is_array() {
@@ -103,7 +102,10 @@ impl MetadataCache {
                 match self.metadata_cache_content.iter().position(|content| {
                     content.metadata_cache_content_type == cache_content.metadata_cache_content_type
                 }) {
-                    None => Ok(self.metadata_cache_content.push(cache_content)),
+                    None => {
+                        self.metadata_cache_content.push(cache_content);
+                        Ok(())
+                    }
                     Some(match_index) => {
                         let mut cloned_cache_values = cache_content
                             .clone()
@@ -130,8 +132,8 @@ impl MetadataCache {
     }
 
     pub fn create_new_key(
-        cache_content: MetadataCacheContent,
-        metadata_cache_type: MetadataCacheType,
+        _cache_content: MetadataCacheContent,
+        _metadata_cache_type: MetadataCacheType,
     ) -> MetadataResult<()> {
         // let bat_file_content = metadata_cache_type
         //     .get_bat_file()
@@ -165,17 +167,6 @@ impl MetadataCache {
 
 // #[cfg(debug_assertions)]
 mod metadata_cache_test {
-    use crate::batbelt::metadata::metadata_cache::{
-        MetadataCache, MetadataCacheContent, MetadataCacheType,
-    };
-    use crate::batbelt::metadata::BatMetadataType;
-    use crate::batbelt::path::{BatFile, BatFolder};
-    use crate::config::{BatAuditorConfig, BatConfig};
-    use assert_fs;
-    use assert_fs::prelude::FileWriteStr;
-    use serde_json::{json, Value};
-    use std::fs;
-    use std::process::Command;
 
     #[test]
     fn test_get_metadata_by_id() {

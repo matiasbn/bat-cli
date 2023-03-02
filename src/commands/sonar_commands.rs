@@ -1,14 +1,10 @@
-use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::execute_command;
 
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::BatMetadataParser;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
-use colored::Colorize;
+
 use error_stack::{Result, ResultExt};
 
 use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;

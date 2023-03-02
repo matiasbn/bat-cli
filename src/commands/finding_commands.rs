@@ -8,8 +8,6 @@ use crate::batbelt::{
 };
 use colored::Colorize;
 
-use crate::batbelt::git::{deprecated_check_correct_branch, GitAction};
-use crate::batbelt::metadata::BatMetadata;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 use error_stack::{Report, Result, ResultExt};

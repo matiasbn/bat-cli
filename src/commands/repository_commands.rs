@@ -2,11 +2,7 @@ use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
 
 use crate::batbelt::git::GitCommit;
-use crate::batbelt::path::BatFile::GitIgnore;
-use crate::batbelt::path::BatFolder;
-use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
-use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
-use crate::batbelt::templates::TemplateGenerator;
+
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use clap::Subcommand;

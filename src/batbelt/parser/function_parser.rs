@@ -1,12 +1,10 @@
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataCacheType};
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, MetadataId, MetadataResult};
+use crate::batbelt::metadata::{BatMetadataParser, MetadataId};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::parser::ParserError;
 
-use crate::batbelt::metadata::metadata_cache::{
-    MetadataCache, MetadataCacheContent, MetadataCacheType,
-};
+use crate::batbelt::metadata::metadata_cache::{MetadataCache, MetadataCacheType};
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
@@ -66,9 +64,9 @@ impl FunctionParser {
             "new_function_parser_with_dependencies:\n{:#?}",
             new_function_parser
         );
-        let dependencies_metadata_cache_content = FunctionMetadataCacheType::Dependency
+        let _dependencies_metadata_cache_content = FunctionMetadataCacheType::Dependency
             .to_metadata_cache_content(new_function_parser.dependencies.clone());
-        let extern_dep_metadata_cache_content = FunctionMetadataCacheType::ExternalDependency
+        let _extern_dep_metadata_cache_content = FunctionMetadataCacheType::ExternalDependency
             .to_metadata_cache_content(new_function_parser.external_dependencies.clone());
         // new_function_parser
         //     .function_metadata

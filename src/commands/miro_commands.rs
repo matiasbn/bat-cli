@@ -3,7 +3,7 @@ use crate::batbelt;
 use colored::{ColoredString, Colorize};
 
 use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
@@ -16,7 +16,6 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::miro::image::MiroImage;
 
-use crate::batbelt::git::GitAction;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::BatEnumerator;
@@ -82,7 +81,7 @@ impl MiroCommand {
             }
             MiroCommand::Metadata { select_all } => self.metadata_action(*select_all).await?,
             // MiroCommand::Function { select_all } => self.function_action(*select_all).await?,
-            MiroCommand::Function { select_all } => unimplemented!(),
+            MiroCommand::Function { select_all: _ } => unimplemented!(),
         }
         Ok(())
     }
@@ -955,7 +954,7 @@ impl MiroCommand {
             .dependencies
             .clone()
             .into_iter()
-            .map(|dp| FunctionMetadata::find_by_metadata_id(dp))
+            .map(FunctionMetadata::find_by_metadata_id)
             .collect::<Result<Vec<_>, _>>()
             .change_context(CommandError)?;
 

@@ -12,9 +12,8 @@ use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
 use error_stack::{FutureExt, Result, ResultExt};
 
-use crate::batbelt::metadata::metadata_cache::MetadataCache;
 use crate::batbelt::BatEnumerator;
-use serde_json::{json, Value};
+
 use std::{fs, vec};
 use walkdir::DirEntry;
 
