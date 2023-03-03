@@ -27,7 +27,8 @@ use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::Value::Null;
+use serde_json::{json, Value};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
@@ -209,6 +210,9 @@ where
             .get_cache_bat_file()
             .read_content(false)
             .change_context(MetadataError)?;
+        if file_content.is_empty() {
+            return Ok(Null);
+        }
         let file_value: Value = serde_json::from_str(&file_content)
             .into_report()
             .change_context(MetadataError)?;
@@ -221,13 +225,21 @@ where
             .get_cache_bat_file()
             .read_content(false)
             .change_context(MetadataError)?;
-        let mut file_value: Value = serde_json::from_str(&file_content)
-            .into_report()
-            .change_context(MetadataError)?;
-        file_value[&self.metadata_id()] = cache_value;
-        let new_value = serde_json::to_string_pretty(&file_value)
-            .into_report()
-            .change_context(MetadataError)?;
+        let new_value = if file_content.is_empty() {
+            let key = self.metadata_id();
+            serde_json::to_string_pretty(&json!({ key: cache_value }))
+                .into_report()
+                .change_context(MetadataError)?
+        } else {
+            let mut file_value: Value = serde_json::from_str(&file_content)
+                .into_report()
+                .change_context(MetadataError)?;
+            file_value[&self.metadata_id()] = cache_value;
+            let new_value = serde_json::to_string_pretty(&file_value)
+                .into_report()
+                .change_context(MetadataError)?;
+            new_value
+        };
         self.get_cache_bat_file()
             .write_content(false, &new_value)
             .change_context(MetadataError)
