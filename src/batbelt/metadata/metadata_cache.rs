@@ -165,8 +165,15 @@ impl MetadataCache {
     }
 }
 
-// #[cfg(debug_assertions)]
+#[cfg(debug_assertions)]
 mod metadata_cache_test {
+    use crate::batbelt::metadata::metadata_cache::MetadataCacheContent;
+    use crate::batbelt::metadata::BatMetadataType;
+    use crate::batbelt::path::{BatFile, BatFolder};
+    use crate::config::{BatAuditorConfig, BatConfig};
+    use serde_json::json;
+    use std::fs;
+    use std::process::Command;
 
     #[test]
     fn test_get_metadata_by_id() {

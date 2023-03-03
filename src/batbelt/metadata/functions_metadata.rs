@@ -14,6 +14,7 @@ use error_stack::{FutureExt, Result, ResultExt};
 
 use crate::batbelt::BatEnumerator;
 
+use serde_json::json;
 use std::{fs, vec};
 use walkdir::DirEntry;
 
@@ -123,6 +124,85 @@ impl FunctionMetadata {
         .change_context(MetadataError)
     }
 
+    pub fn save_dependency_cache(&self, dependency_id_vec: Vec<MetadataId>) -> MetadataResult<()> {
+        // let test_path = "./test.json";
+        // let metadata_id = "1234";
+        // let dependencies = vec!["asdasd".to_string()];
+        // let external_dependencies = vec!["asdasdasidhasjd".to_string()];
+        // let function_metadata_cache = FunctionMetadataCache {
+        //     dependencies,
+        //     external_dependencies,
+        // };
+        // let json = json!({ metadata_id: function_metadata_cache });
+        // println!("{}", json);
+        // let pretty = serde_json::to_string_pretty(&json).unwrap();
+        // assert_fs::NamedTempFile::new(test_path).unwrap();
+        // fs::write(test_path, &pretty).unwrap();
+        //
+        // let read_value = fs::read_to_string(test_path).unwrap();
+        // let value: Value = serde_json::from_str(&read_value).unwrap();
+        // let f_val: FunctionMetadataCache =
+        //     serde_json::from_value(value[metadata_id].clone()).unwrap();
+        //
+        // println!("fval: {:#?}", f_val);
+        let dependency_cache_value = self.read_cache()?;
+        let updated_value = if dependency_cache_value.is_null() {
+            let function_metadata_cache = FunctionMetadataCache {
+                dependencies: dependency_id_vec,
+                external_dependencies: vec![],
+            };
+            json!(function_metadata_cache)
+        } else {
+            let mut function_metadata_cache: FunctionMetadataCache =
+                serde_json::from_value(dependency_cache_value)
+                    .into_report()
+                    .change_context(MetadataError)?;
+            for dependency_id in dependency_id_vec {
+                if !function_metadata_cache
+                    .dependencies
+                    .contains(&dependency_id)
+                {
+                    function_metadata_cache.dependencies.push(dependency_id);
+                };
+            }
+            json!(function_metadata_cache)
+        };
+        self.save_cache(updated_value)?;
+        Ok(())
+    }
+
+    pub fn save_external_dependency_cache(
+        &self,
+        external_dependencies_name_vec: Vec<String>,
+    ) -> MetadataResult<()> {
+        let dependency_cache_value = self.read_cache()?;
+        let updated_value = if dependency_cache_value.is_null() {
+            let function_metadata_cache = FunctionMetadataCache {
+                dependencies: vec![],
+                external_dependencies: external_dependencies_name_vec,
+            };
+            json!(function_metadata_cache)
+        } else {
+            let mut function_metadata_cache: FunctionMetadataCache =
+                serde_json::from_value(dependency_cache_value)
+                    .into_report()
+                    .change_context(MetadataError)?;
+            for ext_dep_vec in external_dependencies_name_vec {
+                if !function_metadata_cache
+                    .external_dependencies
+                    .contains(&ext_dep_vec)
+                {
+                    function_metadata_cache
+                        .external_dependencies
+                        .push(ext_dep_vec);
+                };
+            }
+            json!(function_metadata_cache)
+        };
+        self.save_cache(updated_value)?;
+        Ok(())
+    }
+
     fn assert_function_is_entrypoint(
         entry_path: &str,
         sonar_result: SonarResult,
@@ -171,21 +251,10 @@ impl FunctionMetadata {
         }
     }
 }
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
-pub enum FunctionMetadataCacheType {
-    Dependency,
-    ExternalDependency,
-}
-
-impl BatEnumerator for FunctionMetadataCacheType {}
-
-impl FunctionMetadataCacheType {
-    pub fn to_metadata_cache_content(&self, cache_values: Vec<String>) -> MetadataCacheContent {
-        MetadataCacheContent {
-            metadata_cache_content_type: self.to_snake_case(),
-            cache_values,
-        }
-    }
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FunctionMetadataCache {
+    dependencies: Vec<MetadataId>,
+    external_dependencies: Vec<String>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
@@ -266,9 +335,19 @@ pub fn get_function_body(function_content: &str) -> String {
     body.trim_end_matches('}').trim().to_string()
 }
 
-#[test]
-fn test_function_parse() {
-    let test_function = "pub(crate) fn get_function_metadata_from_file_info() -> Result<Vec<FunctionMetadata>, String> {
+#[cfg(debug_assertions)]
+
+mod test_function_metadata {
+    use crate::batbelt::metadata::functions_metadata::{
+        get_function_body, get_function_parameters, get_function_signature, FunctionMetadata,
+        FunctionMetadataCache, FunctionMetadataType,
+    };
+    use serde_json::{json, Value};
+    use std::fs;
+
+    #[test]
+    fn test_function_parse() {
+        let test_function = "pub(crate) fn get_function_metadata_from_file_info() -> Result<Vec<FunctionMetadata>, String> {
     let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
     let file_info_content = function_file_info.read_content().unwrap();
     let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
@@ -288,15 +367,16 @@ fn test_function_parse() {
     }
     Ok(function_metadata_vec)
 }";
-    let expected_function_signature = "pub(crate) fn get_function_metadata_from_file_info(
+        let expected_function_signature = "pub(crate) fn get_function_metadata_from_file_info(
     function_file_info: FileInfo,
     function_file_info2: FileInfo2,
 )";
-    let expected_function_parameters = vec![
-        "function_file_info: FileInfo".to_string(),
-        "function_file_info2: FileInfo2".to_string(),
-    ];
-    let expected_function_body = "let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
+        let expected_function_parameters = vec![
+            "function_file_info: FileInfo".to_string(),
+            "function_file_info2: FileInfo2".to_string(),
+        ];
+        let expected_function_body =
+            "let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
     let file_info_content = function_file_info.read_content().unwrap();
     let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
     let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
@@ -314,20 +394,43 @@ fn test_function_parse() {
         function_metadata_vec.push(function_metadata);
     }
     Ok(function_metadata_vec)";
-    let function_parameters = get_function_parameters(test_function.to_string());
-    assert_eq!(
-        expected_function_parameters, function_parameters,
-        "wrong parameters"
-    );
-    let function_body = get_function_body(test_function);
-    assert_eq!(expected_function_body, function_body, "wrong body");
-    let function_signature = get_function_signature(test_function);
-    assert_eq!(
-        expected_function_signature, function_signature,
-        "wrong signature"
-    );
+        let function_parameters = get_function_parameters(test_function.to_string());
+        assert_eq!(
+            expected_function_parameters, function_parameters,
+            "wrong parameters"
+        );
+        let function_body = get_function_body(test_function);
+        assert_eq!(expected_function_body, function_body, "wrong body");
+        let function_signature = get_function_signature(test_function);
+        assert_eq!(
+            expected_function_signature, function_signature,
+            "wrong signature"
+        );
+    }
+
+    #[test]
+    fn test_handle_cache() {
+        let test_path = "./test.json";
+        let metadata_id = "1234";
+        let dependencies = vec!["asdasd".to_string()];
+        let external_dependencies = vec!["asdasdasidhasjd".to_string()];
+        let function_metadata_cache = FunctionMetadataCache {
+            dependencies,
+            external_dependencies,
+        };
+        let json = json!({ metadata_id: function_metadata_cache });
+        println!("{}", json);
+        let pretty = serde_json::to_string_pretty(&json).unwrap();
+        assert_fs::NamedTempFile::new(test_path).unwrap();
+        fs::write(test_path, &pretty).unwrap();
+
+        let read_value = fs::read_to_string(test_path).unwrap();
+        let value: Value = serde_json::from_str(&read_value).unwrap();
+        let f_val: FunctionMetadataCache =
+            serde_json::from_value(value[metadata_id].clone()).unwrap();
+
+        let test = value["bad_key"].clone();
+
+        println!("fval: {:#?}", f_val);
+    }
 }
-
-#[test]
-
-fn test_parse_handler_in_entrypoint() {}

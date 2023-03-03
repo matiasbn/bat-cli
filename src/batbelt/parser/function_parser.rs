@@ -1,8 +1,8 @@
-use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataCacheType};
+use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, MetadataId};
 use crate::batbelt::parser::trait_parser::TraitParser;
-use crate::batbelt::parser::ParserError;
+use crate::batbelt::parser::{ParserError, ParserResult};
 
 use crate::batbelt::metadata::metadata_cache::{MetadataCache, MetadataCacheType};
 use error_stack::{Report, Result, ResultExt};
@@ -64,19 +64,18 @@ impl FunctionParser {
             "new_function_parser_with_dependencies:\n{:#?}",
             new_function_parser
         );
-        let _dependencies_metadata_cache_content = FunctionMetadataCacheType::Dependency
-            .to_metadata_cache_content(new_function_parser.dependencies.clone());
-        let _extern_dep_metadata_cache_content = FunctionMetadataCacheType::ExternalDependency
-            .to_metadata_cache_content(new_function_parser.external_dependencies.clone());
-        // new_function_parser
-        //     .function_metadata
-        //     .save_cache(dependencies_metadata_cache_content)
-        //     .change_context(ParserError)?;
-        // new_function_parser
-        //     .function_metadata
-        //     .save_cache(extern_dep_metadata_cache_content)
-        //     .change_context(ParserError)?;
+        new_function_parser.save_function_metadata_cache()?;
         Ok(new_function_parser)
+    }
+
+    fn save_function_metadata_cache(&self) -> ParserResult<()> {
+        self.function_metadata
+            .save_dependency_cache(self.dependencies.clone())
+            .change_context(ParserError)?;
+        self.function_metadata
+            .save_external_dependency_cache(self.external_dependencies.clone())
+            .change_context(ParserError)?;
+        Ok(())
     }
 
     pub fn new_from_metadata(
@@ -204,26 +203,21 @@ impl FunctionParser {
                 .collect::<Vec<_>>();
             if !dependency_function_metadata_vec.clone().is_empty() {
                 for dependency_metadata in dependency_function_metadata_vec.clone() {
-                    let mut function_metadata_cache = MetadataCache::new(
-                        dependency_metadata.metadata_id.clone(),
-                        MetadataCacheType::Function,
-                    );
-                    match function_metadata_cache.read_cache_by_id() {
-                        // already
-                        Ok(_) => {
-                            dependency_function_metadata_id_vec
-                                .push(dependency_metadata.metadata_id);
-                        }
-                        Err(_) => {
-                            let function_parser = dependency_metadata
-                                .to_function_parser(
-                                    Some(function_metadata.clone()),
-                                    Some(trait_impl_parser_vec.clone()),
-                                )
-                                .change_context(ParserError)?;
-                            dependency_function_metadata_id_vec
-                                .push(function_parser.function_metadata.metadata_id);
-                        }
+                    if !dependency_metadata
+                        .read_cache()
+                        .change_context(ParserError)?
+                        .is_null()
+                    {
+                        dependency_function_metadata_id_vec.push(dependency_metadata.metadata_id);
+                    } else {
+                        let function_parser = dependency_metadata
+                            .to_function_parser(
+                                Some(function_metadata.clone()),
+                                Some(trait_impl_parser_vec.clone()),
+                            )
+                            .change_context(ParserError)?;
+                        dependency_function_metadata_id_vec
+                            .push(function_parser.function_metadata.metadata_id);
                     }
                 }
             } else {

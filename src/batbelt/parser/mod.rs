@@ -1,4 +1,5 @@
 use colored::Colorize;
+use error_stack::Result;
 use std::error::Error;
 use std::fmt;
 
@@ -19,6 +20,8 @@ impl fmt::Display for ParserError {
 }
 
 impl Error for ParserError {}
+
+pub type ParserResult<T> = Result<T, ParserError>;
 
 pub fn parse_formatted_path(name: String, path: String, start_line_index: usize) -> String {
     format!(

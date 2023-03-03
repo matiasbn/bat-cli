@@ -191,16 +191,20 @@ where
 
     fn metadata_name() -> String;
 
-    fn value_to_vec_string(value: Value) -> Vec<String> {
-        value
+    fn value_to_vec_string(value: Value) -> MetadataResult<Vec<String>> {
+        Ok(value
             .as_array()
-            .unwrap()
+            .ok_or(MetadataError)
+            .into_report()?
             .iter()
-            .map(|val| val.as_str().unwrap().to_string())
-            .collect::<Vec<String>>()
+            .map(|val| val.as_str().ok_or(MetadataError).into_report())
+            .collect::<Result<Vec<_>, MetadataError>>()?
+            .into_iter()
+            .map(|val| val.to_string())
+            .collect::<Vec<_>>())
     }
 
-    fn read_cache_key(&self, cache_key: &str) -> MetadataResult<Value> {
+    fn read_cache(&self) -> MetadataResult<Value> {
         let file_content = self
             .get_cache_bat_file()
             .read_content(false)
@@ -208,11 +212,11 @@ where
         let file_value: Value = serde_json::from_str(&file_content)
             .into_report()
             .change_context(MetadataError)?;
-        let value = file_value[cache_key].clone();
+        let value = file_value[&self.metadata_id()].clone();
         Ok(value)
     }
 
-    fn save_cache_key(&self, cache_key: &str, cache_value: Value) -> MetadataResult<()> {
+    fn save_cache(&self, cache_value: Value) -> MetadataResult<()> {
         let file_content = self
             .get_cache_bat_file()
             .read_content(false)
@@ -220,7 +224,7 @@ where
         let mut file_value: Value = serde_json::from_str(&file_content)
             .into_report()
             .change_context(MetadataError)?;
-        file_value[cache_key] = cache_value;
+        file_value[&self.metadata_id()] = cache_value;
         let new_value = serde_json::to_string_pretty(&file_value)
             .into_report()
             .change_context(MetadataError)?;

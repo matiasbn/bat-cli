@@ -145,6 +145,20 @@ impl TemplateGenerator {
         for metadata_path in metadata_types_path {
             execute_command("touch", &[&metadata_path], false).change_context(TemplateError)?;
         }
+
+        let metadata_cache_path = BatMetadataType::get_type_vec()
+            .into_iter()
+            .map(|meta_type| {
+                meta_type
+                    .get_cache_file()
+                    .get_path(false)
+                    .change_context(TemplateError)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for metadata_path in metadata_cache_path {
+            println!("metadata cachae{}", metadata_path);
+            execute_command("touch", &[&metadata_path], false).change_context(TemplateError)?;
+        }
         Ok(())
     }
 
@@ -304,6 +318,7 @@ impl TemplatePlaceholder {
 
 #[cfg(debug_assertions)]
 mod template_test {
+    use crate::batbelt::templates::TemplateGenerator;
 
     #[test]
     fn test_get_gitignore_content() {
