@@ -3,8 +3,9 @@ use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::{SonarResult, SonarResultType};
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CAAccountAttributeInfo {
     pub content: String,
     pub is_pda: bool,
@@ -13,7 +14,7 @@ pub struct CAAccountAttributeInfo {
     pub seeds: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CAAccountTypeInfo {
     pub content: String,
     pub solana_account_type: SolanaAccountType,
@@ -22,7 +23,7 @@ pub struct CAAccountTypeInfo {
     pub lifetime_name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CAAccountParser {
     pub name: String,
     pub account_attribute_info: CAAccountAttributeInfo,

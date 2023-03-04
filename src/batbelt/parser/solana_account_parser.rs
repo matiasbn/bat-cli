@@ -3,8 +3,9 @@ use crate::batbelt::metadata::BatMetadataParser;
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::SonarResult;
 use error_stack::{Result, ResultExt};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter, Serialize, Deserialize)]
 pub enum SolanaAccountType {
     TokenAccount,
     Mint,

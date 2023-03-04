@@ -1,9 +1,10 @@
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, MetadataId};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId, MetadataResult};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::parser::{ParserError, ParserResult};
 
+use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
@@ -63,19 +64,17 @@ impl FunctionParser {
             "new_function_parser_with_dependencies:\n{:#?}",
             new_function_parser
         );
-        // new_function_parser.save_function_metadata_cache()?;
+        let function_dependencies_metadata = FunctionDependenciesMetadata::new(
+            BatMetadata::create_metadata_id(),
+            new_function_parser.function_metadata.metadata_id.clone(),
+            new_function_parser.dependencies.clone(),
+            new_function_parser.external_dependencies.clone(),
+        );
+        function_dependencies_metadata
+            .update_metadata_file()
+            .change_context(ParserError)?;
         Ok(new_function_parser)
     }
-
-    // fn save_function_metadata_cache(&self) -> ParserResult<()> {
-    //     self.function_metadata
-    //         .save_dependency_cache(self.dependencies.clone())
-    //         .change_context(ParserError)?;
-    //     self.function_metadata
-    //         .save_external_dependency_cache(self.external_dependencies.clone())
-    //         .change_context(ParserError)?;
-    //     Ok(())
-    // }
 
     pub fn new_from_metadata(
         function_metadata: FunctionMetadata,
@@ -193,7 +192,7 @@ impl FunctionParser {
                     .any(|dep_metadata_id| dep_metadata_id == f_meta.metadata_id.clone())
             })
             .collect::<Vec<_>>();
-
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         for dependency_function_name in dependency_function_names_vec {
             let dependency_function_metadata_vec = filtered_function_metadata_vec
                 .clone()
@@ -202,22 +201,22 @@ impl FunctionParser {
                 .collect::<Vec<_>>();
             if !dependency_function_metadata_vec.clone().is_empty() {
                 for dependency_metadata in dependency_function_metadata_vec.clone() {
-                    // if !dependency_metadata
-                    //     .read_cache()
-                    //     .change_context(ParserError)?
-                    //     .is_null()
-                    // {
-                    //     dependency_function_metadata_id_vec.push(dependency_metadata.metadata_id);
-                    // } else {
-                    let function_parser = dependency_metadata
-                        .to_function_parser(
-                            Some(function_metadata.clone()),
-                            Some(trait_impl_parser_vec.clone()),
-                        )
-                        .change_context(ParserError)?;
-                    dependency_function_metadata_id_vec
-                        .push(function_parser.function_metadata.metadata_id);
-                    // }
+                    match bat_metadata.get_functions_dependencies_metadata_by_function_metadata_id(
+                        dependency_metadata.metadata_id.clone(),
+                    ) {
+                        Ok(f_dep_metadata) => dependency_function_metadata_id_vec
+                            .push(f_dep_metadata.function_metadata_id.clone()),
+                        Err(_) => {
+                            let function_parser = dependency_metadata
+                                .to_function_parser(
+                                    Some(function_metadata.clone()),
+                                    Some(trait_impl_parser_vec.clone()),
+                                )
+                                .change_context(ParserError)?;
+                            dependency_function_metadata_id_vec
+                                .push(function_parser.function_metadata.metadata_id);
+                        }
+                    }
                 }
             } else {
                 self.external_dependencies.push(dependency_function_name);

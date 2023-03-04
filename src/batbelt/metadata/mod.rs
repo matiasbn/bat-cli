@@ -1,4 +1,5 @@
 pub mod entrypoint_metadata;
+pub mod function_dependencies_metadata;
 pub mod functions_metadata;
 pub mod structs_metadata;
 pub mod traits_metadata;
@@ -18,6 +19,7 @@ use inflector::Inflector;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
+use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
@@ -53,6 +55,8 @@ enum MetadataErrorReports {
     MetadataIdNotFound { metadata_id: MetadataId },
     EntryPointsMetadataNotInitialized,
     EntryPointNameNotFound { entry_point_name: String },
+    FunctionDependenciesMetadataNotInitialized,
+    FunctionDependenciesNotFound { function_metadata_id: MetadataId },
 }
 
 impl MetadataErrorReports {
@@ -70,6 +74,17 @@ impl MetadataErrorReports {
                     entry_point_name.red()
                 )
             }
+            MetadataErrorReports::FunctionDependenciesMetadataNotInitialized => {
+                format!("Function dependencies metadata has not been initialized")
+            }
+            MetadataErrorReports::FunctionDependenciesNotFound {
+                function_metadata_id,
+            } => {
+                format!(
+                    "Entry point metadata not found for {} id",
+                    function_metadata_id.red()
+                )
+            }
         };
         Report::new(MetadataError).attach_printable(message)
     }
@@ -79,6 +94,7 @@ impl MetadataErrorReports {
 pub struct BatMetadata {
     pub source_code: SourceCodeMetadata,
     pub entry_points: Vec<EntrypointMetadata>,
+    pub function_dependencies: Vec<FunctionDependenciesMetadata>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -172,6 +188,7 @@ impl BatMetadata {
                 traits: vec![],
             },
             entry_points: vec![],
+            function_dependencies: vec![],
         }
     }
 
@@ -232,6 +249,29 @@ impl BatMetadata {
                     .get_error_report(),
             ),
             Some(ep) => Ok(ep),
+        }
+    }
+
+    pub fn get_functions_dependencies_metadata_by_function_metadata_id(
+        &self,
+        function_metadata_id: String,
+    ) -> MetadataResult<FunctionDependenciesMetadata> {
+        if self.function_dependencies.is_empty() {
+            return Err(
+                MetadataErrorReports::FunctionDependenciesMetadataNotInitialized.get_error_report(),
+            );
+        }
+        match self
+            .function_dependencies
+            .clone()
+            .into_iter()
+            .find(|ep| ep.function_metadata_id == function_metadata_id)
+        {
+            None => Err(MetadataErrorReports::FunctionDependenciesNotFound {
+                function_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
         }
     }
 
