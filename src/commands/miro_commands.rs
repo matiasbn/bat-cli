@@ -5,7 +5,7 @@ use colored::{ColoredString, Colorize};
 use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
 };
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_source_code_metadata::{
@@ -830,10 +830,8 @@ impl MiroCommand {
 
     async fn function_action(&self, _select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
-        let function_metadata_vec = FunctionSourceCodeMetadata::get_filtered_metadata(None, None)
-            .change_context(CommandError)?;
-        let trait_impl_parser_vec = TraitSourceCodeMetadata::get_trait_parser_vec(None, None)
-            .change_context(CommandError)?;
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        let function_metadata_vec = bat_metadata.source_code.functions_source_code.clone();
         let mut keep_deploying = true;
         let mut deployed_dependencies: Vec<(MiroImage, FunctionSourceCodeMetadata)> = vec![];
         let mut pending_to_check: Vec<FunctionSourceCodeMetadata> = vec![];
@@ -872,26 +870,11 @@ impl MiroCommand {
                     parent_function,
                     miro_image,
                     selected_miro_frame.clone(),
-                    function_metadata_vec.clone(),
-                    trait_impl_parser_vec.clone(),
                     &mut deployed_dependencies,
                     &mut pending_to_check,
                 )
                 .await?;
             }
-
-            // function_metadata_vec = function_metadata_vec
-            //     .clone()
-            //     .into_iter()
-            //     .filter(|dep| {
-            //         !deployed_dependencies
-            //             .clone()
-            //             .into_iter()
-            //             .map(|dep| dep.1)
-            //             .collect::<Vec<_>>()
-            //             .contains(dep)
-            //     })
-            //     .collect::<Vec<_>>();
 
             let prompt_text = format!(
                 "Do you want to {} in the {} frame?",
@@ -909,8 +892,6 @@ impl MiroCommand {
         parent_function: FunctionSourceCodeMetadata,
         parent_function_image: Option<MiroImage>,
         selected_miro_frame: MiroFrame,
-        function_metadata_vec: Vec<FunctionSourceCodeMetadata>,
-        trait_impl_parser_vec: Vec<TraitParser>,
         deployed_dependencies: &mut Vec<(MiroImage, FunctionSourceCodeMetadata)>,
         pending_to_check: &mut Vec<FunctionSourceCodeMetadata>,
     ) -> Result<(), CommandError> {

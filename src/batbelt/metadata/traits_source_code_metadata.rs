@@ -3,7 +3,7 @@ use crate::batbelt::path::BatFile;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataId};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType, MetadataId};
 
 use crate::batbelt::parser::trait_parser::TraitParser;
 use error_stack::{Result, ResultExt};
@@ -116,11 +116,10 @@ impl TraitSourceCodeMetadata {
         TraitParser::new_from_metadata(self.clone()).change_context(MetadataError)
     }
 
-    pub fn get_trait_parser_vec(
-        trait_name: Option<&str>,
-        trait_type: Option<TraitMetadataType>,
-    ) -> Result<Vec<TraitParser>, MetadataError> {
-        Self::get_filtered_metadata(trait_name, trait_type)?
+    pub fn get_trait_parser_vec() -> Result<Vec<TraitParser>, MetadataError> {
+        BatMetadata::read_metadata()?
+            .source_code
+            .traits_source_code
             .into_iter()
             .map(|impl_meta| impl_meta.to_trait_impl_parser())
             .collect::<Result<Vec<_>, MetadataError>>()
