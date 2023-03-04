@@ -1,10 +1,20 @@
-use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
-use crate::batbelt::metadata::BatMetadataParser;
+use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::SonarResult;
 use error_stack::{Result, ResultExt};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 pub enum SolanaAccountType {
     TokenAccount,
     Mint,
@@ -35,13 +45,13 @@ impl SolanaAccountType {
             return Ok(Self::Mint);
         }
 
-        let solana_accounts_metadata =
-            StructMetadata::get_filtered_metadata(None, Some(StructMetadataType::SolanaAccount))
-                .change_context(ParserError)?;
-        if solana_accounts_metadata
+        let mut solana_accounts_metadata = BatMetadata::read_metadata()
+            .change_context(ParserError)?
+            .source_code
+            .structs_source_code
             .into_iter()
-            .any(|solana_account| last_line.contains(&solana_account.name))
-        {
+            .filter(|s_metda| s_metda.struct_type == StructMetadataType::SolanaAccount);
+        if solana_accounts_metadata.any(|solana_account| last_line.contains(&solana_account.name)) {
             return Ok(Self::ProgramStateAccount);
         }
 

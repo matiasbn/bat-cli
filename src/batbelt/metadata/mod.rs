@@ -1,24 +1,39 @@
-pub mod functions_metadata;
-pub mod metadata_cache;
-pub mod structs_metadata;
-pub mod traits_metadata;
+pub mod code_overhaul_metadata;
+pub mod context_accounts_metadata;
+pub mod entrypoint_metadata;
+pub mod function_dependencies_metadata;
+pub mod functions_source_code_metadata;
+pub mod miro_metadata;
+pub mod structs_source_code_metadata;
+pub mod trait_metadata;
+pub mod traits_source_code_metadata;
 
 use colored::Colorize;
 use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display};
-use std::path::Path;
 
-use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
-
-use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::path::BatFile;
 
 use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
-use crate::batbelt::metadata::metadata_cache::{MetadataCacheContent, MetadataCacheType};
-
+use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulMetadata;
+use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
+use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
+use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::{
+    FunctionMetadataType, FunctionSourceCodeMetadata,
+};
+use crate::batbelt::metadata::miro_metadata::MiroCodeOverhaulMetadata;
+use crate::batbelt::metadata::structs_source_code_metadata::{
+    StructMetadataType, StructSourceCodeMetadata,
+};
+use crate::batbelt::metadata::trait_metadata::TraitMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::{
+    TraitMetadataType, TraitSourceCodeMetadata,
+};
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
@@ -27,7 +42,8 @@ use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+
+use serde_json::{json, Value};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
@@ -42,40 +58,486 @@ impl fmt::Display for MetadataError {
 
 impl Error for MetadataError {}
 
-pub struct BatMetadata;
-
 pub type MetadataResult<T> = Result<T, MetadataError>;
 
 pub type MetadataId = String;
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BatMetadata {
+    pub initialized: bool,
+    pub source_code: SourceCodeMetadata,
+    pub entry_points: Vec<EntrypointMetadata>,
+    pub function_dependencies: Vec<FunctionDependenciesMetadata>,
+    pub traits: Vec<TraitMetadata>,
+    pub context_accounts: Vec<ContextAccountsMetadata>,
+    pub miro: MiroMetadata,
+    pub code_overhaul: Vec<CodeOverhaulMetadata>,
+}
+
 impl BatMetadata {
-    pub fn metadata_is_initialized() -> Result<bool, MetadataError> {
-        let mut metadata_initialized = true;
-        for metadata_type in BatMetadataType::get_type_vec() {
-            let section_initialized = metadata_type.is_initialized()?;
-            if !section_initialized {
-                metadata_initialized = false;
-            }
+    pub fn new_empty() -> Self {
+        Self {
+            initialized: false,
+            source_code: SourceCodeMetadata {
+                functions_source_code: vec![],
+                structs_source_code: vec![],
+                traits_source_code: vec![],
+            },
+            entry_points: vec![],
+            function_dependencies: vec![],
+            traits: vec![],
+            context_accounts: vec![],
+            miro: MiroMetadata {
+                code_overhaul: vec![],
+            },
+            code_overhaul: vec![],
         }
-        Ok(metadata_initialized)
     }
 
-    pub fn check_metadata_is_initialized() -> Result<(), MetadataError> {
-        let metadata_types = BatMetadataType::get_type_vec();
-        // check file exists
-        for metadata_type in metadata_types.clone() {
-            if !Path::new(&metadata_type.get_path()?).is_file() {
-                return Err(Report::new(MetadataError).attach_printable(format!(
-                    "Metadata file not found: {}",
-                    metadata_type.get_path()?
-                )));
-            }
+    pub fn create_metadata_id() -> String {
+        let s: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect();
+        s
+    }
+
+    pub fn read_metadata() -> MetadataResult<Self> {
+        let metadata_json_bat_file = BatFile::BatMetadataFile;
+        let bat_metadata_value: Value = serde_json::from_str(
+            &metadata_json_bat_file
+                .read_content(true)
+                .change_context(MetadataError)?,
+        )
+        .into_report()
+        .change_context(MetadataError)?;
+        let bat_metadata: BatMetadata = serde_json::from_value(bat_metadata_value)
+            .into_report()
+            .change_context(MetadataError)?;
+        Ok(bat_metadata)
+    }
+
+    pub fn save_metadata(&self) -> MetadataResult<()> {
+        let metadata_json_bat_file = BatFile::BatMetadataFile;
+        // metadata_json_bat_file
+        //     .create_empty(false)
+        //     .change_context(MetadataError)?;
+        let metadata_json = json!(&self);
+        let metadata_json_pretty = serde_json::to_string_pretty(&metadata_json)
+            .into_report()
+            .change_context(MetadataError)?;
+        metadata_json_bat_file
+            .write_content(false, &metadata_json_pretty)
+            .change_context(MetadataError)?;
+        Ok(())
+    }
+
+    pub fn get_entrypoint_metadata_by_name(
+        &self,
+        entry_point_name: String,
+    ) -> MetadataResult<EntrypointMetadata> {
+        if self.entry_points.is_empty() {
+            return Err(MetadataErrorReports::EntryPointsMetadataNotInitialized.get_error_report());
         }
-        // check markdown exists
-        for metadata_type in metadata_types {
-            metadata_type.check_is_initialized()?;
+        match self
+            .entry_points
+            .clone()
+            .into_iter()
+            .find(|ep| ep.name == entry_point_name)
+        {
+            None => Err(
+                MetadataErrorReports::EntryPointNameNotFound { entry_point_name }
+                    .get_error_report(),
+            ),
+            Some(ep) => Ok(ep),
+        }
+    }
+
+    pub fn get_functions_dependencies_metadata_by_function_metadata_id(
+        &self,
+        function_metadata_id: String,
+    ) -> MetadataResult<FunctionDependenciesMetadata> {
+        if self.function_dependencies.is_empty() {
+            return Err(
+                MetadataErrorReports::FunctionDependenciesMetadataNotInitialized.get_error_report(),
+            );
+        }
+        match self
+            .function_dependencies
+            .clone()
+            .into_iter()
+            .find(|ep| ep.function_metadata_id == function_metadata_id)
+        {
+            None => Err(MetadataErrorReports::FunctionDependenciesNotFound {
+                function_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn get_trait_metadata_by_trait_source_code_metadata_id(
+        &self,
+        trait_source_code_metadata_id: String,
+    ) -> MetadataResult<TraitMetadata> {
+        if self.function_dependencies.is_empty() {
+            return Err(MetadataErrorReports::TraitsMetadataNotInitialized.get_error_report());
+        }
+        match self
+            .traits
+            .clone()
+            .into_iter()
+            .find(|meta| meta.trait_source_code_metadata_id == trait_source_code_metadata_id)
+        {
+            None => Err(MetadataErrorReports::TraitNotFound {
+                trait_source_code_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn get_context_accounts_metadata_by_struct_source_code_metadata_id(
+        &self,
+        struct_source_code_metadata_id: String,
+    ) -> MetadataResult<ContextAccountsMetadata> {
+        if self.context_accounts.is_empty() {
+            return Err(
+                MetadataErrorReports::ContextAccountsMetadataNotInitialized.get_error_report()
+            );
+        }
+        match self
+            .context_accounts
+            .clone()
+            .into_iter()
+            .find(|meta| meta.struct_source_code_metadata_id == struct_source_code_metadata_id)
+        {
+            None => Err(MetadataErrorReports::ContextAccountsNotFound {
+                struct_source_code_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn get_code_overhaul_metadata_by_entry_point_name(
+        &self,
+        entry_point_name: String,
+    ) -> MetadataResult<CodeOverhaulMetadata> {
+        if self.code_overhaul.is_empty() {
+            return Err(
+                MetadataErrorReports::ContextAccountsMetadataNotInitialized.get_error_report()
+            );
+        }
+        match self
+            .code_overhaul
+            .clone()
+            .into_iter()
+            .find(|meta| meta.entry_point_name == entry_point_name)
+        {
+            None => Err(MetadataErrorReports::ContextAccountsNotFound {
+                struct_source_code_metadata_id: entry_point_name,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn check_metadata_is_initialized(&self) -> Result<(), MetadataError> {
+        if !self.initialized {
+            return Err(MetadataErrorReports::MetadataNotInitialized
+                .get_error_report()
+                .attach(Suggestion(format!(
+                    "Initialize Metadata by running {}",
+                    "bat-cli sonar".green()
+                ))));
         }
         Ok(())
+    }
+}
+
+enum MetadataErrorReports {
+    MetadataNotInitialized,
+    MetadataIdNotFound {
+        metadata_id: MetadataId,
+    },
+    EntryPointsMetadataNotInitialized,
+    EntryPointNameNotFound {
+        entry_point_name: String,
+    },
+    FunctionDependenciesMetadataNotInitialized,
+    FunctionDependenciesNotFound {
+        function_metadata_id: MetadataId,
+    },
+    TraitsMetadataNotInitialized,
+    TraitNotFound {
+        trait_source_code_metadata_id: MetadataId,
+    },
+    ContextAccountsMetadataNotInitialized,
+    ContextAccountsNotFound {
+        struct_source_code_metadata_id: MetadataId,
+    },
+    MiroCodeOverhaulMetadataNotInitialized,
+    MiroCodeOverhaulMetadataNotFound {
+        entry_point_name: String,
+    },
+}
+
+impl MetadataErrorReports {
+    pub fn get_error_report(&self) -> Report<MetadataError> {
+        let initialize_suggestion = Suggestion(format!(
+            "Initialize the BatMetadata by running {}",
+            "bat-cli sonar".green()
+        ));
+
+        let message = match self {
+            MetadataErrorReports::MetadataNotInitialized => {
+                "Metadata is not initialized".to_string()
+            }
+            MetadataErrorReports::MetadataIdNotFound { metadata_id } => {
+                format!("Metadata not found for {}", metadata_id.red())
+            }
+            MetadataErrorReports::EntryPointsMetadataNotInitialized => {
+                "Entry point metadata has not been initialized".to_string()
+            }
+            MetadataErrorReports::EntryPointNameNotFound { entry_point_name } => {
+                format!(
+                    "Entry point metadata not found for {}",
+                    entry_point_name.red()
+                )
+            }
+            MetadataErrorReports::FunctionDependenciesMetadataNotInitialized => {
+                "Function dependencies metadata has not been initialized".to_string()
+            }
+            MetadataErrorReports::FunctionDependenciesNotFound {
+                function_metadata_id,
+            } => {
+                format!(
+                    "Entry point metadata not found for {} id",
+                    function_metadata_id.red()
+                )
+            }
+            MetadataErrorReports::TraitsMetadataNotInitialized => {
+                "Traits metadata has not been initialized".to_string()
+            }
+            MetadataErrorReports::TraitNotFound {
+                trait_source_code_metadata_id: trait_metadata_id,
+            } => {
+                format!(
+                    "Trait metadata not found for {} id",
+                    trait_metadata_id.red()
+                )
+            }
+            MetadataErrorReports::ContextAccountsMetadataNotInitialized => {
+                "Context accounts metadata has not been initialized".to_string()
+            }
+            MetadataErrorReports::ContextAccountsNotFound {
+                struct_source_code_metadata_id,
+            } => {
+                format!(
+                    "Context accounts metadata not found for {} id",
+                    struct_source_code_metadata_id.red()
+                )
+            }
+            MetadataErrorReports::MiroCodeOverhaulMetadataNotInitialized => {
+                "Miro code-overhaul's metadata has not been initialized".to_string()
+            }
+            MetadataErrorReports::MiroCodeOverhaulMetadataNotFound { entry_point_name } => {
+                format!(
+                    "Miro code-overhaul's metadata not found for {:#?} entry point",
+                    entry_point_name.red()
+                )
+            }
+        };
+        Report::new(MetadataError)
+            .attach_printable(message)
+            .attach(initialize_suggestion)
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MiroMetadata {
+    pub code_overhaul: Vec<MiroCodeOverhaulMetadata>,
+}
+
+impl MiroMetadata {
+    pub fn new(code_overhaul: Vec<MiroCodeOverhaulMetadata>) -> Self {
+        Self { code_overhaul }
+    }
+
+    pub fn get_co_metadata_by_entrypoint_name(
+        entry_point_name: String,
+    ) -> MetadataResult<MiroCodeOverhaulMetadata> {
+        let bat_metadata = BatMetadata::read_metadata()?;
+        if bat_metadata.miro.code_overhaul.is_empty() {
+            return Err(
+                MetadataErrorReports::MiroCodeOverhaulMetadataNotInitialized.get_error_report()
+            );
+        }
+        match bat_metadata
+            .miro
+            .code_overhaul
+            .into_iter()
+            .find(|meta| meta.entry_point_name == entry_point_name)
+        {
+            None => {
+                Err(
+                    MetadataErrorReports::MiroCodeOverhaulMetadataNotFound { entry_point_name }
+                        .get_error_report(),
+                )
+            }
+            Some(co_meta) => Ok(co_meta),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SourceCodeMetadata {
+    pub functions_source_code: Vec<FunctionSourceCodeMetadata>,
+    pub structs_source_code: Vec<StructSourceCodeMetadata>,
+    pub traits_source_code: Vec<TraitSourceCodeMetadata>,
+}
+
+impl SourceCodeMetadata {
+    pub fn get_function_by_id(
+        &self,
+        metadata_id: MetadataId,
+    ) -> MetadataResult<FunctionSourceCodeMetadata> {
+        let result = self
+            .functions_source_code
+            .clone()
+            .into_iter()
+            .find(|meta| meta.metadata_id == metadata_id);
+        match result {
+            Some(f_metadata) => Ok(f_metadata),
+            None => {
+                Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
+            }
+        }
+    }
+
+    pub fn get_struct_by_id(
+        &self,
+        metadata_id: MetadataId,
+    ) -> MetadataResult<StructSourceCodeMetadata> {
+        let result = self
+            .structs_source_code
+            .clone()
+            .into_iter()
+            .find(|meta| meta.metadata_id == metadata_id);
+        match result {
+            Some(metadata) => Ok(metadata),
+            None => {
+                Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
+            }
+        }
+    }
+
+    pub fn get_trait_by_id(
+        &self,
+        metadata_id: MetadataId,
+    ) -> MetadataResult<TraitSourceCodeMetadata> {
+        let result = self
+            .traits_source_code
+            .clone()
+            .into_iter()
+            .find(|meta| meta.metadata_id == metadata_id);
+        match result {
+            Some(metadata) => Ok(metadata),
+            None => {
+                Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
+            }
+        }
+    }
+
+    pub fn update_functions(&self, new_vec: Vec<FunctionSourceCodeMetadata>) -> MetadataResult<()> {
+        let mut bat_metadata = BatMetadata::read_metadata()?;
+        let mut metadata_vec = new_vec;
+        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
+        bat_metadata.source_code.functions_source_code = metadata_vec;
+        bat_metadata.save_metadata()?;
+        Ok(())
+    }
+
+    pub fn update_structs(&self, new_vec: Vec<StructSourceCodeMetadata>) -> MetadataResult<()> {
+        let mut bat_metadata = BatMetadata::read_metadata()?;
+        let mut metadata_vec = new_vec;
+        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
+        bat_metadata.source_code.structs_source_code = metadata_vec;
+        bat_metadata.save_metadata()?;
+        Ok(())
+    }
+    pub fn update_traits(&self, new_vec: Vec<TraitSourceCodeMetadata>) -> MetadataResult<()> {
+        let mut bat_metadata = BatMetadata::read_metadata()?;
+        let mut metadata_vec = new_vec;
+        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
+        bat_metadata.source_code.traits_source_code = metadata_vec;
+        bat_metadata.save_metadata()?;
+        Ok(())
+    }
+
+    pub fn get_filtered_structs(
+        struct_name: Option<String>,
+        struct_type: Option<StructMetadataType>,
+    ) -> MetadataResult<Vec<StructSourceCodeMetadata>> {
+        Ok(BatMetadata::read_metadata()?
+            .source_code
+            .structs_source_code
+            .into_iter()
+            .filter(|struct_metadata| {
+                if struct_name.is_some() && struct_name.clone().unwrap() != struct_metadata.name {
+                    return false;
+                };
+                if struct_type.is_some() && struct_type.unwrap() != struct_metadata.struct_type {
+                    return false;
+                };
+                true
+            })
+            .collect::<Vec<_>>())
+    }
+
+    pub fn get_filtered_functions(
+        function_name: Option<String>,
+        function_type: Option<FunctionMetadataType>,
+    ) -> MetadataResult<Vec<FunctionSourceCodeMetadata>> {
+        Ok(BatMetadata::read_metadata()?
+            .source_code
+            .functions_source_code
+            .into_iter()
+            .filter(|function_metadata| {
+                if function_name.is_some()
+                    && function_name.clone().unwrap() != function_metadata.name
+                {
+                    return false;
+                };
+                if function_type.is_some()
+                    && function_type.unwrap() != function_metadata.function_type
+                {
+                    return false;
+                };
+                true
+            })
+            .collect::<Vec<_>>())
+    }
+    pub fn get_filtered_traits(
+        trait_name: Option<String>,
+        trait_type: Option<TraitMetadataType>,
+    ) -> MetadataResult<Vec<TraitSourceCodeMetadata>> {
+        Ok(BatMetadata::read_metadata()?
+            .source_code
+            .traits_source_code
+            .into_iter()
+            .filter(|trait_metadata| {
+                if trait_name.is_some() && trait_name.clone().unwrap() != trait_metadata.name {
+                    return false;
+                };
+                if trait_type.is_some() && trait_type.unwrap() != trait_metadata.trait_type {
+                    return false;
+                };
+                true
+            })
+            .collect::<Vec<_>>())
     }
 }
 
@@ -98,64 +560,6 @@ pub enum BatMetadataType {
 }
 
 impl BatMetadataType {
-    pub fn get_path(&self) -> Result<String, MetadataError> {
-        let path = match self {
-            BatMetadataType::Struct => BatFile::StructsMetadataFile
-                .get_path(false)
-                .change_context(MetadataError)?,
-            BatMetadataType::Function => BatFile::FunctionsMetadataFile
-                .get_path(false)
-                .change_context(MetadataError)?,
-            BatMetadataType::Trait => BatFile::TraitsMetadataFile
-                .get_path(false)
-                .change_context(MetadataError)?,
-        };
-        Ok(path)
-    }
-
-    pub fn get_cache_file(&self) -> BatFile {
-        BatFile::MetadataCacheFile {
-            metadata_cache_type: *self,
-        }
-    }
-
-    pub fn get_markdown(&self) -> Result<MarkdownFile, MetadataError> {
-        let file_path = self.get_path()?;
-        log::debug!("markdown file path: {}", file_path);
-        let markdown_file = MarkdownFile::new(&file_path).change_context(MetadataError)?;
-        Ok(markdown_file)
-    }
-
-    pub fn get_markdown_sections_from_metadata_file(
-        &self,
-    ) -> Result<Vec<MarkdownSection>, MetadataError> {
-        let markdown_file = self.get_markdown()?;
-        if markdown_file.sections.is_empty() {
-            return Err(Report::new(MetadataError)
-                .attach_printable(format!("Markdown file is empty:\n{:#?}", markdown_file)));
-        }
-        Ok(markdown_file.sections)
-    }
-
-    pub fn is_initialized(&self) -> Result<bool, MetadataError> {
-        let markdown = self.get_markdown()?;
-        Ok(!markdown.sections.is_empty())
-    }
-
-    pub fn check_is_initialized(&self) -> Result<(), MetadataError> {
-        if !self.is_initialized()? {
-            return Err(Report::new(MetadataError)
-                .attach_printable(format!(
-                    "{} metadata is required to be initialized to execute this action",
-                    self.to_string().red()
-                ))
-                .attach(Suggestion(format!(
-                    "run {} to initialize the metadata file",
-                    "bat-cli sonar".green()
-                ))));
-        }
-        Ok(())
-    }
     pub fn prompt_metadata_type_selection() -> Result<Self, MetadataError> {
         let metadata_types_vec = BatMetadataType::get_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
@@ -176,57 +580,24 @@ where
     fn name(&self) -> String;
     fn path(&self) -> String;
     fn metadata_id(&self) -> MetadataId;
-    fn metadata_cache_type() -> MetadataCacheType;
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
     fn metadata_sub_type(&self) -> U;
     fn get_bat_metadata_type() -> BatMetadataType;
-    fn get_bat_file() -> BatFile;
-
-    fn get_cache_bat_file(&self) -> BatFile {
-        BatFile::MetadataCacheFile {
-            metadata_cache_type: Self::get_bat_metadata_type(),
-        }
-    }
 
     fn metadata_name() -> String;
 
-    fn value_to_vec_string(value: Value) -> Vec<String> {
-        value
+    fn value_to_vec_string(value: Value) -> MetadataResult<Vec<String>> {
+        Ok(value
             .as_array()
-            .unwrap()
+            .ok_or(MetadataError)
+            .into_report()?
             .iter()
-            .map(|val| val.as_str().unwrap().to_string())
-            .collect::<Vec<String>>()
-    }
-
-    fn read_cache_key(&self, cache_key: &str) -> MetadataResult<Value> {
-        let file_content = self
-            .get_cache_bat_file()
-            .read_content(false)
-            .change_context(MetadataError)?;
-        let file_value: Value = serde_json::from_str(&file_content)
-            .into_report()
-            .change_context(MetadataError)?;
-        let value = file_value[cache_key].clone();
-        Ok(value)
-    }
-
-    fn save_cache_key(&self, cache_key: &str, cache_value: Value) -> MetadataResult<()> {
-        let file_content = self
-            .get_cache_bat_file()
-            .read_content(false)
-            .change_context(MetadataError)?;
-        let mut file_value: Value = serde_json::from_str(&file_content)
-            .into_report()
-            .change_context(MetadataError)?;
-        file_value[cache_key] = cache_value;
-        let new_value = serde_json::to_string_pretty(&file_value)
-            .into_report()
-            .change_context(MetadataError)?;
-        self.get_cache_bat_file()
-            .write_content(false, &new_value)
-            .change_context(MetadataError)
+            .map(|val| val.as_str().ok_or(MetadataError).into_report())
+            .collect::<Result<Vec<_>, MetadataError>>()?
+            .into_iter()
+            .map(|val| val.to_string())
+            .collect::<Vec<_>>())
     }
 
     fn new(
@@ -247,35 +618,6 @@ where
         s
     }
 
-    fn update_markdown_from_metadata_vec(metadata_vec: &mut Vec<Self>) -> MetadataResult<()> {
-        if metadata_vec.is_empty() {
-            return Ok(());
-        }
-        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
-        let metadata_bat_file = Self::get_bat_file();
-        let metadata_markdown_content = metadata_bat_file
-            .read_content(true)
-            .change_context(MetadataError)?;
-
-        let new_markdown_content = metadata_vec
-            .iter_mut()
-            .map(|metadata| metadata.get_markdown_section_content_string())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-
-        let result_metadata_content = if metadata_markdown_content.is_empty() {
-            new_markdown_content
-        } else {
-            format!("{}\n\n{}", metadata_markdown_content, new_markdown_content)
-        };
-
-        let mut markdown_file = Self::get_bat_metadata_type().get_markdown()?;
-        markdown_file.content = result_metadata_content;
-        markdown_file.save().change_context(MetadataError)?;
-
-        Ok(())
-    }
-
     fn to_source_code_parser(&self, optional_name: Option<String>) -> SourceCodeParser {
         SourceCodeParser::new(
             if let Some(function_name) = optional_name {
@@ -288,219 +630,7 @@ where
             self.end_line_index(),
         )
     }
-
-    fn get_markdown_section_content_string(&self) -> String {
-        format!(
-            "# {}\n\n- type: {}\n- path: {}\n- start_line_index: {}\n- end_line_index: {}\n- metadata_id: {}",
-            self.name(),
-            self.metadata_sub_type().to_snake_case(),
-            self.path(),
-            self.start_line_index(),
-            self.end_line_index(),
-            self.metadata_id()
-        )
-    }
-
-    fn from_markdown_section(md_section: MarkdownSection) -> Result<Self, MetadataError> {
-        let message = format!(
-            "Error parsing function_metadata from markdown_section: \n{:#?}",
-            md_section
-        );
-        let name = md_section.section_header.title;
-        let type_string = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::Type,
-        )
-        .attach_printable(message.clone())?;
-        let path = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::Path,
-        )
-        .attach_printable(message.clone())?;
-        let start_line_index = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::StartLineIndex,
-        )
-        .attach_printable(message.clone())?;
-        let end_line_index = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::EndLineIndex,
-        )
-        .attach_printable(message.clone())?;
-        let metadata_id = Self::parse_metadata_info_section(
-            &md_section.content,
-            BatMetadataMarkdownContent::MetadataId,
-        )
-        .attach_printable(message)?;
-        Ok(Self::new(
-            path,
-            name,
-            U::from_str(&type_string),
-            start_line_index.parse::<usize>().unwrap(),
-            end_line_index.parse::<usize>().unwrap(),
-            metadata_id,
-        ))
-    }
     fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError>;
-
-    fn create_metadata_from_program_files() -> Result<Vec<Self>, MetadataError> {
-        let program_dir_entries = BatFolder::ProgramPath
-            .get_all_files_dir_entries(false, None, None)
-            .change_context(MetadataError)?;
-        let mut metadata_vec: Vec<Self> = program_dir_entries
-            .into_iter()
-            .map(|entry| Self::create_metadata_from_dir_entry(entry))
-            .collect::<Result<Vec<_>, MetadataError>>()?
-            .into_iter()
-            .fold(vec![], |mut result_vec, mut entry| {
-                result_vec.append(&mut entry);
-                result_vec
-            });
-        metadata_vec.sort_by_key(|function_a| function_a.name());
-        Ok(metadata_vec)
-    }
-
-    fn parse_metadata_info_section(
-        metadata_info_content: &str,
-        metadata_section: BatMetadataMarkdownContent,
-    ) -> Result<String, MetadataError> {
-        let section_prefix = metadata_section.get_prefix();
-        let data = metadata_info_content
-            .lines()
-            .find(|line| line.contains(&section_prefix))
-            .ok_or(MetadataError)
-            .into_report()
-            .attach_printable(format!(
-                "Error parsing info section {}, with metadata_info_content:\n{}",
-                metadata_section.to_snake_case(),
-                metadata_info_content
-            ))?
-            .replace(&section_prefix, "")
-            .trim()
-            .to_string();
-        Ok(data)
-    }
-
-    fn prompt_selection() -> Result<Self, MetadataError> {
-        let (metadata_vec, metadata_names) = Self::prompt_types()?;
-        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
-        let selection = BatDialoguer::select(prompt_text, metadata_names, None)
-            .change_context(MetadataError)?;
-
-        Ok(metadata_vec[selection].clone())
-    }
-
-    fn prompt_multiselection(
-        select_all: bool,
-        force_select: bool,
-    ) -> Result<Vec<Self>, MetadataError> {
-        let (metadata_vec, metadata_names) = Self::prompt_types()?;
-        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
-        let selections = BatDialoguer::multiselect(
-            prompt_text,
-            metadata_names.clone(),
-            Some(&vec![select_all; metadata_names.len()]),
-            force_select,
-        )
-        .change_context(MetadataError)?;
-
-        let filtered_vec = metadata_vec
-            .into_iter()
-            .enumerate()
-            .filter_map(|(sc_index, sc_metadata)| {
-                if selections.iter().any(|selection| &sc_index == selection) {
-                    Some(sc_metadata)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        Ok(filtered_vec)
-    }
-
-    fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
-        let prompt_text = format!(
-            "Please select the {} {}:",
-            Self::metadata_name().blue(),
-            "type".blue()
-        );
-        let selection = BatDialoguer::select(prompt_text, U::get_colorized_type_vec(true), None)
-            .change_context(MetadataError)?;
-        let selected_sub_type = U::get_type_vec()[selection].clone();
-        let metadata_vec_filtered = Self::get_filtered_metadata(None, Some(selected_sub_type))
-            .change_context(MetadataError)?;
-        let metadata_names = metadata_vec_filtered
-            .iter()
-            .map(|metadata| {
-                parse_formatted_path(
-                    metadata.name(),
-                    metadata.path(),
-                    metadata.start_line_index(),
-                )
-            })
-            .collect::<Vec<_>>();
-        Ok((metadata_vec_filtered, metadata_names))
-    }
-
-    fn find_by_metadata_id(metadata_id: MetadataId) -> MetadataResult<Self> {
-        let match_metadata = Self::get_bat_metadata_type()
-            .get_markdown_sections_from_metadata_file()?
-            .into_iter()
-            .map(|section| Self::from_markdown_section(section))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .find(|metadata| metadata.metadata_id() == metadata_id);
-        match match_metadata {
-            None => Err(Report::new(MetadataError).attach_printable(format!(
-                "No match for metadata with metadata_id:{}",
-                metadata_id
-            ))),
-            Some(metadata) => Ok(metadata),
-        }
-    }
-
-    fn get_filtered_metadata(
-        metadata_name: Option<&str>,
-        metadata_type: Option<U>,
-    ) -> Result<Vec<Self>, MetadataError> {
-        let markdown_sections =
-            Self::get_bat_metadata_type().get_markdown_sections_from_metadata_file()?;
-
-        let filtered_sections = markdown_sections
-            .into_iter()
-            .filter(|section| {
-                if metadata_name.is_some() && metadata_name.unwrap() != section.section_header.title
-                {
-                    return false;
-                };
-                if metadata_type.is_some() {
-                    let type_content = BatMetadataMarkdownContent::Type
-                        .get_info_section_content(metadata_type.clone().unwrap().to_snake_case());
-                    log::debug!("type_content\n{:#?}", type_content);
-                    if !section.content.contains(&type_content) {
-                        return false;
-                    }
-                };
-                true
-            })
-            .collect::<Vec<_>>();
-        log::debug!("metadata_name\n{:#?}", metadata_name);
-        log::debug!("metadata_type\n{:#?}", metadata_type);
-        log::debug!("filtered_sections\n{:#?}", filtered_sections);
-        if filtered_sections.is_empty() {
-            let message = format!(
-                "Error finding metadata sections for:\nmetadata_name: {:#?}\nmetadata_type: {:#?}",
-                metadata_name, metadata_type
-            );
-            return Err(Report::new(MetadataError).attach_printable(message));
-        }
-
-        let function_metadata_vec = filtered_sections
-            .into_iter()
-            .map(|section| Self::from_markdown_section(section))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(function_metadata_vec)
-    }
 }
 
 impl BatEnumerator for BatMetadataType {}

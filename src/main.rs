@@ -66,8 +66,11 @@ enum BatCommands {
     /// code-overhaul files management
     #[command(subcommand)]
     CO(CodeOverhaulCommand),
-    /// Execute the bat sonar to create metadata files
+    /// Execute the BatSonar to create metadata files for all Sonar result types
     Sonar,
+    // /// Execute specific BatSonar commands
+    // #[command(subcommand)]
+    // SonarSpecific(SonarSpecificCommand),
     /// findings files management
     #[command(subcommand)]
     Finding(FindingCommand),
@@ -116,6 +119,7 @@ impl BatCommands {
                 commands::finding_commands::accept_all()
             }
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
+            // BatCommands::SonarSpecific(command) => command.execute_command(),
             BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tools(command) => command.execute_command(),
@@ -144,12 +148,17 @@ impl BatCommands {
             BatCommands::Refresh => {
                 return Ok(());
             }
-            BatCommands::Sonar => {
-                return Ok(());
-            }
             BatCommands::Package(_) => {
                 return Ok(());
             }
+            BatCommands::Sonar => (
+                SonarCommand::Run.check_metadata_is_initialized(),
+                SonarCommand::Run.check_correct_branch(),
+            ),
+            // BatCommands::SonarSpecific(command) => (
+            //     command.check_metadata_is_initialized(),
+            //     command.check_correct_branch(),
+            // ),
             BatCommands::Tools(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
@@ -172,7 +181,10 @@ impl BatCommands {
             ),
         };
         if check_metadata {
-            BatMetadata::check_metadata_is_initialized().change_context(CommandError)?;
+            BatMetadata::read_metadata()
+                .change_context(CommandError)?
+                .check_metadata_is_initialized()
+                .change_context(CommandError)?;
         }
 
         if check_branch {
@@ -215,6 +227,13 @@ impl BatCommands {
                         .collect::<Vec<_>>(),
                     command.to_string().to_kebab_case(),
                 )),
+                // BatCommands::SonarSpecific(_) => Some((
+                //     SonarSpecificCommand::get_type_vec()
+                //         .into_iter()
+                //         .map(|command_type| command_type.to_string().to_kebab_case())
+                //         .collect::<Vec<_>>(),
+                //     command.to_string().to_kebab_case(),
+                // )),
                 BatCommands::Sonar => Some((vec![], command.to_string().to_kebab_case())),
                 BatCommands::Repo(_) => Some((
                     RepositoryCommand::get_type_vec()
@@ -303,7 +322,7 @@ async fn main() -> CommandResult<()> {
             eprintln!(
                 "{} {} script finished with error",
                 "bat-cli".red(),
-                cli.command.to_string().to_kebab_case().green()
+                cli.command.to_string().to_kebab_case().red()
             );
             log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)

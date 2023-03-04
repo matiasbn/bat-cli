@@ -8,7 +8,6 @@ use strum::IntoEnumIterator;
 pub mod bat_dialoguer;
 pub mod command_line;
 pub mod git;
-pub mod markdown;
 pub mod metadata;
 pub mod miro;
 pub mod parser;
@@ -73,9 +72,7 @@ where
             self.to_string()
         };
 
-        log::debug!("self_name_for_colorized: {}", self_name);
         let colorized_vec = Self::get_colorized_type_vec(to_plural);
-        log::debug!("colorized_vec: {:#?}", colorized_vec);
 
         colorized_vec
             .into_iter()

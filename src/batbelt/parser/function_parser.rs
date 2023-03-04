@@ -1,10 +1,12 @@
-use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataCacheType};
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, MetadataId};
-use crate::batbelt::parser::trait_parser::TraitParser;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
+
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
+
 use crate::batbelt::parser::ParserError;
 
-use crate::batbelt::metadata::metadata_cache::{MetadataCache, MetadataCacheType};
+use crate::batbelt::metadata::function_dependencies_metadata::{
+    FunctionDependenciesMetadata, FunctionDependencyInfo,
+};
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
@@ -24,7 +26,7 @@ pub struct FunctionParameterParser {
 #[derive(Clone, Debug)]
 pub struct FunctionParser {
     pub name: String,
-    pub function_metadata: FunctionMetadata,
+    pub function_metadata: FunctionSourceCodeMetadata,
     pub content: String,
     pub signature: String,
     pub body: String,
@@ -36,10 +38,8 @@ pub struct FunctionParser {
 impl FunctionParser {
     fn new(
         name: String,
-        function_metadata: FunctionMetadata,
+        function_metadata: FunctionSourceCodeMetadata,
         content: String,
-        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<Self, ParserError> {
         let mut new_function_parser = Self {
             name,
@@ -56,100 +56,107 @@ impl FunctionParser {
         new_function_parser.get_function_parameters()?;
         log::debug!("new_function_parser:\n{:#?}", new_function_parser);
         log::debug!("new_function_body:\n{}", new_function_parser.body);
-        new_function_parser.get_function_dependencies(
-            optional_function_metadata_vec,
-            optional_trait_impl_parser_vec,
-        )?;
+        new_function_parser.get_function_dependencies()?;
         log::debug!(
             "new_function_parser_with_dependencies:\n{:#?}",
             new_function_parser
         );
-        let _dependencies_metadata_cache_content = FunctionMetadataCacheType::Dependency
-            .to_metadata_cache_content(new_function_parser.dependencies.clone());
-        let _extern_dep_metadata_cache_content = FunctionMetadataCacheType::ExternalDependency
-            .to_metadata_cache_content(new_function_parser.external_dependencies.clone());
-        // new_function_parser
-        //     .function_metadata
-        //     .save_cache(dependencies_metadata_cache_content)
-        //     .change_context(ParserError)?;
-        // new_function_parser
-        //     .function_metadata
-        //     .save_cache(extern_dep_metadata_cache_content)
-        //     .change_context(ParserError)?;
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+        let function_dependencies_metadata = FunctionDependenciesMetadata::new(
+            new_function_parser.name.clone(),
+            BatMetadata::create_metadata_id(),
+            new_function_parser.function_metadata.metadata_id.clone(),
+            new_function_parser
+                .dependencies
+                .clone()
+                .into_iter()
+                .map(|func_dep| {
+                    bat_metadata
+                        .source_code
+                        .get_function_by_id(func_dep)
+                        .change_context(ParserError)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|func_meta| FunctionDependencyInfo {
+                    function_name: func_meta.name.clone(),
+                    function_metadata_id: func_meta.metadata_id,
+                })
+                .collect::<Vec<_>>(),
+            new_function_parser.external_dependencies.clone(),
+        );
+        function_dependencies_metadata
+            .update_metadata_file()
+            .change_context(ParserError)?;
+        for function_dependency in new_function_parser.clone().dependencies {
+            if let Err(_) = bat_metadata
+                .get_functions_dependencies_metadata_by_function_metadata_id(
+                    function_dependency.clone(),
+                )
+                .change_context(ParserError)
+            {
+                let function_metadata = bat_metadata
+                    .source_code
+                    .get_function_by_id(function_dependency.clone())
+                    .change_context(ParserError)?;
+                FunctionParser::new_from_metadata(function_metadata)?;
+            }
+        }
         Ok(new_function_parser)
     }
 
     pub fn new_from_metadata(
-        function_metadata: FunctionMetadata,
-        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
+        function_metadata: FunctionSourceCodeMetadata,
     ) -> Result<Self, ParserError> {
         let name = function_metadata.name.clone();
         let content = function_metadata
             .to_source_code_parser(None)
             .get_source_code_content();
-        Self::new(
-            name,
-            function_metadata,
-            content,
-            optional_function_metadata_vec,
-            optional_trait_impl_parser_vec,
-        )
+        Self::new(name, function_metadata, content)
     }
 
-    fn get_function_dependencies(
-        &mut self,
-        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
-    ) -> Result<(), ParserError> {
-        let function_metadata = if optional_function_metadata_vec.is_some() {
-            optional_function_metadata_vec.unwrap()
-        } else {
-            FunctionMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
-        };
-
-        let trait_impl_parser_vec = if optional_trait_impl_parser_vec.is_some() {
-            optional_trait_impl_parser_vec.unwrap()
-        } else {
-            TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata.clone()))
-                .change_context(ParserError)?
-        };
-        let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
-
-        let impl_function_regex =
-            Regex::new(r"[A-Za-z0-9_]+::[A-Za-z0-9]+\(\(?[A-Za-z0-9]*\)?\)").unwrap();
-
-        let impl_function_matches = impl_function_regex
-            .find_iter(&self.body.clone())
-            .map(|impl_match| impl_match.as_str().to_string())
+    fn get_function_dependencies(&mut self) -> Result<(), ParserError> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+        let function_metadata = bat_metadata.source_code.functions_source_code.clone();
+        // only not external
+        let trait_metadata_vec = bat_metadata
+            .traits
+            .into_iter()
+            .filter(|t_metadata| !t_metadata.external_trait)
             .collect::<Vec<_>>();
+        let mut body_clone = self.body.clone();
 
+        let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
         let mut dependency_function_metadata_id_vec = vec![];
 
+        let impl_function_regex =
+            Regex::new(r"[A-Za-z0-9_]+::[A-Za-z0-9]+\(\(?[&._A-Za-z0-9]*\)?\)").unwrap();
+
+        let impl_function_matches = impl_function_regex
+            .find_iter(&body_clone)
+            .map(|impl_match| impl_match.as_str().to_string())
+            .collect::<Vec<_>>();
+        log::debug!("impl_function_matches: \n{:#?}", impl_function_matches);
         for impl_match in impl_function_matches {
-            let mut impl_match_split = impl_match.split("::");
-            let impl_match_to = impl_match_split.next().unwrap();
-            let impl_match_function_name =
-                Self::get_function_name_from_signature(impl_match_split.next().unwrap());
+            log::debug!("impl_match: {}", impl_match);
+            // delete from body to avoid double checking
+            body_clone = body_clone.replace(&impl_match, "");
+            let impl_function_signature_match = Self::get_function_name_from_signature(&impl_match);
+            log::debug!("impl_match_signature: {}", &impl_function_signature_match);
             let impl_function_metadata =
-                trait_impl_parser_vec
+                trait_metadata_vec
                     .clone()
                     .into_iter()
-                    .find_map(|impl_parser| {
-                        if impl_parser.impl_to.contains(impl_match_to) {
-                            let f_metadata = impl_parser
-                                .impl_functions
-                                .into_iter()
-                                .find(|impl_fn| impl_fn.name == impl_match_function_name);
-                            if f_metadata.is_some() {
-                                Some(f_metadata.unwrap())
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
+                    .find(|trait_metadata| {
+                        trait_metadata
+                            .impl_functions
+                            .clone()
+                            .into_iter()
+                            .any(|impl_func| {
+                                impl_func.trait_signature == impl_function_signature_match
+                            })
                     });
+            log::debug!("impl_function_metadata_match {:#?}", impl_function_metadata);
             if impl_function_metadata.is_some() {
                 dependency_function_metadata_id_vec
                     .push(impl_function_metadata.unwrap().metadata_id);
@@ -158,7 +165,7 @@ impl FunctionParser {
 
         let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_:.&, ()]*)\)").unwrap(); //[A-Za-z0-9_]+\(([A-Za-z0-9_,():\s])*\)$
         let dependency_function_names_vec = dependency_regex
-            .find_iter(&self.body.clone())
+            .find_iter(&body_clone)
             .filter_map(|reg_match| {
                 let match_str = reg_match.as_str().to_string();
                 log::debug!("match_str_regex {}", match_str);
@@ -186,7 +193,6 @@ impl FunctionParser {
             .collect::<Vec<_>>();
         // filter the already found dependencies
         let filtered_function_metadata_vec = function_metadata
-            .clone()
             .into_iter()
             .filter(|f_meta| {
                 !dependency_function_metadata_id_vec
@@ -195,7 +201,7 @@ impl FunctionParser {
                     .any(|dep_metadata_id| dep_metadata_id == f_meta.metadata_id.clone())
             })
             .collect::<Vec<_>>();
-
+        let _bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         for dependency_function_name in dependency_function_names_vec {
             let dependency_function_metadata_vec = filtered_function_metadata_vec
                 .clone()
@@ -204,27 +210,8 @@ impl FunctionParser {
                 .collect::<Vec<_>>();
             if !dependency_function_metadata_vec.clone().is_empty() {
                 for dependency_metadata in dependency_function_metadata_vec.clone() {
-                    let mut function_metadata_cache = MetadataCache::new(
-                        dependency_metadata.metadata_id.clone(),
-                        MetadataCacheType::Function,
-                    );
-                    match function_metadata_cache.read_cache_by_id() {
-                        // already
-                        Ok(_) => {
-                            dependency_function_metadata_id_vec
-                                .push(dependency_metadata.metadata_id);
-                        }
-                        Err(_) => {
-                            let function_parser = dependency_metadata
-                                .to_function_parser(
-                                    Some(function_metadata.clone()),
-                                    Some(trait_impl_parser_vec.clone()),
-                                )
-                                .change_context(ParserError)?;
-                            dependency_function_metadata_id_vec
-                                .push(function_parser.function_metadata.metadata_id);
-                        }
-                    }
+                    dependency_function_metadata_id_vec
+                        .push(dependency_metadata.metadata_id.clone())
                 }
             } else {
                 self.external_dependencies.push(dependency_function_name);

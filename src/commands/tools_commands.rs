@@ -8,14 +8,15 @@ use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 
 use clap::Subcommand;
 
-use error_stack::ResultExt;
+use error_stack::{Report, ResultExt};
 
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
+use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+
 use log::Level;
 
 #[derive(
@@ -65,27 +66,27 @@ impl ToolsCommands {
             BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
         let (path, start_line_index) = match selected_bat_metadata_type {
             BatMetadataType::Struct => {
-                let StructMetadata {
+                let StructSourceCodeMetadata {
                     path,
                     start_line_index,
                     ..
-                } = StructMetadata::prompt_selection().change_context(CommandError)?;
+                } = StructSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
             BatMetadataType::Function => {
-                let FunctionMetadata {
+                let FunctionSourceCodeMetadata {
                     path,
                     start_line_index,
                     ..
-                } = FunctionMetadata::prompt_selection().change_context(CommandError)?;
+                } = FunctionSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
             BatMetadataType::Trait => {
-                let TraitMetadata {
+                let TraitSourceCodeMetadata {
                     path,
                     start_line_index,
                     ..
-                } = TraitMetadata::prompt_selection().change_context(CommandError)?;
+                } = TraitSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
         };
@@ -116,49 +117,48 @@ impl ToolsCommands {
         let level_selected = log_level_vec[selection];
         PackageJsonTemplate::create_package_json(Some(level_selected))
             .change_context(CommandError)?;
-        BatFile::PackageJson {
-            to_create_project: false,
-        }
-        .open_in_editor(false, None)
-        .change_context(CommandError)
+        BatFile::PackageJson
+            .open_in_editor(false, None)
+            .change_context(CommandError)
     }
 
     fn execute_get_metadata(&self) -> CommandResult<()> {
-        let selected_bat_metadata_type =
-            BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
         let metadata_id = BatDialoguer::input("Metadata id:".to_string())?;
-        match selected_bat_metadata_type {
-            BatMetadataType::Struct => {
-                let selected_metadata = StructMetadata::find_by_metadata_id(metadata_id)
-                    .change_context(CommandError)?;
-                println!("Selected metadata: {:#?}", selected_metadata);
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        for function_metadata in bat_metadata.source_code.functions_source_code {
+            if function_metadata.metadata_id == metadata_id {
+                println!("Metadata found:\n{:#?}", function_metadata);
                 CodeEditor::open_file_in_editor(
-                    &selected_metadata.path,
-                    Some(selected_metadata.start_line_index),
+                    &function_metadata.path,
+                    Some(function_metadata.start_line_index),
                 )
                 .change_context(CommandError)?;
+                return Ok(());
             }
-            BatMetadataType::Function => {
-                let selected_metadata = FunctionMetadata::find_by_metadata_id(metadata_id)
-                    .change_context(CommandError)?;
-                println!("Selected metadata: {:#?}", selected_metadata);
+        }
+        for struct_metadata in bat_metadata.source_code.structs_source_code {
+            if struct_metadata.metadata_id == metadata_id {
+                println!("Metadata found:\n{:#?}", struct_metadata);
                 CodeEditor::open_file_in_editor(
-                    &selected_metadata.path,
-                    Some(selected_metadata.start_line_index),
+                    &struct_metadata.path,
+                    Some(struct_metadata.start_line_index),
                 )
                 .change_context(CommandError)?;
+                return Ok(());
             }
-            BatMetadataType::Trait => {
-                let selected_metadata =
-                    TraitMetadata::find_by_metadata_id(metadata_id).change_context(CommandError)?;
-                println!("Selected metadata: {:#?}", selected_metadata);
+        }
+        for trait_metadata in bat_metadata.source_code.traits_source_code {
+            if trait_metadata.metadata_id == metadata_id {
+                println!("Metadata found:\n{:#?}", trait_metadata);
                 CodeEditor::open_file_in_editor(
-                    &selected_metadata.path,
-                    Some(selected_metadata.start_line_index),
+                    &trait_metadata.path,
+                    Some(trait_metadata.start_line_index),
                 )
                 .change_context(CommandError)?;
+                return Ok(());
             }
-        };
-        Ok(())
+        }
+        Err(Report::new(CommandError)
+            .attach_printable(format!("Metadata for {} couldn't be found", metadata_id)))
     }
 }
