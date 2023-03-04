@@ -34,20 +34,16 @@ impl PackageJsonTemplate {
             .into_report()
             .change_context(TemplateError)?;
 
-        BatFile::PackageJson {
-            to_create_project: true,
-        }
-        .write_content(false, &content)
-        .change_context(TemplateError)?;
+        BatFile::PackageJson
+            .write_content(false, &content)
+            .change_context(TemplateError)?;
         Ok(())
     }
 
     pub fn create_package_json(log_level: Option<Level>) -> Result<(), TemplateError> {
-        BatFile::PackageJson {
-            to_create_project: false,
-        }
-        .write_content(false, &Self::get_package_json_content(log_level)?)
-        .change_context(TemplateError)?;
+        BatFile::PackageJson
+            .write_content(false, &Self::get_package_json_content(log_level)?)
+            .change_context(TemplateError)?;
         Ok(())
     }
 

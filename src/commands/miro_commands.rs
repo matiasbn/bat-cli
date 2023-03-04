@@ -2,18 +2,24 @@ use crate::batbelt;
 
 use colored::{ColoredString, Colorize};
 
-use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::functions_source_code_metadata::{
+    FunctionMetadataType, FunctionSourceCodeMetadata,
+};
+use crate::batbelt::metadata::{
+    BatMetadata, BatMetadataParser, BatMetadataType, MetadataError, SourceCodeMetadata,
+};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::structs_source_code_metadata::{
+    StructMetadataType, StructSourceCodeMetadata,
+};
 use crate::batbelt::miro::connector::create_connector;
 use crate::batbelt::miro::frame::MiroFrame;
 
 use crate::batbelt::miro::MiroConfig;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
 use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
@@ -509,7 +515,7 @@ impl MiroCommand {
         let selected_miro_frame = self.prompt_select_frame().await?;
         // get entrypoints name
         let entrypoints_names =
-            EntrypointParser::get_entrypoints_names(sorted).change_context(CommandError)?;
+            EntrypointParser::get_entrypoint_names(sorted).change_context(CommandError)?;
 
         // prompt the user to select an entrypoint
         let prompt_text = "Please select the entrypoints to deploy";
@@ -582,9 +588,9 @@ impl MiroCommand {
             // get context_accounts name
             let entrypoint = EntrypointParser::new_from_name(selected_entrypoint.as_str())
                 .change_context(CommandError)?;
-            let ep_source_code = entrypoint.entrypoint_function.to_source_code_parser(Some(
+            let ep_source_code = entrypoint.entry_point_function.to_source_code_parser(Some(
                 self.parse_screenshot_name(
-                    &entrypoint.entrypoint_function.name,
+                    &entrypoint.entry_point_function.name,
                     &selected_miro_frame.title,
                 ),
             ));
@@ -670,7 +676,7 @@ impl MiroCommand {
                     .unwrap();
                     let selected_struct_type = StructMetadataType::get_type_vec()[selection];
                     let struct_metadata_vec =
-                        StructMetadata::get_filtered_metadata(None, Some(selected_struct_type))
+                        SourceCodeMetadata::get_filtered_structs(None, Some(selected_struct_type))
                             .change_context(CommandError)?;
                     let struct_metadata_names = struct_metadata_vec
                         .iter()
@@ -738,9 +744,11 @@ impl MiroCommand {
                     )
                     .unwrap();
                     let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
-                    let function_metadata_vec =
-                        FunctionMetadata::get_filtered_metadata(None, Some(selected_function_type))
-                            .change_context(CommandError)?;
+                    let function_metadata_vec = SourceCodeMetadata::get_filtered_functions(
+                        None,
+                        Some(selected_function_type),
+                    )
+                    .change_context(CommandError)?;
                     let function_metadata_names = function_metadata_vec
                         .iter()
                         .map(|function_metadata| {
@@ -822,14 +830,11 @@ impl MiroCommand {
 
     async fn function_action(&self, _select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
-        let function_metadata_vec =
-            FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
-        let trait_impl_parser_vec =
-            TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata_vec.clone()))
-                .change_context(CommandError)?;
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        let function_metadata_vec = bat_metadata.source_code.functions_source_code.clone();
         let mut keep_deploying = true;
-        let mut deployed_dependencies: Vec<(MiroImage, FunctionMetadata)> = vec![];
-        let mut pending_to_check: Vec<FunctionMetadata> = vec![];
+        let mut deployed_dependencies: Vec<(MiroImage, FunctionSourceCodeMetadata)> = vec![];
+        let mut pending_to_check: Vec<FunctionSourceCodeMetadata> = vec![];
         while keep_deploying {
             let function_metadata_names_vec = function_metadata_vec
                 .clone()
@@ -865,26 +870,11 @@ impl MiroCommand {
                     parent_function,
                     miro_image,
                     selected_miro_frame.clone(),
-                    function_metadata_vec.clone(),
-                    trait_impl_parser_vec.clone(),
                     &mut deployed_dependencies,
                     &mut pending_to_check,
                 )
                 .await?;
             }
-
-            // function_metadata_vec = function_metadata_vec
-            //     .clone()
-            //     .into_iter()
-            //     .filter(|dep| {
-            //         !deployed_dependencies
-            //             .clone()
-            //             .into_iter()
-            //             .map(|dep| dep.1)
-            //             .collect::<Vec<_>>()
-            //             .contains(dep)
-            //     })
-            //     .collect::<Vec<_>>();
 
             let prompt_text = format!(
                 "Do you want to {} in the {} frame?",
@@ -899,19 +889,14 @@ impl MiroCommand {
 
     async fn prompt_deploy_dependencies(
         &self,
-        parent_function: FunctionMetadata,
+        parent_function: FunctionSourceCodeMetadata,
         parent_function_image: Option<MiroImage>,
         selected_miro_frame: MiroFrame,
-        function_metadata_vec: Vec<FunctionMetadata>,
-        trait_impl_parser_vec: Vec<TraitParser>,
-        deployed_dependencies: &mut Vec<(MiroImage, FunctionMetadata)>,
-        pending_to_check: &mut Vec<FunctionMetadata>,
+        deployed_dependencies: &mut Vec<(MiroImage, FunctionSourceCodeMetadata)>,
+        pending_to_check: &mut Vec<FunctionSourceCodeMetadata>,
     ) -> Result<(), CommandError> {
         let function_parser = parent_function
-            .to_function_parser(
-                Some(function_metadata_vec.clone()),
-                Some(trait_impl_parser_vec),
-            )
+            .to_function_parser()
             .change_context(CommandError)?;
 
         let function_sc_options = SourceCodeScreenshotOptions {
@@ -950,12 +935,14 @@ impl MiroCommand {
             return Ok(());
         }
 
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+
         let function_dependencies = function_parser
             .dependencies
             .clone()
             .into_iter()
-            .map(FunctionMetadata::find_by_metadata_id)
-            .collect::<Result<Vec<_>, _>>()
+            .map(|f_meta| bat_metadata.source_code.get_function_by_id(f_meta.clone()))
+            .collect::<Result<Vec<_>, MetadataError>>()
             .change_context(CommandError)?;
 
         let dependencies_names_vec = function_dependencies
@@ -1004,7 +991,7 @@ impl MiroCommand {
             false,
         )?;
 
-        let mut pending_to_deploy: Vec<FunctionMetadata> = vec![];
+        let mut pending_to_deploy: Vec<FunctionSourceCodeMetadata> = vec![];
         let mut pending_to_connect: Vec<MiroImage> = vec![];
 
         for selection in multi_selection {

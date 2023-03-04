@@ -1,6 +1,6 @@
 use crate::batbelt;
 use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::metadata::functions_metadata::get_function_parameters;
+use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
@@ -21,7 +21,6 @@ pub struct CodeOverhaulTemplate {
 impl CodeOverhaulTemplate {
     pub fn new(entrypoint_name: &str, initialized: bool) -> Result<Self, TemplateError> {
         let entrypoint_parser = if initialized {
-            BatMetadata::metadata_is_initialized().change_context(TemplateError)?;
             let ep_parser =
                 EntrypointParser::new_from_name(entrypoint_name).change_context(TemplateError)?;
             Some(ep_parser)

@@ -10,9 +10,9 @@ use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataResul
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
-use error_stack::{FutureExt, Result, ResultExt};
-
 use crate::batbelt::BatEnumerator;
+use error_stack::{FutureExt, Result, ResultExt};
+use serde::{Deserialize, Serialize};
 
 use serde_json::json;
 use std::{fs, vec};
@@ -20,8 +20,8 @@ use walkdir::DirEntry;
 
 use super::MetadataError;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionMetadata {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FunctionSourceCodeMetadata {
     pub path: String,
     pub name: String,
     pub metadata_id: MetadataId,
@@ -30,7 +30,7 @@ pub struct FunctionMetadata {
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
+impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -39,9 +39,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     }
     fn metadata_id(&self) -> MetadataId {
         self.metadata_id.clone()
-    }
-    fn metadata_cache_type() -> MetadataCacheType {
-        MetadataCacheType::Function
     }
     fn start_line_index(&self) -> usize {
         self.start_line_index
@@ -54,10 +51,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     }
     fn get_bat_metadata_type() -> BatMetadataType {
         BatMetadataType::Function
-    }
-
-    fn get_bat_file() -> BatFile {
-        BatFile::FunctionsMetadataFile
     }
     fn metadata_name() -> String {
         "Function".to_string()
@@ -82,7 +75,7 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     }
 
     fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
-        let mut metadata_result: Vec<FunctionMetadata> = vec![];
+        let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
@@ -95,7 +88,7 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
             } else {
                 FunctionMetadataType::Other
             };
-            let function_metadata = FunctionMetadata::new(
+            let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
                 function_type,
@@ -110,104 +103,16 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     }
 }
 
-impl FunctionMetadata {
-    pub fn to_function_parser(
-        &self,
-        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
-    ) -> Result<FunctionParser, MetadataError> {
-        FunctionParser::new_from_metadata(
-            self.clone(),
-            optional_function_metadata_vec,
-            optional_trait_impl_parser_vec,
-        )
-        .change_context(MetadataError)
-    }
-
-    pub fn save_dependency_cache(&self, dependency_id_vec: Vec<MetadataId>) -> MetadataResult<()> {
-        // let test_path = "./test.json";
-        // let metadata_id = "1234";
-        // let dependencies = vec!["asdasd".to_string()];
-        // let external_dependencies = vec!["asdasdasidhasjd".to_string()];
-        // let function_metadata_cache = FunctionMetadataCache {
-        //     dependencies,
-        //     external_dependencies,
-        // };
-        // let json = json!({ metadata_id: function_metadata_cache });
-        // println!("{}", json);
-        // let pretty = serde_json::to_string_pretty(&json).unwrap();
-        // assert_fs::NamedTempFile::new(test_path).unwrap();
-        // fs::write(test_path, &pretty).unwrap();
-        //
-        // let read_value = fs::read_to_string(test_path).unwrap();
-        // let value: Value = serde_json::from_str(&read_value).unwrap();
-        // let f_val: FunctionMetadataCache =
-        //     serde_json::from_value(value[metadata_id].clone()).unwrap();
-        //
-        // println!("fval: {:#?}", f_val);
-        let dependency_cache_value = self.read_cache()?;
-        let updated_value = if dependency_cache_value.is_null() {
-            let function_metadata_cache = FunctionMetadataCache {
-                dependencies: dependency_id_vec,
-                external_dependencies: vec![],
-            };
-            json!(function_metadata_cache)
-        } else {
-            let mut function_metadata_cache: FunctionMetadataCache =
-                serde_json::from_value(dependency_cache_value)
-                    .into_report()
-                    .change_context(MetadataError)?;
-            for dependency_id in dependency_id_vec {
-                if !function_metadata_cache
-                    .dependencies
-                    .contains(&dependency_id)
-                {
-                    function_metadata_cache.dependencies.push(dependency_id);
-                };
-            }
-            json!(function_metadata_cache)
-        };
-        self.save_cache(updated_value)?;
-        Ok(())
-    }
-
-    pub fn save_external_dependency_cache(
-        &self,
-        external_dependencies_name_vec: Vec<String>,
-    ) -> MetadataResult<()> {
-        let dependency_cache_value = self.read_cache()?;
-        let updated_value = if dependency_cache_value.is_null() {
-            let function_metadata_cache = FunctionMetadataCache {
-                dependencies: vec![],
-                external_dependencies: external_dependencies_name_vec,
-            };
-            json!(function_metadata_cache)
-        } else {
-            let mut function_metadata_cache: FunctionMetadataCache =
-                serde_json::from_value(dependency_cache_value)
-                    .into_report()
-                    .change_context(MetadataError)?;
-            for ext_dep_vec in external_dependencies_name_vec {
-                if !function_metadata_cache
-                    .external_dependencies
-                    .contains(&ext_dep_vec)
-                {
-                    function_metadata_cache
-                        .external_dependencies
-                        .push(ext_dep_vec);
-                };
-            }
-            json!(function_metadata_cache)
-        };
-        self.save_cache(updated_value)?;
-        Ok(())
+impl FunctionSourceCodeMetadata {
+    pub fn to_function_parser(&self) -> Result<FunctionParser, MetadataError> {
+        FunctionParser::new_from_metadata(self.clone()).change_context(MetadataError)
     }
 
     fn assert_function_is_entrypoint(
         entry_path: &str,
         sonar_result: SonarResult,
     ) -> MetadataResult<bool> {
-        let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
+        let entrypoints_names = EntrypointParser::get_entrypoint_names(false).unwrap();
         if entry_path == BatConfig::get_config().unwrap().program_lib_path {
             if entrypoints_names
                 .into_iter()
@@ -250,6 +155,72 @@ impl FunctionMetadata {
             Ok(false)
         }
     }
+
+    pub fn prompt_selection() -> Result<Self, MetadataError> {
+        let (metadata_vec, metadata_names) = Self::prompt_types()?;
+        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
+        let selection = BatDialoguer::select(prompt_text, metadata_names, None)
+            .change_context(MetadataError)?;
+
+        Ok(metadata_vec[selection].clone())
+    }
+
+    pub fn prompt_multiselection(
+        select_all: bool,
+        force_select: bool,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let (metadata_vec, metadata_names) = Self::prompt_types()?;
+        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
+        let selections = BatDialoguer::multiselect(
+            prompt_text,
+            metadata_names.clone(),
+            Some(&vec![select_all; metadata_names.len()]),
+            force_select,
+        )
+        .change_context(MetadataError)?;
+
+        let filtered_vec = metadata_vec
+            .into_iter()
+            .enumerate()
+            .filter_map(|(sc_index, sc_metadata)| {
+                if selections.iter().any(|selection| &sc_index == selection) {
+                    Some(sc_metadata)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok(filtered_vec)
+    }
+
+    pub fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
+        let prompt_text = format!(
+            "Please select the {} {}:",
+            Self::metadata_name().blue(),
+            "type".blue()
+        );
+        let selection = BatDialoguer::select(
+            prompt_text,
+            FunctionMetadataType::get_colorized_type_vec(true),
+            None,
+        )
+        .change_context(MetadataError)?;
+        let selected_sub_type = FunctionMetadataType::get_type_vec()[selection].clone();
+        let metadata_vec_filtered =
+            SourceCodeMetadata::get_filtered_functions(None, Some(selected_sub_type))
+                .change_context(MetadataError)?;
+        let metadata_names = metadata_vec_filtered
+            .iter()
+            .map(|metadata| {
+                parse_formatted_path(
+                    metadata.name(),
+                    metadata.path(),
+                    metadata.start_line_index(),
+                )
+            })
+            .collect::<Vec<_>>();
+        Ok((metadata_vec_filtered, metadata_names))
+    }
 }
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FunctionMetadataCache {
@@ -257,7 +228,16 @@ pub struct FunctionMetadataCache {
     external_dependencies: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 pub enum FunctionMetadataType {
     EntryPoint,
     Handler,
@@ -338,9 +318,9 @@ pub fn get_function_body(function_content: &str) -> String {
 #[cfg(debug_assertions)]
 
 mod test_function_metadata {
-    use crate::batbelt::metadata::functions_metadata::{
-        get_function_body, get_function_parameters, get_function_signature, FunctionMetadata,
-        FunctionMetadataCache, FunctionMetadataType,
+    use crate::batbelt::metadata::functions_source_code_metadata::{
+        get_function_body, get_function_parameters, get_function_signature, FunctionMetadataCache,
+        FunctionMetadataType, FunctionSourceCodeMetadata,
     };
     use serde_json::{json, Value};
     use std::fs;

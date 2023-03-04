@@ -144,12 +144,13 @@ impl BatCommands {
             BatCommands::Refresh => {
                 return Ok(());
             }
-            BatCommands::Sonar => {
-                return Ok(());
-            }
             BatCommands::Package(_) => {
                 return Ok(());
             }
+            BatCommands::Sonar => (
+                SonarCommand::Run.check_metadata_is_initialized(),
+                SonarCommand::Run.check_correct_branch(),
+            ),
             BatCommands::Tools(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
@@ -172,7 +173,10 @@ impl BatCommands {
             ),
         };
         if check_metadata {
-            BatMetadata::check_metadata_is_initialized().change_context(CommandError)?;
+            BatMetadata::read_metadata()
+                .change_context(CommandError)?
+                .check_metadata_is_initialized()
+                .change_context(CommandError)?;
         }
 
         if check_branch {
@@ -303,7 +307,7 @@ async fn main() -> CommandResult<()> {
             eprintln!(
                 "{} {} script finished with error",
                 "bat-cli".red(),
-                cli.command.to_string().to_kebab_case().green()
+                cli.command.to_string().to_kebab_case().red()
             );
             log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)

@@ -5,21 +5,25 @@ use std::fmt::Debug;
 use crate::batbelt;
 use crate::batbelt::path::BatFile;
 
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataId};
+use crate::batbelt::metadata::{
+    BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
+};
 
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::BatEnumerator;
 use error_stack::{Result, ResultExt};
 
-use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
+use super::MetadataError;
+use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::parser::parse_formatted_path;
+use colored::Colorize;
+use serde::{Deserialize, Serialize};
 use std::{fs, vec};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
-use super::MetadataError;
-
-#[derive(Debug, Clone)]
-pub struct StructMetadata {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructSourceCodeMetadata {
     pub path: String,
     pub name: String,
     pub struct_type: StructMetadataType,
@@ -28,7 +32,7 @@ pub struct StructMetadata {
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser<StructMetadataType> for StructMetadata {
+impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -37,9 +41,6 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
     }
     fn metadata_id(&self) -> MetadataId {
         self.metadata_id.clone()
-    }
-    fn metadata_cache_type() -> MetadataCacheType {
-        MetadataCacheType::Struct
     }
     fn start_line_index(&self) -> usize {
         self.start_line_index
@@ -53,13 +54,9 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
     fn get_bat_metadata_type() -> BatMetadataType {
         BatMetadataType::Struct
     }
-    fn get_bat_file() -> BatFile {
-        BatFile::StructsMetadataFile
-    }
     fn metadata_name() -> String {
         "Struct".to_string()
     }
-
     fn new(
         path: String,
         name: String,
@@ -68,7 +65,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
         end_line_index: usize,
         metadata_id: MetadataId,
     ) -> Self {
-        StructMetadata {
+        StructSourceCodeMetadata {
             path,
             name,
             metadata_id,
@@ -92,7 +89,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
                 } else {
                     StructMetadataType::Other
                 };
-            let struct_metadata = StructMetadata::new(
+            let struct_metadata = StructSourceCodeMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
                 struct_type,
@@ -107,7 +104,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
     }
 }
 
-impl StructMetadata {
+impl StructSourceCodeMetadata {
     fn assert_struct_is_context_accounts(
         file_info_content: &str,
         sonar_result: SonarResult,
@@ -171,9 +168,84 @@ impl StructMetadata {
 
         false
     }
+
+    pub fn prompt_selection() -> Result<Self, MetadataError> {
+        let (metadata_vec, metadata_names) = Self::prompt_types()?;
+        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
+        let selection = BatDialoguer::select(prompt_text, metadata_names, None)
+            .change_context(MetadataError)?;
+
+        Ok(metadata_vec[selection].clone())
+    }
+
+    pub fn prompt_multiselection(
+        select_all: bool,
+        force_select: bool,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let (metadata_vec, metadata_names) = Self::prompt_types()?;
+        let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
+        let selections = BatDialoguer::multiselect(
+            prompt_text,
+            metadata_names.clone(),
+            Some(&vec![select_all; metadata_names.len()]),
+            force_select,
+        )
+        .change_context(MetadataError)?;
+
+        let filtered_vec = metadata_vec
+            .into_iter()
+            .enumerate()
+            .filter_map(|(sc_index, sc_metadata)| {
+                if selections.iter().any(|selection| &sc_index == selection) {
+                    Some(sc_metadata)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok(filtered_vec)
+    }
+
+    pub fn prompt_types() -> Result<(Vec<Self>, Vec<String>), MetadataError> {
+        let prompt_text = format!(
+            "Please select the {} {}:",
+            Self::metadata_name().blue(),
+            "type".blue()
+        );
+        let selection = BatDialoguer::select(
+            prompt_text,
+            StructMetadataType::get_colorized_type_vec(true),
+            None,
+        )
+        .change_context(MetadataError)?;
+        let selected_sub_type = StructMetadataType::get_type_vec()[selection].clone();
+        let metadata_vec_filtered =
+            SourceCodeMetadata::get_filtered_structs(None, Some(selected_sub_type))
+                .change_context(MetadataError)?;
+        let metadata_names = metadata_vec_filtered
+            .iter()
+            .map(|metadata| {
+                parse_formatted_path(
+                    metadata.name(),
+                    metadata.path(),
+                    metadata.start_line_index(),
+                )
+            })
+            .collect::<Vec<_>>();
+        Ok((metadata_vec_filtered, metadata_names))
+    }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 pub enum StructMetadataType {
     ContextAccounts,
     SolanaAccount,

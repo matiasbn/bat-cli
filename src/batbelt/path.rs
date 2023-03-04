@@ -30,47 +30,22 @@ pub enum BatFile {
     BatToml,
     BatAuditorToml,
     Batlog,
-    MetadataCacheFile {
-        metadata_cache_type: BatMetadataType,
-    },
-    FunctionsMetadataFile,
-    StructsMetadataFile,
-    TraitsMetadataFile,
+    BatMetadataFile,
     ThreatModeling,
     FindingCandidates,
     OpenQuestions,
     ProgramLib,
-    Readme {
-        to_create_project: bool,
-    },
-    GitIgnore {
-        to_create_project: bool,
-    },
-    PackageJson {
-        to_create_project: bool,
-    },
+    Readme,
+    GitIgnore,
+    PackageJson,
     RobotFile,
-    CodeOverhaulToReview {
-        file_name: String,
-    },
-    CodeOverhaulStarted {
-        file_name: String,
-    },
-    CodeOverhaulFinished {
-        file_name: String,
-    },
-    FindingToReview {
-        file_name: String,
-    },
-    FindingAccepted {
-        file_name: String,
-    },
-    FindingRejected {
-        file_name: String,
-    },
-    Generic {
-        file_path: String,
-    },
+    CodeOverhaulToReview { file_name: String },
+    CodeOverhaulStarted { file_name: String },
+    CodeOverhaulFinished { file_name: String },
+    FindingToReview { file_name: String },
+    FindingAccepted { file_name: String },
+    FindingRejected { file_name: String },
+    Generic { file_path: String },
 }
 
 impl BatEnumerator for BatFile {}
@@ -81,46 +56,19 @@ impl BatFile {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
             BatFile::Batlog => "Batlog.log".to_string(),
-            BatFile::PackageJson {
-                to_create_project: for_init,
-            } => {
-                format!(
-                    "{}/package.json",
-                    if *for_init {
-                        BatFolder::ProjectFolderPath.get_path(true)?
-                    } else {
-                        ".".to_string()
-                    }
-                )
+            BatFile::PackageJson => {
+                format!("./package.json",)
             }
-            BatFile::GitIgnore {
-                to_create_project: for_init,
-            } => {
-                format!(
-                    "{}/.gitignore",
-                    if *for_init {
-                        BatFolder::ProjectFolderPath.get_path(true)?
-                    } else {
-                        ".".to_string()
-                    }
-                )
+            BatFile::GitIgnore => {
+                format!("./.gitignore",)
             }
             BatFile::ProgramLib => {
                 BatConfig::get_config()
                     .change_context(BatPathError)?
                     .program_lib_path
             }
-            BatFile::Readme {
-                to_create_project: for_init,
-            } => {
-                format!(
-                    "{}/README.md",
-                    if *for_init {
-                        BatFolder::ProjectFolderPath.get_path(true)?
-                    } else {
-                        ".".to_string()
-                    }
-                )
+            BatFile::Readme => {
+                format!("./README.md",)
             }
             BatFile::RobotFile => format!(
                 "{}/robot.md",
@@ -142,36 +90,6 @@ impl BatFile {
                 format!(
                     "{}/threat_modeling.md",
                     BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFile::StructsMetadataFile => {
-                format!(
-                    "{}/{}.md",
-                    BatFolder::MetadataFolder.get_path(canonicalize)?,
-                    BatMetadataType::Struct
-                        .to_string()
-                        .to_lowercase()
-                        .to_plural()
-                )
-            }
-            BatFile::FunctionsMetadataFile => {
-                format!(
-                    "{}/{}.md",
-                    BatFolder::MetadataFolder.get_path(canonicalize)?,
-                    BatMetadataType::Function
-                        .to_string()
-                        .to_lowercase()
-                        .to_plural()
-                )
-            }
-            BatFile::TraitsMetadataFile => {
-                format!(
-                    "{}/{}.md",
-                    BatFolder::MetadataFolder.get_path(canonicalize)?,
-                    BatMetadataType::Trait
-                        .to_string()
-                        .to_lowercase()
-                        .to_plural()
                 )
             }
             BatFile::CodeOverhaulToReview { file_name } => {
@@ -216,14 +134,10 @@ impl BatFile {
                     BatFolder::FindingsRejected.get_path(canonicalize)?
                 )
             }
+            BatFile::BatMetadataFile => {
+                format!("./BatMetadata.json",)
+            }
             BatFile::Generic { file_path } => file_path.clone(),
-            BatFile::MetadataCacheFile {
-                metadata_cache_type,
-            } => format!(
-                "{}/{}.json",
-                BatFolder::MetadataCacheFolder.get_path(canonicalize)?,
-                metadata_cache_type.to_string().to_snake_case().to_plural()
-            ),
         };
 
         if canonicalize {
@@ -322,8 +236,6 @@ impl BatFile {
     Debug, PartialEq, Clone, strum_macros::Display, strum_macros::EnumIter, Serialize, Deserialize,
 )]
 pub enum BatFolder {
-    MetadataFolder,
-    MetadataCacheFolder,
     ProgramPath,
     ProjectFolderPath,
     FindingsFolderPath,
@@ -360,18 +272,6 @@ impl BatFolder {
                 format!(
                     "{}/figures",
                     BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFolder::MetadataFolder => {
-                format!(
-                    "{}/metadata",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFolder::MetadataCacheFolder => {
-                format!(
-                    "{}/cache",
-                    BatFolder::MetadataFolder.get_path(canonicalize)?
                 )
             }
             BatFolder::ProgramPath => bat_config

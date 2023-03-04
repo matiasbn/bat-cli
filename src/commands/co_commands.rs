@@ -131,7 +131,7 @@ pub fn open_co() -> error_stack::Result<(), CommandError> {
                 //     .code_editor::;
             }
             BatFile::ProgramLib
-                .open_in_editor(true, Some(ep_parser.entrypoint_function.start_line_index))
+                .open_in_editor(true, Some(ep_parser.entry_point_function.start_line_index))
                 .change_context(CommandError)?;
             return Ok(());
         } else {
@@ -298,8 +298,8 @@ pub fn start_co_file() -> error_stack::Result<(), CommandError> {
             CodeEditor::open_file_in_editor(&handler.path, Some(handler.start_line_index))?;
         }
         CodeEditor::open_file_in_editor(
-            &ep_parser.entrypoint_function.path,
-            Some(ep_parser.entrypoint_function.start_line_index),
+            &ep_parser.entry_point_function.path,
+            Some(ep_parser.entry_point_function.start_line_index),
         )?;
     }
     Ok(())

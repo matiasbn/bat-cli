@@ -234,7 +234,7 @@ pub enum GitCommit {
     AcceptFindings,
     UpdateTemplates,
     Notes,
-    UpdateMetadata { metadata_type: BatMetadataType },
+    UpdateMetadataJson,
 }
 
 impl GitCommit {
@@ -358,11 +358,7 @@ impl GitCommit {
                     BatFolder::CodeOverhaulToReview
                         .get_path(true)
                         .change_context(GitError)?,
-                    BatFile::GitIgnore {
-                        to_create_project: false,
-                    }
-                    .get_path(true)
-                    .change_context(GitError)?,
+                    BatFile::GitIgnore.get_path(true).change_context(GitError)?,
                 ]
             }
             GitCommit::Notes => {
@@ -378,8 +374,10 @@ impl GitCommit {
                         .change_context(GitError)?,
                 ]
             }
-            GitCommit::UpdateMetadata { metadata_type } => {
-                vec![metadata_type.get_path().change_context(GitError)?]
+            GitCommit::UpdateMetadataJson => {
+                vec![BatFile::BatMetadataFile
+                    .get_path(false)
+                    .change_context(GitError)?]
             }
         };
         Ok(commit_files)
@@ -425,9 +423,8 @@ impl GitCommit {
                 "notes: open_questions, finding_candidates and threat_modeling notes updated"
                     .to_string()
             }
-            GitCommit::UpdateMetadata { metadata_type } => {
-                let metadata_type_string = metadata_type.to_string().to_plural().to_snake_case();
-                format!("metadata: {}.md updated", metadata_type_string)
+            GitCommit::UpdateMetadataJson => {
+                format!("metadata: metadata.json updated")
             }
         };
         Ok(commit_string)

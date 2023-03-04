@@ -1,7 +1,7 @@
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
 
-use error_stack::Result;
+use error_stack::{FutureExt, IntoReport, Result, ResultExt};
 use reqwest;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{
@@ -86,14 +86,32 @@ impl MiroImage {
         &mut self,
         api_response: reqwest::Response,
     ) -> Result<(), MiroError> {
-        let response_string = api_response.text().await.unwrap();
-        let response: Value = serde_json::from_str(response_string.as_str()).unwrap();
+        let response_string = api_response
+            .text()
+            .await
+            .into_report()
+            .change_context(MiroError)?;
+        let response: Value = serde_json::from_str(response_string.as_str())
+            .into_report()
+            .change_context(MiroError)?;
         self.item_id = response["id"].to_string().replace('\"', "");
         self.parent_id = response["parent"]["id"].to_string().replace('\"', "");
-        self.height = response["geometry"]["height"].as_f64().unwrap() as u64;
-        self.width = response["geometry"]["width"].as_f64().unwrap() as u64;
-        self.x_position = response["position"]["x"].as_f64().unwrap() as i64;
-        self.y_position = response["position"]["y"].as_f64().unwrap() as i64;
+        self.height = response["geometry"]["height"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as u64;
+        self.width = response["geometry"]["width"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as u64;
+        self.x_position = response["position"]["x"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as i64;
+        self.y_position = response["position"]["y"]
+            .as_f64()
+            .ok_or(MiroError)
+            .into_report()? as i64;
         Ok(())
     }
 
