@@ -40,9 +40,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     fn metadata_id(&self) -> MetadataId {
         self.metadata_id.clone()
     }
-    fn metadata_cache_type() -> MetadataCacheType {
-        MetadataCacheType::Function
-    }
     fn start_line_index(&self) -> usize {
         self.start_line_index
     }
@@ -122,85 +119,6 @@ impl FunctionMetadata {
             optional_trait_impl_parser_vec,
         )
         .change_context(MetadataError)
-    }
-
-    pub fn save_dependency_cache(&self, dependency_id_vec: Vec<MetadataId>) -> MetadataResult<()> {
-        // let test_path = "./test.json";
-        // let metadata_id = "1234";
-        // let dependencies = vec!["asdasd".to_string()];
-        // let external_dependencies = vec!["asdasdasidhasjd".to_string()];
-        // let function_metadata_cache = FunctionMetadataCache {
-        //     dependencies,
-        //     external_dependencies,
-        // };
-        // let json = json!({ metadata_id: function_metadata_cache });
-        // println!("{}", json);
-        // let pretty = serde_json::to_string_pretty(&json).unwrap();
-        // assert_fs::NamedTempFile::new(test_path).unwrap();
-        // fs::write(test_path, &pretty).unwrap();
-        //
-        // let read_value = fs::read_to_string(test_path).unwrap();
-        // let value: Value = serde_json::from_str(&read_value).unwrap();
-        // let f_val: FunctionMetadataCache =
-        //     serde_json::from_value(value[metadata_id].clone()).unwrap();
-        //
-        // println!("fval: {:#?}", f_val);
-        let dependency_cache_value = self.read_cache()?;
-        let updated_value = if dependency_cache_value.is_null() {
-            let function_metadata_cache = FunctionMetadataCache {
-                dependencies: dependency_id_vec,
-                external_dependencies: vec![],
-            };
-            json!(function_metadata_cache)
-        } else {
-            let mut function_metadata_cache: FunctionMetadataCache =
-                serde_json::from_value(dependency_cache_value)
-                    .into_report()
-                    .change_context(MetadataError)?;
-            for dependency_id in dependency_id_vec {
-                if !function_metadata_cache
-                    .dependencies
-                    .contains(&dependency_id)
-                {
-                    function_metadata_cache.dependencies.push(dependency_id);
-                };
-            }
-            json!(function_metadata_cache)
-        };
-        self.save_cache(updated_value)?;
-        Ok(())
-    }
-
-    pub fn save_external_dependency_cache(
-        &self,
-        external_dependencies_name_vec: Vec<String>,
-    ) -> MetadataResult<()> {
-        let dependency_cache_value = self.read_cache()?;
-        let updated_value = if dependency_cache_value.is_null() {
-            let function_metadata_cache = FunctionMetadataCache {
-                dependencies: vec![],
-                external_dependencies: external_dependencies_name_vec,
-            };
-            json!(function_metadata_cache)
-        } else {
-            let mut function_metadata_cache: FunctionMetadataCache =
-                serde_json::from_value(dependency_cache_value)
-                    .into_report()
-                    .change_context(MetadataError)?;
-            for ext_dep_vec in external_dependencies_name_vec {
-                if !function_metadata_cache
-                    .external_dependencies
-                    .contains(&ext_dep_vec)
-                {
-                    function_metadata_cache
-                        .external_dependencies
-                        .push(ext_dep_vec);
-                };
-            }
-            json!(function_metadata_cache)
-        };
-        self.save_cache(updated_value)?;
-        Ok(())
     }
 
     fn assert_function_is_entrypoint(

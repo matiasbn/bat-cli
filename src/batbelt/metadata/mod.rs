@@ -1,5 +1,4 @@
 pub mod functions_metadata;
-pub mod metadata_cache;
 pub mod structs_metadata;
 pub mod traits_metadata;
 
@@ -16,8 +15,6 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-
-use crate::batbelt::metadata::metadata_cache::{MetadataCacheContent, MetadataCacheType};
 
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
@@ -50,6 +47,21 @@ pub type MetadataResult<T> = Result<T, MetadataError>;
 
 pub type MetadataId = String;
 
+enum MetadataErrorMessage {
+    MetadataIdNotFound { metadata_id: MetadataId },
+}
+
+impl MetadataErrorMessage {
+    pub fn get_error_report(&self) -> Report<MetadataError> {
+        let message = match self {
+            MetadataErrorMessage::MetadataIdNotFound { metadata_id } => {
+                format!("Metadata not found for {}", metadata_id.red())
+            }
+        };
+        Report::new(MetadataError).attach_printable(message)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct BatMetadata {
     pub source_code: SourceCodeMetadata,
@@ -64,6 +76,48 @@ pub struct SourceCodeMetadata {
 }
 
 impl SourceCodeMetadata {
+    pub fn get_function_by_id(&self, metadata_id: MetadataId) -> MetadataResult<FunctionMetadata> {
+        let result = self
+            .functions
+            .clone()
+            .into_iter()
+            .find(|meta| meta.metadata_id == metadata_id);
+        return match result {
+            Some(f_metadata) => Ok(f_metadata),
+            None => {
+                Err(MetadataErrorMessage::MetadataIdNotFound { metadata_id }.get_error_report())
+            }
+        };
+    }
+
+    pub fn get_struct_by_id(&self, metadata_id: MetadataId) -> MetadataResult<StructMetadata> {
+        let result = self
+            .structs
+            .clone()
+            .into_iter()
+            .find(|meta| meta.metadata_id == metadata_id);
+        return match result {
+            Some(metadata) => Ok(metadata),
+            None => {
+                Err(MetadataErrorMessage::MetadataIdNotFound { metadata_id }.get_error_report())
+            }
+        };
+    }
+
+    pub fn get_trait_by_id(&self, metadata_id: MetadataId) -> MetadataResult<TraitMetadata> {
+        let result = self
+            .traits
+            .clone()
+            .into_iter()
+            .find(|meta| meta.metadata_id == metadata_id);
+        return match result {
+            Some(metadata) => Ok(metadata),
+            None => {
+                Err(MetadataErrorMessage::MetadataIdNotFound { metadata_id }.get_error_report())
+            }
+        };
+    }
+
     pub fn update_functions(&self, new_vec: Vec<FunctionMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
         bat_metadata.source_code.initialized = true;
@@ -73,6 +127,7 @@ impl SourceCodeMetadata {
         bat_metadata.save_metadata()?;
         Ok(())
     }
+
     pub fn update_structs(&self, new_vec: Vec<StructMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
         bat_metadata.source_code.initialized = true;
@@ -262,18 +317,11 @@ where
     fn name(&self) -> String;
     fn path(&self) -> String;
     fn metadata_id(&self) -> MetadataId;
-    fn metadata_cache_type() -> MetadataCacheType;
     fn start_line_index(&self) -> usize;
     fn end_line_index(&self) -> usize;
     fn metadata_sub_type(&self) -> U;
     fn get_bat_metadata_type() -> BatMetadataType;
     fn get_bat_file() -> BatFile;
-
-    fn get_cache_bat_file(&self) -> BatFile {
-        BatFile::MetadataCacheFile {
-            metadata_cache_type: Self::get_bat_metadata_type(),
-        }
-    }
 
     fn metadata_name() -> String;
 
@@ -288,46 +336,6 @@ where
             .into_iter()
             .map(|val| val.to_string())
             .collect::<Vec<_>>())
-    }
-
-    fn read_cache(&self) -> MetadataResult<Value> {
-        let file_content = self
-            .get_cache_bat_file()
-            .read_content(false)
-            .change_context(MetadataError)?;
-        if file_content.is_empty() {
-            return Ok(Null);
-        }
-        let file_value: Value = serde_json::from_str(&file_content)
-            .into_report()
-            .change_context(MetadataError)?;
-        let value = file_value[&self.metadata_id()].clone();
-        Ok(value)
-    }
-
-    fn save_cache(&self, cache_value: Value) -> MetadataResult<()> {
-        let file_content = self
-            .get_cache_bat_file()
-            .read_content(false)
-            .change_context(MetadataError)?;
-        let new_value = if file_content.is_empty() {
-            let key = self.metadata_id();
-            serde_json::to_string_pretty(&json!({ key: cache_value }))
-                .into_report()
-                .change_context(MetadataError)?
-        } else {
-            let mut file_value: Value = serde_json::from_str(&file_content)
-                .into_report()
-                .change_context(MetadataError)?;
-            file_value[&self.metadata_id()] = cache_value;
-            let new_value = serde_json::to_string_pretty(&file_value)
-                .into_report()
-                .change_context(MetadataError)?;
-            new_value
-        };
-        self.get_cache_bat_file()
-            .write_content(false, &new_value)
-            .change_context(MetadataError)
     }
 
     fn new(

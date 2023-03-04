@@ -12,7 +12,6 @@ use crate::batbelt::BatEnumerator;
 use error_stack::{Result, ResultExt};
 
 use super::MetadataError;
-use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
 use serde::{Deserialize, Serialize};
 use std::{fs, vec};
 use strum::IntoEnumIterator;
@@ -37,9 +36,6 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
     }
     fn metadata_id(&self) -> MetadataId {
         self.metadata_id.clone()
-    }
-    fn metadata_cache_type() -> MetadataCacheType {
-        MetadataCacheType::Struct
     }
     fn start_line_index(&self) -> usize {
         self.start_line_index

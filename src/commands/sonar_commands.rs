@@ -57,6 +57,7 @@ impl SonarCommand {
         execute_command("mkdir", &[&metadata_path], false)?;
         execute_command("mkdir", &[&metadata_cache_path], false)?;
         TemplateGenerator::create_auditor_metadata_files().change_context(CommandError)?;
+        TemplateGenerator::create_metadata_json().change_context(CommandError)?;
         BatSonarInteractive::SonarStart {
             sonar_result_type: SonarResultType::Struct,
         }

@@ -4,7 +4,6 @@ use crate::batbelt::metadata::{BatMetadataParser, MetadataId};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::parser::{ParserError, ParserResult};
 
-use crate::batbelt::metadata::metadata_cache::{MetadataCache, MetadataCacheType};
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
@@ -64,19 +63,19 @@ impl FunctionParser {
             "new_function_parser_with_dependencies:\n{:#?}",
             new_function_parser
         );
-        new_function_parser.save_function_metadata_cache()?;
+        // new_function_parser.save_function_metadata_cache()?;
         Ok(new_function_parser)
     }
 
-    fn save_function_metadata_cache(&self) -> ParserResult<()> {
-        self.function_metadata
-            .save_dependency_cache(self.dependencies.clone())
-            .change_context(ParserError)?;
-        self.function_metadata
-            .save_external_dependency_cache(self.external_dependencies.clone())
-            .change_context(ParserError)?;
-        Ok(())
-    }
+    // fn save_function_metadata_cache(&self) -> ParserResult<()> {
+    //     self.function_metadata
+    //         .save_dependency_cache(self.dependencies.clone())
+    //         .change_context(ParserError)?;
+    //     self.function_metadata
+    //         .save_external_dependency_cache(self.external_dependencies.clone())
+    //         .change_context(ParserError)?;
+    //     Ok(())
+    // }
 
     pub fn new_from_metadata(
         function_metadata: FunctionMetadata,
@@ -203,22 +202,22 @@ impl FunctionParser {
                 .collect::<Vec<_>>();
             if !dependency_function_metadata_vec.clone().is_empty() {
                 for dependency_metadata in dependency_function_metadata_vec.clone() {
-                    if !dependency_metadata
-                        .read_cache()
-                        .change_context(ParserError)?
-                        .is_null()
-                    {
-                        dependency_function_metadata_id_vec.push(dependency_metadata.metadata_id);
-                    } else {
-                        let function_parser = dependency_metadata
-                            .to_function_parser(
-                                Some(function_metadata.clone()),
-                                Some(trait_impl_parser_vec.clone()),
-                            )
-                            .change_context(ParserError)?;
-                        dependency_function_metadata_id_vec
-                            .push(function_parser.function_metadata.metadata_id);
-                    }
+                    // if !dependency_metadata
+                    //     .read_cache()
+                    //     .change_context(ParserError)?
+                    //     .is_null()
+                    // {
+                    //     dependency_function_metadata_id_vec.push(dependency_metadata.metadata_id);
+                    // } else {
+                    let function_parser = dependency_metadata
+                        .to_function_parser(
+                            Some(function_metadata.clone()),
+                            Some(trait_impl_parser_vec.clone()),
+                        )
+                        .change_context(ParserError)?;
+                    dependency_function_metadata_id_vec
+                        .push(function_parser.function_metadata.metadata_id);
+                    // }
                 }
             } else {
                 self.external_dependencies.push(dependency_function_name);
