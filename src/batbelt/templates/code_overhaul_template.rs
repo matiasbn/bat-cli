@@ -1,6 +1,6 @@
 use crate::batbelt;
 use crate::batbelt::markdown::MarkdownFile;
-use crate::batbelt::metadata::functions_metadata::get_function_parameters;
+use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 

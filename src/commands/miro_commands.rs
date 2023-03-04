@@ -2,18 +2,18 @@ use crate::batbelt;
 
 use colored::{ColoredString, Colorize};
 
-use crate::batbelt::metadata::functions_metadata::{FunctionMetadata, FunctionMetadataType};
+use crate::batbelt::metadata::functions_source_code_metadata::{FunctionMetadata, FunctionMetadataType};
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::structs_source_code_metadata::{StructSourceCodeMetadata, StructMetadataType};
 use crate::batbelt::miro::connector::create_connector;
 use crate::batbelt::miro::frame::MiroFrame;
 
 use crate::batbelt::miro::MiroConfig;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
 use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
@@ -670,7 +670,7 @@ impl MiroCommand {
                     .unwrap();
                     let selected_struct_type = StructMetadataType::get_type_vec()[selection];
                     let struct_metadata_vec =
-                        StructMetadata::get_filtered_metadata(None, Some(selected_struct_type))
+                        StructSourceCodeMetadata::get_filtered_metadata(None, Some(selected_struct_type))
                             .change_context(CommandError)?;
                     let struct_metadata_names = struct_metadata_vec
                         .iter()
@@ -825,7 +825,7 @@ impl MiroCommand {
         let function_metadata_vec =
             FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
         let trait_impl_parser_vec =
-            TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata_vec.clone()))
+            TraitSourceMetadata::get_trait_parser_vec(None, None, Some(function_metadata_vec.clone()))
                 .change_context(CommandError)?;
         let mut keep_deploying = true;
         let mut deployed_dependencies: Vec<(MiroImage, FunctionMetadata)> = vec![];

@@ -2,7 +2,7 @@ use crate::batbelt::path::BatFile;
 
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataId};
 
 use crate::batbelt::parser::trait_parser::TraitParser;
@@ -15,7 +15,7 @@ use std::{fs, vec};
 use walkdir::DirEntry;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TraitMetadata {
+pub struct TraitSourceMetadata {
     pub path: String,
     pub name: String,
     pub trait_type: TraitMetadataType,
@@ -24,7 +24,7 @@ pub struct TraitMetadata {
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
+impl BatMetadataParser<TraitMetadataType> for TraitSourceMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -79,7 +79,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::TraitImpl);
         let mut metadata_result = vec![];
         for result in bat_sonar.results {
-            let function_metadata = TraitMetadata::new(
+            let function_metadata = TraitSourceMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
                 TraitMetadataType::Implementation,
@@ -92,7 +92,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
 
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Trait);
         for result in bat_sonar.results {
-            let function_metadata = TraitMetadata::new(
+            let function_metadata = TraitSourceMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
                 TraitMetadataType::Definition,
@@ -107,7 +107,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitMetadata {
     }
 }
 
-impl TraitMetadata {
+impl TraitSourceMetadata {
     pub fn to_trait_impl_parser(
         &self,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,

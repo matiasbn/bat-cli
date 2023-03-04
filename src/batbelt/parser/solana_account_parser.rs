@@ -1,4 +1,4 @@
-use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::structs_source_code_metadata::{StructSourceCodeMetadata, StructMetadataType};
 use crate::batbelt::metadata::BatMetadataParser;
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::SonarResult;
@@ -37,7 +37,7 @@ impl SolanaAccountType {
         }
 
         let solana_accounts_metadata =
-            StructMetadata::get_filtered_metadata(None, Some(StructMetadataType::SolanaAccount))
+            StructSourceCodeMetadata::get_filtered_metadata(None, Some(StructMetadataType::SolanaAccount))
                 .change_context(ParserError)?;
         if solana_accounts_metadata
             .into_iter()

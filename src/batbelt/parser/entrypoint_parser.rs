@@ -1,8 +1,8 @@
-use crate::batbelt::metadata::functions_metadata::{
+use crate::batbelt::metadata::functions_source_code_metadata::{
     get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataType,
 };
 
-use crate::batbelt::metadata::structs_metadata::{StructMetadata, StructMetadataType};
+use crate::batbelt::metadata::structs_source_code_metadata::{StructSourceCodeMetadata, StructMetadataType};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::config::BatConfig;
@@ -19,7 +19,7 @@ use crate::batbelt::parser::ParserError;
 pub struct EntrypointParser {
     pub name: String,
     pub handler: Option<FunctionMetadata>,
-    pub context_accounts: StructMetadata,
+    pub context_accounts: StructSourceCodeMetadata,
     pub entry_point_function: FunctionMetadata,
 }
 
@@ -27,7 +27,7 @@ impl EntrypointParser {
     pub fn new(
         name: String,
         handler: Option<FunctionMetadata>,
-        context_accounts: StructMetadata,
+        context_accounts: StructSourceCodeMetadata,
         entry_point_function: FunctionMetadata,
     ) -> Self {
         Self {
@@ -111,7 +111,7 @@ impl EntrypointParser {
                 && function_parameters[0].contains(&context_name)
                 && (entrypoint_function_body.contains(&function_metadata.name))
         });
-        let structs_metadata = StructMetadata::get_filtered_metadata(
+        let structs_metadata = StructSourceCodeMetadata::get_filtered_metadata(
             Some(&context_name),
             Some(StructMetadataType::ContextAccounts),
         )

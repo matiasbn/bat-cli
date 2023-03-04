@@ -18,7 +18,7 @@ use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StructMetadata {
+pub struct StructSourceCodeMetadata {
     pub path: String,
     pub name: String,
     pub struct_type: StructMetadataType,
@@ -27,7 +27,7 @@ pub struct StructMetadata {
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser<StructMetadataType> for StructMetadata {
+impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -64,7 +64,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
         end_line_index: usize,
         metadata_id: MetadataId,
     ) -> Self {
-        StructMetadata {
+        StructSourceCodeMetadata {
             path,
             name,
             metadata_id,
@@ -88,7 +88,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
                 } else {
                     StructMetadataType::Other
                 };
-            let struct_metadata = StructMetadata::new(
+            let struct_metadata = StructSourceCodeMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
                 struct_type,
@@ -103,7 +103,7 @@ impl BatMetadataParser<StructMetadataType> for StructMetadata {
     }
 }
 
-impl StructMetadata {
+impl StructSourceCodeMetadata {
     fn assert_struct_is_context_accounts(
         file_info_content: &str,
         sonar_result: SonarResult,

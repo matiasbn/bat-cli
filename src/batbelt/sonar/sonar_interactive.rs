@@ -1,7 +1,7 @@
 use crate::batbelt::git::GitCommit;
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
+use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::sonar::{BatSonarError, SonarResultType};
@@ -125,7 +125,7 @@ impl BatSonarInteractive {
                         match metadata_type {
                             BatMetadataType::Struct => {
                                 let mut struct_res =
-                                    StructMetadata::create_metadata_from_dir_entry(entry.clone())
+                                    StructSourceCodeMetadata::create_metadata_from_dir_entry(entry.clone())
                                         .unwrap();
                                 total += struct_res.len();
                                 structs_result.append(&mut struct_res);
@@ -139,7 +139,7 @@ impl BatSonarInteractive {
                             }
                             BatMetadataType::Trait => {
                                 let mut trait_res =
-                                    TraitMetadata::create_metadata_from_dir_entry(entry.clone())
+                                    TraitSourceMetadata::create_metadata_from_dir_entry(entry.clone())
                                         .unwrap();
 
                                 total += trait_res.len();
@@ -169,10 +169,10 @@ impl BatSonarInteractive {
                             .update_traits(traits_result.clone())
                             .unwrap();
                     }
-                    StructMetadata::update_markdown_from_metadata_vec(&mut structs_result).unwrap();
+                    StructSourceCodeMetadata::update_markdown_from_metadata_vec(&mut structs_result).unwrap();
                     FunctionMetadata::update_markdown_from_metadata_vec(&mut functions_result)
                         .unwrap();
-                    TraitMetadata::update_markdown_from_metadata_vec(&mut traits_result).unwrap();
+                    TraitSourceMetadata::update_markdown_from_metadata_vec(&mut traits_result).unwrap();
                 })
             })
             .collect();

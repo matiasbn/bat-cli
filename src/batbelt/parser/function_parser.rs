@@ -1,5 +1,5 @@
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId, MetadataResult};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::parser::{ParserError, ParserResult};
@@ -108,7 +108,7 @@ impl FunctionParser {
         let trait_impl_parser_vec = if optional_trait_impl_parser_vec.is_some() {
             optional_trait_impl_parser_vec.unwrap()
         } else {
-            TraitMetadata::get_trait_parser_vec(None, None, Some(function_metadata.clone()))
+            TraitSourceMetadata::get_trait_parser_vec(None, None, Some(function_metadata.clone()))
                 .change_context(ParserError)?
         };
         let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();

@@ -1,5 +1,5 @@
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
 use crate::batbelt::parser::ParserError;
 
 use crate::batbelt::metadata::BatMetadataParser;
@@ -11,13 +11,13 @@ pub struct TraitParser {
     pub name: String,
     pub impl_from: String,
     pub impl_to: String,
-    pub trait_metadata: TraitMetadata,
+    pub trait_metadata: TraitSourceMetadata,
     pub impl_functions: Vec<FunctionMetadata>,
 }
 
 impl TraitParser {
     pub fn new_from_metadata(
-        trait_metadata: TraitMetadata,
+        trait_metadata: TraitSourceMetadata,
         optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
     ) -> Result<Self, ParserError> {
         let name = trait_metadata.name.clone();

@@ -265,7 +265,7 @@ pub fn get_function_body(function_content: &str) -> String {
 #[cfg(debug_assertions)]
 
 mod test_function_metadata {
-    use crate::batbelt::metadata::functions_metadata::{
+    use crate::batbelt::metadata::functions_source_code_metadata::{
         get_function_body, get_function_parameters, get_function_signature, FunctionMetadata,
         FunctionMetadataCache, FunctionMetadataType,
     };

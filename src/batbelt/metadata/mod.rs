@@ -1,8 +1,9 @@
 pub mod entrypoint_metadata;
 pub mod function_dependencies_metadata;
-pub mod functions_metadata;
-pub mod structs_metadata;
-pub mod traits_metadata;
+pub mod functions_source_code_metadata;
+pub mod structs_source_code_metadata;
+pub mod trait_metadata;
+pub mod traits_source_code_metadata;
 
 use colored::Colorize;
 use std::error::Error;
@@ -20,9 +21,9 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
+use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
@@ -101,8 +102,8 @@ pub struct BatMetadata {
 pub struct SourceCodeMetadata {
     pub initialized: bool,
     pub functions: Vec<FunctionMetadata>,
-    pub structs: Vec<StructMetadata>,
-    pub traits: Vec<TraitMetadata>,
+    pub structs: Vec<StructSourceCodeMetadata>,
+    pub traits: Vec<TraitSourceMetadata>,
 }
 
 impl SourceCodeMetadata {
@@ -120,7 +121,10 @@ impl SourceCodeMetadata {
         };
     }
 
-    pub fn get_struct_by_id(&self, metadata_id: MetadataId) -> MetadataResult<StructMetadata> {
+    pub fn get_struct_by_id(
+        &self,
+        metadata_id: MetadataId,
+    ) -> MetadataResult<StructSourceCodeMetadata> {
         let result = self
             .structs
             .clone()
@@ -134,7 +138,7 @@ impl SourceCodeMetadata {
         };
     }
 
-    pub fn get_trait_by_id(&self, metadata_id: MetadataId) -> MetadataResult<TraitMetadata> {
+    pub fn get_trait_by_id(&self, metadata_id: MetadataId) -> MetadataResult<TraitSourceMetadata> {
         let result = self
             .traits
             .clone()
@@ -158,7 +162,7 @@ impl SourceCodeMetadata {
         Ok(())
     }
 
-    pub fn update_structs(&self, new_vec: Vec<StructMetadata>) -> MetadataResult<()> {
+    pub fn update_structs(&self, new_vec: Vec<StructSourceCodeMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
         bat_metadata.source_code.initialized = true;
         let mut metadata_vec = new_vec.clone();
@@ -167,7 +171,7 @@ impl SourceCodeMetadata {
         bat_metadata.save_metadata()?;
         Ok(())
     }
-    pub fn update_traits(&self, new_vec: Vec<TraitMetadata>) -> MetadataResult<()> {
+    pub fn update_traits(&self, new_vec: Vec<TraitSourceMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
         bat_metadata.source_code.initialized = true;
         let mut metadata_vec = new_vec.clone();

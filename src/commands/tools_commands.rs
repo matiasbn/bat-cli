@@ -10,9 +10,9 @@ use clap::Subcommand;
 
 use error_stack::{Report, ResultExt};
 
-use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
-use crate::batbelt::metadata::structs_metadata::StructMetadata;
-use crate::batbelt::metadata::traits_metadata::TraitMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
+use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
@@ -66,11 +66,11 @@ impl ToolsCommands {
             BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
         let (path, start_line_index) = match selected_bat_metadata_type {
             BatMetadataType::Struct => {
-                let StructMetadata {
+                let StructSourceCodeMetadata {
                     path,
                     start_line_index,
                     ..
-                } = StructMetadata::prompt_selection().change_context(CommandError)?;
+                } = StructSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
             BatMetadataType::Function => {
@@ -82,11 +82,11 @@ impl ToolsCommands {
                 (path, start_line_index)
             }
             BatMetadataType::Trait => {
-                let TraitMetadata {
+                let TraitSourceMetadata {
                     path,
                     start_line_index,
                     ..
-                } = TraitMetadata::prompt_selection().change_context(CommandError)?;
+                } = TraitSourceMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
         };
