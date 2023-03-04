@@ -68,8 +68,6 @@ enum BatCommands {
     CO(CodeOverhaulCommand),
     /// Execute the bat sonar to create metadata files
     Sonar,
-    /// Get function dependencies
-    FunctionDependencies,
     /// findings files management
     #[command(subcommand)]
     Finding(FindingCommand),
@@ -118,9 +116,6 @@ impl BatCommands {
                 commands::finding_commands::accept_all()
             }
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
-            BatCommands::FunctionDependencies => {
-                SonarCommand::GetFunctionDependencies.execute_command()
-            }
             BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tools(command) => command.execute_command(),
@@ -155,10 +150,6 @@ impl BatCommands {
             BatCommands::Sonar => (
                 SonarCommand::Run.check_metadata_is_initialized(),
                 SonarCommand::Run.check_correct_branch(),
-            ),
-            BatCommands::FunctionDependencies => (
-                SonarCommand::GetFunctionDependencies.check_metadata_is_initialized(),
-                SonarCommand::GetFunctionDependencies.check_correct_branch(),
             ),
             BatCommands::Tools(command) => (
                 command.check_metadata_is_initialized(),
@@ -226,9 +217,6 @@ impl BatCommands {
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Sonar => Some((vec![], command.to_string().to_kebab_case())),
-                BatCommands::FunctionDependencies => {
-                    Some((vec![], command.to_string().to_kebab_case()))
-                }
                 BatCommands::Repo(_) => Some((
                     RepositoryCommand::get_type_vec()
                         .into_iter()

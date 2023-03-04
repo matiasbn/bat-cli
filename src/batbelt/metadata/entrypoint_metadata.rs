@@ -41,8 +41,8 @@ impl EntrypointMetadata {
             None => bat_metadata.entry_points.push(self.clone()),
             Some(pos) => bat_metadata.entry_points[pos] = self.clone(),
         };
+        bat_metadata.entry_points.sort_by_key(|ep| ep.name.clone());
         bat_metadata.save_metadata()?;
         Ok(())
     }
-    
 }

@@ -2,11 +2,17 @@ use crate::batbelt::metadata::{BatMetadata, MetadataId, MetadataResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct FunctionDependencyInfo {
+    pub function_name: String,
+    pub function_metadata_id: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct FunctionDependenciesMetadata {
     pub function_name: String,
     pub metadata_id: MetadataId,
     pub function_metadata_id: String,
-    pub dependencies: Vec<MetadataId>,
+    pub dependencies: Vec<FunctionDependencyInfo>,
     pub external_dependencies: Vec<MetadataId>,
 }
 
@@ -15,7 +21,7 @@ impl FunctionDependenciesMetadata {
         function_name: String,
         metadata_id: MetadataId,
         function_metadata_id: String,
-        dependencies: Vec<MetadataId>,
+        dependencies: Vec<FunctionDependencyInfo>,
         external_dependencies: Vec<MetadataId>,
     ) -> Self {
         Self {
@@ -38,6 +44,9 @@ impl FunctionDependenciesMetadata {
             None => bat_metadata.function_dependencies.push(self.clone()),
             Some(pos) => bat_metadata.function_dependencies[pos] = self.clone(),
         };
+        bat_metadata
+            .function_dependencies
+            .sort_by_key(|func_dep| func_dep.function_name.clone());
         bat_metadata.save_metadata()?;
         Ok(())
     }

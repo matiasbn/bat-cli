@@ -62,6 +62,9 @@ impl TraitMetadata {
             None => bat_metadata.traits.push(self.clone()),
             Some(pos) => bat_metadata.traits[pos] = self.clone(),
         };
+        bat_metadata
+            .traits
+            .sort_by_key(|trait_meta| trait_meta.name.clone());
         bat_metadata.save_metadata()?;
         Ok(())
     }

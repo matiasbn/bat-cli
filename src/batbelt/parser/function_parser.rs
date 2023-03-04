@@ -4,7 +4,9 @@ use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId, Metad
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::parser::{ParserError, ParserResult};
 
-use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
+use crate::batbelt::metadata::function_dependencies_metadata::{
+    FunctionDependenciesMetadata, FunctionDependencyInfo,
+};
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
@@ -59,17 +61,33 @@ impl FunctionParser {
             "new_function_parser_with_dependencies:\n{:#?}",
             new_function_parser
         );
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         let function_dependencies_metadata = FunctionDependenciesMetadata::new(
             new_function_parser.name.clone(),
             BatMetadata::create_metadata_id(),
             new_function_parser.function_metadata.metadata_id.clone(),
-            new_function_parser.dependencies.clone(),
+            new_function_parser
+                .dependencies
+                .clone()
+                .into_iter()
+                .map(|func_dep| {
+                    bat_metadata
+                        .source_code
+                        .get_function_by_id(func_dep.clone())
+                        .change_context(ParserError)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|func_meta| FunctionDependencyInfo {
+                    function_name: func_meta.name.clone(),
+                    function_metadata_id: func_meta.metadata_id.clone(),
+                })
+                .collect::<Vec<_>>(),
             new_function_parser.external_dependencies.clone(),
         );
         function_dependencies_metadata
             .update_metadata_file()
             .change_context(ParserError)?;
-        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         for function_dependency in new_function_parser.clone().dependencies {
             if let Err(_) = bat_metadata
                 .get_functions_dependencies_metadata_by_function_metadata_id(

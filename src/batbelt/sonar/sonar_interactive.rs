@@ -248,7 +248,8 @@ impl BatSonarInteractive {
         let bat_metadata = BatMetadata::read_metadata().change_context(BatSonarError)?;
         let traits_sc_metadata = bat_metadata.source_code.traits_source_code.clone();
         println!(
-            "Getting metadata for {}, analyzing {} traits",
+            "Getting metadata for {}, analyzing {} {}",
+            BatMetadataType::Trait.get_colored_name(true),
             BatMetadataType::Trait.get_colored_name(true),
             style(format!("{}", traits_sc_metadata.len())).bold().dim(),
         );
@@ -284,11 +285,12 @@ impl BatSonarInteractive {
         let bat_metadata = BatMetadata::read_metadata().change_context(BatSonarError)?;
         let functions_sc_metadata = bat_metadata.source_code.functions_source_code.clone();
         println!(
-            "Getting metadata for {}, analyzing {} traits",
-            BatMetadataType::Function.get_colored_name(true),
+            "Getting metadata for {}, analyzing {} {}",
+            "Function dependencies".green(),
             style(format!("{}", functions_sc_metadata.len()))
                 .bold()
                 .dim(),
+            BatMetadataType::Function.get_colored_name(true),
         );
         let m = MultiProgress::new();
         let handles: Vec<_> = (0..1)
