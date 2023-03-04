@@ -10,10 +10,10 @@ use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use crate::batbelt;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::git::{GitAction, GitCommit};
-use crate::batbelt::miro::frame::{
-    MiroFrame, MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X,
-    MIRO_INITIAL_Y,
-};
+use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulMetadata;
+use crate::batbelt::metadata::miro_metadata::MiroCodeOverhaulMetadata;
+use crate::batbelt::metadata::BatMetadata;
+
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile::GitIgnore;
 use crate::batbelt::path::{BatFile, BatFolder};
@@ -203,7 +203,6 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
             // create overhaul files
             initialize_code_overhaul_files()?;
             // commit to-review files
-            create_miro_frames_for_entrypoints().await?;
         }
     } else {
         TemplateGenerator::create_auditor_folders().change_context(CommandError)?;
@@ -211,7 +210,6 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
         // create overhaul files
         initialize_code_overhaul_files()?;
         // commit to-review files
-        create_miro_frames_for_entrypoints().await?;
     }
 
     println!("Project successfully initialized");
@@ -262,52 +260,6 @@ fn initialize_code_overhaul_files() -> Result<(), CommandError> {
     for entrypoint_name in entrypoints_names {
         create_overhaul_file(entrypoint_name.clone())?;
     }
-    Ok(())
-}
-
-async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
-    let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
-    if bat_auditor_config.miro_oauth_access_token.is_empty() {
-        return Ok(());
-    }
-
-    let user_want_to_deploy = BatDialoguer::select_yes_or_no(
-        "Do you want to deploy the Miro frames for code overhaul?".to_string(),
-    )
-    .change_context(CommandError)?;
-
-    if !user_want_to_deploy {
-        println!("Ok, skipping code-overhaul Miro frames deployment....");
-        return Ok(());
-    }
-
-    let miro_board_frames = MiroFrame::get_frames_from_miro()
-        .await
-        .change_context(CommandError)?;
-
-    let entrypoints_names =
-        EntrypointParser::get_entrypoint_names(false).change_context(CommandError)?;
-
-    for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
-        let frame_already_deployed = miro_board_frames
-            .iter()
-            .any(|frame| &frame.title == entrypoint_name);
-        if !frame_already_deployed {
-            println!("Creating frame in Miro for {}", entrypoint_name.green());
-            let mut miro_frame =
-                MiroFrame::new(entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
-            miro_frame.deploy().await.change_context(CommandError)?;
-            let x_modifier = entrypoint_index as i64 % MIRO_BOARD_COLUMNS;
-            let y_modifier = entrypoint_index as i64 / MIRO_BOARD_COLUMNS;
-            let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
-            let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
-            miro_frame
-                .update_position(x_position, y_position)
-                .await
-                .change_context(CommandError)?;
-        }
-    }
-
     Ok(())
 }
 

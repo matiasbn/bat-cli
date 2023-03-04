@@ -14,6 +14,7 @@ use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{Report, ResultExt};
 
+use crate::batbelt::metadata::BatMetadata;
 use std::fs;
 
 #[derive(
@@ -268,7 +269,12 @@ pub fn start_co_file() -> error_stack::Result<(), CommandError> {
 
     let started_template =
         CodeOverhaulTemplate::new(entrypoint_name, true).change_context(CommandError)?;
-    let mut started_markdown_content = started_template
+
+    GitCommit::UpdateMetadataJson
+        .create_commit()
+        .change_context(CommandError)?;
+
+    let started_markdown_content = started_template
         .get_markdown_content()
         .change_context(CommandError)?;
 

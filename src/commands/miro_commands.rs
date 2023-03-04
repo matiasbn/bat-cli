@@ -1,4 +1,5 @@
 use crate::batbelt;
+use std::fs;
 
 use colored::{ColoredString, Colorize};
 
@@ -6,31 +7,45 @@ use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
 };
 use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, MetadataError, SourceCodeMetadata,
+    BatMetadata, BatMetadataParser, BatMetadataType, MetadataError, MetadataResult, MiroMetadata,
+    SourceCodeMetadata,
 };
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_source_code_metadata::{
     StructMetadataType, StructSourceCodeMetadata,
 };
-use crate::batbelt::miro::connector::create_connector;
+use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
 use crate::batbelt::miro::frame::MiroFrame;
 
-use crate::batbelt::miro::MiroConfig;
+use crate::batbelt::miro::{MiroConfig, MiroItemType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
 use crate::batbelt::miro::image::MiroImage;
 
+use crate::batbelt::git::GitCommit;
+use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerInfo, SignerType};
+use crate::batbelt::miro::item::MiroItem;
+use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::parser::trait_parser::TraitParser;
-use crate::batbelt::BatEnumerator;
+use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::templates::code_overhaul_template::{
+    CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
+};
+use crate::batbelt::{silicon, BatEnumerator};
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
-use error_stack::{Result, ResultExt};
+use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
+use regex::Regex;
 
 use super::CommandError;
+use crate::batbelt::miro::frame::{
+    MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
+};
+use crate::config::BatAuditorConfig;
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -80,435 +95,493 @@ impl BatCommandEnumerator for MiroCommand {
 
 impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
+        MiroConfig::check_miro_enabled().change_context(CommandError)?;
         match self {
-            MiroCommand::CodeOverhaul => unimplemented!(),
+            MiroCommand::CodeOverhaul => self.deploy_code_overhaul_screenshots_to_frame().await?,
             MiroCommand::Entrypoint { select_all, sorted } => {
                 self.entrypoint_action(*select_all, *sorted).await?
             }
             MiroCommand::Metadata { select_all } => self.metadata_action(*select_all).await?,
             MiroCommand::Function { select_all } => self.function_action(*select_all).await?,
-            // MiroCommand::Function { select_all: _ } => unimplemented!(),
         }
         Ok(())
     }
-    // #[derive(Clone, Copy)]
-    // pub enum SignerType {
-    //     Validated,
-    //     NotValidated,
-    //     NotSigner,
-    // }
-    //
-    // impl SignerType {
-    //     pub fn get_sticky_note_color(&self) -> MiroColor {
-    //         match self {
-    //             SignerType::Validated => MiroColor::Red,
-    //             SignerType::NotValidated => MiroColor::DarkBlue,
-    //             SignerType::NotSigner => MiroColor::Gray,
-    //         }
-    //     }
-    // }
-    //
-    // pub struct SignerInfo {
-    //     pub signer_text: String,
-    //     pub sticky_note_id: String,
-    //     pub user_figure_id: String,
-    //     pub signer_type: SignerType,
-    // }
 
-    pub async fn deploy_code_overhaul_screenshots_to_frame() -> Result<(), CommandError> {
-        unimplemented!();
-        // MiroConfig::check_miro_enabled();
-        // let started_path = batbelt::path::get_folder_path(BatFolder::CodeOverhaulStarted, false)
-        //     .change_context(CommandError)?;
-        // let started_files_file_info =
-        //     get_only_files_from_folder(started_path).change_context(CommandError)?;
-        // let file_names = started_files_file_info
-        //     .iter()
-        //     .map(|file_info| file_info.name.clone())
-        //     .collect::<Vec<_>>();
-        // let prompt_text = "Select the co file to deploy to Miro";
-        // let selection =
-        //     batbelt::cli_inputs::select(&prompt_text, file_names, None).change_context(CommandError)?;
-        // let selected_file_info = &started_files_file_info[selection];
-        // let entrypoint_name = selected_file_info.name.trim_end_matches(".md");
-        // let selected_co_started_path = selected_file_info.path.clone();
-        // let miro_frames = MiroFrame::get_frames_from_miro()
-        //     .await
-        //     .change_context(CommandError)?;
-        // let entrypoint_frame = miro_frames
-        //     .iter()
-        //     .find(|frame| frame.title == entrypoint_name);
-        // let entrypoint_frame = if let Some(ep_frame) = entrypoint_frame {
-        //     ep_frame
-        // } else {
-        //     unimplemented!()
-        // };
-        // let entrypoint_frame_objects = entrypoint_frame.get_items_within_frame().await;
-        //
-        // let is_deploying = entrypoint_frame_objects
-        //     .change_context(CommandError)?
-        //     .is_empty();
-        // if is_deploying {
-        //     // check that the signers are finished
-        //     let current_content = fs::read_to_string(selected_co_started_path.clone()).unwrap();
-        //     if current_content.contains(
-        //         &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
-        //     ) {
-        //         return Err(Report::new(CommandError).attach_printable(format!(
-        //             "Please complete the signers description before deploying to Miro"
-        //         )));
-        //     }
-        //     let entrypoints_metadata_path = BatFile::EntrypointsMetadata
-        //         .get_path(false)
-        //         .change_context(CommandError)?;
-        //     let metadata_markdown = MarkdownFile::new(&entrypoints_metadata_path);
-        //     let entrypoints_section = metadata_markdown
-        //         .get_section(&BatMetadataType::Entrypoints.to_sentence_case())
+    pub async fn deploy_code_overhaul_screenshots_to_frame(&self) -> Result<(), CommandError> {
+        let co_started_bat_folder = BatFolder::CodeOverhaulStarted;
+        let started_files_names = co_started_bat_folder
+            .get_all_files_names(true, None, None)
+            .change_context(CommandError)?;
+        let prompt_text = "Select the co file to deploy to Miro".to_string();
+        let selection = BatDialoguer::select(prompt_text, started_files_names.clone(), None)?;
+        let selected_file_name = started_files_names[selection].clone();
+        let entrypoint_name = selected_file_name.trim_end_matches(".md").to_string();
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        let started_co_bat_file = BatFile::CodeOverhaulStarted {
+            file_name: selected_file_name.clone(),
+        };
+
+        let (co_miro_frame, mut co_metadata) =
+            match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone()) {
+                Ok(co_meta) => {
+                    let frame_id = co_meta.miro_frame_id.clone();
+                    let miro_frame = MiroFrame::new_from_item_id(&frame_id)
+                        .change_context(CommandError)
+                        .await?;
+                    println!(
+                        "Deploying {} to {:#?}",
+                        entrypoint_name.green(),
+                        miro_frame.title.clone()
+                    );
+                    (miro_frame, co_meta)
+                }
+                Err(_) => {
+                    println!(
+                        "Miro Metadata not found for entrypoint {}",
+                        entrypoint_name.green()
+                    );
+                    let miro_frame = self.prompt_select_frame().await?;
+                    let miro_co_metadata = MiroCodeOverhaulMetadata {
+                        metadata_id: BatMetadata::create_metadata_id(),
+                        entry_point_name: entrypoint_name.clone(),
+                        miro_frame_id: miro_frame.item_id.clone(),
+                        images_deployed: false,
+                        entry_point_image_id: "".to_string(),
+                        context_accounts_image_id: "".to_string(),
+                        validations_image_id: "".to_string(),
+                        handler_image_id: "".to_string(),
+                        signers: vec![],
+                    };
+                    miro_co_metadata
+                        .update_code_overhaul_metadata()
+                        .change_context(CommandError)?;
+                    (miro_frame, miro_co_metadata)
+                }
+            };
+        if !co_metadata.images_deployed {
+            // check that the signers are finished
+            let started_co_content = started_co_bat_file
+                .read_content(false)
+                .change_context(CommandError)?;
+            if started_co_content.contains(
+                &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
+            ) {
+                return Err(Report::new(CommandError).attach_printable(format!(
+                    "Please complete the signers description before deploying to Miro"
+                )));
+            }
+            let entrypoint_parser =
+                EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
+            let signers_section_regex = Regex::new(r"# Signers:[\s\S]*?#").unwrap();
+            let signers = signers_section_regex
+                .find(&started_co_content)
+                .ok_or(CommandError)
+                .into_report()?
+                .as_str()
+                .to_string()
+                .lines()
+                .filter_map(|line| {
+                    if line.starts_with("- ") {
+                        let mut line_split = line.trim_start_matches("- ").split(": ");
+                        Some((
+                            line_split.next().unwrap().to_string(),
+                            line_split.next().unwrap().to_string(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            log::debug!("signers_section: \n{:#?}", signers);
+
+            let mut signers_info: Vec<SignerInfo> = vec![];
+            if !signers.is_empty() {
+                for (signer_name, signer_description) in signers.into_iter() {
+                    let prompt_text = format!(
+                        "is the signer {} a validated signer?",
+                        format!("{signer_name}").red()
+                    );
+                    let is_validated =
+                        BatDialoguer::select_yes_or_no(prompt_text).change_context(CommandError)?;
+                    let signer_type = if is_validated {
+                        SignerType::Validated
+                    } else {
+                        SignerType::NotValidated
+                    };
+
+                    let signer_title = if is_validated {
+                        format!("Validated signer:\n\n {}", signer_name)
+                    } else {
+                        format!("Not validated signer:\n\n {}", signer_name)
+                    };
+
+                    signers_info.push(SignerInfo {
+                        signer_text: signer_title,
+                        sticky_note_id: "".to_string(),
+                        user_figure_id: "".to_string(),
+                        signer_type,
+                    })
+                }
+            } else {
+                // no signers, push template signer
+                signers_info.push(SignerInfo {
+                    signer_text: SignerType::Permissionless.to_string(),
+                    sticky_note_id: "".to_string(),
+                    user_figure_id: "".to_string(),
+                    signer_type: SignerType::Permissionless,
+                })
+            }
+
+            println!(
+                "Creating signers figures in Miro for {}",
+                entrypoint_name.green()
+            );
+
+            for (signer_index, signer) in signers_info.iter_mut().enumerate() {
+                let x_position = 550;
+                let y_position = (150 + signer_index * 270) as i64;
+                let width = 374;
+                let mut signer_sticky_note = MiroStickyNote::new(
+                    &signer.signer_text,
+                    signer.signer_type.get_sticky_note_color(),
+                    &co_miro_frame.item_id,
+                    x_position,
+                    y_position,
+                    width,
+                    0,
+                );
+                signer_sticky_note
+                    .deploy()
+                    .await
+                    .change_context(CommandError)?;
+
+                let user_figure_url = "https://mirostatic.com/app/static/12079327f83ff492.svg";
+                let y_position = (150 + signer_index * 270) as i64;
+                let mut user_figure = MiroImage::new_from_url(
+                    user_figure_url,
+                    &co_miro_frame.item_id,
+                    150,
+                    y_position,
+                    200,
+                );
+                user_figure.deploy().await.change_context(CommandError)?;
+
+                *signer = SignerInfo {
+                    signer_text: signer.signer_text.clone(),
+                    sticky_note_id: signer_sticky_note.item_id,
+                    user_figure_id: user_figure.item_id,
+                    signer_type: signer.signer_type.clone(),
+                }
+            }
+            co_metadata.signers = signers_info.clone();
+
+            let options = SourceCodeScreenshotOptions {
+                include_path: true,
+                offset_to_start_line: true,
+                filter_comments: true,
+                font_size: Some(20),
+                filters: None,
+                show_line_number: true,
+            };
+            let co_options = SourceCodeScreenshotOptions {
+                include_path: false,
+                offset_to_start_line: false,
+                filter_comments: false,
+                font_size: Some(20),
+                filters: None,
+                show_line_number: false,
+            };
+
+            // Deploy images
+
+            let (entrypoint_x_position, entrypoint_y_position) = (1300, 250);
+            let (co_x_position, co_y_position) = (2200, 350);
+            let (validations_x_position, validations_y_position) = (3000, 500);
+            let (handler_x_position, handler_y_position) = (2900, 1400);
+
+            match entrypoint_parser.handler.clone() {
+                None => {}
+                Some(handler_meta) => {
+                    let handler_sc = handler_meta.to_source_code_parser(Some(
+                        self.parse_screenshot_name(&handler_meta.name, &co_miro_frame.title),
+                    ));
+                    let handler_image = handler_sc
+                        .deploy_screenshot_to_miro_frame(
+                            co_miro_frame.clone(),
+                            handler_x_position,
+                            handler_y_position,
+                            SourceCodeScreenshotOptions {
+                                include_path: true,
+                                offset_to_start_line: true,
+                                filter_comments: true,
+                                font_size: None,
+                                filters: None,
+                                show_line_number: true,
+                            },
+                        )
+                        .await
+                        .change_context(CommandError)?;
+                    co_metadata.handler_image_id = handler_image.item_id.clone();
+                }
+            }
+
+            let entrypoint_function_image = entrypoint_parser
+                .entry_point_function
+                .to_source_code_parser(Some(self.parse_screenshot_name(
+                    &entrypoint_parser.entry_point_function.name,
+                    &co_miro_frame.title,
+                )))
+                .deploy_screenshot_to_miro_frame(
+                    co_miro_frame.clone(),
+                    entrypoint_x_position,
+                    entrypoint_y_position,
+                    SourceCodeScreenshotOptions {
+                        include_path: false,
+                        offset_to_start_line: true,
+                        filter_comments: false,
+                        font_size: None,
+                        filters: None,
+                        show_line_number: true,
+                    },
+                )
+                .await
+                .change_context(CommandError)?;
+            co_metadata.entry_point_image_id = entrypoint_function_image.item_id.clone();
+
+            let validations_section = CodeOverhaulSection::Validations
+                .get_section_content(Some(entrypoint_parser.clone()))
+                .change_context(CommandError)?;
+            let val_sec_formatted = validations_section
+                .lines()
+                .filter_map(|line| {
+                    if line.trim() == "# Validations:" {
+                        return Some("/// Validations".to_string());
+                    };
+                    if line.trim() == "- ```rust" || line.trim() == "```" {
+                        return Some("".to_string());
+                    }
+                    return Some(line.to_string());
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let auditor_figures_path = BatFolder::AuditorFigures
+                .get_path(false)
+                .change_context(CommandError)?;
+
+            let val_sec_sc_path = silicon::create_figure(
+                &val_sec_formatted,
+                &auditor_figures_path,
+                "validations",
+                0,
+                None,
+                false,
+            );
+
+            let mut validations_miro_image =
+                MiroImage::new_from_file_path(&val_sec_sc_path, &co_miro_frame.item_id);
+            validations_miro_image
+                .deploy()
+                .await
+                .change_context(CommandError)?;
+
+            fs::remove_file(&val_sec_sc_path)
+                .into_report()
+                .change_context(CommandError)?;
+
+            let val_miro_item = MiroItem::new(
+                &validations_miro_image.item_id,
+                &co_miro_frame.item_id,
+                validations_x_position,
+                validations_y_position,
+                MiroItemType::Image,
+            );
+            val_miro_item.update_item_parent_and_position().await;
+
+            co_metadata.validations_image_id = validations_miro_image.item_id.clone();
+
+            let context_accounts_section = CodeOverhaulSection::ContextAccounts
+                .get_section_content(Some(entrypoint_parser.clone()))
+                .change_context(CommandError)?;
+            let ca_formatted = context_accounts_section
+                .lines()
+                .filter_map(|line| {
+                    if line.trim() == "# Context accounts:" {
+                        return Some("/// Context accounts".to_string());
+                    };
+                    if line.trim() == "- ```rust" || line.trim() == "```" {
+                        return None;
+                    }
+                    Some(line.to_string())
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let ca_sc_path = silicon::create_figure(
+                &ca_formatted,
+                &auditor_figures_path,
+                "context_accounts",
+                0,
+                None,
+                false,
+            );
+
+            let mut ca_miro_image =
+                MiroImage::new_from_file_path(&ca_sc_path, &co_miro_frame.item_id);
+            ca_miro_image.deploy().await.change_context(CommandError)?;
+            let ca_miro_item = MiroItem::new(
+                &ca_miro_image.item_id,
+                &co_miro_frame.item_id,
+                co_x_position,
+                co_y_position,
+                MiroItemType::Image,
+            );
+            ca_miro_item.update_item_parent_and_position().await;
+
+            fs::remove_file(&ca_sc_path)
+                .into_report()
+                .change_context(CommandError)?;
+
+            co_metadata.context_accounts_image_id = ca_miro_image.item_id.clone();
+            co_metadata.images_deployed = true;
+            co_metadata
+                .update_code_overhaul_metadata()
+                .change_context(CommandError)?;
+
+            GitCommit::UpdateMetadataJson
+                .create_commit()
+                .change_context(CommandError)?;
+            // Connect images
+            // entrypoint_miro_image.update_position(1300, 250).await;
+            // co_miro_image.update_position(2200, 350).await;
+            // validations_miro_image.update_position(3000, 500).await;
+            // handler_miro_image.update_position(2900, 1400).await;
+
+            println!("Connecting signers to entrypoint");
+            for signer_miro_ids in signers_info {
+                batbelt::miro::connector::create_connector(
+                    &signer_miro_ids.user_figure_id,
+                    &signer_miro_ids.sticky_note_id,
+                    None,
+                )
+                .await
+                .change_context(CommandError)?;
+                batbelt::miro::connector::create_connector(
+                    &signer_miro_ids.sticky_note_id,
+                    &co_metadata.entry_point_image_id,
+                    Some(ConnectorOptions {
+                        start_x_position: "100%".to_string(),
+                        start_y_position: "50%".to_string(),
+                        end_x_position: "0%".to_string(),
+                        end_y_position: "50%".to_string(),
+                    }),
+                )
+                .await
+                .change_context(CommandError)?;
+            }
+
+            println!("Connecting snapshots in Miro");
+            batbelt::miro::connector::create_connector(
+                &co_metadata.entry_point_image_id,
+                &co_metadata.context_accounts_image_id,
+                None,
+            )
+            .await
+            .change_context(CommandError)?;
+            batbelt::miro::connector::create_connector(
+                &co_metadata.context_accounts_image_id,
+                &co_metadata.validations_image_id,
+                None,
+            )
+            .await
+            .change_context(CommandError)?;
+            if !co_metadata.handler_image_id.is_empty() {
+                batbelt::miro::connector::create_connector(
+                    &co_metadata.validations_image_id,
+                    &co_metadata.handler_image_id,
+                    None,
+                )
+                .await
+                .change_context(CommandError)?;
+            }
+        }
+        // // Deploy mut_accounts
+        // if mut_accounts.len() > 0 {
+        //     let structs_section = metadata_markdown
+        //         .get_section(&MetadataSection::Structs.to_sentence_case())
         //         .unwrap();
-        //     let started_entrypoint_section =
-        //         metadata_markdown.get_subsection(&entrypoint_name, entrypoints_section.section_header);
-        //     let EntrypointMetadata {
-        //         name: _,
-        //         signers,
-        //         instruction_file_path,
-        //         handler_function,
-        //         context_name: _,
-        //         mut_accounts: _,
-        //         function_parameters: _,
-        //     } = EntrypointMetadata::from_markdown_section(started_entrypoint_section);
-        //     // get the signers name and description
-        //
-        //     let mut signers_info: Vec<SignerInfo> = vec![];
-        //     if !signers.is_empty() {
-        //         for signer_name in signers.iter() {
-        //             let prompt_text = format!(
-        //                 "is the signer {} a validated signer?",
-        //                 format!("{signer_name}").red()
+        //     let structs_subsection = metadata_markdown.get_section_subsections(structs_section);
+        //     for mut_account in mut_accounts {
+        //         let mut_account_section = structs_subsection.iter().find_map(|subsection| {
+        //             let struct_md_section =
+        //                 StructMetadata::from_markdown_section(subsection.clone());
+        //             if struct_md_section.struct_type == StructMetadataType::SolanaAccount
+        //                 && struct_md_section.name == mut_account[1]
+        //             {
+        //                 Some(struct_md_section)
+        //             } else {
+        //                 None
+        //             }
+        //         });
+        //         if let Some(mut_section) = mut_account_section {
+        //             let mut_acc_source_code = SourceCodeParser::new(
+        //                 CodeOverhaulSection::Validations.to_title(),
+        //                 mut_section.path.clone(),
+        //                 mut_section.start_line_index,
+        //                 mut_section.end_line_index,
         //             );
-        //             let selection = batbelt::cli_inputs::select_yes_or_no(&prompt_text)
-        //                 .change_context(CommandError)?;
-        //             let signer_type = if selection {
-        //                 SignerType::Validated
-        //             } else {
-        //                 SignerType::NotValidated
-        //             };
-        //
-        //             let signer_title = if selection {
-        //                 format!("Validated signer:\n\n {}", signer_name)
-        //             } else {
-        //                 format!("Not validated signer:\n\n {}", signer_name)
-        //             };
-        //
-        //             signers_info.push(SignerInfo {
-        //                 signer_text: signer_title,
-        //                 sticky_note_id: "".to_string(),
-        //                 user_figure_id: "".to_string(),
-        //                 signer_type,
-        //             })
-        //         }
-        //     } else {
-        //         // no signers, push template signer
-        //         signers_info.push(SignerInfo {
-        //             signer_text: "Permissionless".to_string(),
-        //             sticky_note_id: "".to_string(),
-        //             user_figure_id: "".to_string(),
-        //             signer_type: SignerType::NotSigner,
-        //         })
-        //     }
-        //
-        //     println!(
-        //         "Creating signers figures in Miro for {}",
-        //         entrypoint_name.green()
-        //     );
-        //
-        //     for (signer_index, signer) in signers_info.iter_mut().enumerate() {
-        //         let x_position = 550;
-        //         let y_position = (150 + signer_index * 270) as i64;
-        //         let width = 374;
-        //         let mut signer_sticky_note = MiroStickyNote::new(
-        //             &signer.signer_text,
-        //             signer.signer_type.get_sticky_note_color(),
-        //             &entrypoint_frame.item_id,
-        //             x_position,
-        //             y_position,
-        //             width,
-        //             0,
-        //         );
-        //         signer_sticky_note
-        //             .deploy()
-        //             .await
-        //             .change_context(CommandError)?;
-        //
-        //         let user_figure_url = "https://mirostatic.com/app/static/12079327f83ff492.svg";
-        //         let y_position = (150 + signer_index * 270) as i64;
-        //         let mut user_figure = MiroImage::new_from_url(
-        //             user_figure_url,
-        //             &entrypoint_frame.item_id,
-        //             150,
-        //             y_position,
-        //             200,
-        //         );
-        //         user_figure.deploy().await.change_context(CommandError)?;
-        //
-        //         *signer = SignerInfo {
-        //             signer_text: signer.signer_text.clone(),
-        //             sticky_note_id: signer_sticky_note.item_id,
-        //             user_figure_id: user_figure.item_id,
-        //             signer_type: SignerType::NotSigner,
+        //             let mut_acc_screenshot_path =
+        //                 mut_acc_source_code.create_screenshot(options.clone());
+        //             let mut mut_acc_miro_image = MiroImage::new_from_file_path(
+        //                 &mut_acc_screenshot_path,
+        //                 &entrypoint_frame.item_id,
+        //             );
+        //             mut_acc_miro_image.deploy().await;
+        //             mut_acc_miro_image.update_position(400, 400).await;
+        //             // fs::remove_file(mut_acc_screenshot_path).unwrap();
         //         }
         //     }
-        //     // Handler figure
-        //     let functions_section = metadata_markdown
-        //         .get_section(&BatMetadataType::Functions.to_sentence_case())
-        //         .unwrap();
-        //     let functions_subsections =
-        //         metadata_markdown.get_section_subsections(functions_section.clone());
-        //     let handler_subsection = functions_subsections
-        //         .iter()
-        //         .find(|subsection| {
-        //             subsection.section_header.title == handler_function
-        //                 && subsection.content.contains(&instruction_file_path)
-        //         })
-        //         .unwrap();
-        //     let handler_function_metadata =
-        //         FunctionMetadata::from_markdown_section(handler_subsection.clone())
-        //             .change_context(CommandError)?;
-        //     let handler_source_code = SourceCodeParser::new(
-        //         handler_function,
-        //         handler_function_metadata.path,
-        //         handler_function_metadata.start_line_index,
-        //         handler_function_metadata.end_line_index,
-        //     );
-        //     let entrypoint_metadata = functions_subsections
-        //         .iter()
-        //         .map(|function| {
-        //             FunctionMetadata::from_markdown_section(function.clone())
-        //                 .change_context(CommandError)
-        //         })
-        //         .collect::<Result<Vec<FunctionMetadata>, _>>()?
-        //         .into_iter()
-        //         .find(|function_metadata| {
-        //             function_metadata.function_type == FunctionMetadataType::EntryPoint
-        //                 && function_metadata.name == entrypoint_name
-        //         })
-        //         .ok_or(CommandError)
-        //         .into_report()
-        //         .attach_printable(format!(
-        //             "Error finding FunctionMetadata for {}",
-        //             entrypoint_name
-        //         ))?;
-        //
-        //     let entrypoint_source_code = SourceCodeParser::new(
-        //         entrypoint_metadata.name,
-        //         entrypoint_metadata.path,
-        //         entrypoint_metadata.start_line_index,
-        //         entrypoint_metadata.end_line_index,
-        //     );
-        //     // Context accounts figure
-        //     let co_file_markdown = MarkdownFile::new(&selected_co_started_path);
-        //     let context_accounts_section = co_file_markdown
-        //         .get_section(&CodeOverhaulSection::ContextAccounts.to_title())
-        //         .unwrap();
-        //     let context_accounts_source_code = SourceCodeParser::new(
-        //         CodeOverhaulSection::ContextAccounts.to_title(),
-        //         selected_co_started_path.clone(),
-        //         context_accounts_section.start_line_index,
-        //         context_accounts_section.end_line_index,
-        //     );
-        //     // Validations figure
-        //     let validations_section = co_file_markdown
-        //         .get_section(&CodeOverhaulSection::Validations.to_title())
-        //         .unwrap();
-        //
-        //     let validations_accounts_source_code = SourceCodeParser::new(
-        //         CodeOverhaulSection::Validations.to_title(),
-        //         selected_co_started_path.clone(),
-        //         validations_section.start_line_index,
-        //         validations_section.end_line_index,
-        //     );
-        //     let options = SourceCodeScreenshotOptions {
-        //         include_path: true,
-        //         offset_to_start_line: true,
-        //         filter_comments: true,
-        //         font_size: Some(20),
-        //         filters: None,
-        //         show_line_number: true,
-        //     };
-        //     let co_options = SourceCodeScreenshotOptions {
-        //         include_path: false,
-        //         offset_to_start_line: false,
-        //         filter_comments: false,
-        //         font_size: Some(20),
-        //         filters: None,
-        //         show_line_number: false,
-        //     };
-        //     let handler_screenshot_path = handler_source_code
-        //         .create_screenshot(options.clone())
-        //         .change_context(CommandError)?;
-        //     let entrypoint_screenshot_path = entrypoint_source_code
-        //         .create_screenshot(options.clone())
-        //         .change_context(CommandError)?;
-        //     let co_screenshot_path = context_accounts_source_code
-        //         .create_screenshot(co_options.clone())
-        //         .change_context(CommandError)?;
-        //     let validations_screenshot_path = validations_accounts_source_code
-        //         .create_screenshot(co_options.clone())
-        //         .change_context(CommandError)?;
-        //
-        //     // Miro Images&
-        //     let mut handler_miro_image =
-        //         MiroImage::new_from_file_path(&handler_screenshot_path, &entrypoint_frame.item_id);
-        //     let mut entrypoint_miro_image =
-        //         MiroImage::new_from_file_path(&entrypoint_screenshot_path, &entrypoint_frame.item_id);
-        //     let mut co_miro_image =
-        //         MiroImage::new_from_file_path(&co_screenshot_path, &entrypoint_frame.item_id);
-        //     let mut validations_miro_image =
-        //         MiroImage::new_from_file_path(&validations_screenshot_path, &entrypoint_frame.item_id);
-        //
-        //     handler_miro_image
-        //         .deploy()
-        //         .await
-        //         .change_context(CommandError)?;
-        //     entrypoint_miro_image
-        //         .deploy()
-        //         .await
-        //         .change_context(CommandError)?;
-        //     co_miro_image.deploy().await.change_context(CommandError)?;
-        //     validations_miro_image
-        //         .deploy()
-        //         .await
-        //         .change_context(CommandError)?;
-        //
-        //     entrypoint_miro_image.update_position(1300, 250).await;
-        //     co_miro_image.update_position(2200, 350).await;
-        //     validations_miro_image.update_position(3000, 500).await;
-        //     handler_miro_image.update_position(2900, 1400).await;
-        //
-        //     println!("Connecting signers to entrypoint");
-        //     for signer_miro_ids in signers_info {
-        //         batbelt::miro::connector::create_connector(
-        //             &signer_miro_ids.user_figure_id,
-        //             &signer_miro_ids.sticky_note_id,
-        //             None,
-        //         )
-        //         .await
-        //         .change_context(CommandError)?;
-        //         batbelt::miro::connector::create_connector(
-        //             &signer_miro_ids.sticky_note_id,
-        //             &entrypoint_miro_image.item_id,
-        //             Some(ConnectorOptions {
-        //                 start_x_position: "100%".to_string(),
-        //                 start_y_position: "50%".to_string(),
-        //                 end_x_position: "0%".to_string(),
-        //                 end_y_position: "50%".to_string(),
-        //             }),
-        //         )
-        //         .await
-        //         .change_context(CommandError)?;
-        //     }
-        //
-        //     println!("Connecting snapshots in Miro");
-        //     batbelt::miro::connector::create_connector(
-        //         &entrypoint_miro_image.item_id,
-        //         &co_miro_image.item_id,
-        //         None,
-        //     )
-        //     .await
-        //     .change_context(CommandError)?;
-        //     batbelt::miro::connector::create_connector(
-        //         &co_miro_image.item_id,
-        //         &validations_miro_image.item_id,
-        //         None,
-        //     )
-        //     .await
-        //     .change_context(CommandError)?;
-        //     batbelt::miro::connector::create_connector(
-        //         &validations_miro_image.item_id,
-        //         &handler_miro_image.item_id,
-        //         None,
-        //     )
-        //     .await
-        //     .change_context(CommandError)?;
-        //
-        //     // // Deploy mut_accounts
-        //     // if mut_accounts.len() > 0 {
-        //     //     let structs_section = metadata_markdown
-        //     //         .get_section(&MetadataSection::Structs.to_sentence_case())
-        //     //         .unwrap();
-        //     //     let structs_subsection = metadata_markdown.get_section_subsections(structs_section);
-        //     //     for mut_account in mut_accounts {
-        //     //         let mut_account_section = structs_subsection.iter().find_map(|subsection| {
-        //     //             let struct_md_section =
-        //     //                 StructMetadata::from_markdown_section(subsection.clone());
-        //     //             if struct_md_section.struct_type == StructMetadataType::SolanaAccount
-        //     //                 && struct_md_section.name == mut_account[1]
-        //     //             {
-        //     //                 Some(struct_md_section)
-        //     //             } else {
-        //     //                 None
-        //     //             }
-        //     //         });
-        //     //         if let Some(mut_section) = mut_account_section {
-        //     //             let mut_acc_source_code = SourceCodeParser::new(
-        //     //                 CodeOverhaulSection::Validations.to_title(),
-        //     //                 mut_section.path.clone(),
-        //     //                 mut_section.start_line_index,
-        //     //                 mut_section.end_line_index,
-        //     //             );
-        //     //             let mut_acc_screenshot_path =
-        //     //                 mut_acc_source_code.create_screenshot(options.clone());
-        //     //             let mut mut_acc_miro_image = MiroImage::new_from_file_path(
-        //     //                 &mut_acc_screenshot_path,
-        //     //                 &entrypoint_frame.item_id,
-        //     //             );
-        //     //             mut_acc_miro_image.deploy().await;
-        //     //             mut_acc_miro_image.update_position(400, 400).await;
-        //     //             // fs::remove_file(mut_acc_screenshot_path).unwrap();
-        //     //         }
-        //     //     }
-        //     // }
-        //     // Remove screenshots
-        //     fs::remove_file(handler_screenshot_path).unwrap();
-        //     fs::remove_file(co_screenshot_path).unwrap();
-        //     fs::remove_file(validations_screenshot_path).unwrap();
-        //     fs::remove_file(entrypoint_screenshot_path).unwrap();
-        //
-        //     //
-        //     // create_git_commit(
-        //     //     GitCommit::DeployMiro,
-        //     //     Some(vec![selected_co_started_path.to_string()]),
-        //     // )
-        //     // .unwrap();
-        //     Ok(())
-        // } else {
-        //     // update images
-        //     // let prompt_text = format!("select the images to update for {selected_folder}");
-        //     // let selections = batbelt::cli_inputs::multiselect(
-        //     //     &prompt_text,
-        //     //     CO_FIGURES.to_vec(),
-        //     //     Some(&vec![true, true, true, true]),
-        //     // )?;
-        //     // if !selections.is_empty() {
-        //     //     for selection in selections.iter() {
-        //     //         let snapshot_path_vec = &snapshot_paths.clone().collect::<Vec<_>>();
-        //     //         let snapshot_path = &snapshot_path_vec.as_slice()[*selection];
-        //     //         let file_name = snapshot_path.split('/').last().unwrap();
-        //     //         println!("Updating: {file_name}");
-        //     //         let item_id =
-        //     //             batbelt::helpers::get::get_screenshot_id(file_name, &selected_co_started_path);
-        //     //         let mut screenshot_image =
-        //     //             MiroImage::new_from_item_id(&item_id, MiroImageType::FromPath).await;
-        //     //         screenshot_image.update_from_path(&snapshot_path).await;
-        //     //     }
-        //     //     create_git_commit(
-        //     //         GitCommit::UpdateMiro,
-        //     //         Some(vec![selected_folder.to_string()]),
-        //     //     )?;
-        //     // } else {
-        //     //     println!("No files selected");
-        //     // }
-        //     Ok(())
         // }
+        // Remove screenshots
+        // fs::remove_file(handler_screenshot_path).unwrap();
+        // fs::remove_file(co_screenshot_path).unwrap();
+        // fs::remove_file(validations_screenshot_path).unwrap();
+        // fs::remove_file(entrypoint_screenshot_path).unwrap();
+        //
+        //
+        // create_git_commit(
+        //     GitCommit::DeployMiro,
+        //     Some(vec![selected_co_started_path.to_string()]),
+        // )
+        // .unwrap();
+        // Ok(())
+        // } else {
+        //     update images
+        //     let prompt_text = format!("select the images to update for {selected_folder}");
+        //     let selections = batbelt::cli_inputs::multiselect(
+        //         &prompt_text,
+        //         CO_FIGURES.to_vec(),
+        //         Some(&vec![true, true, true, true]),
+        //     )?;
+        //     if !selections.is_empty() {
+        //         for selection in selections.iter() {
+        //             let snapshot_path_vec = &snapshot_paths.clone().collect::<Vec<_>>();
+        //             let snapshot_path = &snapshot_path_vec.as_slice()[*selection];
+        //             let file_name = snapshot_path.split('/').last().unwrap();
+        //             println!("Updating: {file_name}");
+        //             let item_id =
+        //                 batbelt::helpers::get::get_screenshot_id(file_name, &selected_co_started_path);
+        //             let mut screenshot_image =
+        //                 MiroImage::new_from_item_id(&item_id, MiroImageType::FromPath).await;
+        //             screenshot_image.update_from_path(&snapshot_path).await;
+        //         }
+        //         create_git_commit(
+        //             GitCommit::UpdateMiro,
+        //             Some(vec![selected_folder.to_string()]),
+        //         )?;
+        //     } else {
+        //         println!("No files selected");
+        //     }
+        Ok(())
     }
 
     async fn entrypoint_action(&self, select_all: bool, sorted: bool) -> Result<(), CommandError> {
@@ -1045,6 +1118,75 @@ impl MiroCommand {
         Ok(())
     }
 
+    async fn create_miro_frames_for_entry_points() -> Result<(), CommandError> {
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+        if bat_auditor_config.miro_oauth_access_token.is_empty() {
+            return Ok(());
+        }
+
+        let user_want_to_deploy = BatDialoguer::select_yes_or_no(
+            "Do you want to deploy the Miro frames for code overhaul?".to_string(),
+        )
+        .change_context(CommandError)?;
+
+        if !user_want_to_deploy {
+            println!("Ok, skipping Miro frames deployment....");
+            return Ok(());
+        }
+
+        let miro_board_frames = MiroFrame::get_frames_from_miro()
+            .await
+            .change_context(CommandError)?;
+
+        let entrypoints_names =
+            EntrypointParser::get_entrypoint_names(false).change_context(CommandError)?;
+
+        for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
+            let frame_already_deployed = miro_board_frames
+                .iter()
+                .find(|frame| &frame.title == entrypoint_name);
+
+            let mut miro_co_metadata = MiroCodeOverhaulMetadata {
+                metadata_id: BatMetadata::create_metadata_id(),
+                entry_point_name: entrypoint_name.clone(),
+                miro_frame_id: "".to_string(),
+                images_deployed: false,
+                entry_point_image_id: "".to_string(),
+                context_accounts_image_id: "".to_string(),
+                validations_image_id: "".to_string(),
+                handler_image_id: "".to_string(),
+                signers: vec![],
+            };
+
+            match frame_already_deployed {
+                Some(frame) => {
+                    miro_co_metadata.miro_frame_id = frame.item_id.clone();
+                }
+                None => {
+                    println!("Creating frame in Miro for {}", entrypoint_name.green());
+                    let mut miro_frame =
+                        MiroFrame::new(entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
+                    miro_frame.deploy().await.change_context(CommandError)?;
+                    let x_modifier = entrypoint_index as i64 % MIRO_BOARD_COLUMNS;
+                    let y_modifier = entrypoint_index as i64 / MIRO_BOARD_COLUMNS;
+                    let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
+                    let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
+                    miro_frame
+                        .update_position(x_position, y_position)
+                        .await
+                        .change_context(CommandError)?;
+                    miro_co_metadata.miro_frame_id = miro_frame.item_id.clone();
+                }
+            }
+
+            miro_co_metadata
+                .update_code_overhaul_metadata()
+                .change_context(CommandError)?;
+        }
+
+        Ok(())
+    }
+
     fn get_formatted_path(&self, name: String, path: String, start_line_index: usize) -> String {
         format!(
             "{}: {}:{}",
@@ -1058,7 +1200,7 @@ impl MiroCommand {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
 
         println!(
-            "\n\nGetting the {} from the {} ...\n\n",
+            "\nGetting the {} from the {} ...\n",
             "frames".yellow(),
             "Miro board".yellow()
         );

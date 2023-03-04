@@ -1,7 +1,9 @@
+pub mod code_overhaul_metadata;
 pub mod context_accounts_metadata;
 pub mod entrypoint_metadata;
 pub mod function_dependencies_metadata;
 pub mod functions_source_code_metadata;
+pub mod miro_metadata;
 pub mod structs_source_code_metadata;
 pub mod trait_metadata;
 pub mod traits_source_code_metadata;
@@ -18,12 +20,14 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
+use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulMetadata;
 use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
 use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
 };
+use crate::batbelt::metadata::miro_metadata::MiroCodeOverhaulMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::{
     StructMetadataType, StructSourceCodeMetadata,
 };
@@ -59,6 +63,201 @@ pub type MetadataResult<T> = Result<T, MetadataError>;
 
 pub type MetadataId = String;
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BatMetadata {
+    pub initialized: bool,
+    pub source_code: SourceCodeMetadata,
+    pub entry_points: Vec<EntrypointMetadata>,
+    pub function_dependencies: Vec<FunctionDependenciesMetadata>,
+    pub traits: Vec<TraitMetadata>,
+    pub context_accounts: Vec<ContextAccountsMetadata>,
+    pub miro: MiroMetadata,
+    pub code_overhaul: Vec<CodeOverhaulMetadata>,
+}
+
+impl BatMetadata {
+    pub fn new_empty() -> Self {
+        Self {
+            initialized: false,
+            source_code: SourceCodeMetadata {
+                functions_source_code: vec![],
+                structs_source_code: vec![],
+                traits_source_code: vec![],
+            },
+            entry_points: vec![],
+            function_dependencies: vec![],
+            traits: vec![],
+            context_accounts: vec![],
+            miro: MiroMetadata {
+                code_overhaul: vec![],
+            },
+            code_overhaul: vec![],
+        }
+    }
+
+    pub fn create_metadata_id() -> String {
+        let s: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect();
+        s
+    }
+
+    pub fn read_metadata() -> MetadataResult<Self> {
+        let metadata_json_bat_file = BatFile::BatMetadataFile;
+        let bat_metadata_value: Value = serde_json::from_str(
+            &metadata_json_bat_file
+                .read_content(true)
+                .change_context(MetadataError)?,
+        )
+        .into_report()
+        .change_context(MetadataError)?;
+        let bat_metadata: BatMetadata = serde_json::from_value(bat_metadata_value)
+            .into_report()
+            .change_context(MetadataError)?;
+        Ok(bat_metadata)
+    }
+
+    pub fn save_metadata(&self) -> MetadataResult<()> {
+        let metadata_json_bat_file = BatFile::BatMetadataFile;
+        // metadata_json_bat_file
+        //     .create_empty(false)
+        //     .change_context(MetadataError)?;
+        let metadata_json = json!(&self);
+        let metadata_json_pretty = serde_json::to_string_pretty(&metadata_json)
+            .into_report()
+            .change_context(MetadataError)?;
+        metadata_json_bat_file
+            .write_content(false, &metadata_json_pretty)
+            .change_context(MetadataError)?;
+        Ok(())
+    }
+
+    pub fn get_entrypoint_metadata_by_name(
+        &self,
+        entry_point_name: String,
+    ) -> MetadataResult<EntrypointMetadata> {
+        if self.entry_points.is_empty() {
+            return Err(MetadataErrorReports::EntryPointsMetadataNotInitialized.get_error_report());
+        }
+        match self
+            .entry_points
+            .clone()
+            .into_iter()
+            .find(|ep| ep.name == entry_point_name)
+        {
+            None => Err(
+                MetadataErrorReports::EntryPointNameNotFound { entry_point_name }
+                    .get_error_report(),
+            ),
+            Some(ep) => Ok(ep),
+        }
+    }
+
+    pub fn get_functions_dependencies_metadata_by_function_metadata_id(
+        &self,
+        function_metadata_id: String,
+    ) -> MetadataResult<FunctionDependenciesMetadata> {
+        if self.function_dependencies.is_empty() {
+            return Err(
+                MetadataErrorReports::FunctionDependenciesMetadataNotInitialized.get_error_report(),
+            );
+        }
+        match self
+            .function_dependencies
+            .clone()
+            .into_iter()
+            .find(|ep| ep.function_metadata_id == function_metadata_id)
+        {
+            None => Err(MetadataErrorReports::FunctionDependenciesNotFound {
+                function_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn get_trait_metadata_by_trait_source_code_metadata_id(
+        &self,
+        trait_source_code_metadata_id: String,
+    ) -> MetadataResult<TraitMetadata> {
+        if self.function_dependencies.is_empty() {
+            return Err(MetadataErrorReports::TraitsMetadataNotInitialized.get_error_report());
+        }
+        match self
+            .traits
+            .clone()
+            .into_iter()
+            .find(|meta| meta.trait_source_code_metadata_id == trait_source_code_metadata_id)
+        {
+            None => Err(MetadataErrorReports::TraitNotFound {
+                trait_source_code_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn get_context_accounts_metadata_by_struct_source_code_metadata_id(
+        &self,
+        struct_source_code_metadata_id: String,
+    ) -> MetadataResult<ContextAccountsMetadata> {
+        if self.context_accounts.is_empty() {
+            return Err(
+                MetadataErrorReports::ContextAccountsMetadataNotInitialized.get_error_report()
+            );
+        }
+        match self
+            .context_accounts
+            .clone()
+            .into_iter()
+            .find(|meta| meta.struct_source_code_metadata_id == struct_source_code_metadata_id)
+        {
+            None => Err(MetadataErrorReports::ContextAccountsNotFound {
+                struct_source_code_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn get_code_overhaul_metadata_by_entry_point_name(
+        &self,
+        entry_point_name: String,
+    ) -> MetadataResult<CodeOverhaulMetadata> {
+        if self.code_overhaul.is_empty() {
+            return Err(
+                MetadataErrorReports::ContextAccountsMetadataNotInitialized.get_error_report()
+            );
+        }
+        match self
+            .code_overhaul
+            .clone()
+            .into_iter()
+            .find(|meta| meta.entry_point_name == entry_point_name)
+        {
+            None => Err(MetadataErrorReports::ContextAccountsNotFound {
+                struct_source_code_metadata_id: entry_point_name,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn check_metadata_is_initialized(&self) -> Result<(), MetadataError> {
+        if !self.initialized {
+            return Err(MetadataErrorReports::MetadataNotInitialized
+                .get_error_report()
+                .attach(Suggestion(format!(
+                    "Initialize Metadata by running {}",
+                    "bat-cli sonar".green()
+                ))));
+        }
+        Ok(())
+    }
+}
+
 enum MetadataErrorReports {
     MetadataNotInitialized,
     MetadataIdNotFound {
@@ -80,10 +279,19 @@ enum MetadataErrorReports {
     ContextAccountsNotFound {
         struct_source_code_metadata_id: MetadataId,
     },
+    MiroCodeOverhaulMetadataNotInitialized,
+    MiroCodeOverhaulMetadataNotFound {
+        entry_point_name: String,
+    },
 }
 
 impl MetadataErrorReports {
     pub fn get_error_report(&self) -> Report<MetadataError> {
+        let initialize_suggestion = Suggestion(format!(
+            "Initialize the BatMetadata by running {}",
+            "bat-cli sonar".green()
+        ));
+
         let message = match self {
             MetadataErrorReports::MetadataNotInitialized => {
                 format!("Metadata is not initialized")
@@ -133,19 +341,57 @@ impl MetadataErrorReports {
                     struct_source_code_metadata_id.red()
                 )
             }
+            MetadataErrorReports::MiroCodeOverhaulMetadataNotInitialized => {
+                format!("Miro code-overhaul's metadata has not been initialized")
+            }
+            MetadataErrorReports::MiroCodeOverhaulMetadataNotFound { entry_point_name } => {
+                format!(
+                    "Miro code-overhaul's metadata not found for {:#?} entry point",
+                    entry_point_name.red()
+                )
+            }
         };
-        Report::new(MetadataError).attach_printable(message)
+        Report::new(MetadataError)
+            .attach_printable(message)
+            .attach(initialize_suggestion)
     }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct BatMetadata {
-    pub initialized: bool,
-    pub source_code: SourceCodeMetadata,
-    pub entry_points: Vec<EntrypointMetadata>,
-    pub function_dependencies: Vec<FunctionDependenciesMetadata>,
-    pub traits: Vec<TraitMetadata>,
-    pub context_accounts: Vec<ContextAccountsMetadata>,
+pub struct MiroMetadata {
+    pub code_overhaul: Vec<MiroCodeOverhaulMetadata>,
+}
+
+impl MiroMetadata {
+    pub fn new(code_overhaul: Vec<MiroCodeOverhaulMetadata>) -> Self {
+        Self { code_overhaul }
+    }
+
+    pub fn get_co_metadata_by_entrypoint_name(
+        entry_point_name: String,
+    ) -> MetadataResult<MiroCodeOverhaulMetadata> {
+        let bat_metadata = BatMetadata::read_metadata()?;
+        if bat_metadata.miro.code_overhaul.is_empty() {
+            return Err(
+                MetadataErrorReports::MiroCodeOverhaulMetadataNotInitialized.get_error_report()
+            );
+        }
+        match bat_metadata
+            .miro
+            .code_overhaul
+            .clone()
+            .into_iter()
+            .find(|meta| meta.entry_point_name == entry_point_name)
+        {
+            None => {
+                Err(
+                    MetadataErrorReports::MiroCodeOverhaulMetadataNotFound { entry_point_name }
+                        .get_error_report(),
+                )
+            }
+            Some(co_meta) => Ok(co_meta),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -297,162 +543,6 @@ impl SourceCodeMetadata {
                 true
             })
             .collect::<Vec<_>>())
-    }
-}
-
-impl BatMetadata {
-    pub fn new_empty() -> Self {
-        Self {
-            initialized: false,
-            source_code: SourceCodeMetadata {
-                functions_source_code: vec![],
-                structs_source_code: vec![],
-                traits_source_code: vec![],
-            },
-            entry_points: vec![],
-            function_dependencies: vec![],
-            traits: vec![],
-            context_accounts: vec![],
-        }
-    }
-
-    pub fn create_metadata_id() -> String {
-        let s: String = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(30)
-            .map(char::from)
-            .collect();
-        s
-    }
-
-    pub fn read_metadata() -> MetadataResult<Self> {
-        let metadata_json_bat_file = BatFile::BatMetadataFile;
-        let bat_metadata_value: Value = serde_json::from_str(
-            &metadata_json_bat_file
-                .read_content(true)
-                .change_context(MetadataError)?,
-        )
-        .into_report()
-        .change_context(MetadataError)?;
-        let bat_metadata: BatMetadata = serde_json::from_value(bat_metadata_value)
-            .into_report()
-            .change_context(MetadataError)?;
-        Ok(bat_metadata)
-    }
-
-    pub fn save_metadata(&self) -> MetadataResult<()> {
-        let metadata_json_bat_file = BatFile::BatMetadataFile;
-        metadata_json_bat_file
-            .create_empty(false)
-            .change_context(MetadataError)?;
-        let metadata_json = json!(&self);
-        let metadata_json_pretty = serde_json::to_string_pretty(&metadata_json)
-            .into_report()
-            .change_context(MetadataError)?;
-        metadata_json_bat_file
-            .write_content(false, &metadata_json_pretty)
-            .change_context(MetadataError)?;
-        Ok(())
-    }
-
-    pub fn get_entrypoint_metadata_by_name(
-        &self,
-        entry_point_name: String,
-    ) -> MetadataResult<EntrypointMetadata> {
-        if self.entry_points.is_empty() {
-            return Err(MetadataErrorReports::EntryPointsMetadataNotInitialized.get_error_report());
-        }
-        match self
-            .entry_points
-            .clone()
-            .into_iter()
-            .find(|ep| ep.name == entry_point_name)
-        {
-            None => Err(
-                MetadataErrorReports::EntryPointNameNotFound { entry_point_name }
-                    .get_error_report(),
-            ),
-            Some(ep) => Ok(ep),
-        }
-    }
-
-    pub fn get_functions_dependencies_metadata_by_function_metadata_id(
-        &self,
-        function_metadata_id: String,
-    ) -> MetadataResult<FunctionDependenciesMetadata> {
-        if self.function_dependencies.is_empty() {
-            return Err(
-                MetadataErrorReports::FunctionDependenciesMetadataNotInitialized.get_error_report(),
-            );
-        }
-        match self
-            .function_dependencies
-            .clone()
-            .into_iter()
-            .find(|ep| ep.function_metadata_id == function_metadata_id)
-        {
-            None => Err(MetadataErrorReports::FunctionDependenciesNotFound {
-                function_metadata_id,
-            }
-            .get_error_report()),
-            Some(metadata) => Ok(metadata),
-        }
-    }
-
-    pub fn get_trait_metadata_by_trait_source_code_metadata_id(
-        &self,
-        trait_source_code_metadata_id: String,
-    ) -> MetadataResult<TraitMetadata> {
-        if self.function_dependencies.is_empty() {
-            return Err(MetadataErrorReports::TraitsMetadataNotInitialized.get_error_report());
-        }
-        match self
-            .traits
-            .clone()
-            .into_iter()
-            .find(|meta| meta.trait_source_code_metadata_id == trait_source_code_metadata_id)
-        {
-            None => Err(MetadataErrorReports::TraitNotFound {
-                trait_source_code_metadata_id,
-            }
-            .get_error_report()),
-            Some(metadata) => Ok(metadata),
-        }
-    }
-
-    pub fn get_context_accounts_metadata_by_struct_source_code_metadata_id(
-        &self,
-        struct_source_code_metadata_id: String,
-    ) -> MetadataResult<ContextAccountsMetadata> {
-        if self.context_accounts.is_empty() {
-            return Err(
-                MetadataErrorReports::ContextAccountsMetadataNotInitialized.get_error_report()
-            );
-        }
-        match self
-            .context_accounts
-            .clone()
-            .into_iter()
-            .find(|meta| meta.struct_source_code_metadata_id == struct_source_code_metadata_id)
-        {
-            None => Err(MetadataErrorReports::ContextAccountsNotFound {
-                struct_source_code_metadata_id,
-            }
-            .get_error_report()),
-            Some(metadata) => Ok(metadata),
-        }
-    }
-
-    pub fn check_metadata_is_initialized(&self) -> Result<(), MetadataError> {
-        if !self.initialized {
-            return Err(MetadataErrorReports::MetadataNotInitialized
-                .get_error_report()
-                .attach(Suggestion(format!(
-                    "Initialize Metadata by running {}",
-                    "bat-cli sonar".green()
-                ))));
-        }
-        Ok(())
     }
 }
 

@@ -46,6 +46,12 @@ impl BatCommandEnumerator for SonarCommand {
 }
 impl SonarCommand {
     fn execute_run(&self) -> CommandResult<()> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        // backup miro metadata
+        let miro_metadata = bat_metadata.miro.clone();
+        // backup co metadata
+        let co_metadata = bat_metadata.code_overhaul.clone();
+
         TemplateGenerator::create_metadata_json().change_context(CommandError)?;
 
         BatSonarInteractive::SonarStart {
@@ -71,6 +77,12 @@ impl SonarCommand {
         SonarSpecificCommand::EntryPoints.execute_entry_points()?;
         SonarSpecificCommand::Traits.execute_traits()?;
         SonarSpecificCommand::FunctionDependencies.execute_function_dependencies()?;
+
+        let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        bat_metadata.miro = miro_metadata;
+        bat_metadata.code_overhaul = co_metadata;
+        bat_metadata.initialized = true;
+        bat_metadata.save_metadata().change_context(CommandError)?;
 
         GitCommit::UpdateMetadataJson
             .create_commit()

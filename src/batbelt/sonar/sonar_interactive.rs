@@ -172,21 +172,21 @@ impl BatSonarInteractive {
                         thread::sleep(Duration::from_millis(200));
                     }
                     pb.finish_with_message(format!("{} {} found", total, metadata_type_color));
-                    let mut new_metadata = BatMetadata::new_empty();
+                    let bat_metadata = BatMetadata::read_metadata().unwrap();
                     if !functions_result.is_empty() {
-                        new_metadata
+                        bat_metadata
                             .source_code
                             .update_functions(functions_result.clone())
                             .unwrap();
                     }
                     if !structs_result.is_empty() {
-                        new_metadata
+                        bat_metadata
                             .source_code
                             .update_structs(structs_result.clone())
                             .unwrap();
                     }
                     if !traits_result.is_empty() {
-                        new_metadata
+                        bat_metadata
                             .source_code
                             .update_traits(traits_result.clone())
                             .unwrap();
