@@ -1,10 +1,14 @@
 use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
-use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
+use crate::batbelt::metadata::structs_source_code_metadata::{
+    StructMetadataType, StructSourceCodeMetadata,
+};
 use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{
+    BatMetadata, BatMetadataParser, BatMetadataType, SourceCodeMetadata,
+};
 use crate::batbelt::path::BatFolder;
-use crate::batbelt::sonar::{BatSonarError, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, BatSonarError, SonarResultType};
 use crate::batbelt::BatEnumerator;
 
 use colored::Colorize;
@@ -12,6 +16,8 @@ use dialoguer::console::{style, Emoji};
 use error_stack::{Result, ResultExt};
 use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
 
+use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
+use crate::batbelt::parser::context_accounts_parser::CAAccountParser;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
@@ -31,6 +37,7 @@ pub enum BatSonarInteractive {
     GetEntryPointsMetadata,
     GetTraitsMetadata,
     GetFunctionDependenciesMetadata,
+    GetContextAccountsMetadata,
 }
 
 impl BatSonarInteractive {
@@ -44,6 +51,9 @@ impl BatSonarInteractive {
             BatSonarInteractive::GetTraitsMetadata => self.get_traits_metadata()?,
             BatSonarInteractive::GetFunctionDependenciesMetadata => {
                 self.get_functions_dependencies_metadata()?
+            }
+            BatSonarInteractive::GetContextAccountsMetadata => {
+                self.get_context_accounts_metadata()?
             }
         }
         Ok(())
@@ -294,6 +304,64 @@ impl BatSonarInteractive {
                         pb.set_message(format!("Getting information for: {}", function_sc.name));
                         pb.inc(1);
                         FunctionParser::new_from_metadata(function_sc.clone()).unwrap();
+                        thread::sleep(Duration::from_millis(200));
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            let _ = h.join();
+        }
+        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
+
+        Ok(())
+    }
+
+    fn get_context_accounts_metadata(&self) -> Result<(), BatSonarError> {
+        let started = Instant::now();
+        let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+        let ca_sc_metadata = SourceCodeMetadata::get_filtered_structs(
+            None,
+            Some(StructMetadataType::ContextAccounts),
+        )
+        .change_context(BatSonarError)?;
+        println!(
+            "Getting metadata for {}, analyzing {} {}",
+            StructMetadataType::ContextAccounts.get_colored_name(true),
+            style(format!("{}", ca_sc_metadata.len())).bold().dim(),
+            BatMetadataType::Struct.get_colored_name(true),
+        );
+        let m = MultiProgress::new();
+        let handles: Vec<_> = (0..1)
+            .map(|i| {
+                let ca_sc_clone = ca_sc_metadata.clone();
+                let pb = m.add(ProgressBar::new(ca_sc_clone.len() as u64));
+                pb.set_style(spinner_style.clone());
+                thread::spawn(move || {
+                    for (idx, ca_sc) in ca_sc_clone.iter().enumerate().clone() {
+                        pb.set_prefix(format!("[{}/{}]", idx + 1, ca_sc_clone.len()));
+                        pb.set_message(format!("Getting information for: {}", ca_sc.name));
+                        pb.inc(1);
+                        let ca_content =
+                            ca_sc.to_source_code_parser(None).get_source_code_content();
+                        let bat_sonar =
+                            BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccountsAll);
+                        let ca_info = bat_sonar
+                            .results
+                            .into_iter()
+                            .map(|result| {
+                                CAAccountParser::new_from_sonar_result(result.clone()).unwrap()
+                            })
+                            .collect::<Vec<_>>();
+                        let context_accounts_metadata = ContextAccountsMetadata::new(
+                            ca_sc.name.clone(),
+                            BatMetadata::create_metadata_id(),
+                            ca_sc.metadata_id.clone(),
+                            ca_info,
+                        );
+                        context_accounts_metadata.update_metadata_file().unwrap();
                         thread::sleep(Duration::from_millis(200));
                     }
                 })

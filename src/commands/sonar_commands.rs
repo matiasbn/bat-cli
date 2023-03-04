@@ -84,6 +84,10 @@ impl SonarCommand {
             .print_interactive()
             .change_context(CommandError)?;
 
+        BatSonarInteractive::GetContextAccountsMetadata
+            .print_interactive()
+            .change_context(CommandError)?;
+
         let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         bat_metadata.initialized = true;
         bat_metadata.save_metadata().change_context(CommandError)?;
