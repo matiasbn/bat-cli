@@ -1,18 +1,15 @@
 use super::CommandError;
-use crate::batbelt::command_line::execute_command;
+
 use crate::batbelt::templates::TemplateGenerator;
-use crate::batbelt::{bat_dialoguer, BatEnumerator, ShareableData};
+use crate::batbelt::{BatEnumerator, ShareableData};
 use crate::config::{BatAuditorConfig, BatConfig};
 use colored::Colorize;
 use error_stack::Result;
-use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use error_stack::{FutureExt, Report, ResultExt};
 
 use crate::batbelt;
-use crate::batbelt::bat_dialoguer::BatDialoguer;
+
 use crate::batbelt::git::{GitAction, GitCommit};
-use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulMetadata;
-use crate::batbelt::metadata::miro_metadata::MiroCodeOverhaulMetadata;
-use crate::batbelt::metadata::BatMetadata;
 
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile::GitIgnore;
@@ -21,11 +18,9 @@ use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
-use normalize_url::normalizer;
-use std::fs;
+
 use std::path::Path;
 use std::process::Command;
-use walkdir::WalkDir;
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,

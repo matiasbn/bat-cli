@@ -49,7 +49,7 @@ impl TraitMetadata {
         let trait_sc_metadata = BatMetadata::read_metadata()?
             .source_code
             .get_trait_by_id(self.trait_source_code_metadata_id.clone())?;
-        Ok(TraitParser::new_from_metadata(trait_sc_metadata).change_context(MetadataError)?)
+        TraitParser::new_from_metadata(trait_sc_metadata).change_context(MetadataError)
     }
 
     pub fn update_metadata_file(&self) -> MetadataResult<()> {

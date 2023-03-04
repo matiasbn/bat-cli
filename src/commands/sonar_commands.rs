@@ -1,7 +1,5 @@
-use crate::batbelt::command_line::execute_command;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
-use crate::batbelt::path::BatFolder;
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 
@@ -9,7 +7,7 @@ use crate::batbelt::git::GitCommit;
 use error_stack::{Result, ResultExt};
 
 use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
-use crate::batbelt::sonar::{BatSonarError, SonarResultType};
+use crate::batbelt::sonar::SonarResultType;
 use crate::batbelt::templates::TemplateGenerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 
@@ -50,7 +48,7 @@ impl SonarCommand {
         // backup miro metadata
         let miro_metadata = bat_metadata.miro.clone();
         // backup co metadata
-        let co_metadata = bat_metadata.code_overhaul.clone();
+        let co_metadata = bat_metadata.code_overhaul;
 
         TemplateGenerator::create_metadata_json().change_context(CommandError)?;
 

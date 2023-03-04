@@ -1,10 +1,10 @@
 use crate::batbelt::command_line::{execute_command, CodeEditor};
-use crate::batbelt::metadata::BatMetadataType;
+
 use crate::config::{BatAuditorConfig, BatConfig};
 
 use crate::batbelt::BatEnumerator;
 use error_stack::{FutureExt, IntoReport, Result, ResultExt};
-use inflector::Inflector;
+
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, fs, path::Path};
 use walkdir::{DirEntry, WalkDir};
@@ -55,20 +55,14 @@ impl BatFile {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
             BatFile::Batlog => "Batlog.log".to_string(),
-            BatFile::PackageJson => {
-                format!("./package.json",)
-            }
-            BatFile::GitIgnore => {
-                format!("./.gitignore",)
-            }
+            BatFile::PackageJson => "./package.json".to_string(),
+            BatFile::GitIgnore => "./.gitignore".to_string(),
             BatFile::ProgramLib => {
                 BatConfig::get_config()
                     .change_context(BatPathError)?
                     .program_lib_path
             }
-            BatFile::Readme => {
-                format!("./README.md",)
-            }
+            BatFile::Readme => "./README.md".to_string(),
             BatFile::RobotFile => format!(
                 "{}/robot.md",
                 BatFolder::AuditorNotes.get_path(canonicalize)?
@@ -133,9 +127,7 @@ impl BatFile {
                     BatFolder::FindingsRejected.get_path(canonicalize)?
                 )
             }
-            BatFile::BatMetadataFile => {
-                format!("./BatMetadata.json",)
-            }
+            BatFile::BatMetadataFile => "./BatMetadata.json".to_string(),
             BatFile::Generic { file_path } => file_path.clone(),
         };
 

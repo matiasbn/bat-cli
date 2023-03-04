@@ -12,9 +12,8 @@ use colored::Colorize;
 use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display};
-use std::path::Path;
 
-use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::path::BatFile;
 
 use inflector::Inflector;
 
@@ -43,7 +42,7 @@ use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::Value::Null;
+
 use serde_json::{json, Value};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
@@ -294,13 +293,13 @@ impl MetadataErrorReports {
 
         let message = match self {
             MetadataErrorReports::MetadataNotInitialized => {
-                format!("Metadata is not initialized")
+                "Metadata is not initialized".to_string()
             }
             MetadataErrorReports::MetadataIdNotFound { metadata_id } => {
                 format!("Metadata not found for {}", metadata_id.red())
             }
             MetadataErrorReports::EntryPointsMetadataNotInitialized => {
-                format!("Entry point metadata has not been initialized")
+                "Entry point metadata has not been initialized".to_string()
             }
             MetadataErrorReports::EntryPointNameNotFound { entry_point_name } => {
                 format!(
@@ -309,7 +308,7 @@ impl MetadataErrorReports {
                 )
             }
             MetadataErrorReports::FunctionDependenciesMetadataNotInitialized => {
-                format!("Function dependencies metadata has not been initialized")
+                "Function dependencies metadata has not been initialized".to_string()
             }
             MetadataErrorReports::FunctionDependenciesNotFound {
                 function_metadata_id,
@@ -320,7 +319,7 @@ impl MetadataErrorReports {
                 )
             }
             MetadataErrorReports::TraitsMetadataNotInitialized => {
-                format!("Traits metadata has not been initialized")
+                "Traits metadata has not been initialized".to_string()
             }
             MetadataErrorReports::TraitNotFound {
                 trait_source_code_metadata_id: trait_metadata_id,
@@ -331,7 +330,7 @@ impl MetadataErrorReports {
                 )
             }
             MetadataErrorReports::ContextAccountsMetadataNotInitialized => {
-                format!("Context accounts metadata has not been initialized")
+                "Context accounts metadata has not been initialized".to_string()
             }
             MetadataErrorReports::ContextAccountsNotFound {
                 struct_source_code_metadata_id,
@@ -342,7 +341,7 @@ impl MetadataErrorReports {
                 )
             }
             MetadataErrorReports::MiroCodeOverhaulMetadataNotInitialized => {
-                format!("Miro code-overhaul's metadata has not been initialized")
+                "Miro code-overhaul's metadata has not been initialized".to_string()
             }
             MetadataErrorReports::MiroCodeOverhaulMetadataNotFound { entry_point_name } => {
                 format!(
@@ -379,7 +378,6 @@ impl MiroMetadata {
         match bat_metadata
             .miro
             .code_overhaul
-            .clone()
             .into_iter()
             .find(|meta| meta.entry_point_name == entry_point_name)
         {
@@ -411,12 +409,12 @@ impl SourceCodeMetadata {
             .clone()
             .into_iter()
             .find(|meta| meta.metadata_id == metadata_id);
-        return match result {
+        match result {
             Some(f_metadata) => Ok(f_metadata),
             None => {
                 Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
             }
-        };
+        }
     }
 
     pub fn get_struct_by_id(
@@ -428,12 +426,12 @@ impl SourceCodeMetadata {
             .clone()
             .into_iter()
             .find(|meta| meta.metadata_id == metadata_id);
-        return match result {
+        match result {
             Some(metadata) => Ok(metadata),
             None => {
                 Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
             }
-        };
+        }
     }
 
     pub fn get_trait_by_id(
@@ -445,17 +443,17 @@ impl SourceCodeMetadata {
             .clone()
             .into_iter()
             .find(|meta| meta.metadata_id == metadata_id);
-        return match result {
+        match result {
             Some(metadata) => Ok(metadata),
             None => {
                 Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
             }
-        };
+        }
     }
 
     pub fn update_functions(&self, new_vec: Vec<FunctionSourceCodeMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
-        let mut metadata_vec = new_vec.clone();
+        let mut metadata_vec = new_vec;
         metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
         bat_metadata.source_code.functions_source_code = metadata_vec;
         bat_metadata.save_metadata()?;
@@ -464,7 +462,7 @@ impl SourceCodeMetadata {
 
     pub fn update_structs(&self, new_vec: Vec<StructSourceCodeMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
-        let mut metadata_vec = new_vec.clone();
+        let mut metadata_vec = new_vec;
         metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
         bat_metadata.source_code.structs_source_code = metadata_vec;
         bat_metadata.save_metadata()?;
@@ -472,7 +470,7 @@ impl SourceCodeMetadata {
     }
     pub fn update_traits(&self, new_vec: Vec<TraitSourceCodeMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
-        let mut metadata_vec = new_vec.clone();
+        let mut metadata_vec = new_vec;
         metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
         bat_metadata.source_code.traits_source_code = metadata_vec;
         bat_metadata.save_metadata()?;
@@ -491,9 +489,7 @@ impl SourceCodeMetadata {
                 if struct_name.is_some() && struct_name.clone().unwrap() != struct_metadata.name {
                     return false;
                 };
-                if struct_type.is_some()
-                    && struct_type.clone().unwrap() != struct_metadata.struct_type
-                {
+                if struct_type.is_some() && struct_type.unwrap() != struct_metadata.struct_type {
                     return false;
                 };
                 true
@@ -516,7 +512,7 @@ impl SourceCodeMetadata {
                     return false;
                 };
                 if function_type.is_some()
-                    && function_type.clone().unwrap() != function_metadata.function_type
+                    && function_type.unwrap() != function_metadata.function_type
                 {
                     return false;
                 };
@@ -536,8 +532,7 @@ impl SourceCodeMetadata {
                 if trait_name.is_some() && trait_name.clone().unwrap() != trait_metadata.name {
                     return false;
                 };
-                if trait_type.is_some() && trait_type.clone().unwrap() != trait_metadata.trait_type
-                {
+                if trait_type.is_some() && trait_type.unwrap() != trait_metadata.trait_type {
                     return false;
                 };
                 true

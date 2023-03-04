@@ -1,8 +1,6 @@
-use crate::batbelt::metadata::traits_source_code_metadata::TraitMetadataType;
-use crate::batbelt::metadata::{BatMetadata, MetadataError, MetadataId, MetadataResult};
+use crate::batbelt::metadata::{BatMetadata, MetadataId, MetadataResult};
 use crate::batbelt::parser::context_accounts_parser::CAAccountParser;
-use crate::batbelt::parser::trait_parser::TraitParser;
-use error_stack::ResultExt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

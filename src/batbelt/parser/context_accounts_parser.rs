@@ -71,7 +71,7 @@ impl CAAccountParser {
             )));
         }
         let account_attribute_info = Self::get_account_attribute_info(&sonar_result.content)?;
-        let account_type_info = Self::get_account_type_info(sonar_result.clone())?;
+        let account_type_info = Self::get_account_type_info(sonar_result)?;
         let new_parser = Self::new(account_type_info, account_attribute_info);
         Ok(new_parser)
     }
@@ -97,7 +97,7 @@ impl CAAccountParser {
             account_name: sonar_result.name.clone(),
         };
 
-        last_line = last_line.trim_end_matches(">").to_string();
+        last_line = last_line.trim_end_matches('>').to_string();
         account_type_info.account_wrapper_name = last_line
             .trim_start_matches(&format!("pub {}: ", sonar_result.name))
             .split('<')
@@ -191,7 +191,7 @@ impl CAAccountParser {
                 .into_report()
                 .change_context(ParserError)?;
             let payer_match = rent_exemption_payer_regex
-                .find(&sonar_result_content)
+                .find(sonar_result_content)
                 .unwrap()
                 .as_str()
                 .trim()
@@ -203,11 +203,11 @@ impl CAAccountParser {
         let rent_exemption_close_regex = Regex::new(r"close = [A-Za-z0-9_.]+")
             .into_report()
             .change_context(ParserError)?;
-        if rent_exemption_close_regex.is_match(&sonar_result_content) {
+        if rent_exemption_close_regex.is_match(sonar_result_content) {
             account_info.is_close = true;
             account_info.is_init = false;
             let close_match = rent_exemption_close_regex
-                .find(&sonar_result_content)
+                .find(sonar_result_content)
                 .unwrap()
                 .as_str()
                 .trim()

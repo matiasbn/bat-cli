@@ -13,9 +13,7 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::fs;
 
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
-use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
-};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 
 use crate::batbelt::parser::ParserError;
 

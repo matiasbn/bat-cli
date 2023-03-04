@@ -10,7 +10,7 @@ use inflector::Inflector;
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::BatFile;
 use crate::commands::miro_commands::MiroCommand;
-use crate::commands::sonar_commands::{SonarCommand, SonarSpecificCommand};
+use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 
 use crate::batbelt::git::GitAction;
