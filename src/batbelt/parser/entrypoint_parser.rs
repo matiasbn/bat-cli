@@ -10,7 +10,8 @@ use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::fs;
 
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType, MetadataId};
 
 use crate::batbelt::parser::ParserError;
 
@@ -19,7 +20,7 @@ pub struct EntrypointParser {
     pub name: String,
     pub handler: Option<FunctionMetadata>,
     pub context_accounts: StructMetadata,
-    pub entrypoint_function: FunctionMetadata,
+    pub entry_point_function: FunctionMetadata,
 }
 
 impl EntrypointParser {
@@ -27,13 +28,13 @@ impl EntrypointParser {
         name: String,
         handler: Option<FunctionMetadata>,
         context_accounts: StructMetadata,
-        entrypoint_function: FunctionMetadata,
+        entry_point_function: FunctionMetadata,
     ) -> Self {
         Self {
             name,
             handler,
             context_accounts,
-            entrypoint_function,
+            entry_point_function,
         }
     }
 
@@ -44,6 +45,34 @@ impl EntrypointParser {
         BatMetadataType::Function
             .check_is_initialized()
             .change_context(ParserError)?;
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+        if let Ok(ep_metadata) =
+            bat_metadata.get_entrypoint_metadata_by_name(entrypoint_name.to_string())
+        {
+            let entry_point_function = bat_metadata
+                .source_code
+                .get_function_by_id(ep_metadata.entrypoint_function_id.clone())
+                .change_context(ParserError)?;
+            let handler = match ep_metadata.handler_id {
+                None => None,
+                Some(h_id) => Some(
+                    bat_metadata
+                        .source_code
+                        .get_function_by_id(h_id)
+                        .change_context(ParserError)?,
+                ),
+            };
+            let context_accounts = bat_metadata
+                .source_code
+                .get_struct_by_id(ep_metadata.context_accounts_id.clone())
+                .change_context(ParserError)?;
+            return Ok(Self {
+                name: ep_metadata.name,
+                handler,
+                context_accounts,
+                entry_point_function,
+            });
+        };
 
         let entrypoint_section = FunctionMetadata::get_filtered_metadata(
             Some(entrypoint_name),
@@ -96,15 +125,31 @@ impl EntrypointParser {
                 "Error context_accounts struct by name {} for entrypoint_name: {}",
                 context_name, entrypoint_name
             ))?;
+        let ep_metadata = EntrypointMetadata {
+            name: entrypoint_name.to_string(),
+            metadata_id: BatMetadata::create_metadata_id(),
+            handler_id: match handler.clone() {
+                None => None,
+                Some(handler_function) => Some(handler_function.metadata_id),
+            },
+            context_accounts_id: context_accounts.metadata_id.clone(),
+            entrypoint_function_id: entrypoint_function.metadata_id.clone(),
+            miro_frame_id: None,
+        };
+
+        ep_metadata
+            .update_metadata_file()
+            .change_context(ParserError)?;
+
         Ok(Self {
             name: entrypoint_name.to_string(),
             handler,
             context_accounts: context_accounts.clone(),
-            entrypoint_function,
+            entry_point_function: entrypoint_function,
         })
     }
 
-    pub fn get_entrypoints_names(sorted: bool) -> Result<Vec<String>, ParserError> {
+    pub fn get_entrypoint_names(sorted: bool) -> Result<Vec<String>, ParserError> {
         let BatConfig {
             program_lib_path, ..
         } = BatConfig::get_config().change_context(ParserError)?;
@@ -126,7 +171,7 @@ impl EntrypointParser {
     }
 
     pub fn get_all_contexts_names() -> Vec<String> {
-        let entrypoints_names = Self::get_entrypoints_names(false).unwrap();
+        let entrypoints_names = Self::get_entrypoint_names(false).unwrap();
 
         entrypoints_names
             .into_iter()

@@ -1,3 +1,4 @@
+pub mod entrypoint_metadata;
 pub mod functions_metadata;
 pub mod structs_metadata;
 pub mod traits_metadata;
@@ -16,6 +17,7 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
+use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
@@ -47,27 +49,39 @@ pub type MetadataResult<T> = Result<T, MetadataError>;
 
 pub type MetadataId = String;
 
-enum MetadataErrorMessage {
+enum MetadataErrorReports {
     MetadataIdNotFound { metadata_id: MetadataId },
+    EntryPointsMetadataNotInitialized,
+    EntryPointNameNotFound { entry_point_name: String },
 }
 
-impl MetadataErrorMessage {
+impl MetadataErrorReports {
     pub fn get_error_report(&self) -> Report<MetadataError> {
         let message = match self {
-            MetadataErrorMessage::MetadataIdNotFound { metadata_id } => {
+            MetadataErrorReports::MetadataIdNotFound { metadata_id } => {
                 format!("Metadata not found for {}", metadata_id.red())
+            }
+            MetadataErrorReports::EntryPointsMetadataNotInitialized => {
+                format!("Entry point metadata has not been initialized")
+            }
+            MetadataErrorReports::EntryPointNameNotFound { entry_point_name } => {
+                format!(
+                    "Entry point metadata not found for {}",
+                    entry_point_name.red()
+                )
             }
         };
         Report::new(MetadataError).attach_printable(message)
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct BatMetadata {
     pub source_code: SourceCodeMetadata,
+    pub entry_points: Vec<EntrypointMetadata>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SourceCodeMetadata {
     pub initialized: bool,
     pub functions: Vec<FunctionMetadata>,
@@ -85,7 +99,7 @@ impl SourceCodeMetadata {
         return match result {
             Some(f_metadata) => Ok(f_metadata),
             None => {
-                Err(MetadataErrorMessage::MetadataIdNotFound { metadata_id }.get_error_report())
+                Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
             }
         };
     }
@@ -99,7 +113,7 @@ impl SourceCodeMetadata {
         return match result {
             Some(metadata) => Ok(metadata),
             None => {
-                Err(MetadataErrorMessage::MetadataIdNotFound { metadata_id }.get_error_report())
+                Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
             }
         };
     }
@@ -113,7 +127,7 @@ impl SourceCodeMetadata {
         return match result {
             Some(metadata) => Ok(metadata),
             None => {
-                Err(MetadataErrorMessage::MetadataIdNotFound { metadata_id }.get_error_report())
+                Err(MetadataErrorReports::MetadataIdNotFound { metadata_id }.get_error_report())
             }
         };
     }
@@ -149,7 +163,7 @@ impl SourceCodeMetadata {
 }
 
 impl BatMetadata {
-    pub fn new() -> Self {
+    pub fn new_empty() -> Self {
         Self {
             source_code: SourceCodeMetadata {
                 initialized: false,
@@ -157,7 +171,17 @@ impl BatMetadata {
                 structs: vec![],
                 traits: vec![],
             },
+            entry_points: vec![],
         }
+    }
+
+    pub fn create_metadata_id() -> String {
+        let s: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect();
+        s
     }
 
     pub fn read_metadata() -> MetadataResult<Self> {
@@ -188,6 +212,27 @@ impl BatMetadata {
             .write_content(false, &metadata_json_pretty)
             .change_context(MetadataError)?;
         Ok(())
+    }
+
+    pub fn get_entrypoint_metadata_by_name(
+        &self,
+        entry_point_name: String,
+    ) -> MetadataResult<EntrypointMetadata> {
+        if self.entry_points.is_empty() {
+            return Err(MetadataErrorReports::EntryPointsMetadataNotInitialized.get_error_report());
+        }
+        match self
+            .entry_points
+            .clone()
+            .into_iter()
+            .find(|ep| ep.name == entry_point_name)
+        {
+            None => Err(
+                MetadataErrorReports::EntryPointNameNotFound { entry_point_name }
+                    .get_error_report(),
+            ),
+            Some(ep) => Ok(ep),
+        }
     }
 
     pub fn metadata_is_initialized() -> Result<bool, MetadataError> {

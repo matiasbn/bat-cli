@@ -509,7 +509,7 @@ impl MiroCommand {
         let selected_miro_frame = self.prompt_select_frame().await?;
         // get entrypoints name
         let entrypoints_names =
-            EntrypointParser::get_entrypoints_names(sorted).change_context(CommandError)?;
+            EntrypointParser::get_entrypoint_names(sorted).change_context(CommandError)?;
 
         // prompt the user to select an entrypoint
         let prompt_text = "Please select the entrypoints to deploy";
@@ -582,9 +582,9 @@ impl MiroCommand {
             // get context_accounts name
             let entrypoint = EntrypointParser::new_from_name(selected_entrypoint.as_str())
                 .change_context(CommandError)?;
-            let ep_source_code = entrypoint.entrypoint_function.to_source_code_parser(Some(
+            let ep_source_code = entrypoint.entry_point_function.to_source_code_parser(Some(
                 self.parse_screenshot_name(
-                    &entrypoint.entrypoint_function.name,
+                    &entrypoint.entry_point_function.name,
                     &selected_miro_frame.title,
                 ),
             ));

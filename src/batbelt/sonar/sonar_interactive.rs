@@ -12,6 +12,7 @@ use dialoguer::console::{style, Emoji};
 use error_stack::{Result, ResultExt};
 use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
 
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::commands::CommandError;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -24,7 +25,8 @@ static SPARKLE: Emoji<'_, '_> = Emoji("✨ ", ":-)");
 #[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
 pub enum BatSonarInteractive {
     SonarStart { sonar_result_type: SonarResultType },
-    ParseMetadata,
+    GetSourceCodeMetadata,
+    GetEntryPointsMetadata,
 }
 
 impl BatSonarInteractive {
@@ -33,7 +35,8 @@ impl BatSonarInteractive {
             BatSonarInteractive::SonarStart { sonar_result_type } => {
                 self.sonar_start(*sonar_result_type)?
             }
-            BatSonarInteractive::ParseMetadata => self.parse_metadata()?,
+            BatSonarInteractive::GetSourceCodeMetadata => self.get_source_code_metadata()?,
+            BatSonarInteractive::GetEntryPointsMetadata => self.get_entry_points_metadata()?,
         }
         Ok(())
     }
@@ -83,7 +86,7 @@ impl BatSonarInteractive {
         Ok(())
     }
 
-    fn parse_metadata(&self) -> Result<(), BatSonarError> {
+    fn get_source_code_metadata(&self) -> Result<(), BatSonarError> {
         let started = Instant::now();
         let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
             .unwrap()
@@ -92,7 +95,7 @@ impl BatSonarInteractive {
             .get_all_files_dir_entries(false, None, None)
             .change_context(BatSonarError)?;
         println!(
-            "Analizing {} files",
+            "Analyzing {} files",
             style(format!("{}", program_dir_entries.len())).bold().dim(),
         );
         let m = MultiProgress::new();
@@ -145,7 +148,7 @@ impl BatSonarInteractive {
                         thread::sleep(Duration::from_millis(200));
                     }
                     pb.finish_with_message(format!("{} {} found", total, metadata_type_color));
-                    let mut new_metadata = BatMetadata::new();
+                    let mut new_metadata = BatMetadata::new_empty();
                     if !functions_result.is_empty() {
                         new_metadata
                             .source_code
@@ -178,23 +181,40 @@ impl BatSonarInteractive {
 
         println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
 
-        GitCommit::UpdateMetadata {
-            metadata_type: BatMetadataType::Struct,
+        Ok(())
+    }
+    fn get_entry_points_metadata(&self) -> Result<(), BatSonarError> {
+        let started = Instant::now();
+        let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+        let entrypoint_names =
+            EntrypointParser::get_entrypoint_names(false).change_context(BatSonarError)?;
+        println!(
+            "Analyzing {} entry points",
+            style(format!("{}", entrypoint_names.len())).bold().dim(),
+        );
+        let m = MultiProgress::new();
+        let handles: Vec<_> = (0..1)
+            .map(|i| {
+                let entrypoint_names_clone = entrypoint_names.clone();
+                let pb = m.add(ProgressBar::new(entrypoint_names_clone.len() as u64));
+                pb.set_style(spinner_style.clone());
+                thread::spawn(move || {
+                    for (idx, entry) in entrypoint_names_clone.iter().enumerate().clone() {
+                        pb.set_prefix(format!("[{}/{}]", idx + 1, entrypoint_names_clone.len()));
+                        pb.set_message(format!("Getting information for: {}", entry));
+                        pb.inc(1);
+                        EntrypointParser::new_from_name(&entry).unwrap();
+                        thread::sleep(Duration::from_millis(200));
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            let _ = h.join();
         }
-        .create_commit()
-        .change_context(BatSonarError)?;
-
-        GitCommit::UpdateMetadata {
-            metadata_type: BatMetadataType::Function,
-        }
-        .create_commit()
-        .change_context(BatSonarError)?;
-
-        GitCommit::UpdateMetadata {
-            metadata_type: BatMetadataType::Trait,
-        }
-        .create_commit()
-        .change_context(BatSonarError)?;
+        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
 
         Ok(())
     }

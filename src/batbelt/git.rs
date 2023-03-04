@@ -235,6 +235,7 @@ pub enum GitCommit {
     UpdateTemplates,
     Notes,
     UpdateMetadata { metadata_type: BatMetadataType },
+    UpdateMetadataJson,
 }
 
 impl GitCommit {
@@ -377,6 +378,11 @@ impl GitCommit {
             GitCommit::UpdateMetadata { metadata_type } => {
                 vec![metadata_type.get_path().change_context(GitError)?]
             }
+            GitCommit::UpdateMetadataJson => {
+                vec![BatFile::MetadataJsonFile
+                    .get_path(false)
+                    .change_context(GitError)?]
+            }
         };
         Ok(commit_files)
     }
@@ -424,6 +430,9 @@ impl GitCommit {
             GitCommit::UpdateMetadata { metadata_type } => {
                 let metadata_type_string = metadata_type.to_string().to_plural().to_snake_case();
                 format!("metadata: {}.md updated", metadata_type_string)
+            }
+            GitCommit::UpdateMetadataJson => {
+                format!("metadata: metadata.json updated")
             }
         };
         Ok(commit_string)

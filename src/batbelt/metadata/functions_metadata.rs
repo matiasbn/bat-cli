@@ -125,7 +125,7 @@ impl FunctionMetadata {
         entry_path: &str,
         sonar_result: SonarResult,
     ) -> MetadataResult<bool> {
-        let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
+        let entrypoints_names = EntrypointParser::get_entrypoint_names(false).unwrap();
         if entry_path == BatConfig::get_config().unwrap().program_lib_path {
             if entrypoints_names
                 .into_iter()

@@ -1,6 +1,6 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="nocapture test_iterator" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
-    <option name="command" value="test --package bat-cli --bin bat-cli batbelt::sonar::sonar_interactive::sonar_interactive_test::test_iterator -- --exact -nocapture" />
+    <option name="command" value="test --package bat-cli --bin bat-cli batbelt::sonar::sonar_interactive::sonar_interactive_test::test_iterator -- --exact --nocapture" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$/bat-cli" />
     <option name="emulateTerminal" value="true" />
     <option name="channel" value="DEFAULT" />

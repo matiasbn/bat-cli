@@ -256,7 +256,7 @@ fn initialize_project_repository() -> Result<(), CommandError> {
 }
 
 fn initialize_code_overhaul_files() -> Result<(), CommandError> {
-    let entrypoints_names = EntrypointParser::get_entrypoints_names(false).unwrap();
+    let entrypoints_names = EntrypointParser::get_entrypoint_names(false).unwrap();
 
     for entrypoint_name in entrypoints_names {
         create_overhaul_file(entrypoint_name.clone())?;
@@ -285,7 +285,7 @@ async fn create_miro_frames_for_entrypoints() -> Result<(), CommandError> {
         .change_context(CommandError)?;
 
     let entrypoints_names =
-        EntrypointParser::get_entrypoints_names(false).change_context(CommandError)?;
+        EntrypointParser::get_entrypoint_names(false).change_context(CommandError)?;
 
     for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
         let frame_already_deployed = miro_board_frames
