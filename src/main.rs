@@ -10,7 +10,7 @@ use inflector::Inflector;
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::BatFile;
 use crate::commands::miro_commands::MiroCommand;
-use crate::commands::sonar_commands::SonarCommand;
+use crate::commands::sonar_commands::{SonarCommand, SonarSpecificCommand};
 use crate::commands::{BatCommandEnumerator, CommandResult};
 
 use crate::batbelt::git::GitAction;
@@ -66,8 +66,11 @@ enum BatCommands {
     /// code-overhaul files management
     #[command(subcommand)]
     CO(CodeOverhaulCommand),
-    /// Execute the bat sonar to create metadata files
+    /// Execute the BatSonar to create metadata files for all Sonar result types
     Sonar,
+    /// Execute specific BatSonar commands
+    #[command(subcommand)]
+    SonarSpecific(SonarSpecificCommand),
     /// findings files management
     #[command(subcommand)]
     Finding(FindingCommand),
@@ -116,6 +119,7 @@ impl BatCommands {
                 commands::finding_commands::accept_all()
             }
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
+            BatCommands::SonarSpecific(command) => command.execute_command(),
             BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tools(command) => command.execute_command(),
@@ -150,6 +154,10 @@ impl BatCommands {
             BatCommands::Sonar => (
                 SonarCommand::Run.check_metadata_is_initialized(),
                 SonarCommand::Run.check_correct_branch(),
+            ),
+            BatCommands::SonarSpecific(command) => (
+                command.check_metadata_is_initialized(),
+                command.check_correct_branch(),
             ),
             BatCommands::Tools(command) => (
                 command.check_metadata_is_initialized(),
@@ -214,6 +222,13 @@ impl BatCommands {
                 )),
                 BatCommands::Miro(_) => Some((
                     MiroCommand::get_type_vec()
+                        .into_iter()
+                        .map(|command_type| command_type.to_string().to_kebab_case())
+                        .collect::<Vec<_>>(),
+                    command.to_string().to_kebab_case(),
+                )),
+                BatCommands::SonarSpecific(_) => Some((
+                    SonarSpecificCommand::get_type_vec()
                         .into_iter()
                         .map(|command_type| command_type.to_string().to_kebab_case())
                         .collect::<Vec<_>>(),

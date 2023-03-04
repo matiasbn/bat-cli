@@ -1,13 +1,13 @@
 use crate::batbelt;
 use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithStateChanges,
 };
-use crate::batbelt::templates::TemplateError;
+use crate::batbelt::templates::{TemplateError, TemplateResult};
 use colored::Colorize;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
@@ -121,6 +121,24 @@ impl CodeOverhaulSection {
 
         format!("{}\n\n{}", self.to_markdown_header(), section_content)
     }
+
+    // fn get_state_changes_content(
+    //     &self,
+    //     entry_point_parser: EntrypointParser,
+    // ) -> TemplateResult<String> {
+    //     let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+    //     let context_accounts_metadata = bat_metadata
+    //         .get_context_accounts_metadata_by_struct_source_code_metadata_id(
+    //             entry_point_parser.context_accounts.metadata_id.clone(),
+    //         )
+    //         .change_context(TemplateError)?;
+    //     let mut_accounts = context_accounts_metadata
+    //         .context_accounts_info
+    //         .clone()
+    //         .into_iter()
+    //         .filter(|ca_info| ca_info.is_mut)
+    //         .collect::<Vec<_>>();
+    // }
 
     fn get_validations_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
         if entrypoint_parser.handler.is_none() {
