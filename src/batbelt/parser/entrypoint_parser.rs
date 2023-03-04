@@ -43,12 +43,6 @@ impl EntrypointParser {
     }
 
     pub fn new_from_name(entrypoint_name: &str) -> Result<Self, ParserError> {
-        BatMetadataType::Struct
-            .check_is_initialized()
-            .change_context(ParserError)?;
-        BatMetadataType::Function
-            .check_is_initialized()
-            .change_context(ParserError)?;
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         if let Ok(ep_metadata) =
             bat_metadata.get_entrypoint_metadata_by_name(entrypoint_name.to_string())

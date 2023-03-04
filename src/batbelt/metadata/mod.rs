@@ -435,64 +435,6 @@ pub enum BatMetadataType {
 }
 
 impl BatMetadataType {
-    pub fn get_path(&self) -> Result<String, MetadataError> {
-        let path = match self {
-            BatMetadataType::Struct => BatFile::StructsMetadataFile
-                .get_path(false)
-                .change_context(MetadataError)?,
-            BatMetadataType::Function => BatFile::FunctionsMetadataFile
-                .get_path(false)
-                .change_context(MetadataError)?,
-            BatMetadataType::Trait => BatFile::TraitsMetadataFile
-                .get_path(false)
-                .change_context(MetadataError)?,
-        };
-        Ok(path)
-    }
-
-    pub fn get_cache_file(&self) -> BatFile {
-        BatFile::MetadataCacheFile {
-            metadata_cache_type: *self,
-        }
-    }
-
-    pub fn get_markdown(&self) -> Result<MarkdownFile, MetadataError> {
-        let file_path = self.get_path()?;
-        log::debug!("markdown file path: {}", file_path);
-        let markdown_file = MarkdownFile::new(&file_path).change_context(MetadataError)?;
-        Ok(markdown_file)
-    }
-
-    pub fn get_markdown_sections_from_metadata_file(
-        &self,
-    ) -> Result<Vec<MarkdownSection>, MetadataError> {
-        let markdown_file = self.get_markdown()?;
-        if markdown_file.sections.is_empty() {
-            return Err(Report::new(MetadataError)
-                .attach_printable(format!("Markdown file is empty:\n{:#?}", markdown_file)));
-        }
-        Ok(markdown_file.sections)
-    }
-
-    pub fn is_initialized(&self) -> Result<bool, MetadataError> {
-        let markdown = self.get_markdown()?;
-        Ok(!markdown.sections.is_empty())
-    }
-
-    pub fn check_is_initialized(&self) -> Result<(), MetadataError> {
-        if !self.is_initialized()? {
-            return Err(Report::new(MetadataError)
-                .attach_printable(format!(
-                    "{} metadata is required to be initialized to execute this action",
-                    self.to_string().red()
-                ))
-                .attach(Suggestion(format!(
-                    "run {} to initialize the metadata file",
-                    "bat-cli sonar".green()
-                ))));
-        }
-        Ok(())
-    }
     pub fn prompt_metadata_type_selection() -> Result<Self, MetadataError> {
         let metadata_types_vec = BatMetadataType::get_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
@@ -517,7 +459,6 @@ where
     fn end_line_index(&self) -> usize;
     fn metadata_sub_type(&self) -> U;
     fn get_bat_metadata_type() -> BatMetadataType;
-    fn get_bat_file() -> BatFile;
 
     fn metadata_name() -> String;
 

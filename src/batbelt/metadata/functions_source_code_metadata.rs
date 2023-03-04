@@ -52,9 +52,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
     fn get_bat_metadata_type() -> BatMetadataType {
         BatMetadataType::Function
     }
-    fn get_bat_file() -> BatFile {
-        BatFile::FunctionsMetadataFile
-    }
     fn metadata_name() -> String {
         "Function".to_string()
     }

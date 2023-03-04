@@ -54,9 +54,6 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
     fn get_bat_metadata_type() -> BatMetadataType {
         BatMetadataType::Struct
     }
-    fn get_bat_file() -> BatFile {
-        BatFile::StructsMetadataFile
-    }
     fn metadata_name() -> String {
         "Struct".to_string()
     }

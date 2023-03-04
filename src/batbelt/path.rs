@@ -31,12 +31,6 @@ pub enum BatFile {
     BatAuditorToml,
     Batlog,
     BatMetadataFile,
-    MetadataCacheFile {
-        metadata_cache_type: BatMetadataType,
-    },
-    FunctionsMetadataFile,
-    StructsMetadataFile,
-    TraitsMetadataFile,
     ThreatModeling,
     FindingCandidates,
     OpenQuestions,
@@ -45,27 +39,13 @@ pub enum BatFile {
     GitIgnore,
     PackageJson,
     RobotFile,
-    CodeOverhaulToReview {
-        file_name: String,
-    },
-    CodeOverhaulStarted {
-        file_name: String,
-    },
-    CodeOverhaulFinished {
-        file_name: String,
-    },
-    FindingToReview {
-        file_name: String,
-    },
-    FindingAccepted {
-        file_name: String,
-    },
-    FindingRejected {
-        file_name: String,
-    },
-    Generic {
-        file_path: String,
-    },
+    CodeOverhaulToReview { file_name: String },
+    CodeOverhaulStarted { file_name: String },
+    CodeOverhaulFinished { file_name: String },
+    FindingToReview { file_name: String },
+    FindingAccepted { file_name: String },
+    FindingRejected { file_name: String },
+    Generic { file_path: String },
 }
 
 impl BatEnumerator for BatFile {}
@@ -112,36 +92,6 @@ impl BatFile {
                     BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
-            BatFile::StructsMetadataFile => {
-                format!(
-                    "{}/{}.md",
-                    BatFolder::MetadataFolder.get_path(canonicalize)?,
-                    BatMetadataType::Struct
-                        .to_string()
-                        .to_lowercase()
-                        .to_plural()
-                )
-            }
-            BatFile::FunctionsMetadataFile => {
-                format!(
-                    "{}/{}.md",
-                    BatFolder::MetadataFolder.get_path(canonicalize)?,
-                    BatMetadataType::Function
-                        .to_string()
-                        .to_lowercase()
-                        .to_plural()
-                )
-            }
-            BatFile::TraitsMetadataFile => {
-                format!(
-                    "{}/{}.md",
-                    BatFolder::MetadataFolder.get_path(canonicalize)?,
-                    BatMetadataType::Trait
-                        .to_string()
-                        .to_lowercase()
-                        .to_plural()
-                )
-            }
             BatFile::CodeOverhaulToReview { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
@@ -184,13 +134,6 @@ impl BatFile {
                     BatFolder::FindingsRejected.get_path(canonicalize)?
                 )
             }
-            BatFile::MetadataCacheFile {
-                metadata_cache_type,
-            } => format!(
-                "{}/{}.json",
-                BatFolder::MetadataCacheFolder.get_path(canonicalize)?,
-                metadata_cache_type.to_string().to_snake_case().to_plural()
-            ),
             BatFile::BatMetadataFile => {
                 format!("./BatMetadata.json",)
             }
@@ -293,8 +236,6 @@ impl BatFile {
     Debug, PartialEq, Clone, strum_macros::Display, strum_macros::EnumIter, Serialize, Deserialize,
 )]
 pub enum BatFolder {
-    MetadataFolder,
-    MetadataCacheFolder,
     ProgramPath,
     ProjectFolderPath,
     FindingsFolderPath,
@@ -331,18 +272,6 @@ impl BatFolder {
                 format!(
                     "{}/figures",
                     BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFolder::MetadataFolder => {
-                format!(
-                    "{}/metadata",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFolder::MetadataCacheFolder => {
-                format!(
-                    "{}/cache",
-                    BatFolder::MetadataFolder.get_path(canonicalize)?
                 )
             }
             BatFolder::ProgramPath => bat_config

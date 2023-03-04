@@ -51,9 +51,6 @@ impl BatMetadataParser<TraitMetadataType> for TraitSourceCodeMetadata {
     fn get_bat_metadata_type() -> BatMetadataType {
         BatMetadataType::Trait
     }
-    fn get_bat_file() -> BatFile {
-        BatFile::TraitsMetadataFile
-    }
     fn metadata_name() -> String {
         "Trait".to_string()
     }

@@ -48,15 +48,6 @@ impl BatCommandEnumerator for SonarCommand {
 
 impl SonarCommand {
     fn execute_run(&self) -> Result<(), CommandError> {
-        let metadata_path = BatFolder::MetadataFolder
-            .get_path(false)
-            .change_context(CommandError)?;
-        let metadata_cache_path = BatFolder::MetadataCacheFolder
-            .get_path(false)
-            .change_context(CommandError)?;
-        execute_command("rm", &["-rf", &metadata_path], false)?;
-        execute_command("mkdir", &[&metadata_path], false)?;
-        execute_command("mkdir", &[&metadata_cache_path], false)?;
         TemplateGenerator::create_metadata_json().change_context(CommandError)?;
 
         BatSonarInteractive::SonarStart {
