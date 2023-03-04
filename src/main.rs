@@ -173,7 +173,10 @@ impl BatCommands {
             ),
         };
         if check_metadata {
-            BatMetadata::check_metadata_is_initialized().change_context(CommandError)?;
+            BatMetadata::read_metadata()
+                .change_context(CommandError)?
+                .check_metadata_is_initialized()
+                .change_context(CommandError)?;
         }
 
         if check_branch {

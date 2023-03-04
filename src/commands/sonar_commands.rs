@@ -1,6 +1,6 @@
 use crate::batbelt::command_line::execute_command;
 
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
@@ -57,7 +57,6 @@ impl SonarCommand {
         execute_command("rm", &["-rf", &metadata_path], false)?;
         execute_command("mkdir", &[&metadata_path], false)?;
         execute_command("mkdir", &[&metadata_cache_path], false)?;
-        TemplateGenerator::create_auditor_metadata_files().change_context(CommandError)?;
         TemplateGenerator::create_metadata_json().change_context(CommandError)?;
 
         BatSonarInteractive::SonarStart {
@@ -93,6 +92,10 @@ impl SonarCommand {
         BatSonarInteractive::GetFunctionDependenciesMetadata
             .print_interactive()
             .change_context(CommandError)?;
+
+        let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        bat_metadata.initialized = true;
+        bat_metadata.save_metadata().change_context(CommandError)?;
 
         GitCommit::UpdateMetadataJson
             .create_commit()

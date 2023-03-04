@@ -234,7 +234,6 @@ pub enum GitCommit {
     AcceptFindings,
     UpdateTemplates,
     Notes,
-    UpdateMetadata { metadata_type: BatMetadataType },
     UpdateMetadataJson,
 }
 
@@ -375,9 +374,6 @@ impl GitCommit {
                         .change_context(GitError)?,
                 ]
             }
-            GitCommit::UpdateMetadata { metadata_type } => {
-                vec![metadata_type.get_path().change_context(GitError)?]
-            }
             GitCommit::UpdateMetadataJson => {
                 vec![BatFile::BatMetadataFile
                     .get_path(false)
@@ -426,10 +422,6 @@ impl GitCommit {
             GitCommit::Notes => {
                 "notes: open_questions, finding_candidates and threat_modeling notes updated"
                     .to_string()
-            }
-            GitCommit::UpdateMetadata { metadata_type } => {
-                let metadata_type_string = metadata_type.to_string().to_plural().to_snake_case();
-                format!("metadata: {}.md updated", metadata_type_string)
             }
             GitCommit::UpdateMetadataJson => {
                 format!("metadata: metadata.json updated")

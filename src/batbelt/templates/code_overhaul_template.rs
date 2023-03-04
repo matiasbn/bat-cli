@@ -21,7 +21,6 @@ pub struct CodeOverhaulTemplate {
 impl CodeOverhaulTemplate {
     pub fn new(entrypoint_name: &str, initialized: bool) -> Result<Self, TemplateError> {
         let entrypoint_parser = if initialized {
-            BatMetadata::metadata_is_initialized().change_context(TemplateError)?;
             let ep_parser =
                 EntrypointParser::new_from_name(entrypoint_name).change_context(TemplateError)?;
             Some(ep_parser)

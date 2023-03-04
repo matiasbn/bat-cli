@@ -1,8 +1,10 @@
 use crate::batbelt::metadata::functions_source_code_metadata::{
-    get_function_body, get_function_parameters, FunctionSourceCodeMetadata, FunctionMetadataType,
+    get_function_body, get_function_parameters, FunctionMetadataType, FunctionSourceCodeMetadata,
 };
 
-use crate::batbelt::metadata::structs_source_code_metadata::{StructSourceCodeMetadata, StructMetadataType};
+use crate::batbelt::metadata::structs_source_code_metadata::{
+    StructMetadataType, StructSourceCodeMetadata,
+};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::config::BatConfig;
@@ -11,7 +13,9 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::fs;
 
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType, MetadataId};
+use crate::batbelt::metadata::{
+    BatMetadata, BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
+};
 
 use crate::batbelt::parser::ParserError;
 
@@ -74,11 +78,16 @@ impl EntrypointParser {
             });
         };
 
-        let entrypoint_section = FunctionSourceCodeMetadata::get_filtered_metadata(
-            Some(entrypoint_name),
-            Some(FunctionMetadataType::EntryPoint),
-        )
-        .change_context(ParserError)?;
+        let entrypoint_section = BatMetadata::read_metadata()
+            .change_context(ParserError)?
+            .source_code
+            .functions_source_code
+            .into_iter()
+            .filter(|func_meta| {
+                func_meta.name == entrypoint_name
+                    && func_meta.function_type == FunctionMetadataType::EntryPoint
+            })
+            .collect::<Vec<_>>();
 
         if entrypoint_section.len() != 1 {
             return Err(Report::new(ParserError)
@@ -98,7 +107,7 @@ impl EntrypointParser {
         let entrypoint_function_body = get_function_body(&entrypoint_content);
 
         let handlers =
-            FunctionSourceCodeMetadata::get_filtered_metadata(None, Some(FunctionMetadataType::Handler))
+            SourceCodeMetadata::get_filtered_functions(None, Some(FunctionMetadataType::Handler))
                 .change_context(ParserError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
 
@@ -111,8 +120,8 @@ impl EntrypointParser {
                 && function_parameters[0].contains(&context_name)
                 && (entrypoint_function_body.contains(&function_metadata.name))
         });
-        let structs_metadata = StructSourceCodeMetadata::get_filtered_metadata(
-            Some(&context_name),
+        let structs_metadata = SourceCodeMetadata::get_filtered_structs(
+            Some(context_name.clone()),
             Some(StructMetadataType::ContextAccounts),
         )
         .change_context(ParserError)?;

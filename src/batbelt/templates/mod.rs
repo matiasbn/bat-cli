@@ -157,34 +157,7 @@ impl TemplateGenerator {
             .get_path(false)
             .change_context(TemplateError)?;
         Self::create_dir(&auditor_metadata_path, false)?;
-        Self::create_auditor_metadata_files()?;
         NoteTemplate::create_notes_templates()?;
-        Ok(())
-    }
-
-    pub fn create_auditor_metadata_files() -> Result<(), TemplateError> {
-        // metadata files
-        let metadata_types_path = BatMetadataType::get_type_vec()
-            .into_iter()
-            .map(|meta_type| meta_type.get_path())
-            .collect::<Result<Vec<_>, MetadataError>>()
-            .change_context(TemplateError)?;
-        for metadata_path in metadata_types_path {
-            execute_command("touch", &[&metadata_path], false).change_context(TemplateError)?;
-        }
-
-        let metadata_cache_path = BatMetadataType::get_type_vec()
-            .into_iter()
-            .map(|meta_type| {
-                meta_type
-                    .get_cache_file()
-                    .get_path(false)
-                    .change_context(TemplateError)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        for metadata_path in metadata_cache_path {
-            execute_command("touch", &[&metadata_path], false).change_context(TemplateError)?;
-        }
         Ok(())
     }
 

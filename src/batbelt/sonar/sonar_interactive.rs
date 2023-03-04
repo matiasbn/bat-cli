@@ -181,16 +181,6 @@ impl BatSonarInteractive {
                             .update_traits(traits_result.clone())
                             .unwrap();
                     }
-                    StructSourceCodeMetadata::update_markdown_from_metadata_vec(
-                        &mut structs_result,
-                    )
-                    .unwrap();
-                    FunctionSourceCodeMetadata::update_markdown_from_metadata_vec(
-                        &mut functions_result,
-                    )
-                    .unwrap();
-                    TraitSourceCodeMetadata::update_markdown_from_metadata_vec(&mut traits_result)
-                        .unwrap();
                 })
             })
             .collect();

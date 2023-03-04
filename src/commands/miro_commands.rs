@@ -5,7 +5,9 @@ use colored::{ColoredString, Colorize};
 use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
 };
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{
+    BatMetadata, BatMetadataParser, BatMetadataType, MetadataError, SourceCodeMetadata,
+};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_source_code_metadata::{
@@ -673,11 +675,9 @@ impl MiroCommand {
                     )
                     .unwrap();
                     let selected_struct_type = StructMetadataType::get_type_vec()[selection];
-                    let struct_metadata_vec = StructSourceCodeMetadata::get_filtered_metadata(
-                        None,
-                        Some(selected_struct_type),
-                    )
-                    .change_context(CommandError)?;
+                    let struct_metadata_vec =
+                        SourceCodeMetadata::get_filtered_structs(None, Some(selected_struct_type))
+                            .change_context(CommandError)?;
                     let struct_metadata_names = struct_metadata_vec
                         .iter()
                         .map(|struct_metadata| {
@@ -744,7 +744,7 @@ impl MiroCommand {
                     )
                     .unwrap();
                     let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
-                    let function_metadata_vec = FunctionSourceCodeMetadata::get_filtered_metadata(
+                    let function_metadata_vec = SourceCodeMetadata::get_filtered_functions(
                         None,
                         Some(selected_function_type),
                     )
@@ -935,12 +935,14 @@ impl MiroCommand {
             return Ok(());
         }
 
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+
         let function_dependencies = function_parser
             .dependencies
             .clone()
             .into_iter()
-            .map(FunctionSourceCodeMetadata::find_by_metadata_id)
-            .collect::<Result<Vec<_>, _>>()
+            .map(|f_meta| bat_metadata.source_code.get_function_by_id(f_meta.clone()))
+            .collect::<Result<Vec<_>, MetadataError>>()
             .change_context(CommandError)?;
 
         let dependencies_names_vec = function_dependencies
