@@ -5,7 +5,7 @@ pub mod package_json_template;
 
 use super::*;
 use crate::batbelt;
-use crate::batbelt::command_line::execute_command;
+use crate::batbelt::command_line::{execute_command, execute_command_with_child_process};
 use crate::batbelt::metadata::{BatMetadata, BatMetadataType, MetadataError};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
@@ -16,7 +16,7 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 use serde_json::json;
 use std::path::Path;
-use std::{error::Error, fmt, fs};
+use std::{env, error::Error, fmt, fs};
 
 #[derive(Debug)]
 pub struct TemplateError;
@@ -36,12 +36,26 @@ pub struct TemplateGenerator;
 impl TemplateGenerator {
     pub fn create_project() -> Result<(), TemplateError> {
         Self::create_project_folder()?;
-        Self::create_init_notes_folder()?;
-        BatFile::GitIgnore {
-            to_create_project: true,
-        }
-        .write_content(false, &Self::get_git_ignore_content())
+        let project_path = BatFolder::ProjectFolderPath
+            .get_path(true)
+            .change_context(TemplateError)?;
+        execute_command_with_child_process(
+            "mv",
+            &[
+                &BatFile::BatToml
+                    .get_path(false)
+                    .change_context(TemplateError)?,
+                &project_path,
+            ],
+        )
         .change_context(TemplateError)?;
+        env::set_current_dir(&project_path)
+            .into_report()
+            .change_context(TemplateError)?;
+        Self::create_init_notes_folder()?;
+        BatFile::GitIgnore
+            .write_content(false, &Self::get_git_ignore_content())
+            .change_context(TemplateError)?;
         Self::create_readme()?;
         Self::create_metadata_json()?;
         PackageJsonTemplate::create_package_with_init_script()?;
@@ -60,7 +74,7 @@ impl TemplateGenerator {
 
     fn create_metadata_json() -> TemplateResult<()> {
         let metadata_json_bat_file = BatFile::MetadataJsonFile;
-        let new_bat_metadata = BatMetadata::new().change_context(TemplateError)?;
+        let new_bat_metadata = BatMetadata::new();
         metadata_json_bat_file
             .create_empty(false)
             .change_context(TemplateError)?;
@@ -79,8 +93,7 @@ impl TemplateGenerator {
     }
 
     fn create_init_notes_folder() -> Result<(), TemplateError> {
-        let bat_config = BatConfig::get_config().change_context(TemplateError)?;
-        fs::create_dir(format!("./{}/notes", bat_config.project_name))
+        fs::create_dir(format!("./notes"))
             .into_report()
             .change_context(TemplateError)?;
         Ok(())
@@ -115,7 +128,7 @@ impl TemplateGenerator {
             bat_config.starting_date,
             TemplatePlaceholder::EmptyEndingDate.to_placeholder()
         );
-        let path = format!("./{}/README.md", bat_config.project_name);
+        let path = format!("./README.md");
         fs::write(path, content)
             .into_report()
             .change_context(TemplateError)?;
@@ -235,9 +248,7 @@ impl TemplateGenerator {
         }
         let ending_date =
             batbelt::bat_dialoguer::input("Ending date").change_context(TemplateError)?;
-        let bat_readme = BatFile::Readme {
-            to_create_project: false,
-        };
+        let bat_readme = BatFile::Readme;
         let readme_content = bat_readme
             .read_content(true)
             .change_context(TemplateError)?;

@@ -41,15 +41,9 @@ pub enum BatFile {
     FindingCandidates,
     OpenQuestions,
     ProgramLib,
-    Readme {
-        to_create_project: bool,
-    },
-    GitIgnore {
-        to_create_project: bool,
-    },
-    PackageJson {
-        to_create_project: bool,
-    },
+    Readme,
+    GitIgnore,
+    PackageJson,
     RobotFile,
     CodeOverhaulToReview {
         file_name: String,
@@ -82,46 +76,19 @@ impl BatFile {
             BatFile::BatToml => "Bat.toml".to_string(),
             BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
             BatFile::Batlog => "Batlog.log".to_string(),
-            BatFile::PackageJson {
-                to_create_project: for_init,
-            } => {
-                format!(
-                    "{}/package.json",
-                    if *for_init {
-                        BatFolder::ProjectFolderPath.get_path(true)?
-                    } else {
-                        ".".to_string()
-                    }
-                )
+            BatFile::PackageJson => {
+                format!("./package.json",)
             }
-            BatFile::GitIgnore {
-                to_create_project: for_init,
-            } => {
-                format!(
-                    "{}/.gitignore",
-                    if *for_init {
-                        BatFolder::ProjectFolderPath.get_path(true)?
-                    } else {
-                        ".".to_string()
-                    }
-                )
+            BatFile::GitIgnore => {
+                format!("./.gitignore",)
             }
             BatFile::ProgramLib => {
                 BatConfig::get_config()
                     .change_context(BatPathError)?
                     .program_lib_path
             }
-            BatFile::Readme {
-                to_create_project: for_init,
-            } => {
-                format!(
-                    "{}/README.md",
-                    if *for_init {
-                        BatFolder::ProjectFolderPath.get_path(true)?
-                    } else {
-                        ".".to_string()
-                    }
-                )
+            BatFile::Readme => {
+                format!("./README.md",)
             }
             BatFile::RobotFile => format!(
                 "{}/robot.md",
@@ -225,10 +192,7 @@ impl BatFile {
                 metadata_cache_type.to_string().to_snake_case().to_plural()
             ),
             BatFile::MetadataJsonFile => {
-                format!(
-                    "{}/metadata.json",
-                    BatFolder::ProjectFolderPath.get_path(false)?
-                )
+                format!("./metadata.json",)
             }
             BatFile::Generic { file_path } => file_path.clone(),
         };

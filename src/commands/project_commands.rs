@@ -115,11 +115,9 @@ impl ProjectCommands {
 
     fn update_git_ignore(&self) -> CommandResult<()> {
         println!("Updating .gitignore");
-        GitIgnore {
-            to_create_project: false,
-        }
-        .write_content(true, &TemplateGenerator::get_git_ignore_content())
-        .change_context(CommandError)
+        GitIgnore
+            .write_content(true, &TemplateGenerator::get_git_ignore_content())
+            .change_context(CommandError)
     }
 }
 
@@ -128,9 +126,7 @@ pub fn create_bat_project() -> Result<(), CommandError> {
     let bat_config = create_bat_config_file().change_context(CommandError)?;
     println!("Creating {:#?} project", bat_config);
     TemplateGenerator::create_project().change_context(CommandError)?;
-    execute_command("mv", &["Bat.toml", &bat_config.project_name], false)?;
-
-    println!("Project {} succesfully created", bat_config.project_name);
+    println!("Project {} successfully created", bat_config.project_name);
     Ok(())
 }
 
@@ -321,11 +317,9 @@ pub async fn initialize_bat_project(skip_initial_commit: bool) -> Result<(), Com
     .change_context(CommandError)?;
 
     // delete before commit
-    BatFile::PackageJson {
-        to_create_project: false,
-    }
-    .remove_file()
-    .change_context(CommandError)?;
+    BatFile::PackageJson
+        .remove_file()
+        .change_context(CommandError)?;
 
     if !*shared_initialized.cloned.borrow() {
         println!("Initializing project repository");

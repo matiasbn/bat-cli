@@ -63,14 +63,14 @@ pub struct SourceCodeMetadata {
 }
 
 impl BatMetadata {
-    pub fn new() -> MetadataResult<Self> {
-        Ok(Self {
+    pub fn new() -> Self {
+        Self {
             source_code: SourceCodeMetadata {
                 functions: vec![],
                 structs: vec![],
                 traits: vec![],
             },
-        })
+        }
     }
 
     pub fn save_metadata(&self) -> MetadataResult<()> {

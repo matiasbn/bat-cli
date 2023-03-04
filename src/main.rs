@@ -303,7 +303,7 @@ async fn main() -> CommandResult<()> {
             eprintln!(
                 "{} {} script finished with error",
                 "bat-cli".red(),
-                cli.command.to_string().to_kebab_case().green()
+                cli.command.to_string().to_kebab_case().red()
             );
             log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)

@@ -2,7 +2,7 @@ use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
 use crate::batbelt::metadata::structs_metadata::StructMetadata;
 use crate::batbelt::metadata::traits_metadata::TraitMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::sonar::{BatSonarError, SonarResultType};
 use crate::batbelt::BatEnumerator;
@@ -12,6 +12,7 @@ use dialoguer::console::{style, Emoji};
 use error_stack::{Result, ResultExt};
 use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
 
+use crate::commands::CommandError;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -144,6 +145,8 @@ impl BatSonarInteractive {
                         thread::sleep(Duration::from_millis(200));
                     }
                     pb.finish_with_message(format!("{} {} found", total, metadata_type_color));
+                    let mut new_metadata = BatMetadata::new();
+                    new_metadata.save_metadata().unwrap();
                     StructMetadata::update_markdown_from_metadata_vec(&mut structs_result).unwrap();
                     FunctionMetadata::update_markdown_from_metadata_vec(&mut functions_result)
                         .unwrap();
