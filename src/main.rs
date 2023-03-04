@@ -68,9 +68,9 @@ enum BatCommands {
     CO(CodeOverhaulCommand),
     /// Execute the BatSonar to create metadata files for all Sonar result types
     Sonar,
-    /// Execute specific BatSonar commands
-    #[command(subcommand)]
-    SonarSpecific(SonarSpecificCommand),
+    // /// Execute specific BatSonar commands
+    // #[command(subcommand)]
+    // SonarSpecific(SonarSpecificCommand),
     /// findings files management
     #[command(subcommand)]
     Finding(FindingCommand),
@@ -119,7 +119,7 @@ impl BatCommands {
                 commands::finding_commands::accept_all()
             }
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
-            BatCommands::SonarSpecific(command) => command.execute_command(),
+            // BatCommands::SonarSpecific(command) => command.execute_command(),
             BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tools(command) => command.execute_command(),
@@ -155,10 +155,10 @@ impl BatCommands {
                 SonarCommand::Run.check_metadata_is_initialized(),
                 SonarCommand::Run.check_correct_branch(),
             ),
-            BatCommands::SonarSpecific(command) => (
-                command.check_metadata_is_initialized(),
-                command.check_correct_branch(),
-            ),
+            // BatCommands::SonarSpecific(command) => (
+            //     command.check_metadata_is_initialized(),
+            //     command.check_correct_branch(),
+            // ),
             BatCommands::Tools(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
@@ -227,13 +227,13 @@ impl BatCommands {
                         .collect::<Vec<_>>(),
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::SonarSpecific(_) => Some((
-                    SonarSpecificCommand::get_type_vec()
-                        .into_iter()
-                        .map(|command_type| command_type.to_string().to_kebab_case())
-                        .collect::<Vec<_>>(),
-                    command.to_string().to_kebab_case(),
-                )),
+                // BatCommands::SonarSpecific(_) => Some((
+                //     SonarSpecificCommand::get_type_vec()
+                //         .into_iter()
+                //         .map(|command_type| command_type.to_string().to_kebab_case())
+                //         .collect::<Vec<_>>(),
+                //     command.to_string().to_kebab_case(),
+                // )),
                 BatCommands::Sonar => Some((vec![], command.to_string().to_kebab_case())),
                 BatCommands::Repo(_) => Some((
                     RepositoryCommand::get_type_vec()
