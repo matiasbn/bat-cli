@@ -57,20 +57,67 @@ pub struct BatMetadata {
 
 #[derive(Serialize, Deserialize)]
 pub struct SourceCodeMetadata {
+    pub initialized: bool,
     pub functions: Vec<FunctionMetadata>,
     pub structs: Vec<StructMetadata>,
     pub traits: Vec<TraitMetadata>,
+}
+
+impl SourceCodeMetadata {
+    pub fn update_functions(&self, new_vec: Vec<FunctionMetadata>) -> MetadataResult<()> {
+        let mut bat_metadata = BatMetadata::read_metadata()?;
+        bat_metadata.source_code.initialized = true;
+        let mut metadata_vec = new_vec.clone();
+        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
+        bat_metadata.source_code.functions = metadata_vec;
+        bat_metadata.save_metadata()?;
+        Ok(())
+    }
+    pub fn update_structs(&self, new_vec: Vec<StructMetadata>) -> MetadataResult<()> {
+        let mut bat_metadata = BatMetadata::read_metadata()?;
+        bat_metadata.source_code.initialized = true;
+        let mut metadata_vec = new_vec.clone();
+        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
+        bat_metadata.source_code.structs = metadata_vec;
+        bat_metadata.save_metadata()?;
+        Ok(())
+    }
+    pub fn update_traits(&self, new_vec: Vec<TraitMetadata>) -> MetadataResult<()> {
+        let mut bat_metadata = BatMetadata::read_metadata()?;
+        bat_metadata.source_code.initialized = true;
+        let mut metadata_vec = new_vec.clone();
+        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
+        bat_metadata.source_code.traits = metadata_vec;
+        bat_metadata.save_metadata()?;
+        Ok(())
+    }
 }
 
 impl BatMetadata {
     pub fn new() -> Self {
         Self {
             source_code: SourceCodeMetadata {
+                initialized: false,
                 functions: vec![],
                 structs: vec![],
                 traits: vec![],
             },
         }
+    }
+
+    pub fn read_metadata() -> MetadataResult<Self> {
+        let metadata_json_bat_file = BatFile::MetadataJsonFile;
+        let bat_metadata_value: Value = serde_json::from_str(
+            &metadata_json_bat_file
+                .read_content(true)
+                .change_context(MetadataError)?,
+        )
+        .into_report()
+        .change_context(MetadataError)?;
+        let bat_metadata: BatMetadata = serde_json::from_value(bat_metadata_value)
+            .into_report()
+            .change_context(MetadataError)?;
+        Ok(bat_metadata)
     }
 
     pub fn save_metadata(&self) -> MetadataResult<()> {

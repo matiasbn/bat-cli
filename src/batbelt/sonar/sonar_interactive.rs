@@ -146,7 +146,24 @@ impl BatSonarInteractive {
                     }
                     pb.finish_with_message(format!("{} {} found", total, metadata_type_color));
                     let mut new_metadata = BatMetadata::new();
-                    new_metadata.save_metadata().unwrap();
+                    if !functions_result.is_empty() {
+                        new_metadata
+                            .source_code
+                            .update_functions(functions_result.clone())
+                            .unwrap();
+                    }
+                    if !structs_result.is_empty() {
+                        new_metadata
+                            .source_code
+                            .update_structs(structs_result.clone())
+                            .unwrap();
+                    }
+                    if !traits_result.is_empty() {
+                        new_metadata
+                            .source_code
+                            .update_traits(traits_result.clone())
+                            .unwrap();
+                    }
                     StructMetadata::update_markdown_from_metadata_vec(&mut structs_result).unwrap();
                     FunctionMetadata::update_markdown_from_metadata_vec(&mut functions_result)
                         .unwrap();

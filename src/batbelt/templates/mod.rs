@@ -183,7 +183,6 @@ impl TemplateGenerator {
             })
             .collect::<Result<Vec<_>, _>>()?;
         for metadata_path in metadata_cache_path {
-            println!("metadata cachae{}", metadata_path);
             execute_command("touch", &[&metadata_path], false).change_context(TemplateError)?;
         }
         Ok(())
