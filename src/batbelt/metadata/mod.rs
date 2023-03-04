@@ -236,7 +236,7 @@ impl BatMetadata {
     }
 
     pub fn read_metadata() -> MetadataResult<Self> {
-        let metadata_json_bat_file = BatFile::MetadataJsonFile;
+        let metadata_json_bat_file = BatFile::BatMetadataFile;
         let bat_metadata_value: Value = serde_json::from_str(
             &metadata_json_bat_file
                 .read_content(true)
@@ -251,7 +251,7 @@ impl BatMetadata {
     }
 
     pub fn save_metadata(&self) -> MetadataResult<()> {
-        let metadata_json_bat_file = BatFile::MetadataJsonFile;
+        let metadata_json_bat_file = BatFile::BatMetadataFile;
         metadata_json_bat_file
             .create_empty(false)
             .change_context(MetadataError)?;

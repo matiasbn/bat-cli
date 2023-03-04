@@ -73,7 +73,7 @@ impl TemplateGenerator {
     }
 
     pub fn create_metadata_json() -> TemplateResult<()> {
-        let metadata_json_bat_file = BatFile::MetadataJsonFile;
+        let metadata_json_bat_file = BatFile::BatMetadataFile;
         let new_bat_metadata = BatMetadata::new_empty();
         metadata_json_bat_file
             .create_empty(false)

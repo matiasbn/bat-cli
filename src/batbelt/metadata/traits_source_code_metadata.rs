@@ -108,21 +108,17 @@ impl BatMetadataParser<TraitMetadataType> for TraitSourceCodeMetadata {
 }
 
 impl TraitSourceCodeMetadata {
-    pub fn to_trait_impl_parser(
-        &self,
-        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
-    ) -> Result<TraitParser, MetadataError> {
+    pub fn to_trait_impl_parser(&self) -> Result<TraitParser, MetadataError> {
         TraitParser::new_from_metadata(self.clone()).change_context(MetadataError)
     }
 
     pub fn get_trait_parser_vec(
         trait_name: Option<&str>,
         trait_type: Option<TraitMetadataType>,
-        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
     ) -> Result<Vec<TraitParser>, MetadataError> {
         Self::get_filtered_metadata(trait_name, trait_type)?
             .into_iter()
-            .map(|impl_meta| impl_meta.to_trait_impl_parser(optional_function_metadata_vec.clone()))
+            .map(|impl_meta| impl_meta.to_trait_impl_parser())
             .collect::<Result<Vec<_>, MetadataError>>()
     }
 }

@@ -13,6 +13,7 @@ use error_stack::{Result, ResultExt};
 use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
 
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::commands::CommandError;
 use std::thread;
@@ -29,6 +30,7 @@ pub enum BatSonarInteractive {
     GetSourceCodeMetadata,
     GetEntryPointsMetadata,
     GetTraitsMetadata,
+    GetFunctionDependenciesMetadata,
 }
 
 impl BatSonarInteractive {
@@ -40,6 +42,9 @@ impl BatSonarInteractive {
             BatSonarInteractive::GetSourceCodeMetadata => self.get_source_code_metadata()?,
             BatSonarInteractive::GetEntryPointsMetadata => self.get_entry_points_metadata()?,
             BatSonarInteractive::GetTraitsMetadata => self.get_traits_metadata()?,
+            BatSonarInteractive::GetFunctionDependenciesMetadata => {
+                self.get_functions_dependencies_metadata()?
+            }
         }
         Ok(())
     }
@@ -206,7 +211,7 @@ impl BatSonarInteractive {
         let entrypoint_names =
             EntrypointParser::get_entrypoint_names(false).change_context(BatSonarError)?;
         println!(
-            "Getting metadata for{}, analyzing {} entry points",
+            "Getting metadata for {}, analyzing {} entry points",
             "Entry points".green(),
             style(format!("{}", entrypoint_names.len())).bold().dim(),
         );
@@ -244,7 +249,7 @@ impl BatSonarInteractive {
         let traits_sc_metadata = bat_metadata.source_code.traits_source_code.clone();
         println!(
             "Getting metadata for {}, analyzing {} traits",
-            "Traits".green(),
+            BatMetadataType::Trait.get_colored_name(true),
             style(format!("{}", traits_sc_metadata.len())).bold().dim(),
         );
         let m = MultiProgress::new();
@@ -271,7 +276,44 @@ impl BatSonarInteractive {
 
         Ok(())
     }
-    // }
+    fn get_functions_dependencies_metadata(&self) -> Result<(), BatSonarError> {
+        let started = Instant::now();
+        let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+        let bat_metadata = BatMetadata::read_metadata().change_context(BatSonarError)?;
+        let functions_sc_metadata = bat_metadata.source_code.functions_source_code.clone();
+        println!(
+            "Getting metadata for {}, analyzing {} traits",
+            BatMetadataType::Function.get_colored_name(true),
+            style(format!("{}", functions_sc_metadata.len()))
+                .bold()
+                .dim(),
+        );
+        let m = MultiProgress::new();
+        let handles: Vec<_> = (0..1)
+            .map(|i| {
+                let traits_sc_clone = functions_sc_metadata.clone();
+                let pb = m.add(ProgressBar::new(traits_sc_clone.len() as u64));
+                pb.set_style(spinner_style.clone());
+                thread::spawn(move || {
+                    for (idx, function_sc) in traits_sc_clone.iter().enumerate().clone() {
+                        pb.set_prefix(format!("[{}/{}]", idx + 1, traits_sc_clone.len()));
+                        pb.set_message(format!("Getting information for: {}", function_sc.name));
+                        pb.inc(1);
+                        FunctionParser::new_from_metadata(function_sc.clone()).unwrap();
+                        thread::sleep(Duration::from_millis(200));
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            let _ = h.join();
+        }
+        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

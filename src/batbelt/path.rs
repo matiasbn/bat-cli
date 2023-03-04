@@ -30,7 +30,7 @@ pub enum BatFile {
     BatToml,
     BatAuditorToml,
     Batlog,
-    MetadataJsonFile,
+    BatMetadataFile,
     MetadataCacheFile {
         metadata_cache_type: BatMetadataType,
     },
@@ -191,8 +191,8 @@ impl BatFile {
                 BatFolder::MetadataCacheFolder.get_path(canonicalize)?,
                 metadata_cache_type.to_string().to_snake_case().to_plural()
             ),
-            BatFile::MetadataJsonFile => {
-                format!("./metadata.json",)
+            BatFile::BatMetadataFile => {
+                format!("./BatMetadata.json",)
             }
             BatFile::Generic { file_path } => file_path.clone(),
         };

@@ -379,7 +379,7 @@ impl GitCommit {
                 vec![metadata_type.get_path().change_context(GitError)?]
             }
             GitCommit::UpdateMetadataJson => {
-                vec![BatFile::MetadataJsonFile
+                vec![BatFile::BatMetadataFile
                     .get_path(false)
                     .change_context(GitError)?]
             }

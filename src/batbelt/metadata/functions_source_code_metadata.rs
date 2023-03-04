@@ -108,17 +108,8 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
 }
 
 impl FunctionSourceCodeMetadata {
-    pub fn to_function_parser(
-        &self,
-        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
-    ) -> Result<FunctionParser, MetadataError> {
-        FunctionParser::new_from_metadata(
-            self.clone(),
-            optional_function_metadata_vec,
-            optional_trait_impl_parser_vec,
-        )
-        .change_context(MetadataError)
+    pub fn to_function_parser(&self) -> Result<FunctionParser, MetadataError> {
+        FunctionParser::new_from_metadata(self.clone()).change_context(MetadataError)
     }
 
     fn assert_function_is_entrypoint(
@@ -266,8 +257,8 @@ pub fn get_function_body(function_content: &str) -> String {
 
 mod test_function_metadata {
     use crate::batbelt::metadata::functions_source_code_metadata::{
-        get_function_body, get_function_parameters, get_function_signature, FunctionSourceCodeMetadata,
-        FunctionMetadataCache, FunctionMetadataType,
+        get_function_body, get_function_parameters, get_function_signature, FunctionMetadataCache,
+        FunctionMetadataType, FunctionSourceCodeMetadata,
     };
     use serde_json::{json, Value};
     use std::fs;

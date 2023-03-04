@@ -38,8 +38,6 @@ impl FunctionParser {
         name: String,
         function_metadata: FunctionSourceCodeMetadata,
         content: String,
-        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<Self, ParserError> {
         let mut new_function_parser = Self {
             name,
@@ -56,10 +54,7 @@ impl FunctionParser {
         new_function_parser.get_function_parameters()?;
         log::debug!("new_function_parser:\n{:#?}", new_function_parser);
         log::debug!("new_function_body:\n{}", new_function_parser.body);
-        new_function_parser.get_function_dependencies(
-            optional_function_metadata_vec,
-            optional_trait_impl_parser_vec,
-        )?;
+        new_function_parser.get_function_dependencies()?;
         log::debug!(
             "new_function_parser_with_dependencies:\n{:#?}",
             new_function_parser
@@ -78,80 +73,59 @@ impl FunctionParser {
 
     pub fn new_from_metadata(
         function_metadata: FunctionSourceCodeMetadata,
-        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<Self, ParserError> {
         let name = function_metadata.name.clone();
         let content = function_metadata
             .to_source_code_parser(None)
             .get_source_code_content();
-        Self::new(
-            name,
-            function_metadata,
-            content,
-            optional_function_metadata_vec,
-            optional_trait_impl_parser_vec,
-        )
+        Self::new(name, function_metadata, content)
     }
 
-    fn get_function_dependencies(
-        &mut self,
-        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
-        optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
-    ) -> Result<(), ParserError> {
-        let function_metadata = if optional_function_metadata_vec.is_some() {
-            optional_function_metadata_vec.unwrap()
-        } else {
-            FunctionSourceCodeMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
-        };
+    fn get_function_dependencies(&mut self) -> Result<(), ParserError> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+        let function_metadata = bat_metadata.source_code.functions_source_code.clone();
+        let trait_sc_metadata_vec = bat_metadata.traits.clone();
 
-        let trait_impl_parser_vec = if optional_trait_impl_parser_vec.is_some() {
-            optional_trait_impl_parser_vec.unwrap()
-        } else {
-            TraitSourceCodeMetadata::get_trait_parser_vec(None, None, Some(function_metadata.clone()))
-                .change_context(ParserError)?
-        };
         let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
-
-        let impl_function_regex =
-            Regex::new(r"[A-Za-z0-9_]+::[A-Za-z0-9]+\(\(?[A-Za-z0-9]*\)?\)").unwrap();
-
-        let impl_function_matches = impl_function_regex
-            .find_iter(&self.body.clone())
-            .map(|impl_match| impl_match.as_str().to_string())
-            .collect::<Vec<_>>();
-
         let mut dependency_function_metadata_id_vec = vec![];
 
-        for impl_match in impl_function_matches {
-            let mut impl_match_split = impl_match.split("::");
-            let impl_match_to = impl_match_split.next().unwrap();
-            let impl_match_function_name =
-                Self::get_function_name_from_signature(impl_match_split.next().unwrap());
-            let impl_function_metadata =
-                trait_impl_parser_vec
-                    .clone()
-                    .into_iter()
-                    .find_map(|impl_parser| {
-                        if impl_parser.impl_to.contains(impl_match_to) {
-                            let f_metadata = impl_parser
-                                .impl_functions
-                                .into_iter()
-                                .find(|impl_fn| impl_fn.name == impl_match_function_name);
-                            if f_metadata.is_some() {
-                                Some(f_metadata.unwrap())
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    });
-            if impl_function_metadata.is_some() {
-                dependency_function_metadata_id_vec
-                    .push(impl_function_metadata.unwrap().metadata_id);
-            }
-        }
+        // let impl_function_regex =
+        //     Regex::new(r"[A-Za-z0-9_]+::[A-Za-z0-9]+\(\(?[A-Za-z0-9]*\)?\)").unwrap();
+        //
+        // let impl_function_matches = impl_function_regex
+        //     .find_iter(&self.body.clone())
+        //     .map(|impl_match| impl_match.as_str().to_string())
+        //     .collect::<Vec<_>>();
+
+        // for impl_match in impl_function_matches {
+        //     let mut impl_match_split = impl_match.split("::");
+        //     let impl_match_to = impl_match_split.next().unwrap();
+        //     let impl_match_function_name =
+        //         Self::get_function_name_from_signature(impl_match_split.next().unwrap());
+        //     let impl_function_metadata =
+        //         trait_sc_metadata_vec
+        //             .clone()
+        //             .into_iter()
+        //             .find_map(|impl_parser| {
+        //                 if impl_parser.impl_to.contains(impl_match_to) {
+        //                     let f_metadata = impl_parser
+        //                         .impl_functions
+        //                         .into_iter()
+        //                         .find(|impl_fn| impl_fn.name == impl_match_function_name);
+        //                     if f_metadata.is_some() {
+        //                         Some(f_metadata.unwrap())
+        //                     } else {
+        //                         None
+        //                     }
+        //                 } else {
+        //                     None
+        //                 }
+        //             });
+        //     if impl_function_metadata.is_some() {
+        //         dependency_function_metadata_id_vec
+        //             .push(impl_function_metadata.unwrap().metadata_id);
+        //     }
+        // }
 
         let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_:.&, ()]*)\)").unwrap(); //[A-Za-z0-9_]+\(([A-Za-z0-9_,():\s])*\)$
         let dependency_function_names_vec = dependency_regex
@@ -208,10 +182,7 @@ impl FunctionParser {
                             .push(f_dep_metadata.function_metadata_id.clone()),
                         Err(_) => {
                             let function_parser = dependency_metadata
-                                .to_function_parser(
-                                    Some(function_metadata.clone()),
-                                    Some(trait_impl_parser_vec.clone()),
-                                )
+                                .to_function_parser()
                                 .change_context(ParserError)?;
                             dependency_function_metadata_id_vec
                                 .push(function_parser.function_metadata.metadata_id);
