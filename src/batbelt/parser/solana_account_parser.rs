@@ -1,6 +1,4 @@
-use crate::batbelt::metadata::structs_source_code_metadata::{
-    StructMetadataType, StructSourceCodeMetadata,
-};
+use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::SonarResult;

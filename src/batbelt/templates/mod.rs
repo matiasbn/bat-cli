@@ -6,7 +6,7 @@ pub mod package_json_template;
 use super::*;
 use crate::batbelt;
 use crate::batbelt::command_line::{execute_command, execute_command_with_child_process};
-use crate::batbelt::metadata::{BatMetadata, BatMetadataType, MetadataError};
+use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
@@ -14,7 +14,7 @@ use crate::batbelt::BatEnumerator;
 use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
-use serde_json::json;
+
 use std::path::Path;
 use std::{env, error::Error, fmt, fs};
 
@@ -93,7 +93,7 @@ impl TemplateGenerator {
     }
 
     fn create_init_notes_folder() -> Result<(), TemplateError> {
-        fs::create_dir(format!("./notes"))
+        fs::create_dir("./notes")
             .into_report()
             .change_context(TemplateError)?;
         Ok(())
@@ -128,7 +128,7 @@ impl TemplateGenerator {
             bat_config.starting_date,
             TemplatePlaceholder::EmptyEndingDate.to_placeholder()
         );
-        let path = format!("./README.md");
+        let path = "./README.md".to_string();
         fs::write(path, content)
             .into_report()
             .change_context(TemplateError)?;
@@ -310,7 +310,6 @@ impl TemplatePlaceholder {
 
 #[cfg(debug_assertions)]
 mod template_test {
-    use crate::batbelt::templates::TemplateGenerator;
 
     #[test]
     fn test_get_gitignore_content() {

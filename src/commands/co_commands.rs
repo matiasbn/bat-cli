@@ -14,7 +14,6 @@ use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{Report, ResultExt};
 
-use crate::batbelt::metadata::BatMetadata;
 use std::fs;
 
 #[derive(

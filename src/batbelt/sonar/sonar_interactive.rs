@@ -1,4 +1,3 @@
-use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::{
     StructMetadataType, StructSourceCodeMetadata,
@@ -21,7 +20,7 @@ use crate::batbelt::parser::context_accounts_parser::CAAccountParser;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
-use crate::commands::CommandError;
+
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -217,7 +216,7 @@ impl BatSonarInteractive {
         );
         let m = MultiProgress::new();
         let handles: Vec<_> = (0..1)
-            .map(|i| {
+            .map(|_i| {
                 let entrypoint_names_clone = entrypoint_names.clone();
                 let pb = m.add(ProgressBar::new(entrypoint_names_clone.len() as u64));
                 pb.set_style(spinner_style.clone());
@@ -226,7 +225,7 @@ impl BatSonarInteractive {
                         pb.set_prefix(format!("[{}/{}]", idx + 1, entrypoint_names_clone.len()));
                         pb.set_message(format!("Getting information for: {}", entry));
                         pb.inc(1);
-                        EntrypointParser::new_from_name(&entry).unwrap();
+                        EntrypointParser::new_from_name(entry).unwrap();
                         thread::sleep(Duration::from_millis(200));
                     }
                 })
@@ -246,7 +245,7 @@ impl BatSonarInteractive {
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
         let bat_metadata = BatMetadata::read_metadata().change_context(BatSonarError)?;
-        let traits_sc_metadata = bat_metadata.source_code.traits_source_code.clone();
+        let traits_sc_metadata = bat_metadata.source_code.traits_source_code;
         println!(
             "Getting metadata for {}, analyzing {} {}",
             BatMetadataType::Trait.get_colored_name(true),
@@ -255,7 +254,7 @@ impl BatSonarInteractive {
         );
         let m = MultiProgress::new();
         let handles: Vec<_> = (0..1)
-            .map(|i| {
+            .map(|_i| {
                 let traits_sc_clone = traits_sc_metadata.clone();
                 let pb = m.add(ProgressBar::new(traits_sc_clone.len() as u64));
                 pb.set_style(spinner_style.clone());
@@ -283,7 +282,7 @@ impl BatSonarInteractive {
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
         let bat_metadata = BatMetadata::read_metadata().change_context(BatSonarError)?;
-        let functions_sc_metadata = bat_metadata.source_code.functions_source_code.clone();
+        let functions_sc_metadata = bat_metadata.source_code.functions_source_code;
         println!(
             "Getting metadata for {}, analyzing {} {}",
             "Function dependencies".green(),
@@ -294,7 +293,7 @@ impl BatSonarInteractive {
         );
         let m = MultiProgress::new();
         let handles: Vec<_> = (0..1)
-            .map(|i| {
+            .map(|_i| {
                 let functions_sc_clone = functions_sc_metadata.clone();
                 let pb = m.add(ProgressBar::new(functions_sc_clone.len() as u64));
                 pb.set_style(spinner_style.clone());
@@ -335,7 +334,7 @@ impl BatSonarInteractive {
         );
         let m = MultiProgress::new();
         let handles: Vec<_> = (0..1)
-            .map(|i| {
+            .map(|_i| {
                 let ca_sc_clone = ca_sc_metadata.clone();
                 let pb = m.add(ProgressBar::new(ca_sc_clone.len() as u64));
                 pb.set_style(spinner_style.clone());
@@ -351,9 +350,7 @@ impl BatSonarInteractive {
                         let ca_info = bat_sonar
                             .results
                             .into_iter()
-                            .map(|result| {
-                                CAAccountParser::new_from_sonar_result(result.clone()).unwrap()
-                            })
+                            .map(|result| CAAccountParser::new_from_sonar_result(result).unwrap())
                             .collect::<Vec<_>>();
                         let context_accounts_metadata = ContextAccountsMetadata::new(
                             ca_sc.name.clone(),

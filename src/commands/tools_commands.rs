@@ -16,7 +16,7 @@ use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetada
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
-use crate::BatCommands::Repo;
+
 use log::Level;
 
 #[derive(
@@ -158,7 +158,7 @@ impl ToolsCommands {
                 return Ok(());
             }
         }
-        return Err(Report::new(CommandError)
-            .attach_printable(format!("Metadata for {} couldn't be found", metadata_id)));
+        Err(Report::new(CommandError)
+            .attach_printable(format!("Metadata for {} couldn't be found", metadata_id)))
     }
 }

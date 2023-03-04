@@ -1,6 +1,6 @@
 use crate::batbelt;
 use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulSignerMetadata;
@@ -102,7 +102,7 @@ impl CodeOverhaulSection {
             let entrypoint_parser = ep_parser.unwrap();
             match self {
                 CodeOverhaulSection::StateChanges => {
-                    self.get_state_changes_content(entrypoint_parser.clone())?
+                    self.get_state_changes_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
                 CodeOverhaulSection::Signers => {
@@ -140,7 +140,7 @@ impl CodeOverhaulSection {
         let mut state_changes_content_vec = vec![];
         let context_accounts_metadata = bat_metadata
             .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                entry_point_parser.context_accounts.metadata_id.clone(),
+                entry_point_parser.context_accounts.metadata_id,
             )
             .change_context(TemplateError)?;
 
@@ -159,7 +159,6 @@ impl CodeOverhaulSection {
 
         let close_accounts = context_accounts_metadata
             .context_accounts_info
-            .clone()
             .into_iter()
             .filter(|ca_info| ca_info.is_close)
             .collect::<Vec<_>>();
@@ -272,7 +271,7 @@ impl CodeOverhaulSection {
         let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
 
         let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
+            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
             .change_context(TemplateError)?;
         co_metadata.validations = validations_vec.clone();
         co_metadata
@@ -408,14 +407,11 @@ impl CodeOverhaulSection {
             }
         }
         if signers.is_empty() {
-            return Ok(format!(
-                "{}",
-                CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder(),
-            ));
+            return Ok(CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder());
         }
         let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
         let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
+            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
             .change_context(TemplateError)?;
         co_metadata.signers = signers.clone();
         co_metadata
@@ -462,7 +458,7 @@ impl CodeOverhaulSection {
             .join("\n");
         let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
         let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
+            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
             .change_context(TemplateError)?;
         co_metadata.context_accounts_content = formatted.clone();
         co_metadata

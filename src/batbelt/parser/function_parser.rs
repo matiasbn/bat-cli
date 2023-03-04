@@ -1,8 +1,8 @@
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
-use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId, MetadataResult};
-use crate::batbelt::parser::trait_parser::TraitParser;
-use crate::batbelt::parser::{ParserError, ParserResult};
+
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
+
+use crate::batbelt::parser::ParserError;
 
 use crate::batbelt::metadata::function_dependencies_metadata::{
     FunctionDependenciesMetadata, FunctionDependencyInfo,
@@ -73,14 +73,14 @@ impl FunctionParser {
                 .map(|func_dep| {
                     bat_metadata
                         .source_code
-                        .get_function_by_id(func_dep.clone())
+                        .get_function_by_id(func_dep)
                         .change_context(ParserError)
                 })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .map(|func_meta| FunctionDependencyInfo {
                     function_name: func_meta.name.clone(),
-                    function_metadata_id: func_meta.metadata_id.clone(),
+                    function_metadata_id: func_meta.metadata_id,
                 })
                 .collect::<Vec<_>>(),
             new_function_parser.external_dependencies.clone(),
@@ -121,7 +121,6 @@ impl FunctionParser {
         // only not external
         let trait_metadata_vec = bat_metadata
             .traits
-            .clone()
             .into_iter()
             .filter(|t_metadata| !t_metadata.external_trait)
             .collect::<Vec<_>>();
@@ -137,10 +136,7 @@ impl FunctionParser {
             .find_iter(&body_clone)
             .map(|impl_match| impl_match.as_str().to_string())
             .collect::<Vec<_>>();
-        log::debug!(
-            "impl_function_matches: \n{:#?}",
-            impl_function_matches.clone()
-        );
+        log::debug!("impl_function_matches: \n{:#?}", impl_function_matches);
         for impl_match in impl_function_matches {
             log::debug!("impl_match: {}", impl_match);
             // delete from body to avoid double checking
@@ -197,7 +193,6 @@ impl FunctionParser {
             .collect::<Vec<_>>();
         // filter the already found dependencies
         let filtered_function_metadata_vec = function_metadata
-            .clone()
             .into_iter()
             .filter(|f_meta| {
                 !dependency_function_metadata_id_vec
@@ -206,7 +201,7 @@ impl FunctionParser {
                     .any(|dep_metadata_id| dep_metadata_id == f_meta.metadata_id.clone())
             })
             .collect::<Vec<_>>();
-        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+        let _bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         for dependency_function_name in dependency_function_names_vec {
             let dependency_function_metadata_vec = filtered_function_metadata_vec
                 .clone()

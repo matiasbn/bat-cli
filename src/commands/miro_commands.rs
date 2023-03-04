@@ -7,21 +7,19 @@ use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
 };
 use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, MetadataError, MetadataResult, MiroMetadata,
+    BatMetadata, BatMetadataParser, BatMetadataType, MetadataError, MiroMetadata,
     SourceCodeMetadata,
 };
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::metadata::structs_source_code_metadata::{
-    StructMetadataType, StructSourceCodeMetadata,
-};
+use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
 use crate::batbelt::miro::frame::MiroFrame;
 
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
+
 use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::git::GitCommit;
@@ -29,7 +27,7 @@ use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerIn
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
-use crate::batbelt::parser::trait_parser::TraitParser;
+
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
@@ -116,7 +114,7 @@ impl MiroCommand {
         let selection = BatDialoguer::select(prompt_text, started_files_names.clone(), None)?;
         let selected_file_name = started_files_names[selection].clone();
         let entrypoint_name = selected_file_name.trim_end_matches(".md").to_string();
-        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        let _bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         let started_co_bat_file = BatFile::CodeOverhaulStarted {
             file_name: selected_file_name.clone(),
         };
@@ -131,7 +129,7 @@ impl MiroCommand {
                     println!(
                         "Deploying {} to {:#?}",
                         entrypoint_name.green(),
-                        miro_frame.title.clone()
+                        miro_frame.title
                     );
                     (miro_frame, co_meta)
                 }
@@ -166,9 +164,9 @@ impl MiroCommand {
             if started_co_content.contains(
                 &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
             ) {
-                return Err(Report::new(CommandError).attach_printable(format!(
-                    "Please complete the signers description before deploying to Miro"
-                )));
+                return Err(Report::new(CommandError).attach_printable(
+                    "Please complete the signers description before deploying to Miro".to_string(),
+                ));
             }
             let entrypoint_parser =
                 EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
@@ -196,10 +194,10 @@ impl MiroCommand {
 
             let mut signers_info: Vec<SignerInfo> = vec![];
             if !signers.is_empty() {
-                for (signer_name, signer_description) in signers.into_iter() {
+                for (signer_name, _signer_description) in signers.into_iter() {
                     let prompt_text = format!(
                         "is the signer {} a validated signer?",
-                        format!("{signer_name}").red()
+                        signer_name.to_string().red()
                     );
                     let is_validated =
                         BatDialoguer::select_yes_or_no(prompt_text).change_context(CommandError)?;
@@ -270,12 +268,12 @@ impl MiroCommand {
                     signer_text: signer.signer_text.clone(),
                     sticky_note_id: signer_sticky_note.item_id,
                     user_figure_id: user_figure.item_id,
-                    signer_type: signer.signer_type.clone(),
+                    signer_type: signer.signer_type,
                 }
             }
             co_metadata.signers = signers_info.clone();
 
-            let options = SourceCodeScreenshotOptions {
+            let _options = SourceCodeScreenshotOptions {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: true,
@@ -283,7 +281,7 @@ impl MiroCommand {
                 filters: None,
                 show_line_number: true,
             };
-            let co_options = SourceCodeScreenshotOptions {
+            let _co_options = SourceCodeScreenshotOptions {
                 include_path: false,
                 offset_to_start_line: false,
                 filter_comments: false,
@@ -321,7 +319,7 @@ impl MiroCommand {
                         )
                         .await
                         .change_context(CommandError)?;
-                    co_metadata.handler_image_id = handler_image.item_id.clone();
+                    co_metadata.handler_image_id = handler_image.item_id;
                 }
             }
 
@@ -360,7 +358,7 @@ impl MiroCommand {
                     if line.trim() == "- ```rust" || line.trim() == "```" {
                         return Some("".to_string());
                     }
-                    return Some(line.to_string());
+                    Some(line.to_string())
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -1014,7 +1012,7 @@ impl MiroCommand {
             .dependencies
             .clone()
             .into_iter()
-            .map(|f_meta| bat_metadata.source_code.get_function_by_id(f_meta.clone()))
+            .map(|f_meta| bat_metadata.source_code.get_function_by_id(f_meta))
             .collect::<Result<Vec<_>, MetadataError>>()
             .change_context(CommandError)?;
 

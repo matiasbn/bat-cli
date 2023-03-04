@@ -35,7 +35,7 @@ impl TraitParser {
         };
         if let Ok(trait_metadata) = bat_metadata
             .get_trait_metadata_by_trait_source_code_metadata_id(
-                trait_source_code_metadata.metadata_id.clone(),
+                trait_source_code_metadata.metadata_id,
             )
         {
             new_parser.impl_functions = trait_metadata
@@ -64,7 +64,6 @@ impl TraitParser {
                 new_parser
                     .clone()
                     .impl_functions
-                    .clone()
                     .into_iter()
                     .map(|function_meta| {
                         let trait_signature =
@@ -128,7 +127,7 @@ impl TraitParser {
             return Ok(());
         };
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
-        let traits_sc_metadata = bat_metadata.source_code.traits_source_code.clone();
+        let traits_sc_metadata = bat_metadata.source_code.traits_source_code;
         let mut definition_traits = traits_sc_metadata
             .into_iter()
             .filter(|trait_sc| trait_sc.trait_type == TraitMetadataType::Definition);

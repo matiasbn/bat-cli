@@ -1,4 +1,4 @@
-use crate::batbelt::metadata::{BatMetadata, MetadataId, MetadataResult};
+use crate::batbelt::metadata::{BatMetadata, MetadataResult};
 use crate::batbelt::miro::MiroColor;
 use crate::batbelt::BatEnumerator;
 use serde::{Deserialize, Serialize};

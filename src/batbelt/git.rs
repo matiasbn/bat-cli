@@ -10,11 +10,10 @@ use std::{process::Command, str};
 
 use super::path::BatFolder;
 use crate::batbelt::command_line::{execute_command, execute_command_with_child_process};
-use crate::batbelt::metadata::BatMetadataType;
+
 use crate::config::BatAuditorConfig;
 use crate::{batbelt::path::BatFile, config::BatConfig, Suggestion};
 use error_stack::{IntoReport, Report, Result, ResultExt};
-use inflector::Inflector;
 
 #[derive(Debug)]
 pub struct GitError;
@@ -423,9 +422,7 @@ impl GitCommit {
                 "notes: open_questions, finding_candidates and threat_modeling notes updated"
                     .to_string()
             }
-            GitCommit::UpdateMetadataJson => {
-                format!("metadata: metadata.json updated")
-            }
+            GitCommit::UpdateMetadataJson => "metadata: metadata.json updated".to_string(),
         };
         Ok(commit_string)
     }

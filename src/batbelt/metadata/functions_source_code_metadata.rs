@@ -1,6 +1,6 @@
 use super::*;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::BatFile;
+
 use crate::config::BatConfig;
 use strum::IntoEnumIterator;
 
@@ -9,12 +9,11 @@ use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataResult};
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
-use crate::batbelt::parser::trait_parser::TraitParser;
+
 use crate::batbelt::BatEnumerator;
 use error_stack::{FutureExt, Result, ResultExt};
 use serde::{Deserialize, Serialize};
 
-use serde_json::json;
 use std::{fs, vec};
 use walkdir::DirEntry;
 
@@ -208,7 +207,7 @@ impl FunctionSourceCodeMetadata {
             None,
         )
         .change_context(MetadataError)?;
-        let selected_sub_type = FunctionMetadataType::get_type_vec()[selection].clone();
+        let selected_sub_type = FunctionMetadataType::get_type_vec()[selection];
         let metadata_vec_filtered =
             SourceCodeMetadata::get_filtered_functions(None, Some(selected_sub_type))
                 .change_context(MetadataError)?;
@@ -321,12 +320,6 @@ pub fn get_function_body(function_content: &str) -> String {
 #[cfg(debug_assertions)]
 
 mod test_function_metadata {
-    use crate::batbelt::metadata::functions_source_code_metadata::{
-        get_function_body, get_function_parameters, get_function_signature, FunctionMetadataCache,
-        FunctionMetadataType, FunctionSourceCodeMetadata,
-    };
-    use serde_json::{json, Value};
-    use std::fs;
 
     #[test]
     fn test_function_parse() {
@@ -405,14 +398,14 @@ mod test_function_metadata {
         println!("{}", json);
         let pretty = serde_json::to_string_pretty(&json).unwrap();
         assert_fs::NamedTempFile::new(test_path).unwrap();
-        fs::write(test_path, &pretty).unwrap();
+        fs::write(test_path, pretty).unwrap();
 
         let read_value = fs::read_to_string(test_path).unwrap();
         let value: Value = serde_json::from_str(&read_value).unwrap();
         let f_val: FunctionMetadataCache =
             serde_json::from_value(value[metadata_id].clone()).unwrap();
 
-        let test = value["bad_key"].clone();
+        let _test = value["bad_key"].clone();
 
         println!("fval: {:#?}", f_val);
     }

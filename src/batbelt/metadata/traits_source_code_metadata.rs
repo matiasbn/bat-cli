@@ -1,8 +1,5 @@
-use crate::batbelt::path::BatFile;
-
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
-use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 use crate::batbelt::metadata::{
     BatMetadata, BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
 };
@@ -176,7 +173,7 @@ impl TraitSourceCodeMetadata {
             None,
         )
         .change_context(MetadataError)?;
-        let selected_sub_type = TraitMetadataType::get_type_vec()[selection].clone();
+        let selected_sub_type = TraitMetadataType::get_type_vec()[selection];
         let metadata_vec_filtered =
             SourceCodeMetadata::get_filtered_traits(None, Some(selected_sub_type))
                 .change_context(MetadataError)?;
