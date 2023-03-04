@@ -192,9 +192,9 @@ pub async fn finish_co_file() -> error_stack::Result<(), CommandError> {
 
 fn check_code_overhaul_file_completed(file_path: String) -> error_stack::Result<(), CommandError> {
     let file_data = fs::read_to_string(file_path).unwrap();
-    if file_data
-        .contains(&CoderOverhaulTemplatePlaceholders::CompleteWithStateChanges.to_placeholder())
-    {
+    if file_data.contains(
+        &CoderOverhaulTemplatePlaceholders::CompleteWithTheRestOfStateChanges.to_placeholder(),
+    ) {
         return Err(Report::new(CommandError).attach_printable(
             "Please complete the \"What it does?\" section of the {file_name} file",
         ));
@@ -268,7 +268,9 @@ pub fn start_co_file() -> error_stack::Result<(), CommandError> {
 
     let started_template =
         CodeOverhaulTemplate::new(entrypoint_name, true).change_context(CommandError)?;
-    let mut started_markdown_content = started_template.get_markdown_content();
+    let mut started_markdown_content = started_template
+        .get_markdown_content()
+        .change_context(CommandError)?;
 
     started_bat_file
         .write_content(false, &started_markdown_content)

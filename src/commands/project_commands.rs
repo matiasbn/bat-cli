@@ -99,7 +99,9 @@ impl ProjectCommands {
                 false,
             )
             .change_context(CommandError)?;
-            let mut co_markdown_content = co_template.get_markdown_content();
+            let co_markdown_content = co_template
+                .get_markdown_content()
+                .change_context(CommandError)?;
             bat_file
                 .write_content(false, &co_markdown_content)
                 .change_context(CommandError)?;
@@ -323,7 +325,9 @@ fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
     }
     let co_template =
         CodeOverhaulTemplate::new(&entrypoint_name, false).change_context(CommandError)?;
-    let co_markdown_content = co_template.get_markdown_content();
+    let co_markdown_content = co_template
+        .get_markdown_content()
+        .change_context(CommandError)?;
 
     BatFile::CodeOverhaulToReview {
         file_name: entrypoint_name.clone(),
