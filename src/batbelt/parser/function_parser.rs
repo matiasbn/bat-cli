@@ -60,6 +60,7 @@ impl FunctionParser {
             new_function_parser
         );
         let function_dependencies_metadata = FunctionDependenciesMetadata::new(
+            new_function_parser.name.clone(),
             BatMetadata::create_metadata_id(),
             new_function_parser.function_metadata.metadata_id.clone(),
             new_function_parser.dependencies.clone(),
@@ -68,6 +69,21 @@ impl FunctionParser {
         function_dependencies_metadata
             .update_metadata_file()
             .change_context(ParserError)?;
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+        for function_dependency in new_function_parser.clone().dependencies {
+            if let Err(_) = bat_metadata
+                .get_functions_dependencies_metadata_by_function_metadata_id(
+                    function_dependency.clone(),
+                )
+                .change_context(ParserError)
+            {
+                let function_metadata = bat_metadata
+                    .source_code
+                    .get_function_by_id(function_dependency.clone())
+                    .change_context(ParserError)?;
+                FunctionParser::new_from_metadata(function_metadata)?;
+            }
+        }
         Ok(new_function_parser)
     }
 
@@ -84,52 +100,58 @@ impl FunctionParser {
     fn get_function_dependencies(&mut self) -> Result<(), ParserError> {
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         let function_metadata = bat_metadata.source_code.functions_source_code.clone();
-        let trait_sc_metadata_vec = bat_metadata.traits.clone();
+        // only not external
+        let trait_metadata_vec = bat_metadata
+            .traits
+            .clone()
+            .into_iter()
+            .filter(|t_metadata| !t_metadata.external_trait)
+            .collect::<Vec<_>>();
+        let mut body_clone = self.body.clone();
 
         let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
         let mut dependency_function_metadata_id_vec = vec![];
 
-        // let impl_function_regex =
-        //     Regex::new(r"[A-Za-z0-9_]+::[A-Za-z0-9]+\(\(?[A-Za-z0-9]*\)?\)").unwrap();
-        //
-        // let impl_function_matches = impl_function_regex
-        //     .find_iter(&self.body.clone())
-        //     .map(|impl_match| impl_match.as_str().to_string())
-        //     .collect::<Vec<_>>();
+        let impl_function_regex =
+            Regex::new(r"[A-Za-z0-9_]+::[A-Za-z0-9]+\(\(?[&._A-Za-z0-9]*\)?\)").unwrap();
 
-        // for impl_match in impl_function_matches {
-        //     let mut impl_match_split = impl_match.split("::");
-        //     let impl_match_to = impl_match_split.next().unwrap();
-        //     let impl_match_function_name =
-        //         Self::get_function_name_from_signature(impl_match_split.next().unwrap());
-        //     let impl_function_metadata =
-        //         trait_sc_metadata_vec
-        //             .clone()
-        //             .into_iter()
-        //             .find_map(|impl_parser| {
-        //                 if impl_parser.impl_to.contains(impl_match_to) {
-        //                     let f_metadata = impl_parser
-        //                         .impl_functions
-        //                         .into_iter()
-        //                         .find(|impl_fn| impl_fn.name == impl_match_function_name);
-        //                     if f_metadata.is_some() {
-        //                         Some(f_metadata.unwrap())
-        //                     } else {
-        //                         None
-        //                     }
-        //                 } else {
-        //                     None
-        //                 }
-        //             });
-        //     if impl_function_metadata.is_some() {
-        //         dependency_function_metadata_id_vec
-        //             .push(impl_function_metadata.unwrap().metadata_id);
-        //     }
-        // }
+        let impl_function_matches = impl_function_regex
+            .find_iter(&body_clone)
+            .map(|impl_match| impl_match.as_str().to_string())
+            .collect::<Vec<_>>();
+        log::debug!(
+            "impl_function_matches: \n{:#?}",
+            impl_function_matches.clone()
+        );
+        for impl_match in impl_function_matches {
+            log::debug!("impl_match: {}", impl_match);
+            // delete from body to avoid double checking
+            body_clone = body_clone.replace(&impl_match, "");
+            let impl_function_signature_match = Self::get_function_name_from_signature(&impl_match);
+            log::debug!("impl_match_signature: {}", &impl_function_signature_match);
+            let impl_function_metadata =
+                trait_metadata_vec
+                    .clone()
+                    .into_iter()
+                    .find(|trait_metadata| {
+                        trait_metadata
+                            .impl_functions
+                            .clone()
+                            .into_iter()
+                            .any(|impl_func| {
+                                impl_func.trait_signature == impl_function_signature_match
+                            })
+                    });
+            log::debug!("impl_function_metadata_match {:#?}", impl_function_metadata);
+            if impl_function_metadata.is_some() {
+                dependency_function_metadata_id_vec
+                    .push(impl_function_metadata.unwrap().metadata_id);
+            }
+        }
 
         let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_:.&, ()]*)\)").unwrap(); //[A-Za-z0-9_]+\(([A-Za-z0-9_,():\s])*\)$
         let dependency_function_names_vec = dependency_regex
-            .find_iter(&self.body.clone())
+            .find_iter(&body_clone)
             .filter_map(|reg_match| {
                 let match_str = reg_match.as_str().to_string();
                 log::debug!("match_str_regex {}", match_str);
@@ -175,19 +197,8 @@ impl FunctionParser {
                 .collect::<Vec<_>>();
             if !dependency_function_metadata_vec.clone().is_empty() {
                 for dependency_metadata in dependency_function_metadata_vec.clone() {
-                    match bat_metadata.get_functions_dependencies_metadata_by_function_metadata_id(
-                        dependency_metadata.metadata_id.clone(),
-                    ) {
-                        Ok(f_dep_metadata) => dependency_function_metadata_id_vec
-                            .push(f_dep_metadata.function_metadata_id.clone()),
-                        Err(_) => {
-                            let function_parser = dependency_metadata
-                                .to_function_parser()
-                                .change_context(ParserError)?;
-                            dependency_function_metadata_id_vec
-                                .push(function_parser.function_metadata.metadata_id);
-                        }
-                    }
+                    dependency_function_metadata_id_vec
+                        .push(dependency_metadata.metadata_id.clone())
                 }
             } else {
                 self.external_dependencies.push(dependency_function_name);

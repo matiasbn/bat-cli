@@ -75,9 +75,12 @@ impl BatMetadataParser<TraitMetadataType> for TraitSourceCodeMetadata {
     fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
+        log::debug!("entry_path:{}", &entry_path);
+        log::debug!("file_content:\n{}", &file_content);
 
-        let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::TraitImpl);
         let mut metadata_result = vec![];
+        let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::TraitImpl);
+        log::debug!("sonar_TraitImpl_results:\n{:#?}", bat_sonar.results);
         for result in bat_sonar.results {
             let function_metadata = TraitSourceCodeMetadata::new(
                 entry_path.clone(),
@@ -91,6 +94,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitSourceCodeMetadata {
         }
 
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Trait);
+        log::debug!("sonar_Trait_results:\n{:#?}", bat_sonar.results);
         for result in bat_sonar.results {
             let function_metadata = TraitSourceCodeMetadata::new(
                 entry_path.clone(),

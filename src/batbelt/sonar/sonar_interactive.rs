@@ -293,12 +293,12 @@ impl BatSonarInteractive {
         let m = MultiProgress::new();
         let handles: Vec<_> = (0..1)
             .map(|i| {
-                let traits_sc_clone = functions_sc_metadata.clone();
-                let pb = m.add(ProgressBar::new(traits_sc_clone.len() as u64));
+                let functions_sc_clone = functions_sc_metadata.clone();
+                let pb = m.add(ProgressBar::new(functions_sc_clone.len() as u64));
                 pb.set_style(spinner_style.clone());
                 thread::spawn(move || {
-                    for (idx, function_sc) in traits_sc_clone.iter().enumerate().clone() {
-                        pb.set_prefix(format!("[{}/{}]", idx + 1, traits_sc_clone.len()));
+                    for (idx, function_sc) in functions_sc_clone.iter().enumerate().clone() {
+                        pb.set_prefix(format!("[{}/{}]", idx + 1, functions_sc_clone.len()));
                         pb.set_message(format!("Getting information for: {}", function_sc.name));
                         pb.inc(1);
                         FunctionParser::new_from_metadata(function_sc.clone()).unwrap();

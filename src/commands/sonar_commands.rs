@@ -19,9 +19,11 @@ use super::CommandError;
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
 )]
 pub enum SonarCommand {
-    /// Updates the functions.md and structs.md files with data
+    /// Gets metadata from the source code
     #[default]
     Run,
+    /// Gets the function dependencies from metadata
+    GetFunctionDependencies,
 }
 
 impl BatEnumerator for SonarCommand {}
@@ -30,18 +32,21 @@ impl BatCommandEnumerator for SonarCommand {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
             SonarCommand::Run => self.execute_run(),
+            SonarCommand::GetFunctionDependencies => self.execute_get_function_dependencies(),
         }
     }
 
     fn check_metadata_is_initialized(&self) -> bool {
         match self {
             SonarCommand::Run => false,
+            SonarCommand::GetFunctionDependencies => true,
         }
     }
 
     fn check_correct_branch(&self) -> bool {
         match self {
             SonarCommand::Run => true,
+            SonarCommand::GetFunctionDependencies => true,
         }
     }
 }
@@ -90,10 +95,20 @@ impl SonarCommand {
             .print_interactive()
             .change_context(CommandError)?;
 
-        BatSonarInteractive::GetTraitsMetadata
+        // BatSonarInteractive::GetFunctionDependenciesMetadata
+        //     .print_interactive()
+        //     .change_context(CommandError)?;
+
+        GitCommit::UpdateMetadataJson
+            .create_commit()
+            .change_context(CommandError)?;
+        Ok(())
+    }
+
+    fn execute_get_function_dependencies(&self) -> CommandResult<()> {
+        BatSonarInteractive::GetFunctionDependenciesMetadata
             .print_interactive()
             .change_context(CommandError)?;
-
         GitCommit::UpdateMetadataJson
             .create_commit()
             .change_context(CommandError)?;

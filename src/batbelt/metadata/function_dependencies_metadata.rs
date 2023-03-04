@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FunctionDependenciesMetadata {
+    pub function_name: String,
     pub metadata_id: MetadataId,
     pub function_metadata_id: String,
     pub dependencies: Vec<MetadataId>,
@@ -11,12 +12,14 @@ pub struct FunctionDependenciesMetadata {
 
 impl FunctionDependenciesMetadata {
     pub fn new(
+        function_name: String,
         metadata_id: MetadataId,
         function_metadata_id: String,
         dependencies: Vec<MetadataId>,
         external_dependencies: Vec<MetadataId>,
     ) -> Self {
         Self {
+            function_name,
             metadata_id,
             function_metadata_id,
             dependencies,

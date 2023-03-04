@@ -73,9 +73,7 @@ where
             self.to_string()
         };
 
-        log::debug!("self_name_for_colorized: {}", self_name);
         let colorized_vec = Self::get_colorized_type_vec(to_plural);
-        log::debug!("colorized_vec: {:#?}", colorized_vec);
 
         colorized_vec
             .into_iter()
