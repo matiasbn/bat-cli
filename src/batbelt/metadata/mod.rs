@@ -73,6 +73,21 @@ impl BatMetadata {
         })
     }
 
+    pub fn save_metadata(&self) -> MetadataResult<()> {
+        let metadata_json_bat_file = BatFile::MetadataJsonFile;
+        metadata_json_bat_file
+            .create_empty(false)
+            .change_context(MetadataError)?;
+        let metadata_json = json!(&self);
+        let metadata_json_pretty = serde_json::to_string_pretty(&metadata_json)
+            .into_report()
+            .change_context(MetadataError)?;
+        metadata_json_bat_file
+            .write_content(false, &metadata_json_pretty)
+            .change_context(MetadataError)?;
+        Ok(())
+    }
+
     pub fn metadata_is_initialized() -> Result<bool, MetadataError> {
         let mut metadata_initialized = true;
         for metadata_type in BatMetadataType::get_type_vec() {

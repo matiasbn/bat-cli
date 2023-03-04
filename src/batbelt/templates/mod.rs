@@ -60,16 +60,12 @@ impl TemplateGenerator {
 
     fn create_metadata_json() -> TemplateResult<()> {
         let metadata_json_bat_file = BatFile::MetadataJsonFile;
+        let new_bat_metadata = BatMetadata::new().change_context(TemplateError)?;
         metadata_json_bat_file
             .create_empty(false)
             .change_context(TemplateError)?;
-        let new_bat_metadata = BatMetadata::new().change_context(TemplateError)?;
-        let metadata_json = json!(new_bat_metadata);
-        let metadata_json_pretty = serde_json::to_string_pretty(&metadata_json)
-            .into_report()
-            .change_context(TemplateError)?;
-        metadata_json_bat_file
-            .write_content(false, &metadata_json_pretty)
+        new_bat_metadata
+            .save_metadata()
             .change_context(TemplateError)?;
         Ok(())
     }
