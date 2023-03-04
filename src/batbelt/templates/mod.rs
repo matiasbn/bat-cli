@@ -66,7 +66,7 @@ impl TemplateGenerator {
     }
     pub fn get_git_ignore_content() -> String {
         ".idea\n\
-        ./package.json\n\
+        package.json\n\
         BatAuditor.toml\n\
         Batlog.log"
             .to_string()
