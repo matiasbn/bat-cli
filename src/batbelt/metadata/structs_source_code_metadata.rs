@@ -6,7 +6,7 @@ use crate::batbelt;
 use crate::batbelt::path::BatFile;
 
 use crate::batbelt::metadata::{
-    BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
+    BatMetadata, BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
 };
 
 use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
@@ -99,6 +99,10 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
             );
             metadata_result.push(struct_metadata);
         }
+        // let bat_metadata = BatMetadata::read_metadata()?;
+        // bat_metadata
+        //     .source_code
+        //     .update_structs(metadata_result.clone())?;
 
         Ok(metadata_result)
     }

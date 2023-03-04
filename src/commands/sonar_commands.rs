@@ -23,7 +23,6 @@ pub enum SonarCommand {
     #[default]
     Run,
 }
-
 impl BatEnumerator for SonarCommand {}
 
 impl BatCommandEnumerator for SonarCommand {
@@ -45,9 +44,14 @@ impl BatCommandEnumerator for SonarCommand {
         }
     }
 }
-
 impl SonarCommand {
-    fn execute_run(&self) -> Result<(), CommandError> {
+    fn execute_run(&self) -> CommandResult<()> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        // backup miro metadata
+        let miro_metadata = bat_metadata.miro.clone();
+        // backup co metadata
+        let co_metadata = bat_metadata.code_overhaul.clone();
+
         TemplateGenerator::create_metadata_json().change_context(CommandError)?;
 
         BatSonarInteractive::SonarStart {
@@ -68,32 +72,96 @@ impl SonarCommand {
         .print_interactive()
         .change_context(CommandError)?;
 
-        BatSonarInteractive::GetSourceCodeMetadata
-            .print_interactive()
-            .change_context(CommandError)?;
-
-        BatSonarInteractive::GetEntryPointsMetadata
-            .print_interactive()
-            .change_context(CommandError)?;
-
-        BatSonarInteractive::GetTraitsMetadata
-            .print_interactive()
-            .change_context(CommandError)?;
-
-        BatSonarInteractive::GetFunctionDependenciesMetadata
-            .print_interactive()
-            .change_context(CommandError)?;
-
-        BatSonarInteractive::GetContextAccountsMetadata
-            .print_interactive()
-            .change_context(CommandError)?;
+        SonarSpecificCommand::SourceCode.execute_source_code()?;
+        SonarSpecificCommand::ContextAccounts.execute_context_accounts()?;
+        SonarSpecificCommand::EntryPoints.execute_entry_points()?;
+        SonarSpecificCommand::Traits.execute_traits()?;
+        SonarSpecificCommand::FunctionDependencies.execute_function_dependencies()?;
 
         let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        bat_metadata.miro = miro_metadata;
+        bat_metadata.code_overhaul = co_metadata;
         bat_metadata.initialized = true;
         bat_metadata.save_metadata().change_context(CommandError)?;
 
         GitCommit::UpdateMetadataJson
             .create_commit()
+            .change_context(CommandError)?;
+
+        Ok(())
+    }
+}
+
+#[derive(
+    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
+)]
+pub enum SonarSpecificCommand {
+    #[default]
+    SourceCode,
+    ContextAccounts,
+    EntryPoints,
+    Traits,
+    FunctionDependencies,
+}
+
+impl BatEnumerator for SonarSpecificCommand {}
+
+impl BatCommandEnumerator for SonarSpecificCommand {
+    fn execute_command(&self) -> CommandResult<()> {
+        match self {
+            SonarSpecificCommand::SourceCode => self.execute_source_code()?,
+            SonarSpecificCommand::ContextAccounts => self.execute_context_accounts()?,
+            SonarSpecificCommand::EntryPoints => self.execute_entry_points()?,
+            SonarSpecificCommand::Traits => self.execute_traits()?,
+            SonarSpecificCommand::FunctionDependencies => self.execute_function_dependencies()?,
+        }
+        GitCommit::UpdateMetadataJson
+            .create_commit()
+            .change_context(CommandError)?;
+        Ok(())
+    }
+
+    fn check_metadata_is_initialized(&self) -> bool {
+        false
+    }
+
+    fn check_correct_branch(&self) -> bool {
+        true
+    }
+}
+
+impl SonarSpecificCommand {
+    fn execute_source_code(&self) -> Result<(), CommandError> {
+        BatSonarInteractive::GetSourceCodeMetadata
+            .print_interactive()
+            .change_context(CommandError)?;
+        Ok(())
+    }
+
+    fn execute_context_accounts(&self) -> Result<(), CommandError> {
+        BatSonarInteractive::GetContextAccountsMetadata
+            .print_interactive()
+            .change_context(CommandError)?;
+        Ok(())
+    }
+
+    fn execute_entry_points(&self) -> Result<(), CommandError> {
+        BatSonarInteractive::GetEntryPointsMetadata
+            .print_interactive()
+            .change_context(CommandError)?;
+        Ok(())
+    }
+
+    fn execute_traits(&self) -> Result<(), CommandError> {
+        BatSonarInteractive::GetTraitsMetadata
+            .print_interactive()
+            .change_context(CommandError)?;
+        Ok(())
+    }
+
+    fn execute_function_dependencies(&self) -> Result<(), CommandError> {
+        BatSonarInteractive::GetFunctionDependenciesMetadata
+            .print_interactive()
             .change_context(CommandError)?;
         Ok(())
     }

@@ -98,7 +98,10 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
             );
             metadata_result.push(function_metadata);
         }
-
+        // let bat_metadata = BatMetadata::read_metadata()?;
+        // bat_metadata
+        //     .source_code
+        //     .update_functions(metadata_result.clone())?;
         Ok(metadata_result)
     }
 }

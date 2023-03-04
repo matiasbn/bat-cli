@@ -1,16 +1,17 @@
 use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
 use crate::batbelt::parser::ParserError;
 use crate::batbelt::sonar::{SonarResult, SonarResultType};
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CAAccountAttributeInfo {
-    pub content: String,
     pub is_pda: bool,
     pub is_init: bool,
     pub is_mut: bool,
+    pub is_close: bool,
+    pub rent_exemption_account: String,
     pub seeds: Option<Vec<String>>,
 }
 
@@ -21,22 +22,40 @@ pub struct CAAccountTypeInfo {
     pub account_struct_name: String,
     pub account_wrapper_name: String,
     pub lifetime_name: String,
+    pub account_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CAAccountParser {
-    pub account_attribute_info: CAAccountAttributeInfo,
-    pub account_type_info: CAAccountTypeInfo,
+    pub content: String,
+    pub solana_account_type: SolanaAccountType,
+    pub account_struct_name: String,
+    pub account_wrapper_name: String,
+    pub lifetime_name: String,
+    pub account_name: String,
+    pub is_pda: bool,
+    pub is_init: bool,
+    pub is_mut: bool,
+    pub is_close: bool,
+    pub seeds: Option<Vec<String>>,
+    pub rent_exemption_account: String,
 }
 
 impl CAAccountParser {
-    fn new(
-        account_attribute_info: CAAccountAttributeInfo,
-        account_type_info: CAAccountTypeInfo,
-    ) -> Self {
+    fn new(acc_type_info: CAAccountTypeInfo, acc_attribute: CAAccountAttributeInfo) -> Self {
         Self {
-            account_attribute_info,
-            account_type_info,
+            content: acc_type_info.content,
+            solana_account_type: acc_type_info.solana_account_type,
+            account_struct_name: acc_type_info.account_struct_name,
+            account_wrapper_name: acc_type_info.account_wrapper_name,
+            lifetime_name: acc_type_info.lifetime_name,
+            account_name: acc_type_info.account_name,
+            is_pda: acc_attribute.is_pda,
+            is_init: acc_attribute.is_init,
+            is_mut: acc_attribute.is_mut,
+            is_close: acc_attribute.is_close,
+            seeds: acc_attribute.seeds,
+            rent_exemption_account: acc_attribute.rent_exemption_account,
         }
     }
 
@@ -53,31 +72,32 @@ impl CAAccountParser {
         }
         let account_attribute_info = Self::get_account_attribute_info(&sonar_result.content)?;
         let account_type_info = Self::get_account_type_info(sonar_result.clone())?;
-        let new_parser = Self::new(account_attribute_info, account_type_info);
+        let new_parser = Self::new(account_type_info, account_attribute_info);
         Ok(new_parser)
     }
 
     pub fn get_account_type_info(
         sonar_result: SonarResult,
     ) -> Result<CAAccountTypeInfo, ParserError> {
-        let last_line = sonar_result
+        let mut last_line = sonar_result
             .content
             .lines()
             .last()
             .unwrap()
             .trim()
             .trim_end_matches(',')
-            .trim_end_matches('>')
             .to_string();
 
         let mut account_type_info = CAAccountTypeInfo {
-            content: last_line.clone(),
+            content: sonar_result.content.clone(),
             solana_account_type: SolanaAccountType::from_sonar_result(sonar_result.clone())?,
             account_struct_name: "".to_string(),
             account_wrapper_name: "".to_string(),
             lifetime_name: "".to_string(),
+            account_name: sonar_result.name.clone(),
         };
 
+        last_line = last_line.trim_end_matches(">").to_string();
         account_type_info.account_wrapper_name = last_line
             .trim_start_matches(&format!("pub {}: ", sonar_result.name))
             .split('<')
@@ -115,10 +135,11 @@ impl CAAccountParser {
         sonar_result_content: &str,
     ) -> Result<CAAccountAttributeInfo, ParserError> {
         let mut account_info = CAAccountAttributeInfo {
-            content: "".to_string(),
             is_pda: false,
             is_init: false,
             is_mut: false,
+            is_close: false,
+            rent_exemption_account: "".to_string(),
             seeds: None,
         };
         if !sonar_result_content.contains("#[account(") {
@@ -147,8 +168,6 @@ impl CAAccountParser {
                 None
             };
             account_info.seeds = seeds;
-            account_info.content = result_line.to_string();
-            Ok(account_info)
         // multiline
         } else {
             let result_string = result_lines_vec.join("\n");
@@ -164,9 +183,39 @@ impl CAAccountParser {
                 None
             };
             account_info.seeds = seeds;
-            account_info.content = result_string;
-            Ok(account_info)
         }
+
+        if account_info.is_init {
+            log::debug!("sonar_result_content:\n{}", sonar_result_content);
+            let rent_exemption_payer_regex = Regex::new(r"payer = [A-Za-z0-9_.]+")
+                .into_report()
+                .change_context(ParserError)?;
+            let payer_match = rent_exemption_payer_regex
+                .find(&sonar_result_content)
+                .unwrap()
+                .as_str()
+                .trim()
+                .to_string();
+            account_info.rent_exemption_account =
+                payer_match.split(" = ").last().unwrap().to_string();
+        }
+
+        let rent_exemption_close_regex = Regex::new(r"close = [A-Za-z0-9_.]+")
+            .into_report()
+            .change_context(ParserError)?;
+        if rent_exemption_close_regex.is_match(&sonar_result_content) {
+            account_info.is_close = true;
+            account_info.is_init = false;
+            let close_match = rent_exemption_close_regex
+                .find(&sonar_result_content)
+                .unwrap()
+                .as_str()
+                .trim()
+                .to_string();
+            account_info.rent_exemption_account =
+                close_match.split(" = ").last().unwrap().to_string();
+        }
+        Ok(account_info)
     }
 
     fn parse_seeds(seeds_string: &str) -> Result<Vec<String>, ParserError> {

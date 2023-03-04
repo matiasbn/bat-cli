@@ -1,14 +1,14 @@
 use crate::batbelt;
-use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
+use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulSignerMetadata;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
-    CompleteWithNotes, CompleteWithStateChanges,
+    CompleteWithNotes, CompleteWithTheRestOfStateChanges,
 };
-use crate::batbelt::templates::TemplateError;
+use crate::batbelt::templates::{TemplateError, TemplateResult};
 use colored::Colorize;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
@@ -32,29 +32,24 @@ impl CodeOverhaulTemplate {
             entrypoint_parser,
         })
     }
-    pub fn to_markdown_file(&self, file_path: &str) -> Result<MarkdownFile, TemplateError> {
-        let content = self.get_markdown_content();
-        let template = MarkdownFile::new_from_path_and_content(file_path, content);
-        Ok(template)
-    }
 
-    fn get_markdown_content(&self) -> String {
-        let state_changes_content =
-            CodeOverhaulSection::StateChanges.get_section_content(self.entrypoint_parser.clone());
+    pub fn get_markdown_content(&self) -> TemplateResult<String> {
+        let state_changes_content = CodeOverhaulSection::StateChanges
+            .get_section_content(self.entrypoint_parser.clone())?;
         let notes_content =
-            CodeOverhaulSection::Notes.get_section_content(self.entrypoint_parser.clone());
+            CodeOverhaulSection::Notes.get_section_content(self.entrypoint_parser.clone())?;
         let signers_content =
-            CodeOverhaulSection::Signers.get_section_content(self.entrypoint_parser.clone());
+            CodeOverhaulSection::Signers.get_section_content(self.entrypoint_parser.clone())?;
         let function_parameters_content = CodeOverhaulSection::FunctionParameters
-            .get_section_content(self.entrypoint_parser.clone());
+            .get_section_content(self.entrypoint_parser.clone())?;
         let context_accounts_content = CodeOverhaulSection::ContextAccounts
-            .get_section_content(self.entrypoint_parser.clone());
+            .get_section_content(self.entrypoint_parser.clone())?;
         let validations_content =
-            CodeOverhaulSection::Validations.get_section_content(self.entrypoint_parser.clone());
-        let miro_frame_url_content =
-            CodeOverhaulSection::MiroFrameUrl.get_section_content(self.entrypoint_parser.clone());
+            CodeOverhaulSection::Validations.get_section_content(self.entrypoint_parser.clone())?;
+        let miro_frame_url_content = CodeOverhaulSection::MiroFrameUrl
+            .get_section_content(self.entrypoint_parser.clone())?;
 
-        format!(
+        Ok(format!(
             "{state_changes_content}\
             \n\
             \n\
@@ -75,7 +70,7 @@ impl CodeOverhaulTemplate {
             \n\
             {miro_frame_url_content}
             ",
-        )
+        ))
     }
 }
 
@@ -99,23 +94,28 @@ impl CodeOverhaulSection {
         format!("{}:", self.to_string().to_sentence_case())
     }
 
-    pub fn get_section_content(&self, ep_parser: Option<EntrypointParser>) -> String {
+    pub fn get_section_content(
+        &self,
+        ep_parser: Option<EntrypointParser>,
+    ) -> TemplateResult<String> {
         let section_content = if ep_parser.is_some() {
             let entrypoint_parser = ep_parser.unwrap();
             match self {
                 CodeOverhaulSection::StateChanges => {
-                    format!("- {}", CompleteWithStateChanges.to_placeholder())
+                    self.get_state_changes_content(entrypoint_parser.clone())?
                 }
                 CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
-                CodeOverhaulSection::Signers => self.get_signers_section_content(entrypoint_parser),
+                CodeOverhaulSection::Signers => {
+                    self.get_signers_section_content(entrypoint_parser)?
+                }
                 CodeOverhaulSection::FunctionParameters => {
                     self.get_function_parameters_section_content(entrypoint_parser)
                 }
                 CodeOverhaulSection::ContextAccounts => {
-                    self.get_context_account_section_content(entrypoint_parser)
+                    self.get_context_account_section_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::Validations => {
-                    self.get_validations_section_content(entrypoint_parser)
+                    self.get_validations_section_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::MiroFrameUrl => {
                     CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder()
@@ -125,15 +125,67 @@ impl CodeOverhaulSection {
             "".to_string()
         };
 
-        format!("{}\n\n{}", self.to_markdown_header(), section_content)
+        Ok(format!(
+            "{}\n\n{}",
+            self.to_markdown_header(),
+            section_content
+        ))
     }
 
-    fn get_validations_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
+    fn get_state_changes_content(
+        &self,
+        entry_point_parser: EntrypointParser,
+    ) -> TemplateResult<String> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+        let mut state_changes_content_vec = vec![];
+        let context_accounts_metadata = bat_metadata
+            .get_context_accounts_metadata_by_struct_source_code_metadata_id(
+                entry_point_parser.context_accounts.metadata_id.clone(),
+            )
+            .change_context(TemplateError)?;
+
+        let init_accounts = context_accounts_metadata
+            .context_accounts_info
+            .clone()
+            .into_iter()
+            .filter(|ca_info| ca_info.is_init)
+            .collect::<Vec<_>>();
+        for acc in init_accounts {
+            state_changes_content_vec.push(format!(
+                "- Initializes `{}`[{}] funded by `{}`",
+                acc.account_name, acc.account_struct_name, acc.rent_exemption_account
+            ))
+        }
+
+        let close_accounts = context_accounts_metadata
+            .context_accounts_info
+            .clone()
+            .into_iter()
+            .filter(|ca_info| ca_info.is_close)
+            .collect::<Vec<_>>();
+        for acc in close_accounts {
+            state_changes_content_vec.push(format!(
+                "- Closes `{}`[{}]. Rent exemption goes to {:#?}",
+                acc.account_name, acc.account_struct_name, acc.rent_exemption_account
+            ))
+        }
+
+        state_changes_content_vec.push(format!(
+            "- `{}`",
+            CompleteWithTheRestOfStateChanges.to_placeholder()
+        ));
+        Ok(state_changes_content_vec.join("\n"))
+    }
+
+    fn get_validations_section_content(
+        &self,
+        entrypoint_parser: EntrypointParser,
+    ) -> TemplateResult<String> {
         if entrypoint_parser.handler.is_none() {
-            return format!(
+            return Ok(format!(
                 "- {}",
                 CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
-            );
+            ));
         }
         let handler_function = entrypoint_parser.handler.unwrap();
         let context_source_code = handler_function.to_source_code_parser(None);
@@ -217,6 +269,16 @@ impl CodeOverhaulSection {
         validations_vec.append(&mut filtered_if_validations);
         validations_vec.append(&mut filtered_handler_validations);
 
+        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+
+        let mut co_metadata = bat_metadata
+            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
+            .change_context(TemplateError)?;
+        co_metadata.validations = validations_vec.clone();
+        co_metadata
+            .update_metadata_file()
+            .change_context(TemplateError)?;
+
         let validations_content = if validations_vec.is_empty() {
             format!(
                 "- {}",
@@ -229,16 +291,20 @@ impl CodeOverhaulSection {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        validations_content
+        Ok(validations_content)
     }
 
-    fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
+    fn get_signers_section_content(
+        &self,
+        entrypoint_parser: EntrypointParser,
+    ) -> TemplateResult<String> {
         let context_source_code = entrypoint_parser
             .context_accounts
             .to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
         // signer names is only the name of the signer
-        let mut signers: Vec<String> = vec![];
+        let mut signers: Vec<CodeOverhaulSignerMetadata> = vec![];
+
         for (line_index, line) in context_lines.lines().enumerate() {
             if !line.contains("pub") {
                 continue;
@@ -273,13 +339,11 @@ impl CodeOverhaulSection {
                 })
                 .collect::<Vec<_>>();
             if signer_comments.is_empty() {
-                let signer_description = format!(
-                    "- {}: {}",
-                    signer_name,
-                    CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                        .to_placeholder()
-                );
-                signers.push(signer_description)
+                signers.push(CodeOverhaulSignerMetadata {
+                    name: signer_name.to_string().clone(),
+                    description: CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                        .to_placeholder(),
+                })
             } else if signer_comments.len() == 1 {
                 // prompt the user to state if the comment is correct
                 let signer_description_comment = signer_comments[0].split("// ").last().unwrap();
@@ -290,17 +354,17 @@ impl CodeOverhaulSection {
                 );
                 let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
                 if is_correct {
-                    let signer_description =
-                        format!("- {}: {}", signer_name, signer_description_comment);
-                    signers.push(signer_description);
+                    signers.push(CodeOverhaulSignerMetadata {
+                        name: signer_name.to_string(),
+                        description: signer_description_comment.to_string(),
+                    });
                 } else {
-                    let signer_description = format!(
-                        "- {}: {}",
-                        signer_name,
-                        CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                            .to_placeholder()
-                    );
-                    signers.push(signer_description);
+                    signers.push(CodeOverhaulSignerMetadata {
+                        name: signer_name.to_string(),
+                        description:
+                            CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                                .to_placeholder(),
+                    });
                 }
                 // multiple line description
             } else {
@@ -321,13 +385,12 @@ impl CodeOverhaulSection {
                 )
                 .unwrap();
                 if selections.is_empty() {
-                    let signer_description = format!(
-                        "- {}: {}",
-                        signer_name,
-                        CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                            .to_placeholder()
-                    );
-                    signers.push(signer_description);
+                    signers.push(CodeOverhaulSignerMetadata {
+                        name: signer_name.to_string(),
+                        description:
+                            CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                                .to_placeholder(),
+                    });
                 } else {
                     // take the selections and create the array
                     let signer_total_comment = signer_formatted
@@ -337,21 +400,38 @@ impl CodeOverhaulSection {
                         .map(|line| line.1)
                         .collect::<Vec<_>>()
                         .join(". ");
-                    let signer_description = format!("- {}: {}", signer_name, signer_total_comment);
-                    signers.push(signer_description);
+                    signers.push(CodeOverhaulSignerMetadata {
+                        name: signer_name.to_string(),
+                        description: signer_total_comment,
+                    });
                 }
             }
         }
         if signers.is_empty() {
-            return format!(
-                "- {}",
+            return Ok(format!(
+                "{}",
                 CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder(),
-            );
+            ));
         }
-        signers.join("\n")
+        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+        let mut co_metadata = bat_metadata
+            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
+            .change_context(TemplateError)?;
+        co_metadata.signers = signers.clone();
+        co_metadata
+            .update_metadata_file()
+            .change_context(TemplateError)?;
+        Ok(signers
+            .into_iter()
+            .map(|signer| format!("- {}: {}", signer.name, signer.description))
+            .collect::<Vec<_>>()
+            .join("\n"))
     }
 
-    fn get_context_account_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
+    fn get_context_account_section_content(
+        &self,
+        entrypoint_parser: EntrypointParser,
+    ) -> TemplateResult<String> {
         let context_accounts_source_code = entrypoint_parser
             .context_accounts
             .to_source_code_parser(None);
@@ -380,8 +460,15 @@ impl CodeOverhaulSection {
             .map(|line| format!("  {}", line))
             .collect::<Vec<_>>()
             .join("\n");
-
-        format!("{}\n{}\n{}", "- ```rust", formatted, "  ```")
+        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+        let mut co_metadata = bat_metadata
+            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
+            .change_context(TemplateError)?;
+        co_metadata.context_accounts_content = formatted.clone();
+        co_metadata
+            .update_metadata_file()
+            .change_context(TemplateError)?;
+        Ok(format!("{}\n{}\n{}", "- ```rust", formatted, "  ```"))
     }
 
     fn get_function_parameters_section_content(
@@ -428,7 +515,7 @@ pub enum CoderOverhaulTemplatePlaceholders {
     NoSignersDetected,
     NoValidationsDetected,
     NoFunctionParametersDetected,
-    CompleteWithStateChanges,
+    CompleteWithTheRestOfStateChanges,
     CompleteWithNotes,
     CompleteWithSignerDescription,
     CompleteWithMiroFrameUrl,
