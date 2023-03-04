@@ -1,5 +1,5 @@
 use crate::batbelt::metadata::functions_source_code_metadata::{
-    get_function_body, get_function_parameters, FunctionMetadata, FunctionMetadataType,
+    get_function_body, get_function_parameters, FunctionSourceCodeMetadata, FunctionMetadataType,
 };
 
 use crate::batbelt::metadata::structs_source_code_metadata::{StructSourceCodeMetadata, StructMetadataType};
@@ -18,17 +18,17 @@ use crate::batbelt::parser::ParserError;
 #[derive(Clone)]
 pub struct EntrypointParser {
     pub name: String,
-    pub handler: Option<FunctionMetadata>,
+    pub handler: Option<FunctionSourceCodeMetadata>,
     pub context_accounts: StructSourceCodeMetadata,
-    pub entry_point_function: FunctionMetadata,
+    pub entry_point_function: FunctionSourceCodeMetadata,
 }
 
 impl EntrypointParser {
     pub fn new(
         name: String,
-        handler: Option<FunctionMetadata>,
+        handler: Option<FunctionSourceCodeMetadata>,
         context_accounts: StructSourceCodeMetadata,
-        entry_point_function: FunctionMetadata,
+        entry_point_function: FunctionSourceCodeMetadata,
     ) -> Self {
         Self {
             name,
@@ -74,7 +74,7 @@ impl EntrypointParser {
             });
         };
 
-        let entrypoint_section = FunctionMetadata::get_filtered_metadata(
+        let entrypoint_section = FunctionSourceCodeMetadata::get_filtered_metadata(
             Some(entrypoint_name),
             Some(FunctionMetadataType::EntryPoint),
         )
@@ -98,7 +98,7 @@ impl EntrypointParser {
         let entrypoint_function_body = get_function_body(&entrypoint_content);
 
         let handlers =
-            FunctionMetadata::get_filtered_metadata(None, Some(FunctionMetadataType::Handler))
+            FunctionSourceCodeMetadata::get_filtered_metadata(None, Some(FunctionMetadataType::Handler))
                 .change_context(ParserError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
 

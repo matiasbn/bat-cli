@@ -21,9 +21,10 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
-use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
-use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
+use crate::batbelt::metadata::trait_metadata::TraitMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
@@ -53,11 +54,21 @@ pub type MetadataResult<T> = Result<T, MetadataError>;
 pub type MetadataId = String;
 
 enum MetadataErrorReports {
-    MetadataIdNotFound { metadata_id: MetadataId },
+    MetadataIdNotFound {
+        metadata_id: MetadataId,
+    },
     EntryPointsMetadataNotInitialized,
-    EntryPointNameNotFound { entry_point_name: String },
+    EntryPointNameNotFound {
+        entry_point_name: String,
+    },
     FunctionDependenciesMetadataNotInitialized,
-    FunctionDependenciesNotFound { function_metadata_id: MetadataId },
+    FunctionDependenciesNotFound {
+        function_metadata_id: MetadataId,
+    },
+    TraitsMetadataNotInitialized,
+    TraitNotFound {
+        trait_source_code_metadata_id: MetadataId,
+    },
 }
 
 impl MetadataErrorReports {
@@ -86,6 +97,17 @@ impl MetadataErrorReports {
                     function_metadata_id.red()
                 )
             }
+            MetadataErrorReports::TraitsMetadataNotInitialized => {
+                format!("Traits metadata has not been initialized")
+            }
+            MetadataErrorReports::TraitNotFound {
+                trait_source_code_metadata_id: trait_metadata_id,
+            } => {
+                format!(
+                    "Trait metadata not found for {} id",
+                    trait_metadata_id.red()
+                )
+            }
         };
         Report::new(MetadataError).attach_printable(message)
     }
@@ -96,20 +118,24 @@ pub struct BatMetadata {
     pub source_code: SourceCodeMetadata,
     pub entry_points: Vec<EntrypointMetadata>,
     pub function_dependencies: Vec<FunctionDependenciesMetadata>,
+    pub traits: Vec<TraitMetadata>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SourceCodeMetadata {
     pub initialized: bool,
-    pub functions: Vec<FunctionMetadata>,
-    pub structs: Vec<StructSourceCodeMetadata>,
-    pub traits: Vec<TraitSourceMetadata>,
+    pub functions_source_code: Vec<FunctionSourceCodeMetadata>,
+    pub structs_source_code: Vec<StructSourceCodeMetadata>,
+    pub traits_source_code: Vec<TraitSourceCodeMetadata>,
 }
 
 impl SourceCodeMetadata {
-    pub fn get_function_by_id(&self, metadata_id: MetadataId) -> MetadataResult<FunctionMetadata> {
+    pub fn get_function_by_id(
+        &self,
+        metadata_id: MetadataId,
+    ) -> MetadataResult<FunctionSourceCodeMetadata> {
         let result = self
-            .functions
+            .functions_source_code
             .clone()
             .into_iter()
             .find(|meta| meta.metadata_id == metadata_id);
@@ -126,7 +152,7 @@ impl SourceCodeMetadata {
         metadata_id: MetadataId,
     ) -> MetadataResult<StructSourceCodeMetadata> {
         let result = self
-            .structs
+            .structs_source_code
             .clone()
             .into_iter()
             .find(|meta| meta.metadata_id == metadata_id);
@@ -138,9 +164,12 @@ impl SourceCodeMetadata {
         };
     }
 
-    pub fn get_trait_by_id(&self, metadata_id: MetadataId) -> MetadataResult<TraitSourceMetadata> {
+    pub fn get_trait_by_id(
+        &self,
+        metadata_id: MetadataId,
+    ) -> MetadataResult<TraitSourceCodeMetadata> {
         let result = self
-            .traits
+            .traits_source_code
             .clone()
             .into_iter()
             .find(|meta| meta.metadata_id == metadata_id);
@@ -152,12 +181,12 @@ impl SourceCodeMetadata {
         };
     }
 
-    pub fn update_functions(&self, new_vec: Vec<FunctionMetadata>) -> MetadataResult<()> {
+    pub fn update_functions(&self, new_vec: Vec<FunctionSourceCodeMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
         bat_metadata.source_code.initialized = true;
         let mut metadata_vec = new_vec.clone();
         metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
-        bat_metadata.source_code.functions = metadata_vec;
+        bat_metadata.source_code.functions_source_code = metadata_vec;
         bat_metadata.save_metadata()?;
         Ok(())
     }
@@ -167,16 +196,16 @@ impl SourceCodeMetadata {
         bat_metadata.source_code.initialized = true;
         let mut metadata_vec = new_vec.clone();
         metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
-        bat_metadata.source_code.structs = metadata_vec;
+        bat_metadata.source_code.structs_source_code = metadata_vec;
         bat_metadata.save_metadata()?;
         Ok(())
     }
-    pub fn update_traits(&self, new_vec: Vec<TraitSourceMetadata>) -> MetadataResult<()> {
+    pub fn update_traits(&self, new_vec: Vec<TraitSourceCodeMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
         bat_metadata.source_code.initialized = true;
         let mut metadata_vec = new_vec.clone();
         metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
-        bat_metadata.source_code.traits = metadata_vec;
+        bat_metadata.source_code.traits_source_code = metadata_vec;
         bat_metadata.save_metadata()?;
         Ok(())
     }
@@ -187,12 +216,13 @@ impl BatMetadata {
         Self {
             source_code: SourceCodeMetadata {
                 initialized: false,
-                functions: vec![],
-                structs: vec![],
-                traits: vec![],
+                functions_source_code: vec![],
+                structs_source_code: vec![],
+                traits_source_code: vec![],
             },
             entry_points: vec![],
             function_dependencies: vec![],
+            traits: vec![],
         }
     }
 
@@ -273,6 +303,27 @@ impl BatMetadata {
         {
             None => Err(MetadataErrorReports::FunctionDependenciesNotFound {
                 function_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn get_trait_metadata_by_trait_source_code_metadata_id(
+        &self,
+        trait_source_code_metadata_id: String,
+    ) -> MetadataResult<TraitMetadata> {
+        if self.function_dependencies.is_empty() {
+            return Err(MetadataErrorReports::TraitsMetadataNotInitialized.get_error_report());
+        }
+        match self
+            .traits
+            .clone()
+            .into_iter()
+            .find(|meta| meta.trait_source_code_metadata_id == trait_source_code_metadata_id)
+        {
+            None => Err(MetadataErrorReports::TraitNotFound {
+                trait_source_code_metadata_id,
             }
             .get_error_report()),
             Some(metadata) => Ok(metadata),

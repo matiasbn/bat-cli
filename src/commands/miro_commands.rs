@@ -2,7 +2,7 @@ use crate::batbelt;
 
 use colored::{ColoredString, Colorize};
 
-use crate::batbelt::metadata::functions_source_code_metadata::{FunctionMetadata, FunctionMetadataType};
+use crate::batbelt::metadata::functions_source_code_metadata::{FunctionSourceCodeMetadata, FunctionMetadataType};
 use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
@@ -13,7 +13,7 @@ use crate::batbelt::miro::frame::MiroFrame;
 use crate::batbelt::miro::MiroConfig;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
 use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
@@ -739,7 +739,7 @@ impl MiroCommand {
                     .unwrap();
                     let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
                     let function_metadata_vec =
-                        FunctionMetadata::get_filtered_metadata(None, Some(selected_function_type))
+                        FunctionSourceCodeMetadata::get_filtered_metadata(None, Some(selected_function_type))
                             .change_context(CommandError)?;
                     let function_metadata_names = function_metadata_vec
                         .iter()
@@ -823,13 +823,13 @@ impl MiroCommand {
     async fn function_action(&self, _select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = self.prompt_select_frame().await?;
         let function_metadata_vec =
-            FunctionMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
+            FunctionSourceCodeMetadata::get_filtered_metadata(None, None).change_context(CommandError)?;
         let trait_impl_parser_vec =
-            TraitSourceMetadata::get_trait_parser_vec(None, None, Some(function_metadata_vec.clone()))
+            TraitSourceCodeMetadata::get_trait_parser_vec(None, None, Some(function_metadata_vec.clone()))
                 .change_context(CommandError)?;
         let mut keep_deploying = true;
-        let mut deployed_dependencies: Vec<(MiroImage, FunctionMetadata)> = vec![];
-        let mut pending_to_check: Vec<FunctionMetadata> = vec![];
+        let mut deployed_dependencies: Vec<(MiroImage, FunctionSourceCodeMetadata)> = vec![];
+        let mut pending_to_check: Vec<FunctionSourceCodeMetadata> = vec![];
         while keep_deploying {
             let function_metadata_names_vec = function_metadata_vec
                 .clone()
@@ -899,13 +899,13 @@ impl MiroCommand {
 
     async fn prompt_deploy_dependencies(
         &self,
-        parent_function: FunctionMetadata,
+        parent_function: FunctionSourceCodeMetadata,
         parent_function_image: Option<MiroImage>,
         selected_miro_frame: MiroFrame,
-        function_metadata_vec: Vec<FunctionMetadata>,
+        function_metadata_vec: Vec<FunctionSourceCodeMetadata>,
         trait_impl_parser_vec: Vec<TraitParser>,
-        deployed_dependencies: &mut Vec<(MiroImage, FunctionMetadata)>,
-        pending_to_check: &mut Vec<FunctionMetadata>,
+        deployed_dependencies: &mut Vec<(MiroImage, FunctionSourceCodeMetadata)>,
+        pending_to_check: &mut Vec<FunctionSourceCodeMetadata>,
     ) -> Result<(), CommandError> {
         let function_parser = parent_function
             .to_function_parser(
@@ -954,7 +954,7 @@ impl MiroCommand {
             .dependencies
             .clone()
             .into_iter()
-            .map(FunctionMetadata::find_by_metadata_id)
+            .map(FunctionSourceCodeMetadata::find_by_metadata_id)
             .collect::<Result<Vec<_>, _>>()
             .change_context(CommandError)?;
 
@@ -1004,7 +1004,7 @@ impl MiroCommand {
             false,
         )?;
 
-        let mut pending_to_deploy: Vec<FunctionMetadata> = vec![];
+        let mut pending_to_deploy: Vec<FunctionSourceCodeMetadata> = vec![];
         let mut pending_to_connect: Vec<MiroImage> = vec![];
 
         for selection in multi_selection {

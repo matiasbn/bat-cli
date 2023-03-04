@@ -21,7 +21,7 @@ use walkdir::DirEntry;
 use super::MetadataError;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FunctionMetadata {
+pub struct FunctionSourceCodeMetadata {
     pub path: String,
     pub name: String,
     pub metadata_id: MetadataId,
@@ -30,7 +30,7 @@ pub struct FunctionMetadata {
     pub end_line_index: usize,
 }
 
-impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
+impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
     fn name(&self) -> String {
         self.name.clone()
     }
@@ -79,7 +79,7 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     }
 
     fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
-        let mut metadata_result: Vec<FunctionMetadata> = vec![];
+        let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
@@ -92,7 +92,7 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
             } else {
                 FunctionMetadataType::Other
             };
-            let function_metadata = FunctionMetadata::new(
+            let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
                 function_type,
@@ -107,10 +107,10 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionMetadata {
     }
 }
 
-impl FunctionMetadata {
+impl FunctionSourceCodeMetadata {
     pub fn to_function_parser(
         &self,
-        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
         optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<FunctionParser, MetadataError> {
         FunctionParser::new_from_metadata(
@@ -266,7 +266,7 @@ pub fn get_function_body(function_content: &str) -> String {
 
 mod test_function_metadata {
     use crate::batbelt::metadata::functions_source_code_metadata::{
-        get_function_body, get_function_parameters, get_function_signature, FunctionMetadata,
+        get_function_body, get_function_parameters, get_function_signature, FunctionSourceCodeMetadata,
         FunctionMetadataCache, FunctionMetadataType,
     };
     use serde_json::{json, Value};

@@ -1,5 +1,5 @@
-use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
-use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId, MetadataResult};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use crate::batbelt::parser::{ParserError, ParserResult};
@@ -24,7 +24,7 @@ pub struct FunctionParameterParser {
 #[derive(Clone, Debug)]
 pub struct FunctionParser {
     pub name: String,
-    pub function_metadata: FunctionMetadata,
+    pub function_metadata: FunctionSourceCodeMetadata,
     pub content: String,
     pub signature: String,
     pub body: String,
@@ -36,9 +36,9 @@ pub struct FunctionParser {
 impl FunctionParser {
     fn new(
         name: String,
-        function_metadata: FunctionMetadata,
+        function_metadata: FunctionSourceCodeMetadata,
         content: String,
-        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
         optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<Self, ParserError> {
         let mut new_function_parser = Self {
@@ -77,8 +77,8 @@ impl FunctionParser {
     }
 
     pub fn new_from_metadata(
-        function_metadata: FunctionMetadata,
-        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+        function_metadata: FunctionSourceCodeMetadata,
+        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
         optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<Self, ParserError> {
         let name = function_metadata.name.clone();
@@ -96,19 +96,19 @@ impl FunctionParser {
 
     fn get_function_dependencies(
         &mut self,
-        optional_function_metadata_vec: Option<Vec<FunctionMetadata>>,
+        optional_function_metadata_vec: Option<Vec<FunctionSourceCodeMetadata>>,
         optional_trait_impl_parser_vec: Option<Vec<TraitParser>>,
     ) -> Result<(), ParserError> {
         let function_metadata = if optional_function_metadata_vec.is_some() {
             optional_function_metadata_vec.unwrap()
         } else {
-            FunctionMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
+            FunctionSourceCodeMetadata::get_filtered_metadata(None, None).change_context(ParserError)?
         };
 
         let trait_impl_parser_vec = if optional_trait_impl_parser_vec.is_some() {
             optional_trait_impl_parser_vec.unwrap()
         } else {
-            TraitSourceMetadata::get_trait_parser_vec(None, None, Some(function_metadata.clone()))
+            TraitSourceCodeMetadata::get_trait_parser_vec(None, None, Some(function_metadata.clone()))
                 .change_context(ParserError)?
         };
         let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();

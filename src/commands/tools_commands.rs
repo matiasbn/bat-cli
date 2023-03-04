@@ -10,9 +10,9 @@ use clap::Subcommand;
 
 use error_stack::{Report, ResultExt};
 
-use crate::batbelt::metadata::functions_source_code_metadata::FunctionMetadata;
+use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
-use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceMetadata;
+use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
@@ -74,19 +74,19 @@ impl ToolsCommands {
                 (path, start_line_index)
             }
             BatMetadataType::Function => {
-                let FunctionMetadata {
+                let FunctionSourceCodeMetadata {
                     path,
                     start_line_index,
                     ..
-                } = FunctionMetadata::prompt_selection().change_context(CommandError)?;
+                } = FunctionSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
             BatMetadataType::Trait => {
-                let TraitSourceMetadata {
+                let TraitSourceCodeMetadata {
                     path,
                     start_line_index,
                     ..
-                } = TraitSourceMetadata::prompt_selection().change_context(CommandError)?;
+                } = TraitSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
         };
@@ -125,7 +125,7 @@ impl ToolsCommands {
     fn execute_get_metadata(&self) -> CommandResult<()> {
         let metadata_id = BatDialoguer::input("Metadata id:".to_string())?;
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
-        for function_metadata in bat_metadata.source_code.functions {
+        for function_metadata in bat_metadata.source_code.functions_source_code {
             if function_metadata.metadata_id == metadata_id {
                 println!("Metadata found:\n{:#?}", function_metadata);
                 CodeEditor::open_file_in_editor(
@@ -136,7 +136,7 @@ impl ToolsCommands {
                 return Ok(());
             }
         }
-        for struct_metadata in bat_metadata.source_code.structs {
+        for struct_metadata in bat_metadata.source_code.structs_source_code {
             if struct_metadata.metadata_id == metadata_id {
                 println!("Metadata found:\n{:#?}", struct_metadata);
                 CodeEditor::open_file_in_editor(
@@ -147,7 +147,7 @@ impl ToolsCommands {
                 return Ok(());
             }
         }
-        for trait_metadata in bat_metadata.source_code.traits {
+        for trait_metadata in bat_metadata.source_code.traits_source_code {
             if trait_metadata.metadata_id == metadata_id {
                 println!("Metadata found:\n{:#?}", trait_metadata);
                 CodeEditor::open_file_in_editor(

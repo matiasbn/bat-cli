@@ -86,6 +86,10 @@ impl SonarCommand {
             .print_interactive()
             .change_context(CommandError)?;
 
+        BatSonarInteractive::GetTraitsMetadata
+            .print_interactive()
+            .change_context(CommandError)?;
+
         GitCommit::UpdateMetadataJson
             .create_commit()
             .change_context(CommandError)?;
