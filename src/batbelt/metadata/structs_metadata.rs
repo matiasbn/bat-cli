@@ -11,14 +11,14 @@ use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::BatEnumerator;
 use error_stack::{Result, ResultExt};
 
+use super::MetadataError;
 use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
+use serde::{Deserialize, Serialize};
 use std::{fs, vec};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
-use super::MetadataError;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StructMetadata {
     pub path: String,
     pub name: String,
@@ -173,7 +173,16 @@ impl StructMetadata {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 pub enum StructMetadataType {
     ContextAccounts,
     SolanaAccount,

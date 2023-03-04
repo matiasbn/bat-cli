@@ -30,6 +30,7 @@ pub enum BatFile {
     BatToml,
     BatAuditorToml,
     Batlog,
+    MetadataJsonFile,
     MetadataCacheFile {
         metadata_cache_type: BatMetadataType,
     },
@@ -216,7 +217,6 @@ impl BatFile {
                     BatFolder::FindingsRejected.get_path(canonicalize)?
                 )
             }
-            BatFile::Generic { file_path } => file_path.clone(),
             BatFile::MetadataCacheFile {
                 metadata_cache_type,
             } => format!(
@@ -224,6 +224,13 @@ impl BatFile {
                 BatFolder::MetadataCacheFolder.get_path(canonicalize)?,
                 metadata_cache_type.to_string().to_snake_case().to_plural()
             ),
+            BatFile::MetadataJsonFile => {
+                format!(
+                    "{}/metadata.json",
+                    BatFolder::ProjectFolderPath.get_path(false)?
+                )
+            }
+            BatFile::Generic { file_path } => file_path.clone(),
         };
 
         if canonicalize {

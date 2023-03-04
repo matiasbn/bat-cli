@@ -6,7 +6,7 @@ pub mod package_json_template;
 use super::*;
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
-use crate::batbelt::metadata::{BatMetadataType, MetadataError};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataType, MetadataError};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
@@ -14,6 +14,7 @@ use crate::batbelt::BatEnumerator;
 use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
+use serde_json::json;
 use std::path::Path;
 use std::{error::Error, fmt, fs};
 
@@ -42,6 +43,7 @@ impl TemplateGenerator {
         .write_content(false, &Self::get_git_ignore_content())
         .change_context(TemplateError)?;
         Self::create_readme()?;
+        Self::create_metadata_json()?;
         PackageJsonTemplate::create_package_with_init_script()?;
         BatFile::Batlog
             .create_empty(false)
@@ -54,6 +56,22 @@ impl TemplateGenerator {
         BatAuditor.toml\n\
         Batlog.log"
             .to_string()
+    }
+
+    fn create_metadata_json() -> TemplateResult<()> {
+        let metadata_json_bat_file = BatFile::MetadataJsonFile;
+        metadata_json_bat_file
+            .create_empty(false)
+            .change_context(TemplateError)?;
+        let new_bat_metadata = BatMetadata::new().change_context(TemplateError)?;
+        let metadata_json = json!(new_bat_metadata);
+        let metadata_json_pretty = serde_json::to_string_pretty(&metadata_json)
+            .into_report()
+            .change_context(TemplateError)?;
+        metadata_json_bat_file
+            .write_content(false, &metadata_json_pretty)
+            .change_context(TemplateError)?;
+        Ok(())
     }
 
     fn create_project_folder() -> Result<(), TemplateError> {

@@ -19,6 +19,9 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 
 use crate::batbelt::metadata::metadata_cache::{MetadataCacheContent, MetadataCacheType};
 
+use crate::batbelt::metadata::functions_metadata::FunctionMetadata;
+use crate::batbelt::metadata::structs_metadata::StructMetadata;
+use crate::batbelt::metadata::traits_metadata::TraitMetadata;
 use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
@@ -43,13 +46,33 @@ impl fmt::Display for MetadataError {
 
 impl Error for MetadataError {}
 
-pub struct BatMetadata;
-
 pub type MetadataResult<T> = Result<T, MetadataError>;
 
 pub type MetadataId = String;
 
+#[derive(Serialize, Deserialize)]
+pub struct BatMetadata {
+    pub source_code: SourceCodeMetadata,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SourceCodeMetadata {
+    pub functions: Vec<FunctionMetadata>,
+    pub structs: Vec<StructMetadata>,
+    pub traits: Vec<TraitMetadata>,
+}
+
 impl BatMetadata {
+    pub fn new() -> MetadataResult<Self> {
+        Ok(Self {
+            source_code: SourceCodeMetadata {
+                functions: vec![],
+                structs: vec![],
+                traits: vec![],
+            },
+        })
+    }
+
     pub fn metadata_is_initialized() -> Result<bool, MetadataError> {
         let mut metadata_initialized = true;
         for metadata_type in BatMetadataType::get_type_vec() {

@@ -10,9 +10,9 @@ use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataResul
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
-use error_stack::{FutureExt, Result, ResultExt};
-
 use crate::batbelt::BatEnumerator;
+use error_stack::{FutureExt, Result, ResultExt};
+use serde::{Deserialize, Serialize};
 
 use serde_json::json;
 use std::{fs, vec};
@@ -20,7 +20,7 @@ use walkdir::DirEntry;
 
 use super::MetadataError;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FunctionMetadata {
     pub path: String,
     pub name: String,
@@ -257,7 +257,16 @@ pub struct FunctionMetadataCache {
     external_dependencies: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 pub enum FunctionMetadataType {
     EntryPoint,
     Handler,

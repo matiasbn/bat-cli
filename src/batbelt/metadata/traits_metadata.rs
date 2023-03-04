@@ -8,14 +8,14 @@ use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataId};
 use crate::batbelt::parser::trait_parser::TraitParser;
 use error_stack::{Result, ResultExt};
 
+use super::MetadataError;
 use crate::batbelt::metadata::metadata_cache::MetadataCacheType;
 use crate::batbelt::BatEnumerator;
+use serde::{Deserialize, Serialize};
 use std::{fs, vec};
 use walkdir::DirEntry;
 
-use super::MetadataError;
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TraitMetadata {
     pub path: String,
     pub name: String,
@@ -132,7 +132,16 @@ impl TraitMetadata {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
 pub enum TraitMetadataType {
     Definition,
     Implementation,
