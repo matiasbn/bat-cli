@@ -268,15 +268,11 @@ pub fn start_co_file() -> error_stack::Result<(), CommandError> {
 
     let started_template =
         CodeOverhaulTemplate::new(entrypoint_name, true).change_context(CommandError)?;
-    let mut started_markdown = started_template
-        .to_markdown_file(
-            &started_bat_file
-                .get_path(false)
-                .change_context(CommandError)?,
-        )
-        .change_context(CommandError)?;
+    let mut started_markdown_content = started_template.get_markdown_content();
 
-    started_markdown.save().change_context(CommandError)?;
+    started_bat_file
+        .write_content(false, &started_markdown_content)
+        .change_context(CommandError)?;
 
     println!("{to_start_file_name} file moved to started");
 

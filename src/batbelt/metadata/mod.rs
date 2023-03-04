@@ -12,8 +12,6 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 use std::path::Path;
 
-use crate::batbelt::markdown::{MarkdownFile, MarkdownSection};
-
 use crate::batbelt::path::{BatFile, BatFolder};
 
 use inflector::Inflector;

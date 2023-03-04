@@ -1,5 +1,4 @@
 use crate::batbelt::command_line::{execute_command, CodeEditor};
-use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::BatMetadataType;
 use crate::config::{BatAuditorConfig, BatConfig};
 
@@ -222,13 +221,6 @@ impl BatFile {
             .to_str()
             .unwrap()
             .to_string())
-    }
-
-    pub fn to_markdown_file(&self, content: String) -> BatPathResult<MarkdownFile> {
-        Ok(MarkdownFile::new_from_path_and_content(
-            &self.get_path(false)?,
-            content,
-        ))
     }
 }
 

@@ -1,5 +1,4 @@
 use crate::batbelt;
-use crate::batbelt::markdown::MarkdownFile;
 use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
@@ -32,13 +31,8 @@ impl CodeOverhaulTemplate {
             entrypoint_parser,
         })
     }
-    pub fn to_markdown_file(&self, file_path: &str) -> Result<MarkdownFile, TemplateError> {
-        let content = self.get_markdown_content();
-        let template = MarkdownFile::new_from_path_and_content(file_path, content);
-        Ok(template)
-    }
 
-    fn get_markdown_content(&self) -> String {
+    pub fn get_markdown_content(&self) -> String {
         let state_changes_content =
             CodeOverhaulSection::StateChanges.get_section_content(self.entrypoint_parser.clone());
         let notes_content =

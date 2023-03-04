@@ -94,16 +94,15 @@ impl ProjectCommands {
         // if the auditor to-review code overhaul folder exists
         for bat_file in to_review_file_names {
             bat_file.remove_file().change_context(CommandError)?;
-            let file_path = bat_file.get_path(false).change_context(CommandError)?;
             let co_template = CodeOverhaulTemplate::new(
                 &bat_file.get_file_name().change_context(CommandError)?,
                 false,
             )
             .change_context(CommandError)?;
-            let mut co_markdown = co_template
-                .to_markdown_file(&file_path)
+            let mut co_markdown_content = co_template.get_markdown_content();
+            bat_file
+                .write_content(false, &co_markdown_content)
                 .change_context(CommandError)?;
-            co_markdown.save().change_context(CommandError)?;
         }
         Ok(())
     }
@@ -324,11 +323,13 @@ fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
     }
     let co_template =
         CodeOverhaulTemplate::new(&entrypoint_name, false).change_context(CommandError)?;
-    let mut co_markdown = co_template
-        .to_markdown_file(&code_overhaul_file_path)
-        .change_context(CommandError)?;
+    let co_markdown_content = co_template.get_markdown_content();
 
-    co_markdown.save().change_context(CommandError)?;
+    BatFile::CodeOverhaulToReview {
+        file_name: entrypoint_name.clone(),
+    }
+    .write_content(false, &co_markdown_content)
+    .change_context(CommandError)?;
 
     println!(
         "code-overhaul file created: {}{}",
