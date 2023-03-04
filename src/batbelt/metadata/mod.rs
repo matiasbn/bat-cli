@@ -1,3 +1,4 @@
+pub mod context_accounts_metadata;
 pub mod entrypoint_metadata;
 pub mod function_dependencies_metadata;
 pub mod functions_source_code_metadata;
@@ -19,6 +20,7 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
+use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
 use crate::batbelt::metadata::functions_source_code_metadata::{
@@ -76,6 +78,10 @@ enum MetadataErrorReports {
     TraitNotFound {
         trait_source_code_metadata_id: MetadataId,
     },
+    ContextAccountsMetadataNotInitialized,
+    ContextAccountsNotFound {
+        struct_source_code_metadata_id: MetadataId,
+    },
 }
 
 impl MetadataErrorReports {
@@ -118,6 +124,17 @@ impl MetadataErrorReports {
                     trait_metadata_id.red()
                 )
             }
+            MetadataErrorReports::ContextAccountsMetadataNotInitialized => {
+                format!("Context accounts metadata has not been initialized")
+            }
+            MetadataErrorReports::ContextAccountsNotFound {
+                struct_source_code_metadata_id,
+            } => {
+                format!(
+                    "Context accounts metadata not found for {} id",
+                    struct_source_code_metadata_id.red()
+                )
+            }
         };
         Report::new(MetadataError).attach_printable(message)
     }
@@ -130,6 +147,7 @@ pub struct BatMetadata {
     pub entry_points: Vec<EntrypointMetadata>,
     pub function_dependencies: Vec<FunctionDependenciesMetadata>,
     pub traits: Vec<TraitMetadata>,
+    pub context_accounts: Vec<ContextAccountsMetadata>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -296,6 +314,7 @@ impl BatMetadata {
             entry_points: vec![],
             function_dependencies: vec![],
             traits: vec![],
+            context_accounts: vec![],
         }
     }
 
@@ -397,6 +416,29 @@ impl BatMetadata {
         {
             None => Err(MetadataErrorReports::TraitNotFound {
                 trait_source_code_metadata_id,
+            }
+            .get_error_report()),
+            Some(metadata) => Ok(metadata),
+        }
+    }
+
+    pub fn get_context_accounts_metadata_by_struct_source_code_metadata_id(
+        &self,
+        struct_source_code_metadata_id: String,
+    ) -> MetadataResult<ContextAccountsMetadata> {
+        if self.context_accounts.is_empty() {
+            return Err(
+                MetadataErrorReports::ContextAccountsMetadataNotInitialized.get_error_report()
+            );
+        }
+        match self
+            .context_accounts
+            .clone()
+            .into_iter()
+            .find(|meta| meta.struct_source_code_metadata_id == struct_source_code_metadata_id)
+        {
+            None => Err(MetadataErrorReports::ContextAccountsNotFound {
+                struct_source_code_metadata_id,
             }
             .get_error_report()),
             Some(metadata) => Ok(metadata),

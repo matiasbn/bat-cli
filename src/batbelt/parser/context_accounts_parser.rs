@@ -25,19 +25,16 @@ pub struct CAAccountTypeInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CAAccountParser {
-    pub name: String,
     pub account_attribute_info: CAAccountAttributeInfo,
     pub account_type_info: CAAccountTypeInfo,
 }
 
 impl CAAccountParser {
     fn new(
-        name: String,
         account_attribute_info: CAAccountAttributeInfo,
         account_type_info: CAAccountTypeInfo,
     ) -> Self {
         Self {
-            name,
             account_attribute_info,
             account_type_info,
         }
@@ -56,7 +53,7 @@ impl CAAccountParser {
         }
         let account_attribute_info = Self::get_account_attribute_info(&sonar_result.content)?;
         let account_type_info = Self::get_account_type_info(sonar_result.clone())?;
-        let new_parser = Self::new(sonar_result.name, account_attribute_info, account_type_info);
+        let new_parser = Self::new(account_attribute_info, account_type_info);
         Ok(new_parser)
     }
 
