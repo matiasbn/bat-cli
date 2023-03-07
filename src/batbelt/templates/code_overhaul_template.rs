@@ -289,7 +289,7 @@ impl CodeOverhaulSection {
                                 format!(
                                     "{}\t{},",
                                     trailing_str.clone(),
-                                    validation.trim_end_matches(",")
+                                    validation.trim_end_matches(',')
                                 )
                             })
                             .collect::<Vec<_>>()
