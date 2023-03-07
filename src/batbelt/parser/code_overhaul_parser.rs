@@ -67,7 +67,7 @@ impl CodeOverhaulParser {
             self.validations
                 .clone()
                 .into_iter()
-                .map(|validation| self.format_trailing_whitespaces(&validation))
+                .map(|validation| validation.to_string())
                 .collect::<Vec<_>>()
                 .join("\n\n")
         };

@@ -286,7 +286,11 @@ impl CodeOverhaulSection {
                             .validations
                             .into_iter()
                             .map(|validation| {
-                                format!("{}\t{}", trailing_str.clone(), validation)
+                                format!(
+                                    "{}\t{},",
+                                    trailing_str.clone(),
+                                    validation.trim_end_matches(",")
+                                )
                             })
                             .collect::<Vec<_>>()
                             .join("\n"),
