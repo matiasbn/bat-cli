@@ -167,7 +167,11 @@ impl CodeOverhaulParser {
             .to_string()
             .lines()
             .filter_map(|line| {
-                if line.starts_with("- ") {
+                if line.starts_with("- ")
+                    && !line.contains(
+                        &CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder(),
+                    )
+                {
                     let mut line_split = line.trim_start_matches("- ").split(": ");
                     Some(CodeOverhaulSigner {
                         name: line_split.next().unwrap().to_string(),

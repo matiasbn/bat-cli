@@ -58,42 +58,50 @@ impl BatCommandEnumerator for CodeOverhaulCommand {
 impl CodeOverhaulCommand {
     pub async fn execute_command(&self) -> CommandResult<()> {
         match self {
-            CodeOverhaulCommand::Start => self.start_co_file(),
+            CodeOverhaulCommand::Start => self.start_co_file().await,
             CodeOverhaulCommand::Finish => self.finish_co_file(),
-            CodeOverhaulCommand::DeployMiro => self.deploy_diagram().await,
+            CodeOverhaulCommand::DeployMiro => self.deploy_diagram(None).await,
         }
     }
 
-    async fn deploy_diagram(&self) -> CommandResult<()> {
+    async fn deploy_diagram(&self, entry_point_name: Option<String>) -> CommandResult<()> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
-        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
-        if bat_metadata.miro.code_overhaul.is_empty() {
-            let message = format!(
-                "Miro code-overhaul's metadata is not initialized yet.\n \
-            This action is {} to proceed with this function.",
-                "required".red()
-            );
-            let suggestion_message = format!(
-                "Run  {} to deploy the code-overhaul frames",
-                "bat-cli miro deploy-co-frames".green()
-            );
-            return Err(Report::new(CommandError)
-                .attach_printable(message)
-                .attach(Suggestion(suggestion_message)));
-        }
 
-        let co_started_bat_folder = BatFolder::CodeOverhaulStarted;
-        let started_files_names = co_started_bat_folder
-            .get_all_files_names(true, None, None)
-            .change_context(CommandError)?;
-        if started_files_names.is_empty() {
-            return Err(Report::new(CommandError)
-                .attach_printable("code-overhaul's to-review folder is empty"));
-        }
-        let prompt_text = "Select the co file to deploy to Miro".to_string();
-        let selection = BatDialoguer::select(prompt_text, started_files_names.clone(), None)?;
-        let selected_file_name = started_files_names[selection].clone();
-        let entrypoint_name = selected_file_name.trim_end_matches(".md").to_string();
+        let entrypoint_name = match entry_point_name {
+            None => {
+                let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+                if bat_metadata.miro.code_overhaul.is_empty() {
+                    let message = format!(
+                        "Miro code-overhaul's metadata is not initialized yet.\n \
+            This action is {} to proceed with this function.",
+                        "required".red()
+                    );
+                    let suggestion_message = format!(
+                        "Run  {} to deploy the code-overhaul frames",
+                        "bat-cli miro deploy-co-frames".green()
+                    );
+                    return Err(Report::new(CommandError)
+                        .attach_printable(message)
+                        .attach(Suggestion(suggestion_message)));
+                }
+
+                let co_started_bat_folder = BatFolder::CodeOverhaulStarted;
+                let started_files_names = co_started_bat_folder
+                    .get_all_files_names(true, None, None)
+                    .change_context(CommandError)?;
+                if started_files_names.is_empty() {
+                    return Err(Report::new(CommandError)
+                        .attach_printable("code-overhaul's to-review folder is empty"));
+                }
+                let prompt_text = "Select the co file to deploy to Miro".to_string();
+                let selection =
+                    BatDialoguer::select(prompt_text, started_files_names.clone(), None)?;
+                let selected_file_name = started_files_names[selection].clone();
+                let entrypoint_name = selected_file_name.trim_end_matches(".md").to_string();
+                entrypoint_name
+            }
+            Some(ep_name) => ep_name,
+        };
 
         let (co_miro_frame, mut miro_co_metadata) =
             match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone()) {
@@ -557,7 +565,7 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
-    fn start_co_file(&self) -> error_stack::Result<(), CommandError> {
+    async fn start_co_file(&self) -> error_stack::Result<(), CommandError> {
         let review_files = BatFolder::CodeOverhaulToReview
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
@@ -614,10 +622,15 @@ impl CodeOverhaulCommand {
                 let handler = ep_parser.handler.unwrap();
                 CodeEditor::open_file_in_editor(&handler.path, Some(handler.start_line_index))?;
             }
-            CodeEditor::open_file_in_editor(
-                &ep_parser.entry_point_function.path,
-                Some(ep_parser.entry_point_function.start_line_index),
-            )?;
+        }
+        let prompt_text = format!(
+            "Do you want to deploy the code-overhaul frame for {} now?",
+            entrypoint_name.clone().bright_green()
+        );
+        let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
+        if deploy_frame {
+            self.deploy_diagram(Some(entrypoint_name.to_string()))
+                .await?
         }
         Ok(())
     }
