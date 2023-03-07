@@ -375,63 +375,72 @@ impl CodeOverhaulSection {
             } else if signer_comments.len() == 1 {
                 // prompt the user to state if the comment is correct
                 let signer_description_comment = signer_comments[0].split("// ").last().unwrap();
-                let prompt_text = format!(
-                    "is this a proper description of the signer {}?: '{}'",
-                    signer_name.red(),
-                    signer_description_comment
-                );
-                let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
-                if is_correct {
-                    let signer_description =
-                        format!("- {}: {}", signer_name, signer_description_comment);
-                    signers.push(signer_description);
-                } else {
-                    let signer_description = format!(
-                        "- {}: {}",
-                        signer_name,
-                        CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                            .to_placeholder()
-                    );
-                    signers.push(signer_description);
-                }
+                let signer_description =
+                    format!("- {}: {}", signer_name, signer_description_comment);
+                signers.push(signer_description);
+                // let prompt_text = format!(
+                //     "is this a proper description of the signer {}?: '{}'",
+                //     signer_name.red(),
+                //     signer_description_comment
+                // );
+                // let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
+                // if is_correct {
+                // } else {
+                //     let signer_description = format!(
+                //         "- {}: {}",
+                //         signer_name,
+                //         CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                //             .to_placeholder()
+                //     );
+                //     signers.push(signer_description);
+                // }
                 // multiple line description
             } else {
                 // prompt the user to select the lines that contains the description and join them
-                let prompt_text = format!(
-                    "Use the spacebar to select the lines that describes the signer {}.
-                        Hit enter if is not a proper description:",
-                    signer_name.red()
-                );
-                let signer_formatted: Vec<&str> = signer_comments
+                let signer_formatted = signer_comments
                     .iter()
-                    .map(|line| line.split("// ").last().unwrap())
-                    .collect();
-                let selections = batbelt::bat_dialoguer::multiselect(
-                    &prompt_text,
-                    signer_formatted.clone(),
-                    Some(&vec![false; signer_formatted.clone().len()]),
-                )
-                .unwrap();
-                if selections.is_empty() {
-                    let signer_description = format!(
-                        "- {}: {}",
-                        signer_name,
-                        CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                            .to_placeholder()
-                    );
-                    signers.push(signer_description);
-                } else {
-                    // take the selections and create the array
-                    let signer_total_comment = signer_formatted
-                        .into_iter()
-                        .enumerate()
-                        .filter(|line| selections.contains(&line.0))
-                        .map(|line| line.1)
-                        .collect::<Vec<_>>()
-                        .join(". ");
-                    let signer_description = format!("- {}: {}", signer_name, signer_total_comment);
-                    signers.push(signer_description);
-                }
+                    .map(|line| line.split("// ").last().unwrap().to_string())
+                    .collect::<Vec<_>>()
+                    .join(". ");
+                let signer_description = format!("- {}: {}", signer_name, signer_formatted);
+                signers.push(signer_description);
+                // let signer_total_comment = signer_formatted
+                //     .into_iter()
+                //     .enumerate()
+                //     .filter(|line| selections.contains(&line.0))
+                //     .map(|line| line.1)
+                //     .collect::<Vec<_>>();
+                // let prompt_text = format!(
+                //     "Use the spacebar to select the lines that describes the signer {}.
+                //         Hit enter if is not a proper description:",
+                //     signer_name.red()
+                // );
+                // let selections = batbelt::bat_dialoguer::multiselect(
+                //     &prompt_text,
+                //     signer_formatted.clone(),
+                //     Some(&vec![false; signer_formatted.clone().len()]),
+                // )
+                // .unwrap();
+                // if selections.is_empty() {
+                //     let signer_description = format!(
+                //         "- {}: {}",
+                //         signer_name,
+                //         CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                //             .to_placeholder()
+                //     );
+                //     signers.push(signer_description);
+                // } else {
+                //     // take the selections and create the array
+                //     let signer_total_comment = signer_formatted
+                //         .into_iter()
+                //         .enumerate()
+                //         .filter(|line| selections.contains(&line.0))
+                //         .map(|line| line.1)
+                //         .collect::<Vec<_>>()
+                //         .join(". ");
+                //     let signer_description = format!("- {}: {}", signer_name, signer_total_comment);
+                //     signers.push(signer_description);
+                // }
             }
         }
         if signers.is_empty() {
