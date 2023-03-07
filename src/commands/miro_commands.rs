@@ -95,7 +95,7 @@ impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
         return match self {
-            MiroCommand::InitCO => self.code_overhaul_action().await,
+            MiroCommand::InitCO => self.init_co_action().await,
             MiroCommand::Entrypoint { select_all, sorted } => {
                 self.entrypoint_action(*select_all, *sorted).await
             }
@@ -488,7 +488,7 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn code_overhaul_action(&self) -> Result<(), CommandError> {
+    async fn init_co_action(&self) -> Result<(), CommandError> {
         println!("Deploying code-overhaul frames to the Miro board");
 
         let miro_board_frames = MiroFrame::get_frames_from_miro()
@@ -499,6 +499,19 @@ impl MiroCommand {
             EntrypointParser::get_entrypoint_names(false).change_context(CommandError)?;
 
         for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
+            match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())
+                .change_context(CommandError)
+            {
+                Ok(miro_co_metadata) => {
+                    println!(
+                        "Frame already deployed for {}, url: {}",
+                        entrypoint_name.clone(),
+                        MiroFrame::get_frame_url_by_frame_id(&miro_co_metadata.miro_frame_id)
+                            .change_context(CommandError)?
+                    )
+                }
+                Err(_) => {}
+            }
             let frame_name = format!("co: {}", entrypoint_name);
             let frame_already_deployed = miro_board_frames
                 .iter()
