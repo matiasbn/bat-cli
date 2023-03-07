@@ -8,17 +8,18 @@ use crate::batbelt::templates::code_overhaul_template::{
 };
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
+use std::fs;
 
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
-use error_stack::{FutureExt, Report, ResultExt};
+use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 
 use crate::batbelt::metadata::miro_metadata::{SignerInfo, SignerType};
 use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser, MiroMetadata};
 use crate::batbelt::miro::connector::ConnectorOptions;
 use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
-use crate::batbelt::miro::image::MiroImage;
+use crate::batbelt::miro::image::{MiroImage, MiroImageType};
 
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::MiroConfig;
@@ -282,12 +283,12 @@ impl CodeOverhaulCommand {
             miro_co_metadata.entry_point_image_id = entrypoint_function_image.item_id.clone();
 
             let validations_miro_image = co_parser
-                .get_validations_image_for_miro_co_frame(co_miro_frame.clone())
+                .deploy_new_validations_image_for_miro_co_frame(co_miro_frame.clone())
                 .await
                 .change_context(CommandError)?;
 
             let ca_miro_image = co_parser
-                .get_context_accounts_image_for_miro_co_frame(co_miro_frame.clone())
+                .deploy_new_context_accounts_image_for_miro_co_frame(co_miro_frame.clone())
                 .await
                 .change_context(CommandError)?;
 
@@ -356,7 +357,6 @@ impl CodeOverhaulCommand {
                 .await
                 .change_context(CommandError)?;
             }
-        }
         // // Deploy mut_accounts
 
         // if mut_accounts.len() > 0 {
@@ -435,6 +435,122 @@ impl CodeOverhaulCommand {
         //     } else {
         //         println!("No files selected");
         //     }
+        } else {
+            // update screenshots
+            let options = vec![
+                "Entrypoint function".to_string().bright_green(),
+                "Context accounts".to_string().bright_yellow(),
+                "Validations".to_string().bright_red(),
+                "Handler function".to_string().bright_cyan(),
+            ];
+            let prompt_text = "Which screenshots you want to update?".to_string();
+            let selections = BatDialoguer::multiselect(prompt_text, options.clone(), None, true)?;
+            let co_parser = CodeOverhaulParser::new_from_entry_point_name(entrypoint_name.clone())
+                .change_context(CommandError)?;
+            let ep_parser =
+                EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
+            for selection in selections {
+                match selection {
+                    // Entrypoint
+                    0 => {
+                        let ep_sc_parser = ep_parser.entry_point_function.to_source_code_parser(
+                            Some(MiroCommand::parse_screenshot_name(
+                                &ep_parser.entry_point_function.name,
+                                &co_miro_frame.title,
+                            )),
+                        );
+                        let ep_screenshot_path = ep_sc_parser
+                            .create_screenshot(SourceCodeScreenshotOptions {
+                                include_path: false,
+                                offset_to_start_line: true,
+                                filter_comments: false,
+                                font_size: None,
+                                filters: None,
+                                show_line_number: true,
+                            })
+                            .change_context(CommandError)?;
+                        let mut ep_image = MiroImage::new_from_item_id(
+                            &miro_co_metadata.entry_point_image_id,
+                            MiroImageType::FromPath,
+                        )
+                        .await
+                        .change_context(CommandError)?;
+
+                        println!(
+                            "\nUpdating entrypoint screenshot in {} frame",
+                            co_miro_frame.title.green()
+                        );
+
+                        ep_image
+                            .update_from_path(&ep_screenshot_path)
+                            .await
+                            .change_context(CommandError)?;
+
+                        fs::remove_file(&ep_screenshot_path)
+                            .into_report()
+                            .change_context(CommandError)?;
+                    }
+                    // Context accounts
+                    1 => co_parser
+                        .update_context_accounts_screenshot()
+                        .await
+                        .change_context(CommandError)?,
+                    // Validations
+                    2 => co_parser
+                        .update_validations_screenshot()
+                        .await
+                        .change_context(CommandError)?,
+                    // Handler function
+                    3 => {
+                        if ep_parser.handler.is_none() {
+                            println!("No handler function");
+                            continue;
+                        }
+                        let handler_sc_parser = ep_parser
+                            .handler
+                            .clone()
+                            .unwrap()
+                            .to_source_code_parser(Some(MiroCommand::parse_screenshot_name(
+                                &ep_parser.handler.clone().unwrap().name,
+                                &co_miro_frame.title,
+                            )));
+                        let handler_screenshot_path = handler_sc_parser
+                            .create_screenshot(SourceCodeScreenshotOptions {
+                                include_path: true,
+                                offset_to_start_line: true,
+                                filter_comments: true,
+                                font_size: None,
+                                filters: None,
+                                show_line_number: true,
+                            })
+                            .change_context(CommandError)?;
+                        let mut handler_image = MiroImage::new_from_item_id(
+                            &miro_co_metadata.handler_image_id,
+                            MiroImageType::FromPath,
+                        )
+                        .await
+                        .change_context(CommandError)?;
+
+                        println!(
+                            "\nUpdating handler screenshot in {} frame",
+                            co_miro_frame.title.green()
+                        );
+
+                        handler_image
+                            .update_from_path(&handler_screenshot_path)
+                            .await
+                            .change_context(CommandError)?;
+
+                        fs::remove_file(&handler_screenshot_path)
+                            .into_report()
+                            .change_context(CommandError)?;
+                    }
+                    _ => {
+                        unimplemented!()
+                    }
+                };
+            }
+        }
         Ok(())
     }
 
