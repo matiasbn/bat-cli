@@ -36,6 +36,8 @@ pub struct MiroConfig {
 
 pub type MiroApiResult = Result<reqwest::Response, MiroError>;
 
+pub type MiroResult<T> = Result<T, MiroError>;
+
 impl MiroConfig {
     pub fn new() -> Result<Self, MiroError> {
         Self::check_miro_enabled()?;

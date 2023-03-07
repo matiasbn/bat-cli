@@ -1,5 +1,7 @@
 use super::*;
+use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::miro::MiroItemType;
+use colored::Colorize;
 use error_stack::Result;
 use serde_json::json;
 
@@ -131,6 +133,31 @@ impl MiroFrame {
         self.x_position = x_position;
         self.y_position = y_position;
         Ok(())
+    }
+
+    pub async fn prompt_select_frame() -> MiroResult<Self> {
+        MiroConfig::check_miro_enabled()?;
+
+        println!(
+            "\nGetting the {} from the {} ...\n",
+            "frames".yellow(),
+            "Miro board".yellow()
+        );
+        let mut miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await?;
+
+        log::info!("miro_frames:\n{:#?}", miro_frames);
+
+        miro_frames.sort_by(|a, b| a.title.cmp(&b.title));
+        let miro_frame_titles: Vec<String> = miro_frames
+            .iter()
+            .map(|frame| frame.title.clone())
+            .collect();
+
+        let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
+        let selection =
+            BatDialoguer::select(prompt_text, miro_frame_titles, None).change_context(MiroError)?;
+        let selected_miro_frame: MiroFrame = miro_frames[selection].clone();
+        Ok(selected_miro_frame)
     }
 }
 

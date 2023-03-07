@@ -62,7 +62,7 @@ enum BatCommands {
         skip_initial_commit: bool,
     },
     /// Refresh the project
-    Refresh,
+    Reload,
     /// code-overhaul files management
     #[command(subcommand)]
     CO(CodeOverhaulCommand),
@@ -98,14 +98,8 @@ impl BatCommands {
             BatCommands::Init {
                 skip_initial_commit,
             } => commands::project_commands::initialize_bat_project(*skip_initial_commit).await,
-            BatCommands::Refresh => ProjectCommands::Refresh.execute_command(),
-            BatCommands::CO(CodeOverhaulCommand::Start) => commands::co_commands::start_co_file(),
-            BatCommands::CO(CodeOverhaulCommand::Finish) => {
-                commands::co_commands::finish_co_file().await
-            }
-            BatCommands::CO(CodeOverhaulCommand::Update) => commands::co_commands::update_co_file(),
-            BatCommands::CO(CodeOverhaulCommand::Count) => commands::co_commands::count_co_files(),
-            BatCommands::CO(CodeOverhaulCommand::Open) => commands::co_commands::open_co(),
+            BatCommands::Reload => ProjectCommands::Reload.execute_command(),
+            BatCommands::CO(command) => command.execute_command().await,
             BatCommands::Finding(FindingCommand::Create) => {
                 commands::finding_commands::start_finding()
             }
@@ -145,7 +139,7 @@ impl BatCommands {
             BatCommands::Init { .. } => {
                 return Ok(());
             }
-            BatCommands::Refresh => {
+            BatCommands::Reload => {
                 return Ok(());
             }
             BatCommands::Package(_) => {
@@ -242,8 +236,8 @@ impl BatCommands {
                         .collect::<Vec<_>>(),
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Refresh => {
-                    Some((vec![], BatCommands::Refresh.to_string().to_kebab_case()))
+                BatCommands::Reload => {
+                    Some((vec![], BatCommands::Reload.to_string().to_kebab_case()))
                 }
                 _ => None,
             })

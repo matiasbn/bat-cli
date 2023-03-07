@@ -271,6 +271,9 @@ impl GitCommit {
                     }
                     .get_path(true)
                     .change_context(GitError)?,
+                    BatFile::BatMetadataFile
+                        .get_path(false)
+                        .change_context(GitError)?,
                 ]
             }
             GitCommit::FinishCO { entrypoint_name } => {

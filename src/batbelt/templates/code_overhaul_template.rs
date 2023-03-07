@@ -103,10 +103,10 @@ impl CodeOverhaulSection {
         let section_content = if ep_parser.is_some() {
             let entrypoint_parser = ep_parser.unwrap();
             let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-            let meta = match bat_metadata
+            match bat_metadata
                 .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
             {
-                Ok(meta) => meta,
+                Ok(_) => {}
                 Err(_) => {
                     let new_co = CodeOverhaulMetadata::new_empty(
                         BatMetadata::create_metadata_id(),
@@ -115,14 +115,13 @@ impl CodeOverhaulSection {
                     new_co
                         .update_metadata_file()
                         .change_context(TemplateError)?;
-                    new_co
                 }
             };
             let result = match self {
                 CodeOverhaulSection::StateChanges => {
                     self.get_state_changes_content(entrypoint_parser)?
                 }
-                CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
+                CodeOverhaulSection::Notes => format!("- `{}`", CompleteWithNotes.to_placeholder()),
                 CodeOverhaulSection::Signers => {
                     self.get_signers_section_content(entrypoint_parser)?
                 }
@@ -139,8 +138,7 @@ impl CodeOverhaulSection {
                     CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder()
                 }
             };
-            meta.update_metadata_file().change_context(TemplateError)?;
-            return Ok(result);
+            result
         } else {
             "".to_string()
         };
