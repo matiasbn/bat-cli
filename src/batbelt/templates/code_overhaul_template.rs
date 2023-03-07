@@ -1,9 +1,11 @@
 use crate::batbelt;
 use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataResult};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulSignerMetadata;
+use crate::batbelt::metadata::code_overhaul_metadata::{
+    CodeOverhaulMetadata, CodeOverhaulSignerMetadata,
+};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithTheRestOfStateChanges,
@@ -100,7 +102,23 @@ impl CodeOverhaulSection {
     ) -> TemplateResult<String> {
         let section_content = if ep_parser.is_some() {
             let entrypoint_parser = ep_parser.unwrap();
-            match self {
+            let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+            let meta = match bat_metadata
+                .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
+            {
+                Ok(meta) => meta,
+                Err(_) => {
+                    let new_co = CodeOverhaulMetadata::new_empty(
+                        BatMetadata::create_metadata_id(),
+                        entrypoint_parser.clone().name,
+                    );
+                    new_co
+                        .update_metadata_file()
+                        .change_context(TemplateError)?;
+                    new_co
+                }
+            };
+            let result = match self {
                 CodeOverhaulSection::StateChanges => {
                     self.get_state_changes_content(entrypoint_parser)?
                 }
@@ -120,7 +138,9 @@ impl CodeOverhaulSection {
                 CodeOverhaulSection::MiroFrameUrl => {
                     CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder()
                 }
-            }
+            };
+            meta.update_metadata_file().change_context(TemplateError)?;
+            return Ok(result);
         } else {
             "".to_string()
         };

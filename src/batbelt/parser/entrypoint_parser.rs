@@ -135,7 +135,6 @@ impl EntrypointParser {
             },
             context_accounts_id: context_accounts.metadata_id.clone(),
             entrypoint_function_id: entrypoint_function.metadata_id.clone(),
-            miro_frame_id: None,
         };
 
         ep_metadata

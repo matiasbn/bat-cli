@@ -308,11 +308,11 @@ impl TemplatePlaceholder {
     }
 }
 
-#[cfg(debug_assertions)]
-mod template_test {
-
-    #[test]
-    fn test_get_gitignore_content() {
-        println!("{}", TemplateGenerator::get_git_ignore_content());
-    }
-}
+// #[cfg(debug_assertions)]
+// mod template_test {
+//
+//     #[test]
+//     fn test_get_gitignore_content() {
+//         println!("{}", TemplateGenerator::get_git_ignore_content());
+//     }
+// }

@@ -33,6 +33,15 @@ impl CodeOverhaulMetadata {
             signers,
         }
     }
+    pub fn new_empty(metadata_id: MetadataId, entry_point_name: String) -> Self {
+        Self {
+            metadata_id,
+            entry_point_name,
+            validations: vec![],
+            context_accounts_content: "".to_string(),
+            signers: vec![],
+        }
+    }
 
     pub fn update_metadata_file(&self) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;

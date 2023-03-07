@@ -8,7 +8,6 @@ pub struct EntrypointMetadata {
     pub handler_id: Option<MetadataId>,
     pub context_accounts_id: MetadataId,
     pub entrypoint_function_id: MetadataId,
-    pub miro_frame_id: Option<String>,
 }
 
 impl EntrypointMetadata {
@@ -18,7 +17,6 @@ impl EntrypointMetadata {
         context_accounts_id: MetadataId,
         entrypoint_function_id: MetadataId,
         metadata_id: MetadataId,
-        miro_frame_id: Option<String>,
     ) -> Self {
         Self {
             name,
@@ -26,7 +24,6 @@ impl EntrypointMetadata {
             handler_id,
             context_accounts_id,
             entrypoint_function_id,
-            miro_frame_id,
         }
     }
 
