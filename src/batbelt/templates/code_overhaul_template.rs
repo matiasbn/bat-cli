@@ -175,6 +175,10 @@ impl CodeOverhaulSection {
     }
 
     fn get_validations_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
+        log::debug!(
+            "get_validations_section_content entrypoint_parser \n{:#?}",
+            entrypoint_parser.clone()
+        );
         if entrypoint_parser.handler.is_none() {
             return format!(
                 "- {}",
@@ -209,7 +213,7 @@ impl CodeOverhaulSection {
                 }
                 result
             });
-
+        log::debug!("if_validations:\n{:#?}", if_validations.clone());
         // any if that contains an if validation is considered a validation
         let mut filtered_if_validations = handler_if_validations
             .results
@@ -222,9 +226,14 @@ impl CodeOverhaulSection {
             })
             .map(|result| result.content.clone())
             .collect::<Vec<_>>();
+        log::debug!(
+            "filtered_if_validations:\n{:#?}",
+            filtered_if_validations.clone()
+        );
 
         let handler_validations =
             BatSonar::new_from_path(&instruction_file_path, None, SonarResultType::Validation);
+        log::debug!("handler_validations:\n{:#?}", handler_validations.clone());
 
         // if there are validations in if_validations, then filter them from handler validations to avoid repetition
         let mut filtered_handler_validations = if if_validations.is_empty() {
@@ -246,10 +255,18 @@ impl CodeOverhaulSection {
                 .map(|val| val.content.clone())
                 .collect::<Vec<_>>()
         };
+        log::debug!(
+            "filtered_handler_validations:\n{:#?}",
+            filtered_handler_validations.clone()
+        );
 
         let ca_accounts_only_validations = BatSonar::new_scanned(
             &context_source_code.get_source_code_content(),
             SonarResultType::ContextAccountsOnlyValidation,
+        );
+        log::debug!(
+            "ca_accounts_only_validations:\n{:#?}",
+            ca_accounts_only_validations.clone()
         );
 
         let mut ca_accounts_results = ca_accounts_only_validations
@@ -257,6 +274,10 @@ impl CodeOverhaulSection {
             .iter()
             .map(|result| result.content.clone())
             .collect::<Vec<_>>();
+        log::debug!(
+            "ca_accounts_only_validations:\n{:#?}",
+            ca_accounts_only_validations.clone()
+        );
 
         let mut validations_vec: Vec<String> = vec![];
         validations_vec.append(&mut ca_accounts_results);
