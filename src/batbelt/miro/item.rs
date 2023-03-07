@@ -55,8 +55,9 @@ impl MiroItem {
 
     pub async fn get_items_on_board(
         miro_item_type: Option<MiroItemType>,
+        cursor: Option<String>,
     ) -> Result<reqwest::Response, MiroError> {
-        api::get_items_on_board(miro_item_type).await
+        api::get_items_on_board(miro_item_type, cursor).await
     }
 
     pub async fn get_specific_item_on_board(item_id: &str) -> Result<reqwest::Response, MiroError> {
@@ -105,7 +106,10 @@ mod api {
         MiroConfig::parse_response_from_miro(response)
     }
 
-    pub async fn get_items_on_board(miro_item_type: Option<MiroItemType>) -> MiroApiResult {
+    pub async fn get_items_on_board(
+        miro_item_type: Option<MiroItemType>,
+        cursor: Option<String>,
+    ) -> MiroApiResult {
         let MiroConfig {
             access_token,
             board_id,
@@ -115,11 +119,23 @@ mod api {
         let url = if let Some(item_type) = miro_item_type {
             let item_type_string = item_type.to_string();
             format!(
-                "https://api.miro.com/v2/boards/{board_id}/items?limit=50&type={}",
-                item_type_string
+                "https://api.miro.com/v2/boards/{board_id}/items?limit=50&type={}{}",
+                item_type_string,
+                if cursor.is_some() {
+                    format!("&cursor={}", cursor.unwrap())
+                } else {
+                    "".to_string()
+                }
             )
         } else {
-            format!("https://api.miro.com/v2/boards/{board_id}/items?limit=50",)
+            format!(
+                "https://api.miro.com/v2/boards/{board_id}/items?limit=50{}",
+                if cursor.is_some() {
+                    format!("&cursor={}", cursor.unwrap())
+                } else {
+                    "".to_string()
+                }
+            )
         };
         let response = client
             .get(url)

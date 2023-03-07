@@ -307,19 +307,6 @@ pub mod helpers {
     use crate::batbelt::miro::MiroItemType;
 
     use super::*;
-    pub async fn get_accounts_frame_id() -> Result<String, MiroError> {
-        let response = MiroItem::get_items_on_board(Some(MiroItemType::Frame)).await?;
-        let response = response.text().await.unwrap();
-        let value: serde_json::Value =
-            serde_json::from_str(&response).expect("JSON was not well-formatted");
-        let frames = value["data"].as_array().unwrap();
-        let accounts_frame_id = frames
-            .iter()
-            .find(|f| f["data"]["title"] == "Accounts")
-            .unwrap()["id"]
-            .to_string();
-        Ok(accounts_frame_id.replace('\"', ""))
-    }
 
     // pub fn get_data_for_snapshots(
     //     co_file_string: String,
