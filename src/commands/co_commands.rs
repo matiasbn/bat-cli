@@ -15,7 +15,7 @@ use colored::Colorize;
 use error_stack::{FutureExt, Report, ResultExt};
 
 use crate::batbelt::metadata::miro_metadata::{SignerInfo, SignerType};
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MiroMetadata};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser, MiroMetadata};
 use crate::batbelt::miro::connector::ConnectorOptions;
 use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
 use crate::batbelt::miro::image::MiroImage;
@@ -144,9 +144,9 @@ impl CodeOverhaulCommand {
                     };
 
                     let signer_title = if is_validated {
-                        format!("Validated signer:\n\n <strong>{}</strong>", signer.name)
+                        format!("Validated signer:<br> <strong>{}</strong>", signer.name)
                     } else {
-                        format!("Not validated signer:\n\n <strong>{}</strong>", signer.name)
+                        format!("Not validated signer:<br> <strong>{}</strong>", signer.name)
                     };
 
                     signers_info.push(SignerInfo {
@@ -289,9 +289,11 @@ impl CodeOverhaulCommand {
                 .update_code_overhaul_metadata()
                 .change_context(CommandError)?;
 
-            GitCommit::UpdateMetadataJson
-                .create_commit()
-                .change_context(CommandError)?;
+            GitCommit::UpdateMetadataJson {
+                bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
+            }
+            .create_commit()
+            .change_context(CommandError)?;
 
             println!("Connecting signers to entrypoint");
             for signer_miro_ids in signers_info {

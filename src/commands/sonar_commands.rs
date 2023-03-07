@@ -1,4 +1,4 @@
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser};
 
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
@@ -69,64 +69,26 @@ impl SonarCommand {
         .print_interactive()
         .change_context(CommandError)?;
 
-        SonarSpecificCommand::SourceCode.execute_source_code()?;
-        SonarSpecificCommand::ContextAccounts.execute_context_accounts()?;
-        SonarSpecificCommand::EntryPoints.execute_entry_points()?;
-        SonarSpecificCommand::Traits.execute_traits()?;
-        SonarSpecificCommand::FunctionDependencies.execute_function_dependencies()?;
+        self.execute_source_code()?;
+        self.execute_context_accounts()?;
+        self.execute_entry_points()?;
+        self.execute_traits()?;
+        self.execute_function_dependencies()?;
 
         let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         bat_metadata.miro = miro_metadata;
         bat_metadata.initialized = true;
         bat_metadata.save_metadata().change_context(CommandError)?;
 
-        GitCommit::UpdateMetadataJson
-            .create_commit()
-            .change_context(CommandError)?;
-
-        Ok(())
-    }
-}
-
-#[derive(
-    Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
-)]
-pub enum SonarSpecificCommand {
-    #[default]
-    SourceCode,
-    ContextAccounts,
-    EntryPoints,
-    Traits,
-    FunctionDependencies,
-}
-
-impl BatEnumerator for SonarSpecificCommand {}
-
-impl BatCommandEnumerator for SonarSpecificCommand {
-    fn execute_command(&self) -> CommandResult<()> {
-        match self {
-            SonarSpecificCommand::SourceCode => self.execute_source_code()?,
-            SonarSpecificCommand::ContextAccounts => self.execute_context_accounts()?,
-            SonarSpecificCommand::EntryPoints => self.execute_entry_points()?,
-            SonarSpecificCommand::Traits => self.execute_traits()?,
-            SonarSpecificCommand::FunctionDependencies => self.execute_function_dependencies()?,
+        GitCommit::UpdateMetadataJson {
+            bat_metadata_commit: BatMetadataCommit::RunSonarMetadataCommit,
         }
-        GitCommit::UpdateMetadataJson
-            .create_commit()
-            .change_context(CommandError)?;
+        .create_commit()
+        .change_context(CommandError)?;
+
         Ok(())
     }
 
-    fn check_metadata_is_initialized(&self) -> bool {
-        false
-    }
-
-    fn check_correct_branch(&self) -> bool {
-        true
-    }
-}
-
-impl SonarSpecificCommand {
     fn execute_source_code(&self) -> Result<(), CommandError> {
         BatSonarInteractive::GetSourceCodeMetadata
             .print_interactive()

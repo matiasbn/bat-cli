@@ -61,6 +61,23 @@ pub type MetadataResult<T> = Result<T, MetadataError>;
 pub type MetadataId = String;
 
 #[derive(Serialize, Deserialize, Clone)]
+pub enum BatMetadataCommit {
+    RunSonarMetadataCommit,
+    MiroMetadataCommit,
+}
+
+impl BatMetadataCommit {
+    pub fn get_commit_message(&self) -> String {
+        match self {
+            BatMetadataCommit::RunSonarMetadataCommit => {
+                "metadata: bat-cli sonar executed".to_string()
+            }
+            BatMetadataCommit::MiroMetadataCommit => "metadata: miro metadata updated".to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct BatMetadata {
     pub initialized: bool,
     pub source_code: SourceCodeMetadata,
