@@ -1,8 +1,11 @@
-use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
-use crate::batbelt::parser::ParserError;
+use crate::batbelt::metadata::structs_source_code_metadata::{
+    StructMetadataType, StructSourceCodeMetadata,
+};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
+use crate::batbelt::parser::{ParserError, ParserResult};
 use crate::batbelt::sonar::SonarResult;
-use error_stack::{Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -56,5 +59,83 @@ impl SolanaAccountType {
         }
 
         Ok(Self::Other)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct SolanaAccountParserAccount {
+    pub account_name: String,
+    pub account_type: String,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct SolanaAccountParser {
+    pub solana_account_type: SolanaAccountType,
+    pub account_struct_name: String,
+    pub accounts: Vec<SolanaAccountParserAccount>,
+}
+
+impl SolanaAccountParser {
+    pub fn new_from_struct_name_and_solana_account_type(
+        account_struct_name: String,
+        solana_account_type: SolanaAccountType,
+    ) -> ParserResult<Self> {
+        let mut new_solana_account_parser = Self {
+            solana_account_type,
+            account_struct_name,
+            accounts: vec![],
+        };
+        match solana_account_type {
+            SolanaAccountType::ProgramStateAccount => {
+                new_solana_account_parser.parse_program_state_account()?;
+            }
+            _ => unimplemented!(),
+        }
+        Ok(new_solana_account_parser)
+    }
+
+    fn parse_program_state_account(&mut self) -> ParserResult<()> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+        return match bat_metadata
+            .source_code
+            .structs_source_code
+            .into_iter()
+            .find(|struct_sc| {
+                struct_sc.struct_type == StructMetadataType::SolanaAccount
+                    && struct_sc.name == self.account_struct_name
+            }) {
+            None => Err(Report::new(ParserError).attach_printable(format!(
+                "No Solana Account was found with name {}",
+                self.account_struct_name
+            ))),
+            Some(struct_metadata) => {
+                let account_param_regex = Regex::new(r"pub [A-Za-z0-9_]+: [\w]+,")
+                    .into_report()
+                    .change_context(ParserError)?;
+                let struct_metadata_content = struct_metadata
+                    .to_source_code_parser(None)
+                    .get_source_code_content();
+                let account_vec = struct_metadata_content
+                    .lines()
+                    .filter_map(|line| {
+                        if account_param_regex.is_match(line) {
+                            let mut line_split = line
+                                .trim()
+                                .trim_end_matches(",")
+                                .trim_start_matches("pub ")
+                                .split(": ");
+                            Some(SolanaAccountParserAccount {
+                                account_name: line_split.next().unwrap().to_string(),
+                                account_type: line_split.next().unwrap().to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                self.accounts = account_vec;
+                Ok(())
+            }
+        };
     }
 }

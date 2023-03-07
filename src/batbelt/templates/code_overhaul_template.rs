@@ -8,6 +8,7 @@ use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlac
 };
 use crate::batbelt::templates::{TemplateError, TemplateResult};
 
+use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 
@@ -155,6 +156,7 @@ impl CodeOverhaulSection {
 
         let close_accounts = context_accounts_metadata
             .context_accounts_info
+            .clone()
             .into_iter()
             .filter(|ca_info| ca_info.is_close)
             .collect::<Vec<_>>();
@@ -163,6 +165,39 @@ impl CodeOverhaulSection {
                 "- Closes `{}`[{}]. Rent exemption goes to {:#?}",
                 acc.account_name, acc.account_struct_name, acc.rent_exemption_account
             ))
+        }
+
+        let mut_program_state_accounts = context_accounts_metadata
+            .context_accounts_info
+            .into_iter()
+            .filter(|ca_info| {
+                ca_info.is_mut
+                    && ca_info.solana_account_type == SolanaAccountType::ProgramStateAccount
+            });
+        for mut_program_state_acc in mut_program_state_accounts {
+            let solana_acc_parser =
+                SolanaAccountParser::new_from_struct_name_and_solana_account_type(
+                    mut_program_state_acc.clone().account_struct_name,
+                    mut_program_state_acc.clone().solana_account_type,
+                )
+                .change_context(TemplateError)?;
+            state_changes_content_vec.push(format!(
+                "- Updates `{}`[{}]:\n{}",
+                mut_program_state_acc.clone().account_name,
+                mut_program_state_acc.clone().account_struct_name,
+                solana_acc_parser
+                    .accounts
+                    .clone()
+                    .into_iter()
+                    .map(|acc_parser| format!(
+                        "\t- `{}.{}`[{}]",
+                        mut_program_state_acc.clone().account_name,
+                        acc_parser.account_name,
+                        acc_parser.account_type
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ));
         }
 
         state_changes_content_vec.push(format!(
