@@ -77,7 +77,7 @@ impl CodeOverhaulCommand {
             );
             let suggestion_message = format!(
                 "Run  {} to deploy the code-overhaul frames",
-                "bat-cli miro deploy-co".green()
+                "bat-cli miro deploy-co-frames".green()
             );
             return Err(Report::new(CommandError)
                 .attach_printable(message)
