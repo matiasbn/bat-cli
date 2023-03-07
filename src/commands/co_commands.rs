@@ -144,9 +144,9 @@ impl CodeOverhaulCommand {
                     };
 
                     let signer_title = if is_validated {
-                        format!("Validated signer:\n\n <strong>{}</strong>", signer.name)
+                        format!("Validated signer:<br> <strong>{}</strong>", signer.name)
                     } else {
-                        format!("Not validated signer:\n\n <strong>{}</strong>", signer.name)
+                        format!("Not validated signer:<br> <strong>{}</strong>", signer.name)
                     };
 
                     signers_info.push(SignerInfo {
