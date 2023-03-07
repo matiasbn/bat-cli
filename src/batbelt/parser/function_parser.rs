@@ -1,6 +1,6 @@
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId, MetadataResult};
 
 use crate::batbelt::parser::ParserError;
 
@@ -41,9 +41,10 @@ impl FunctionParser {
         function_metadata: FunctionSourceCodeMetadata,
         content: String,
     ) -> Result<Self, ParserError> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         let mut new_function_parser = Self {
             name,
-            function_metadata,
+            function_metadata: function_metadata.clone(),
             content,
             signature: "".to_string(),
             body: "".to_string(),
@@ -56,50 +57,66 @@ impl FunctionParser {
         new_function_parser.get_function_parameters()?;
         log::debug!("new_function_parser:\n{:#?}", new_function_parser);
         log::debug!("new_function_body:\n{}", new_function_parser.body);
-        new_function_parser.get_function_dependencies()?;
-        log::debug!(
-            "new_function_parser_with_dependencies:\n{:#?}",
-            new_function_parser
-        );
-        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
-        let function_dependencies_metadata = FunctionDependenciesMetadata::new(
-            new_function_parser.name.clone(),
-            BatMetadata::create_metadata_id(),
-            new_function_parser.function_metadata.metadata_id.clone(),
-            new_function_parser
-                .dependencies
-                .clone()
-                .into_iter()
-                .map(|func_dep| {
-                    bat_metadata
-                        .source_code
-                        .get_function_by_id(func_dep)
-                        .change_context(ParserError)
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .map(|func_meta| FunctionDependencyInfo {
-                    function_name: func_meta.name.clone(),
-                    function_metadata_id: func_meta.metadata_id,
-                })
-                .collect::<Vec<_>>(),
-            new_function_parser.external_dependencies.clone(),
-        );
-        function_dependencies_metadata
-            .update_metadata_file()
-            .change_context(ParserError)?;
-        for function_dependency in new_function_parser.clone().dependencies {
-            if let Err(_) = bat_metadata
-                .get_functions_dependencies_metadata_by_function_metadata_id(
-                    function_dependency.clone(),
-                )
-                .change_context(ParserError)
-            {
-                let function_metadata = bat_metadata
-                    .source_code
-                    .get_function_by_id(function_dependency.clone())
+        match bat_metadata.get_functions_dependencies_metadata_by_function_metadata_id(
+            function_metadata.metadata_id,
+        ) {
+            Ok(function_dep_metadata) => {
+                new_function_parser.dependencies = function_dep_metadata
+                    .clone()
+                    .dependencies
+                    .into_iter()
+                    .map(|func_dep| func_dep.function_metadata_id.clone())
+                    .collect();
+                new_function_parser.external_dependencies =
+                    function_dep_metadata.clone().external_dependencies;
+                return Ok(new_function_parser);
+            }
+            Err(_) => {
+                new_function_parser.get_function_dependencies()?;
+                log::debug!(
+                    "new_function_parser_with_dependencies:\n{:#?}",
+                    new_function_parser
+                );
+                let function_dependencies_metadata = FunctionDependenciesMetadata::new(
+                    new_function_parser.name.clone(),
+                    BatMetadata::create_metadata_id(),
+                    new_function_parser.function_metadata.metadata_id.clone(),
+                    new_function_parser
+                        .dependencies
+                        .clone()
+                        .into_iter()
+                        .map(|func_dep| {
+                            bat_metadata
+                                .source_code
+                                .get_function_by_id(func_dep)
+                                .change_context(ParserError)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
+                        .map(|func_meta| FunctionDependencyInfo {
+                            function_name: func_meta.name.clone(),
+                            function_metadata_id: func_meta.metadata_id,
+                        })
+                        .collect::<Vec<_>>(),
+                    new_function_parser.external_dependencies.clone(),
+                );
+                function_dependencies_metadata
+                    .update_metadata_file()
                     .change_context(ParserError)?;
-                FunctionParser::new_from_metadata(function_metadata)?;
+                for function_dependency in new_function_parser.clone().dependencies {
+                    if let Err(_) = bat_metadata
+                        .get_functions_dependencies_metadata_by_function_metadata_id(
+                            function_dependency.clone(),
+                        )
+                        .change_context(ParserError)
+                    {
+                        let function_metadata = bat_metadata
+                            .source_code
+                            .get_function_by_id(function_dependency.clone())
+                            .change_context(ParserError)?;
+                        FunctionParser::new_from_metadata(function_metadata)?;
+                    }
+                }
             }
         }
         Ok(new_function_parser)

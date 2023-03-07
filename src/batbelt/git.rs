@@ -425,7 +425,7 @@ impl GitCommit {
                 "notes: open_questions, finding_candidates and threat_modeling notes updated"
                     .to_string()
             }
-            GitCommit::UpdateMetadataJson => "metadata: metadata.json updated".to_string(),
+            GitCommit::UpdateMetadataJson => "metadata: BatMetadata.json updated".to_string(),
         };
         Ok(commit_string)
     }

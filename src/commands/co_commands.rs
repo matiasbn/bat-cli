@@ -17,11 +17,12 @@ use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerInfo, SignerType};
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MiroMetadata};
 use crate::batbelt::miro::connector::ConnectorOptions;
-use crate::batbelt::miro::frame::MiroFrame;
+use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
+use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeScreenshotOptions;
 use crate::commands::miro_commands::MiroCommand;
 use regex::Regex;
@@ -69,17 +70,17 @@ impl CodeOverhaulCommand {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         if bat_metadata.miro.code_overhaul.is_empty() {
-            println!("Miro code-overhaul's metadata is not initialized yet.");
-            println!(
-                "This action is {} to proceed with this function.",
+            let message = format!(
+                "Miro code-overhaul's metadata is not initialized yet.\n \
+            This action is {} to proceed with this function.",
                 "required".red()
             );
             let suggestion_message = format!(
                 "Run  {} to deploy the code-overhaul frames",
-                "bat-cli miro code-overhaul".green()
+                "bat-cli miro deploy-co".green()
             );
             return Err(Report::new(CommandError)
-                .attach_printable("Miro metadata incomplete")
+                .attach_printable(message)
                 .attach(Suggestion(suggestion_message)));
         }
 
@@ -91,11 +92,8 @@ impl CodeOverhaulCommand {
         let selection = BatDialoguer::select(prompt_text, started_files_names.clone(), None)?;
         let selected_file_name = started_files_names[selection].clone();
         let entrypoint_name = selected_file_name.trim_end_matches(".md").to_string();
-        let started_co_bat_file = BatFile::CodeOverhaulStarted {
-            file_name: selected_file_name.clone(),
-        };
 
-        let (co_miro_frame, mut co_metadata) =
+        let (co_miro_frame, mut miro_co_metadata) =
             match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone()) {
                 Ok(co_meta) => {
                     let frame_id = co_meta.miro_frame_id.clone();
@@ -110,72 +108,32 @@ impl CodeOverhaulCommand {
                     (miro_frame, co_meta)
                 }
                 Err(_) => {
-                    println!(
-                        "Miro Metadata not found for entrypoint {}",
-                        entrypoint_name.green()
+                    let message = format!(
+                        "Miro code-overhaul's metadata not found for {}.\n \
+            This action is {} to proceed with this function.",
+                        entrypoint_name,
+                        "required".red()
                     );
-                    let miro_frame = MiroFrame::prompt_select_frame()
-                        .await
-                        .change_context(CommandError)?;
-                    let miro_co_metadata = MiroCodeOverhaulMetadata {
-                        metadata_id: BatMetadata::create_metadata_id(),
-                        entry_point_name: entrypoint_name.clone(),
-                        miro_frame_id: miro_frame.item_id.clone(),
-                        images_deployed: false,
-                        entry_point_image_id: "".to_string(),
-                        context_accounts_image_id: "".to_string(),
-                        validations_image_id: "".to_string(),
-                        handler_image_id: "".to_string(),
-                        signers: vec![],
-                    };
-                    miro_co_metadata
-                        .update_code_overhaul_metadata()
-                        .change_context(CommandError)?;
-                    (miro_frame, miro_co_metadata)
+                    let suggestion_message = format!(
+                        "Run  {} to deploy the code-overhaul frames",
+                        "bat-cli miro deploy-co".green()
+                    );
+                    return Err(Report::new(CommandError)
+                        .attach_printable(message)
+                        .attach(Suggestion(suggestion_message)));
                 }
             };
-        if !co_metadata.images_deployed {
-            // check that the signers are finished
-            let started_co_content = started_co_bat_file
-                .read_content(false)
-                .change_context(CommandError)?;
-            if started_co_content.contains(
-                &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
-            ) {
-                return Err(Report::new(CommandError).attach_printable(
-                    "Please complete the signers description before deploying to Miro".to_string(),
-                ));
-            }
+        if !miro_co_metadata.images_deployed {
             let entrypoint_parser =
                 EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
-            let signers_section_regex = Regex::new(r"# Signers:[\s\S]*?#").unwrap();
-            let signers = signers_section_regex
-                .find(&started_co_content)
-                .ok_or(CommandError)
-                .into_report()?
-                .as_str()
-                .to_string()
-                .lines()
-                .filter_map(|line| {
-                    if line.starts_with("- ") {
-                        let mut line_split = line.trim_start_matches("- ").split(": ");
-                        Some((
-                            line_split.next().unwrap().to_string(),
-                            line_split.next().unwrap().to_string(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            log::debug!("signers_section: \n{:#?}", signers);
-
+            let co_parser = CodeOverhaulParser::new_from_entry_point_name(entrypoint_name.clone())
+                .change_context(CommandError)?;
             let mut signers_info: Vec<SignerInfo> = vec![];
-            if !signers.is_empty() {
-                for (signer_name, _signer_description) in signers.into_iter() {
+            if !co_parser.signers.is_empty() {
+                for signer in co_parser.signers.clone().into_iter() {
                     let prompt_text = format!(
                         "is the signer {} a validated signer?",
-                        signer_name.to_string().red()
+                        signer.name.to_string().red()
                     );
                     let is_validated =
                         BatDialoguer::select_yes_or_no(prompt_text).change_context(CommandError)?;
@@ -186,9 +144,9 @@ impl CodeOverhaulCommand {
                     };
 
                     let signer_title = if is_validated {
-                        format!("Validated signer:\n\n {}", signer_name)
+                        format!("Validated signer:\n\n <strong>{}</strong>", signer.name)
                     } else {
-                        format!("Not validated signer:\n\n {}", signer_name)
+                        format!("Not validated signer:\n\n <strong>{}</strong>", signer.name)
                     };
 
                     signers_info.push(SignerInfo {
@@ -249,31 +207,16 @@ impl CodeOverhaulCommand {
                     signer_type: signer.signer_type,
                 }
             }
-            co_metadata.signers = signers_info.clone();
-
-            let _options = SourceCodeScreenshotOptions {
-                include_path: true,
-                offset_to_start_line: true,
-                filter_comments: true,
-                font_size: Some(20),
-                filters: None,
-                show_line_number: true,
-            };
-            let _co_options = SourceCodeScreenshotOptions {
-                include_path: false,
-                offset_to_start_line: false,
-                filter_comments: false,
-                font_size: Some(20),
-                filters: None,
-                show_line_number: false,
-            };
+            miro_co_metadata.signers = signers_info.clone();
 
             // Deploy images
 
-            let (entrypoint_x_position, entrypoint_y_position) = (1300, 250);
-            let (co_x_position, co_y_position) = (2200, 350);
-            let (validations_x_position, validations_y_position) = (3000, 500);
-            let (handler_x_position, handler_y_position) = (2900, 1400);
+            // let (entrypoint_x_position, entrypoint_y_position) = (1300, 250);
+            // let (handler_x_position, handler_y_position) = (2900, 1400);
+            let (entrypoint_x_position, entrypoint_y_position) =
+                MiroCodeOverhaulConfig::EntryPoint.get_positions();
+            let (handler_x_position, handler_y_position) =
+                MiroCodeOverhaulConfig::Handler.get_positions();
 
             match entrypoint_parser.handler.clone() {
                 None => {}
@@ -300,7 +243,7 @@ impl CodeOverhaulCommand {
                         )
                         .await
                         .change_context(CommandError)?;
-                    co_metadata.handler_image_id = handler_image.item_id;
+                    miro_co_metadata.handler_image_id = handler_image.item_id;
                 }
             }
 
@@ -325,115 +268,30 @@ impl CodeOverhaulCommand {
                 )
                 .await
                 .change_context(CommandError)?;
-            co_metadata.entry_point_image_id = entrypoint_function_image.item_id.clone();
 
-            let validations_section = CodeOverhaulSection::Validations
-                .get_section_content(Some(entrypoint_parser.clone()))
-                .change_context(CommandError)?;
-            let val_sec_formatted = validations_section
-                .lines()
-                .filter_map(|line| {
-                    if line.trim() == "# Validations:" {
-                        return Some("/// Validations".to_string());
-                    };
-                    if line.trim() == "- ```rust" || line.trim() == "```" {
-                        return Some("".to_string());
-                    }
-                    Some(line.to_string())
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            let auditor_figures_path = BatFolder::AuditorFigures
-                .get_path(false)
-                .change_context(CommandError)?;
+            miro_co_metadata.entry_point_image_id = entrypoint_function_image.item_id.clone();
 
-            let val_sec_sc_path = silicon::create_figure(
-                &val_sec_formatted,
-                &auditor_figures_path,
-                "validations",
-                0,
-                None,
-                false,
-            );
-
-            let mut validations_miro_image =
-                MiroImage::new_from_file_path(&val_sec_sc_path, &co_miro_frame.item_id);
-            validations_miro_image
-                .deploy()
+            let validations_miro_image = co_parser
+                .get_validations_image_for_miro_co_frame(co_miro_frame.clone())
                 .await
                 .change_context(CommandError)?;
 
-            fs::remove_file(&val_sec_sc_path)
-                .into_report()
+            let ca_miro_image = co_parser
+                .get_context_accounts_image_for_miro_co_frame(co_miro_frame.clone())
+                .await
                 .change_context(CommandError)?;
 
-            let val_miro_item = MiroItem::new(
-                &validations_miro_image.item_id,
-                &co_miro_frame.item_id,
-                validations_x_position,
-                validations_y_position,
-                MiroItemType::Image,
-            );
-            val_miro_item.update_item_parent_and_position().await;
+            miro_co_metadata.validations_image_id = validations_miro_image.item_id.clone();
+            miro_co_metadata.context_accounts_image_id = ca_miro_image.item_id.clone();
+            miro_co_metadata.images_deployed = true;
 
-            co_metadata.validations_image_id = validations_miro_image.item_id.clone();
-
-            let context_accounts_section = CodeOverhaulSection::ContextAccounts
-                .get_section_content(Some(entrypoint_parser.clone()))
-                .change_context(CommandError)?;
-            let ca_formatted = context_accounts_section
-                .lines()
-                .filter_map(|line| {
-                    if line.trim() == "# Context accounts:" {
-                        return Some("/// Context accounts".to_string());
-                    };
-                    if line.trim() == "- ```rust" || line.trim() == "```" {
-                        return None;
-                    }
-                    Some(line.to_string())
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            let ca_sc_path = silicon::create_figure(
-                &ca_formatted,
-                &auditor_figures_path,
-                "context_accounts",
-                0,
-                None,
-                false,
-            );
-
-            let mut ca_miro_image =
-                MiroImage::new_from_file_path(&ca_sc_path, &co_miro_frame.item_id);
-            ca_miro_image.deploy().await.change_context(CommandError)?;
-            let ca_miro_item = MiroItem::new(
-                &ca_miro_image.item_id,
-                &co_miro_frame.item_id,
-                co_x_position,
-                co_y_position,
-                MiroItemType::Image,
-            );
-            ca_miro_item.update_item_parent_and_position().await;
-
-            fs::remove_file(&ca_sc_path)
-                .into_report()
-                .change_context(CommandError)?;
-
-            co_metadata.context_accounts_image_id = ca_miro_image.item_id.clone();
-            co_metadata.images_deployed = true;
-            co_metadata
+            miro_co_metadata
                 .update_code_overhaul_metadata()
                 .change_context(CommandError)?;
 
             GitCommit::UpdateMetadataJson
                 .create_commit()
                 .change_context(CommandError)?;
-            // Connect images
-            // entrypoint_miro_image.update_position(1300, 250).await;
-            // co_miro_image.update_position(2200, 350).await;
-            // validations_miro_image.update_position(3000, 500).await;
-            // handler_miro_image.update_position(2900, 1400).await;
 
             println!("Connecting signers to entrypoint");
             for signer_miro_ids in signers_info {
@@ -446,7 +304,7 @@ impl CodeOverhaulCommand {
                 .change_context(CommandError)?;
                 batbelt::miro::connector::create_connector(
                     &signer_miro_ids.sticky_note_id,
-                    &co_metadata.entry_point_image_id,
+                    &miro_co_metadata.entry_point_image_id,
                     Some(ConnectorOptions {
                         start_x_position: "100%".to_string(),
                         start_y_position: "50%".to_string(),
@@ -458,25 +316,29 @@ impl CodeOverhaulCommand {
                 .change_context(CommandError)?;
             }
 
-            println!("Connecting snapshots in Miro");
+            println!("Connecting entrypoint screenshot to context accounts screenshot in Miro");
             batbelt::miro::connector::create_connector(
-                &co_metadata.entry_point_image_id,
-                &co_metadata.context_accounts_image_id,
+                &miro_co_metadata.entry_point_image_id,
+                &miro_co_metadata.context_accounts_image_id,
                 None,
             )
             .await
             .change_context(CommandError)?;
+
+            println!("Connecting context accounts screenshot to validations screenshot in Miro");
             batbelt::miro::connector::create_connector(
-                &co_metadata.context_accounts_image_id,
-                &co_metadata.validations_image_id,
+                &miro_co_metadata.context_accounts_image_id,
+                &miro_co_metadata.validations_image_id,
                 None,
             )
             .await
             .change_context(CommandError)?;
-            if !co_metadata.handler_image_id.is_empty() {
+
+            if !miro_co_metadata.handler_image_id.is_empty() {
+                println!("validations screenshot to handler screenshot in Miro");
                 batbelt::miro::connector::create_connector(
-                    &co_metadata.validations_image_id,
-                    &co_metadata.handler_image_id,
+                    &miro_co_metadata.validations_image_id,
+                    &miro_co_metadata.handler_image_id,
                     None,
                 )
                 .await
@@ -484,6 +346,7 @@ impl CodeOverhaulCommand {
             }
         }
         // // Deploy mut_accounts
+
         // if mut_accounts.len() > 0 {
         //     let structs_section = metadata_markdown
         //         .get_section(&MetadataSection::Structs.to_sentence_case())

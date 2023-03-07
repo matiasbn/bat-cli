@@ -17,7 +17,7 @@ use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadat
 
 use crate::batbelt::parser::ParserError;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EntrypointParser {
     pub name: String,
     pub handler: Option<FunctionSourceCodeMetadata>,

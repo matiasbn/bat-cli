@@ -91,50 +91,6 @@ impl SourceCodeParser {
         content_lines
     }
 
-    pub fn get_entrypoints_sourcecode() -> Result<Vec<Self>, ParserError> {
-        let lib_file_path =
-            batbelt::path::get_file_path(BatFile::ProgramLib, false).change_context(ParserError)?;
-        let entrypoints = BatSonar::get_entrypoints_results().change_context(ParserError)?;
-        let sourcecodes = entrypoints
-            .results
-            .into_iter()
-            .map(|res| {
-                SourceCodeParser::new(
-                    res.name,
-                    lib_file_path.clone(),
-                    res.start_line_index,
-                    res.end_line_index,
-                )
-            })
-            .collect::<Vec<_>>();
-        Ok(sourcecodes)
-    }
-
-    // pub fn new_from_metadata_data(name: &str, section: &str, subsection: &str) -> Self {
-    //     let metadata_path = batbelt::path::get_file_path(FilePathType::Metadata, true);
-    //     let metadata_markdown = MarkdownFile::new(&metadata_path);
-    //     let section = metadata_markdown.get_section(section).unwrap();
-    //     let subsection = section.borrow().get_subsection_by_title(subsection);
-    //     let source_code_metadata = subsection.borrow().get_subsection_by_title(name);
-    //     let path = Self::parse_metadata_info_section(
-    //         &source_code_metadata.borrow().content,
-    //         MetadataContent::Path.get_prefix(),
-    //     );
-    //     let start_line_index: usize = Self::parse_metadata_info_section(
-    //         &source_code_metadata.borrow().content,
-    //         MetadataContent::StartLineIndex.get_prefix(),
-    //     )
-    //     .parse()
-    //     .unwrap();
-    //     let end_line_index: usize = Self::parse_metadata_info_section(
-    //         &source_code_metadata.borrow().content,
-    //         MetadataContent::EndLineIndex.get_prefix(),
-    //     )
-    //     .parse()
-    //     .unwrap();
-    //     SourceCodeMetadata::new(name.to_string(), path, start_line_index, end_line_index)
-    // }
-
     pub fn create_screenshot(
         &self,
         options: SourceCodeScreenshotOptions,
@@ -306,17 +262,6 @@ impl SourceCodeParser {
         fs::remove_file(png_path).unwrap();
         miro_item.update_item_parent_and_position().await;
         Ok(screenshot_image)
-    }
-
-    fn parse_metadata_info_section(metadata_info_content: &str, section: &str) -> String {
-        let path = metadata_info_content
-            .lines()
-            .find(|line| line.contains(section))
-            .unwrap()
-            .replace(section, "")
-            .trim()
-            .to_string();
-        path
     }
 }
 

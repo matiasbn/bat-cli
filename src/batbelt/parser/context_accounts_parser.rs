@@ -13,6 +13,7 @@ pub struct CAAccountAttributeInfo {
     pub is_close: bool,
     pub rent_exemption_account: String,
     pub seeds: Option<Vec<String>>,
+    pub validations: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +40,7 @@ pub struct CAAccountParser {
     pub is_close: bool,
     pub seeds: Option<Vec<String>>,
     pub rent_exemption_account: String,
+    pub validations: Vec<String>,
 }
 
 impl CAAccountParser {
@@ -56,6 +58,7 @@ impl CAAccountParser {
             is_close: acc_attribute.is_close,
             seeds: acc_attribute.seeds,
             rent_exemption_account: acc_attribute.rent_exemption_account,
+            validations: acc_attribute.validations,
         }
     }
 
@@ -141,6 +144,7 @@ impl CAAccountParser {
             is_close: false,
             rent_exemption_account: "".to_string(),
             seeds: None,
+            validations: vec![],
         };
         if !sonar_result_content.contains("#[account(") {
             return Ok(account_info);
@@ -203,7 +207,7 @@ impl CAAccountParser {
         let rent_exemption_close_regex = Regex::new(r"close = [A-Za-z0-9_.]+")
             .into_report()
             .change_context(ParserError)?;
-        if rent_exemption_close_regex.is_match(sonar_result_content) {
+        if rent_exemption_close_regex.is_match(sonar_result_content.clone()) {
             account_info.is_close = true;
             account_info.is_init = false;
             let close_match = rent_exemption_close_regex
@@ -215,6 +219,40 @@ impl CAAccountParser {
             account_info.rent_exemption_account =
                 close_match.split(" = ").last().unwrap().to_string();
         }
+
+        let constraints_regex = Regex::new(r"constraint = [\sA-Za-z0-9()?._= @:><!&{}]+[,\n]?")
+            .into_report()
+            .change_context(ParserError)?;
+        if constraints_regex.is_match(sonar_result_content.clone()) {
+            let mut matches = constraints_regex
+                .find_iter(sonar_result_content.clone())
+                .map(|reg_match| reg_match.as_str().trim_end_matches(")").trim().to_string())
+                .collect::<Vec<_>>();
+            account_info.validations.append(&mut matches);
+        }
+
+        let has_one_regex = Regex::new(r"has_one = [\sA-Za-z0-9()?._= @:><!&{}]+[,\n]?")
+            .into_report()
+            .change_context(ParserError)?;
+        if has_one_regex.is_match(sonar_result_content.clone()) {
+            let mut matches = has_one_regex
+                .find_iter(sonar_result_content.clone())
+                .map(|reg_match| reg_match.as_str().trim_end_matches(")").trim().to_string())
+                .collect::<Vec<_>>();
+            account_info.validations.append(&mut matches);
+        }
+
+        let address_regex = Regex::new(r"address = [\sA-Za-z0-9()?._= @:><!&{}]+[,\n]?")
+            .into_report()
+            .change_context(ParserError)?;
+        if address_regex.is_match(sonar_result_content.clone()) {
+            let mut matches = address_regex
+                .find_iter(sonar_result_content.clone())
+                .map(|reg_match| reg_match.as_str().trim_end_matches(")").trim().to_string())
+                .collect::<Vec<_>>();
+            account_info.validations.append(&mut matches);
+        }
+
         Ok(account_info)
     }
 

@@ -51,7 +51,7 @@ use crate::config::BatAuditorConfig;
 pub enum MiroCommand {
     /// Creates the code-overhaul frames
     #[default]
-    CodeOverhaulFrames,
+    DeployCOFrames,
     /// Deploys the entrypoint, context accounts and handler to a Miro frame
     Entrypoint {
         /// select all options as true
@@ -95,7 +95,7 @@ impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
         return match self {
-            MiroCommand::CodeOverhaulFrames => self.code_overhaul_action().await,
+            MiroCommand::DeployCOFrames => self.deploy_co_action().await,
             MiroCommand::Entrypoint { select_all, sorted } => {
                 self.entrypoint_action(*select_all, *sorted).await
             }
@@ -488,61 +488,106 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn code_overhaul_action(&self) -> Result<(), CommandError> {
+    async fn deploy_co_action(&self) -> Result<(), CommandError> {
         println!("Deploying code-overhaul frames to the Miro board");
 
-        let miro_board_frames = MiroFrame::get_frames_from_miro()
-            .await
-            .change_context(CommandError)?;
-
-        let entrypoints_names =
+        let entry_point_names =
             EntrypointParser::get_entrypoint_names(false).change_context(CommandError)?;
 
-        for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
-            let frame_name = format!("co: {}", entrypoint_name);
-            let frame_already_deployed = miro_board_frames
-                .iter()
-                .find(|frame| &frame.title == entrypoint_name);
-
-            let mut miro_co_metadata = MiroCodeOverhaulMetadata {
-                metadata_id: BatMetadata::create_metadata_id(),
-                entry_point_name: entrypoint_name.clone(),
-                miro_frame_id: "".to_string(),
-                images_deployed: false,
-                entry_point_image_id: "".to_string(),
-                context_accounts_image_id: "".to_string(),
-                validations_image_id: "".to_string(),
-                handler_image_id: "".to_string(),
-                signers: vec![],
-            };
-
-            match frame_already_deployed {
-                Some(frame) => {
-                    miro_co_metadata.miro_frame_id = frame.item_id.clone();
-                }
-                None => {
-                    println!("Creating frame in Miro for {}", entrypoint_name.green());
-                    let mut miro_frame =
-                        MiroFrame::new(entrypoint_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
-                    miro_frame.deploy().await.change_context(CommandError)?;
-                    let x_modifier = entrypoint_index as i64 % MIRO_BOARD_COLUMNS;
-                    let y_modifier = entrypoint_index as i64 / MIRO_BOARD_COLUMNS;
-                    let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
-                    let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
-                    miro_frame
-                        .update_position(x_position, y_position)
+        for (entrypoint_index, entrypoint_name) in entry_point_names.iter().enumerate() {
+            match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())
+                .change_context(CommandError)
+            {
+                Ok(mut miro_co_metadata) => {
+                    match MiroFrame::new_from_item_id(&miro_co_metadata.miro_frame_id)
                         .await
-                        .change_context(CommandError)?;
+                        .change_context(CommandError)
+                    {
+                        Ok(miro_frame) => {
+                            println!(
+                                "Frame already deployed for {}, \nurl: {}\n",
+                                entrypoint_name.clone().green(),
+                                MiroFrame::get_frame_url_by_frame_id(&miro_frame.item_id)
+                                    .change_context(CommandError)?
+                            );
+                        }
+                        // the item id is incorrect, is necessary to replace the old metadata
+                        Err(_) => {
+                            println!(
+                                "Incorrect frame deployed for {}, \nurl: {}\nUpdating the Miro metadata\n",
+                                entrypoint_name.clone().red(),
+                                MiroFrame::get_frame_url_by_frame_id(&miro_co_metadata.miro_frame_id)
+                                    .change_context(CommandError)?
+                            );
+                            let new_frame = self
+                                .deploy_miro_frame_for_co(&entrypoint_name, entrypoint_index)
+                                .await?;
+                            let new_co_metadata = MiroCodeOverhaulMetadata {
+                                metadata_id: miro_co_metadata.metadata_id.clone(),
+                                entry_point_name: entrypoint_name.clone(),
+                                miro_frame_id: new_frame.item_id.clone(),
+                                images_deployed: false,
+                                entry_point_image_id: "".to_string(),
+                                context_accounts_image_id: "".to_string(),
+                                validations_image_id: "".to_string(),
+                                handler_image_id: "".to_string(),
+                                signers: vec![],
+                            };
+                            new_co_metadata
+                                .update_code_overhaul_metadata()
+                                .change_context(CommandError)?;
+                        }
+                    }
+                }
+                Err(_) => {
+                    let mut miro_co_metadata = MiroCodeOverhaulMetadata {
+                        metadata_id: BatMetadata::create_metadata_id(),
+                        entry_point_name: entrypoint_name.clone(),
+                        miro_frame_id: "".to_string(),
+                        images_deployed: false,
+                        entry_point_image_id: "".to_string(),
+                        context_accounts_image_id: "".to_string(),
+                        validations_image_id: "".to_string(),
+                        handler_image_id: "".to_string(),
+                        signers: vec![],
+                    };
+
+                    let miro_frame = self
+                        .deploy_miro_frame_for_co(&entrypoint_name, entrypoint_index)
+                        .await?;
+
                     miro_co_metadata.miro_frame_id = miro_frame.item_id.clone();
+                    miro_co_metadata
+                        .update_code_overhaul_metadata()
+                        .change_context(CommandError)?;
                 }
             }
-
-            miro_co_metadata
-                .update_code_overhaul_metadata()
-                .change_context(CommandError)?;
         }
-
+        GitCommit::UpdateMetadataJson
+            .create_commit()
+            .change_context(CommandError)?;
         Ok(())
+    }
+
+    async fn deploy_miro_frame_for_co(
+        &self,
+        entry_point_name: &str,
+        entry_point_index: usize,
+    ) -> CommandResult<MiroFrame> {
+        let frame_name = format!("co: {}", entry_point_name);
+
+        println!("Creating frame in Miro for {}", entry_point_name.green());
+        let mut miro_frame = MiroFrame::new(&frame_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
+        miro_frame.deploy().await.change_context(CommandError)?;
+        let x_modifier = entry_point_index as i64 % MIRO_BOARD_COLUMNS;
+        let y_modifier = entry_point_index as i64 / MIRO_BOARD_COLUMNS;
+        let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
+        let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
+        miro_frame
+            .update_position(x_position, y_position)
+            .await
+            .change_context(CommandError)?;
+        Ok(miro_frame)
     }
 
     fn get_formatted_path(&self, name: String, path: String, start_line_index: usize) -> String {
