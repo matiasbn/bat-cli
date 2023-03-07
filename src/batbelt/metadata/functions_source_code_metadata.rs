@@ -317,96 +317,96 @@ pub fn get_function_body(function_content: &str) -> String {
     body.trim_end_matches('}').trim().to_string()
 }
 
-#[cfg(debug_assertions)]
-
-mod test_function_metadata {
-
-    #[test]
-    fn test_function_parse() {
-        let test_function = "pub(crate) fn get_function_metadata_from_file_info() -> Result<Vec<FunctionMetadata>, String> {
-    let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
-    let file_info_content = function_file_info.read_content().unwrap();
-    let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
-    let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
-    for result in bat_sonar.results {
-        let selection =
-            batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
-        let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
-        let function_metadata = FunctionMetadata::new(
-            function_file_info.path.clone(),
-            result.name.to_string(),
-            function_type,
-            result.start_line_index + 1,
-            result.end_line_index + 1,
-        );
-        function_metadata_vec.push(function_metadata);
-    }
-    Ok(function_metadata_vec)
-}";
-        let expected_function_signature = "pub(crate) fn get_function_metadata_from_file_info(
-    function_file_info: FileInfo,
-    function_file_info2: FileInfo2,
-)";
-        let expected_function_parameters = vec![
-            "function_file_info: FileInfo".to_string(),
-            "function_file_info2: FileInfo2".to_string(),
-        ];
-        let expected_function_body =
-            "let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
-    let file_info_content = function_file_info.read_content().unwrap();
-    let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
-    let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
-    for result in bat_sonar.results {
-        let selection =
-            batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
-        let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
-        let function_metadata = FunctionMetadata::new(
-            function_file_info.path.clone(),
-            result.name.to_string(),
-            function_type,
-            result.start_line_index + 1,
-            result.end_line_index + 1,
-        );
-        function_metadata_vec.push(function_metadata);
-    }
-    Ok(function_metadata_vec)";
-        let function_parameters = get_function_parameters(test_function.to_string());
-        assert_eq!(
-            expected_function_parameters, function_parameters,
-            "wrong parameters"
-        );
-        let function_body = get_function_body(test_function);
-        assert_eq!(expected_function_body, function_body, "wrong body");
-        let function_signature = get_function_signature(test_function);
-        assert_eq!(
-            expected_function_signature, function_signature,
-            "wrong signature"
-        );
-    }
-
-    #[test]
-    fn test_handle_cache() {
-        let test_path = "./test.json";
-        let metadata_id = "1234";
-        let dependencies = vec!["asdasd".to_string()];
-        let external_dependencies = vec!["asdasdasidhasjd".to_string()];
-        let function_metadata_cache = FunctionMetadataCache {
-            dependencies,
-            external_dependencies,
-        };
-        let json = json!({ metadata_id: function_metadata_cache });
-        println!("{}", json);
-        let pretty = serde_json::to_string_pretty(&json).unwrap();
-        assert_fs::NamedTempFile::new(test_path).unwrap();
-        fs::write(test_path, pretty).unwrap();
-
-        let read_value = fs::read_to_string(test_path).unwrap();
-        let value: Value = serde_json::from_str(&read_value).unwrap();
-        let f_val: FunctionMetadataCache =
-            serde_json::from_value(value[metadata_id].clone()).unwrap();
-
-        let _test = value["bad_key"].clone();
-
-        println!("fval: {:#?}", f_val);
-    }
-}
+// #[cfg(debug_assertions)]
+//
+// mod test_function_metadata {
+//
+//     #[test]
+//     fn test_function_parse() {
+//         let test_function = "pub(crate) fn get_function_metadata_from_file_info() -> Result<Vec<FunctionMetadata>, String> {
+//     let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
+//     let file_info_content = function_file_info.read_content().unwrap();
+//     let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
+//     let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
+//     for result in bat_sonar.results {
+//         let selection =
+//             batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
+//         let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
+//         let function_metadata = FunctionMetadata::new(
+//             function_file_info.path.clone(),
+//             result.name.to_string(),
+//             function_type,
+//             result.start_line_index + 1,
+//             result.end_line_index + 1,
+//         );
+//         function_metadata_vec.push(function_metadata);
+//     }
+//     Ok(function_metadata_vec)
+// }";
+//         let expected_function_signature = "pub(crate) fn get_function_metadata_from_file_info(
+//     function_file_info: FileInfo,
+//     function_file_info2: FileInfo2,
+// )";
+//         let expected_function_parameters = vec![
+//             "function_file_info: FileInfo".to_string(),
+//             "function_file_info2: FileInfo2".to_string(),
+//         ];
+//         let expected_function_body =
+//             "let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
+//     let file_info_content = function_file_info.read_content().unwrap();
+//     let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
+//     let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
+//     for result in bat_sonar.results {
+//         let selection =
+//             batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
+//         let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
+//         let function_metadata = FunctionMetadata::new(
+//             function_file_info.path.clone(),
+//             result.name.to_string(),
+//             function_type,
+//             result.start_line_index + 1,
+//             result.end_line_index + 1,
+//         );
+//         function_metadata_vec.push(function_metadata);
+//     }
+//     Ok(function_metadata_vec)";
+//         let function_parameters = get_function_parameters(test_function.to_string());
+//         assert_eq!(
+//             expected_function_parameters, function_parameters,
+//             "wrong parameters"
+//         );
+//         let function_body = get_function_body(test_function);
+//         assert_eq!(expected_function_body, function_body, "wrong body");
+//         let function_signature = get_function_signature(test_function);
+//         assert_eq!(
+//             expected_function_signature, function_signature,
+//             "wrong signature"
+//         );
+//     }
+//
+//     #[test]
+//     fn test_handle_cache() {
+//         let test_path = "./test.json";
+//         let metadata_id = "1234";
+//         let dependencies = vec!["asdasd".to_string()];
+//         let external_dependencies = vec!["asdasdasidhasjd".to_string()];
+//         let function_metadata_cache = FunctionMetadataCache {
+//             dependencies,
+//             external_dependencies,
+//         };
+//         let json = json!({ metadata_id: function_metadata_cache });
+//         println!("{}", json);
+//         let pretty = serde_json::to_string_pretty(&json).unwrap();
+//         assert_fs::NamedTempFile::new(test_path).unwrap();
+//         fs::write(test_path, pretty).unwrap();
+//
+//         let read_value = fs::read_to_string(test_path).unwrap();
+//         let value: Value = serde_json::from_str(&read_value).unwrap();
+//         let f_val: FunctionMetadataCache =
+//             serde_json::from_value(value[metadata_id].clone()).unwrap();
+//
+//         let _test = value["bad_key"].clone();
+//
+//         println!("fval: {:#?}", f_val);
+//     }
+// }

@@ -3,6 +3,7 @@ use error_stack::Result;
 use std::error::Error;
 use std::fmt;
 
+pub mod code_overhaul_parser;
 pub mod context_accounts_parser;
 pub mod entrypoint_parser;
 pub mod function_parser;

@@ -28,7 +28,7 @@ use std::process::Command;
 pub enum ProjectCommands {
     #[default]
     Create,
-    Refresh,
+    Reload,
 }
 impl BatEnumerator for ProjectCommands {}
 
@@ -36,7 +36,7 @@ impl BatCommandEnumerator for ProjectCommands {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
             ProjectCommands::Create => unimplemented!(),
-            ProjectCommands::Refresh => self.refresh_bat_project(),
+            ProjectCommands::Reload => self.refresh_bat_project(),
         }
     }
 
@@ -53,7 +53,7 @@ impl ProjectCommands {
     pub fn execute_command(&self) -> Result<(), CommandError> {
         match self {
             ProjectCommands::Create => unimplemented!(),
-            ProjectCommands::Refresh => self.refresh_bat_project(),
+            ProjectCommands::Reload => self.refresh_bat_project(),
         }
     }
 

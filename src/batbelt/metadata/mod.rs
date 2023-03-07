@@ -1,4 +1,3 @@
-pub mod code_overhaul_metadata;
 pub mod context_accounts_metadata;
 pub mod entrypoint_metadata;
 pub mod function_dependencies_metadata;
@@ -19,7 +18,6 @@ use inflector::Inflector;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
-use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulMetadata;
 use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenciesMetadata;
@@ -71,7 +69,6 @@ pub struct BatMetadata {
     pub traits: Vec<TraitMetadata>,
     pub context_accounts: Vec<ContextAccountsMetadata>,
     pub miro: MiroMetadata,
-    pub code_overhaul: Vec<CodeOverhaulMetadata>,
 }
 
 impl BatMetadata {
@@ -90,7 +87,6 @@ impl BatMetadata {
             miro: MiroMetadata {
                 code_overhaul: vec![],
             },
-            code_overhaul: vec![],
         }
     }
 
@@ -215,29 +211,6 @@ impl BatMetadata {
         {
             None => Err(MetadataErrorReports::ContextAccountsNotFound {
                 struct_source_code_metadata_id,
-            }
-            .get_error_report()),
-            Some(metadata) => Ok(metadata),
-        }
-    }
-
-    pub fn get_code_overhaul_metadata_by_entry_point_name(
-        &self,
-        entry_point_name: String,
-    ) -> MetadataResult<CodeOverhaulMetadata> {
-        if self.code_overhaul.is_empty() {
-            return Err(
-                MetadataErrorReports::ContextAccountsMetadataNotInitialized.get_error_report()
-            );
-        }
-        match self
-            .code_overhaul
-            .clone()
-            .into_iter()
-            .find(|meta| meta.entry_point_name == entry_point_name)
-        {
-            None => Err(MetadataErrorReports::ContextAccountsNotFound {
-                struct_source_code_metadata_id: entry_point_name,
             }
             .get_error_report()),
             Some(metadata) => Ok(metadata),

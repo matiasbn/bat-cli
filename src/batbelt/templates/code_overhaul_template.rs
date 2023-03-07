@@ -1,15 +1,13 @@
-use crate::batbelt;
-use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulSignerMetadata;
+use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithTheRestOfStateChanges,
 };
 use crate::batbelt::templates::{TemplateError, TemplateResult};
-use colored::Colorize;
+
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 
@@ -105,14 +103,12 @@ impl CodeOverhaulSection {
                     self.get_state_changes_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
-                CodeOverhaulSection::Signers => {
-                    self.get_signers_section_content(entrypoint_parser)?
-                }
+                CodeOverhaulSection::Signers => self.get_signers_section_content(entrypoint_parser),
                 CodeOverhaulSection::FunctionParameters => {
-                    self.get_function_parameters_section_content(entrypoint_parser)
+                    self.get_function_parameters_section_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::ContextAccounts => {
-                    self.get_context_account_section_content(entrypoint_parser)?
+                    self.get_context_account_section_content(entrypoint_parser)
                 }
                 CodeOverhaulSection::Validations => {
                     self.get_validations_section_content(entrypoint_parser)?
@@ -180,6 +176,10 @@ impl CodeOverhaulSection {
         &self,
         entrypoint_parser: EntrypointParser,
     ) -> TemplateResult<String> {
+        log::debug!(
+            "get_validations_section_content entrypoint_parser \n{:#?}",
+            entrypoint_parser
+        );
         if entrypoint_parser.handler.is_none() {
             return Ok(format!(
                 "- {}",
@@ -187,7 +187,6 @@ impl CodeOverhaulSection {
             ));
         }
         let handler_function = entrypoint_parser.handler.unwrap();
-        let context_source_code = handler_function.to_source_code_parser(None);
         let instruction_file_path = handler_function.path.clone();
         let handler_if_validations = BatSonar::new_from_path(
             &instruction_file_path,
@@ -214,7 +213,7 @@ impl CodeOverhaulSection {
                 }
                 result
             });
-
+        log::debug!("if_validations:\n{:#?}", if_validations);
         // any if that contains an if validation is considered a validation
         let mut filtered_if_validations = handler_if_validations
             .results
@@ -227,9 +226,14 @@ impl CodeOverhaulSection {
             })
             .map(|result| result.content.clone())
             .collect::<Vec<_>>();
+        log::debug!(
+            "filtered_if_validations:\n{:#?}",
+            filtered_if_validations.clone()
+        );
 
         let handler_validations =
             BatSonar::new_from_path(&instruction_file_path, None, SonarResultType::Validation);
+        log::debug!("handler_validations:\n{:#?}", handler_validations);
 
         // if there are validations in if_validations, then filter them from handler validations to avoid repetition
         let mut filtered_handler_validations = if if_validations.is_empty() {
@@ -251,32 +255,56 @@ impl CodeOverhaulSection {
                 .map(|val| val.content.clone())
                 .collect::<Vec<_>>()
         };
+        log::debug!(
+            "filtered_handler_validations:\n{:#?}",
+            filtered_handler_validations.clone()
+        );
+        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+        let context_accounts_metadata = bat_metadata
+            .get_context_accounts_metadata_by_struct_source_code_metadata_id(
+                entrypoint_parser.context_accounts.metadata_id,
+            )
+            .change_context(TemplateError)?;
 
-        let ca_accounts_only_validations = BatSonar::new_scanned(
-            &context_source_code.get_source_code_content(),
-            SonarResultType::ContextAccountsOnlyValidation,
+        log::debug!(
+            "context_accounts_metadata:\n{:#?}",
+            context_accounts_metadata
         );
 
-        let mut ca_accounts_results = ca_accounts_only_validations
-            .results
-            .iter()
-            .map(|result| result.content.clone())
+        let mut ca_accounts_results = context_accounts_metadata
+            .context_accounts_info
+            .into_iter()
+            .filter_map(|ca_metadata| {
+                if !ca_metadata.validations.is_empty() {
+                    let last_line = ca_metadata.content.lines().last().unwrap();
+                    let last_line_tws = BatSonar::get_trailing_whitespaces(last_line);
+                    let trailing_str = " ".repeat(last_line_tws);
+                    let result = format!(
+                        "{}#[account(\n{}\n{})]\n{}",
+                        trailing_str,
+                        ca_metadata
+                            .validations
+                            .into_iter()
+                            .map(|validation| {
+                                format!("{}\t{}", trailing_str.clone(), validation)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        trailing_str,
+                        last_line
+                    );
+                    Some(result)
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>();
+        log::debug!("ca_accounts_results:\n{:#?}", ca_accounts_results.clone());
 
         let mut validations_vec: Vec<String> = vec![];
         validations_vec.append(&mut ca_accounts_results);
         validations_vec.append(&mut filtered_if_validations);
         validations_vec.append(&mut filtered_handler_validations);
-
-        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-
-        let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
-            .change_context(TemplateError)?;
-        co_metadata.validations = validations_vec.clone();
-        co_metadata
-            .update_metadata_file()
-            .change_context(TemplateError)?;
 
         let validations_content = if validations_vec.is_empty() {
             format!(
@@ -293,17 +321,13 @@ impl CodeOverhaulSection {
         Ok(validations_content)
     }
 
-    fn get_signers_section_content(
-        &self,
-        entrypoint_parser: EntrypointParser,
-    ) -> TemplateResult<String> {
+    fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
         let context_source_code = entrypoint_parser
             .context_accounts
             .to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
         // signer names is only the name of the signer
-        let mut signers: Vec<CodeOverhaulSignerMetadata> = vec![];
-
+        let mut signers: Vec<String> = vec![];
         for (line_index, line) in context_lines.lines().enumerate() {
             if !line.contains("pub") {
                 continue;
@@ -338,96 +362,94 @@ impl CodeOverhaulSection {
                 })
                 .collect::<Vec<_>>();
             if signer_comments.is_empty() {
-                signers.push(CodeOverhaulSignerMetadata {
-                    name: signer_name.to_string().clone(),
-                    description: CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                        .to_placeholder(),
-                })
+                let signer_description = format!(
+                    "- {}: {}",
+                    signer_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                        .to_placeholder()
+                );
+                signers.push(signer_description)
             } else if signer_comments.len() == 1 {
                 // prompt the user to state if the comment is correct
                 let signer_description_comment = signer_comments[0].split("// ").last().unwrap();
-                let prompt_text = format!(
-                    "is this a proper description of the signer {}?: '{}'",
-                    signer_name.red(),
-                    signer_description_comment
-                );
-                let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
-                if is_correct {
-                    signers.push(CodeOverhaulSignerMetadata {
-                        name: signer_name.to_string(),
-                        description: signer_description_comment.to_string(),
-                    });
-                } else {
-                    signers.push(CodeOverhaulSignerMetadata {
-                        name: signer_name.to_string(),
-                        description:
-                            CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                                .to_placeholder(),
-                    });
-                }
+                let signer_description =
+                    format!("- {}: {}", signer_name, signer_description_comment);
+                signers.push(signer_description);
+                // let prompt_text = format!(
+                //     "is this a proper description of the signer {}?: '{}'",
+                //     signer_name.red(),
+                //     signer_description_comment
+                // );
+                // let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
+                // if is_correct {
+                // } else {
+                //     let signer_description = format!(
+                //         "- {}: {}",
+                //         signer_name,
+                //         CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                //             .to_placeholder()
+                //     );
+                //     signers.push(signer_description);
+                // }
                 // multiple line description
             } else {
                 // prompt the user to select the lines that contains the description and join them
-                let prompt_text = format!(
-                    "Use the spacebar to select the lines that describes the signer {}.
-                        Hit enter if is not a proper description:",
-                    signer_name.red()
-                );
-                let signer_formatted: Vec<&str> = signer_comments
+                let signer_formatted = signer_comments
                     .iter()
-                    .map(|line| line.split("// ").last().unwrap())
-                    .collect();
-                let selections = batbelt::bat_dialoguer::multiselect(
-                    &prompt_text,
-                    signer_formatted.clone(),
-                    Some(&vec![false; signer_formatted.clone().len()]),
-                )
-                .unwrap();
-                if selections.is_empty() {
-                    signers.push(CodeOverhaulSignerMetadata {
-                        name: signer_name.to_string(),
-                        description:
-                            CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                                .to_placeholder(),
-                    });
-                } else {
-                    // take the selections and create the array
-                    let signer_total_comment = signer_formatted
-                        .into_iter()
-                        .enumerate()
-                        .filter(|line| selections.contains(&line.0))
-                        .map(|line| line.1)
-                        .collect::<Vec<_>>()
-                        .join(". ");
-                    signers.push(CodeOverhaulSignerMetadata {
-                        name: signer_name.to_string(),
-                        description: signer_total_comment,
-                    });
-                }
+                    .map(|line| line.split("// ").last().unwrap().to_string())
+                    .collect::<Vec<_>>()
+                    .join(". ");
+                let signer_description = format!("- {}: {}", signer_name, signer_formatted);
+                signers.push(signer_description);
+                // let signer_total_comment = signer_formatted
+                //     .into_iter()
+                //     .enumerate()
+                //     .filter(|line| selections.contains(&line.0))
+                //     .map(|line| line.1)
+                //     .collect::<Vec<_>>();
+                // let prompt_text = format!(
+                //     "Use the spacebar to select the lines that describes the signer {}.
+                //         Hit enter if is not a proper description:",
+                //     signer_name.red()
+                // );
+                // let selections = batbelt::bat_dialoguer::multiselect(
+                //     &prompt_text,
+                //     signer_formatted.clone(),
+                //     Some(&vec![false; signer_formatted.clone().len()]),
+                // )
+                // .unwrap();
+                // if selections.is_empty() {
+                //     let signer_description = format!(
+                //         "- {}: {}",
+                //         signer_name,
+                //         CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                //             .to_placeholder()
+                //     );
+                //     signers.push(signer_description);
+                // } else {
+                //     // take the selections and create the array
+                //     let signer_total_comment = signer_formatted
+                //         .into_iter()
+                //         .enumerate()
+                //         .filter(|line| selections.contains(&line.0))
+                //         .map(|line| line.1)
+                //         .collect::<Vec<_>>()
+                //         .join(". ");
+                //     let signer_description = format!("- {}: {}", signer_name, signer_total_comment);
+                //     signers.push(signer_description);
+                // }
             }
         }
         if signers.is_empty() {
-            return Ok(CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder());
+            return format!(
+                "- {}",
+                CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder(),
+            );
         }
-        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-        let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
-            .change_context(TemplateError)?;
-        co_metadata.signers = signers.clone();
-        co_metadata
-            .update_metadata_file()
-            .change_context(TemplateError)?;
-        Ok(signers
-            .into_iter()
-            .map(|signer| format!("- {}: {}", signer.name, signer.description))
-            .collect::<Vec<_>>()
-            .join("\n"))
+        signers.join("\n")
     }
 
-    fn get_context_account_section_content(
-        &self,
-        entrypoint_parser: EntrypointParser,
-    ) -> TemplateResult<String> {
+    fn get_context_account_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
         let context_accounts_source_code = entrypoint_parser
             .context_accounts
             .to_source_code_parser(None);
@@ -456,53 +478,54 @@ impl CodeOverhaulSection {
             .map(|line| format!("  {}", line))
             .collect::<Vec<_>>()
             .join("\n");
-        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-        let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
-            .change_context(TemplateError)?;
-        co_metadata.context_accounts_content = formatted.clone();
-        co_metadata
-            .update_metadata_file()
-            .change_context(TemplateError)?;
-        Ok(format!("{}\n{}\n{}", "- ```rust", formatted, "  ```"))
+
+        format!("{}\n{}\n{}", "- ```rust", formatted, "  ```")
     }
 
     fn get_function_parameters_section_content(
         &self,
         entrypoint_parser: EntrypointParser,
-    ) -> String {
+    ) -> TemplateResult<String> {
         if entrypoint_parser.handler.is_none() {
-            return format!(
+            return Ok(format!(
                 "- {}",
                 CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
-            );
+            ));
         }
         let handler_function = entrypoint_parser.handler.unwrap();
-        let handler_function_parameters = get_function_parameters(
-            handler_function
-                .to_source_code_parser(None)
-                .get_source_code_content(),
-        );
-        let function_parameters_content = if handler_function_parameters.is_empty() {
+        let handler_function_parser =
+            FunctionParser::new_from_metadata(handler_function).change_context(TemplateError)?;
+        let filtered_parameters = handler_function_parser
+            .parameters
+            .into_iter()
+            .filter(|parameter| !parameter.parameter_type.contains("Context<"))
+            .collect::<Vec<_>>();
+        let function_parameters_content = if filtered_parameters.is_empty() {
             format!(
                 "- {}",
                 CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
             )
         } else {
-            handler_function_parameters
+            filtered_parameters
                 .iter()
                 .fold("".to_string(), |result, parameter| {
-                    if parameter.contains("Context<") {
-                        return result;
-                    }
                     if result.is_empty() {
-                        format!("- {}", parameter.trim_end_matches(','))
+                        format!(
+                            "- {}: {}",
+                            parameter.parameter_name,
+                            parameter.parameter_type.trim_end_matches(',')
+                        )
                     } else {
-                        format!("{}\n- {}", result, parameter.trim_end_matches(','))
+                        format!(
+                            "{}\n- {}: {}",
+                            result,
+                            parameter.parameter_name,
+                            parameter.parameter_type.trim_end_matches(',')
+                        )
                     }
                 })
         };
-        function_parameters_content
+        Ok(function_parameters_content)
     }
 }
 

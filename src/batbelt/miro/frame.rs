@@ -1,13 +1,47 @@
 use super::*;
+use crate::batbelt::bat_dialoguer::BatDialoguer;
+
 use crate::batbelt::miro::MiroItemType;
-use error_stack::Result;
+use colored::Colorize;
+use error_stack::{IntoReport, Result};
 use serde_json::json;
 
-pub const MIRO_FRAME_WIDTH: u64 = 3392;
-pub const MIRO_FRAME_HEIGHT: u64 = 1908;
+pub const MIRO_FRAME_WIDTH: u64 = 5600;
+pub const MIRO_FRAME_HEIGHT: u64 = 2600;
 pub const MIRO_BOARD_COLUMNS: i64 = 5;
 pub const MIRO_INITIAL_X: i64 = 4800;
 pub const MIRO_INITIAL_Y: i64 = 0;
+
+#[derive(Debug, Clone)]
+pub enum MiroCodeOverhaulConfig {
+    EntryPoint,
+    ContextAccount,
+    Validations,
+    Handler,
+}
+
+impl MiroCodeOverhaulConfig {
+    pub fn get_positions(&self) -> (i64, i64) {
+        match self {
+            MiroCodeOverhaulConfig::EntryPoint => (
+                MIRO_FRAME_WIDTH as i64 * 3 / 10,
+                (MIRO_FRAME_HEIGHT as i64) / 10,
+            ),
+            MiroCodeOverhaulConfig::ContextAccount => (
+                MIRO_FRAME_WIDTH as i64 * 6 / 10,
+                (MIRO_FRAME_HEIGHT as i64) / 4,
+            ),
+            MiroCodeOverhaulConfig::Validations => (
+                MIRO_FRAME_WIDTH as i64 * 10 / 12,
+                (MIRO_FRAME_HEIGHT as i64) / 4,
+            ),
+            MiroCodeOverhaulConfig::Handler => (
+                MIRO_FRAME_WIDTH as i64 * 10 / 12,
+                (MIRO_FRAME_HEIGHT as i64) * 3 / 4,
+            ),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct MiroFrame {
@@ -49,8 +83,14 @@ impl MiroFrame {
         &mut self,
         api_response: reqwest::Response,
     ) -> Result<(), MiroError> {
-        let response_string = api_response.text().await.unwrap();
-        let value: Value = serde_json::from_str(response_string.as_str()).unwrap();
+        let response_string = api_response
+            .text()
+            .await
+            .into_report()
+            .change_context(MiroError)?;
+        let value: Value = serde_json::from_str(response_string.as_str())
+            .into_report()
+            .change_context(MiroError)?;
         self.parse_value(value)?;
         Ok(())
     }
@@ -131,6 +171,44 @@ impl MiroFrame {
         self.x_position = x_position;
         self.y_position = y_position;
         Ok(())
+    }
+
+    pub async fn prompt_select_frame() -> MiroResult<Self> {
+        MiroConfig::check_miro_enabled()?;
+
+        println!(
+            "\nGetting the {} from the {} ...\n",
+            "frames".yellow(),
+            "Miro board".yellow()
+        );
+        let mut miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await?;
+
+        log::info!("miro_frames:\n{:#?}", miro_frames);
+
+        miro_frames.sort_by(|a, b| a.title.cmp(&b.title));
+        let miro_frame_titles: Vec<String> = miro_frames
+            .iter()
+            .map(|frame| frame.title.clone())
+            .collect();
+
+        let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
+        let selection =
+            BatDialoguer::select(prompt_text, miro_frame_titles, None).change_context(MiroError)?;
+        let selected_miro_frame: MiroFrame = miro_frames[selection].clone();
+        Ok(selected_miro_frame)
+    }
+
+    pub fn get_frame_url_by_frame_id(frame_id: &str) -> MiroResult<String> {
+        let bat_config = BatConfig::get_config().change_context(MiroError)?;
+        let url = normalizer::UrlNormalizer::new(
+            format!("{}/?moveToWidget={frame_id}", bat_config.miro_board_url).as_str(),
+        )
+        .into_report()
+        .change_context(MiroError)?
+        .normalize(None)
+        .into_report()
+        .change_context(MiroError)?;
+        Ok(url)
     }
 }
 
@@ -335,4 +413,34 @@ mod api {
     //     Ok(())
     //     // println!("update frame position response: {response}")
     // }
+}
+
+#[cfg(debug_assertions)]
+mod miro_frame_test {
+
+    #[test]
+    fn test_get_miro_frame_url() {
+        let bat_config = BatConfig {
+            initialized: false,
+            project_name: "".to_string(),
+            client_name: "".to_string(),
+            commit_hash_url: "".to_string(),
+            starting_date: "".to_string(),
+            miro_board_url: "https://miro.com/app/board/uXjVPzsgmiY=/".to_string(),
+            auditor_names: vec![],
+            program_lib_path: "".to_string(),
+            program_name: "".to_string(),
+            project_repository_url: "".to_string(),
+        };
+
+        assert_fs::NamedTempFile::new("Bat.toml").unwrap();
+
+        bat_config.save().unwrap();
+
+        let expected_miro_url =
+            "https://miro.com/app/board/uXjVPzsgmiY=/?moveToWidget=3458764548095165114";
+        let miro_frame_id = "3458764548095165114";
+        let frame_parsed = MiroFrame::get_frame_url_by_frame_id(miro_frame_id).unwrap();
+        assert_eq!(expected_miro_url, frame_parsed);
+    }
 }
