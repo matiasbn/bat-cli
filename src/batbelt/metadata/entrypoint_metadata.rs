@@ -1,7 +1,7 @@
 use crate::batbelt::metadata::{BatMetadata, MetadataId, MetadataResult};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EntrypointMetadata {
     pub name: String,
     pub metadata_id: MetadataId,

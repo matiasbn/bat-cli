@@ -7,6 +7,7 @@ use crate::batbelt::parser::ParserError;
 use crate::batbelt::metadata::function_dependencies_metadata::{
     FunctionDependenciesMetadata, FunctionDependencyInfo,
 };
+
 use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
@@ -160,23 +161,24 @@ impl FunctionParser {
             body_clone = body_clone.replace(&impl_match, "");
             let impl_function_signature_match = Self::get_function_name_from_signature(&impl_match);
             log::debug!("impl_match_signature: {}", &impl_function_signature_match);
-            let impl_function_metadata =
+            let impl_function_metadata_id =
                 trait_metadata_vec
                     .clone()
                     .into_iter()
-                    .find(|trait_metadata| {
-                        trait_metadata
-                            .impl_functions
-                            .clone()
-                            .into_iter()
-                            .any(|impl_func| {
-                                impl_func.trait_signature == impl_function_signature_match
-                            })
+                    .find_map(|trait_metadata| {
+                        match trait_metadata.impl_functions.into_iter().find(|impl_func| {
+                            impl_func.trait_signature == impl_function_signature_match
+                        }) {
+                            None => None,
+                            Some(impl_func) => Some(impl_func.function_source_code_metadata_id),
+                        }
                     });
-            log::debug!("impl_function_metadata_match {:#?}", impl_function_metadata);
-            if impl_function_metadata.is_some() {
-                dependency_function_metadata_id_vec
-                    .push(impl_function_metadata.unwrap().metadata_id);
+            log::debug!(
+                "impl_function_metadata_match {:#?}",
+                impl_function_metadata_id
+            );
+            if impl_function_metadata_id.is_some() {
+                dependency_function_metadata_id_vec.push(impl_function_metadata_id.unwrap());
             }
         }
 
@@ -188,16 +190,15 @@ impl FunctionParser {
                 log::debug!("match_str_regex {}", match_str);
                 let function_name = Self::get_function_name_from_signature(&match_str);
                 log::debug!("match_str_regex_function_name {}", function_name);
-                let matching_line = self
-                    .body
-                    .clone()
+                if function_name == "Ok" || function_name == "Some" {
+                    return None;
+                };
+                let matching_line = body_clone
                     .lines()
                     .find(|line| line.contains(&match_str))
                     .unwrap()
                     .to_string();
                 if function_name != self.name
-                    && function_name != "Ok"
-                    && function_name != "Some"
                     && !double_parentheses_regex.is_match(&match_str)
                     && !matching_line.contains("self.")
                     && !matching_line.contains("Self::")

@@ -34,7 +34,7 @@ pub enum ToolsCommands {
     CustomizePackageJson,
     /// Opens the co file and the instruction file of a started entrypoint
     OpenCodeOverhaulFiles,
-    /// Search source code metadata by id and opens on code editor
+    /// Search source code metadata by id and opens on code editor, if is source_code
     OpenMetadataById,
     /// Counts the to-review, started, finished and total co files
     CountCodeOverhaul,
@@ -172,6 +172,54 @@ impl ToolsCommands {
                 return Ok(());
             }
         }
+        if let Some(trait_metadata) = bat_metadata
+            .traits
+            .clone()
+            .into_iter()
+            .find(|trait_meta| trait_meta.metadata_id == metadata_id)
+        {
+            println!("Metadata found is trait metadata:\n{:#?}", trait_metadata);
+            return Ok(());
+        }
+
+        if let Some(entry_point_meta) = bat_metadata
+            .entry_points
+            .clone()
+            .into_iter()
+            .find(|metadata| metadata.metadata_id == metadata_id)
+        {
+            println!(
+                "Metadata found is entrypoint metadata:\n{:#?}",
+                entry_point_meta
+            );
+            return Ok(());
+        }
+
+        if let Some(ca_meta) = bat_metadata
+            .context_accounts
+            .clone()
+            .into_iter()
+            .find(|metadata| metadata.metadata_id == metadata_id)
+        {
+            println!(
+                "Metadata found is context accounts metadata:\n{:#?}",
+                ca_meta
+            );
+            return Ok(());
+        }
+
+        if let Some(func_dep_meta) = bat_metadata
+            .function_dependencies
+            .into_iter()
+            .find(|metadata| metadata.metadata_id == metadata_id)
+        {
+            println!(
+                "Metadata found is function dependencies metadata:\n{:#?}",
+                func_dep_meta
+            );
+            return Ok(());
+        }
+
         Err(Report::new(CommandError)
             .attach_printable(format!("Metadata for {} couldn't be found", metadata_id)))
     }
