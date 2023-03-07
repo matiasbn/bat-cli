@@ -304,8 +304,6 @@ pub mod helpers {
 
     use error_stack::Report;
 
-    use crate::batbelt::miro::MiroItemType;
-
     use super::*;
 
     // pub fn get_data_for_snapshots(
