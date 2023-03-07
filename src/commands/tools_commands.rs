@@ -210,7 +210,6 @@ impl ToolsCommands {
 
         if let Some(func_dep_meta) = bat_metadata
             .function_dependencies
-            .clone()
             .into_iter()
             .find(|metadata| metadata.metadata_id == metadata_id)
         {
