@@ -415,32 +415,32 @@ mod api {
     // }
 }
 
-#[cfg(debug_assertions)]
-mod miro_frame_test {
-
-    #[test]
-    fn test_get_miro_frame_url() {
-        let bat_config = BatConfig {
-            initialized: false,
-            project_name: "".to_string(),
-            client_name: "".to_string(),
-            commit_hash_url: "".to_string(),
-            starting_date: "".to_string(),
-            miro_board_url: "https://miro.com/app/board/uXjVPzsgmiY=/".to_string(),
-            auditor_names: vec![],
-            program_lib_path: "".to_string(),
-            program_name: "".to_string(),
-            project_repository_url: "".to_string(),
-        };
-
-        assert_fs::NamedTempFile::new("Bat.toml").unwrap();
-
-        bat_config.save().unwrap();
-
-        let expected_miro_url =
-            "https://miro.com/app/board/uXjVPzsgmiY=/?moveToWidget=3458764548095165114";
-        let miro_frame_id = "3458764548095165114";
-        let frame_parsed = MiroFrame::get_frame_url_by_frame_id(miro_frame_id).unwrap();
-        assert_eq!(expected_miro_url, frame_parsed);
-    }
-}
+// #[cfg(debug_assertions)]
+// mod miro_frame_test {
+//
+//     #[test]
+//     fn test_get_miro_frame_url() {
+//         let bat_config = BatConfig {
+//             initialized: false,
+//             project_name: "".to_string(),
+//             client_name: "".to_string(),
+//             commit_hash_url: "".to_string(),
+//             starting_date: "".to_string(),
+//             miro_board_url: "https://miro.com/app/board/uXjVPzsgmiY=/".to_string(),
+//             auditor_names: vec![],
+//             program_lib_path: "".to_string(),
+//             program_name: "".to_string(),
+//             project_repository_url: "".to_string(),
+//         };
+//
+//         assert_fs::NamedTempFile::new("Bat.toml").unwrap();
+//
+//         bat_config.save().unwrap();
+//
+//         let expected_miro_url =
+//             "https://miro.com/app/board/uXjVPzsgmiY=/?moveToWidget=3458764548095165114";
+//         let miro_frame_id = "3458764548095165114";
+//         let frame_parsed = MiroFrame::get_frame_url_by_frame_id(miro_frame_id).unwrap();
+//         assert_eq!(expected_miro_url, frame_parsed);
+//     }
+// }

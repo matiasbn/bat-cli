@@ -1,13 +1,13 @@
 use crate::batbelt::metadata::{BatMetadata, MetadataId, MetadataResult};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FunctionDependencyInfo {
     pub function_name: String,
     pub function_metadata_id: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FunctionDependenciesMetadata {
     pub function_name: String,
     pub metadata_id: MetadataId,
