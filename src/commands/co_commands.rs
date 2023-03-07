@@ -14,11 +14,10 @@ use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 
-use crate::batbelt::metadata::code_overhaul_metadata::CodeOverhaulMetadata;
 use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerInfo, SignerType};
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MiroMetadata};
 use crate::batbelt::miro::connector::ConnectorOptions;
-use crate::batbelt::miro::frame::MiroFrame;
+use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
@@ -145,9 +144,9 @@ impl CodeOverhaulCommand {
                     };
 
                     let signer_title = if is_validated {
-                        format!("Validated signer:\n\n {}", signer.name)
+                        format!("Validated signer:\n\n <strong>{}</strong>", signer.name)
                     } else {
-                        format!("Not validated signer:\n\n {}", signer.name)
+                        format!("Not validated signer:\n\n <strong>{}</strong>", signer.name)
                     };
 
                     signers_info.push(SignerInfo {
@@ -212,8 +211,12 @@ impl CodeOverhaulCommand {
 
             // Deploy images
 
-            let (entrypoint_x_position, entrypoint_y_position) = (1300, 250);
-            let (handler_x_position, handler_y_position) = (2900, 1400);
+            // let (entrypoint_x_position, entrypoint_y_position) = (1300, 250);
+            // let (handler_x_position, handler_y_position) = (2900, 1400);
+            let (entrypoint_x_position, entrypoint_y_position) =
+                MiroCodeOverhaulConfig::EntryPoint.get_positions();
+            let (handler_x_position, handler_y_position) =
+                MiroCodeOverhaulConfig::Handler.get_positions();
 
             match entrypoint_parser.handler.clone() {
                 None => {}

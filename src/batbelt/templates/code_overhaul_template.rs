@@ -1,11 +1,8 @@
 use crate::batbelt;
 use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataResult};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::batbelt::metadata::code_overhaul_metadata::{
-    CodeOverhaulMetadata, CodeOverhaulSignerMetadata,
-};
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithTheRestOfStateChanges,
@@ -102,43 +99,25 @@ impl CodeOverhaulSection {
     ) -> TemplateResult<String> {
         let section_content = if ep_parser.is_some() {
             let entrypoint_parser = ep_parser.unwrap();
-            let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-            match bat_metadata
-                .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name.clone())
-            {
-                Ok(_) => {}
-                Err(_) => {
-                    let new_co = CodeOverhaulMetadata::new_empty(
-                        BatMetadata::create_metadata_id(),
-                        entrypoint_parser.clone().name,
-                    );
-                    new_co
-                        .update_metadata_file()
-                        .change_context(TemplateError)?;
-                }
-            };
-            let result = match self {
+            match self {
                 CodeOverhaulSection::StateChanges => {
-                    self.get_state_changes_content(entrypoint_parser)?
+                    self.get_state_changes_content(entrypoint_parser.clone())?
                 }
-                CodeOverhaulSection::Notes => format!("- `{}`", CompleteWithNotes.to_placeholder()),
-                CodeOverhaulSection::Signers => {
-                    self.get_signers_section_content(entrypoint_parser)?
-                }
+                CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
+                CodeOverhaulSection::Signers => self.get_signers_section_content(entrypoint_parser),
                 CodeOverhaulSection::FunctionParameters => {
                     self.get_function_parameters_section_content(entrypoint_parser)
                 }
                 CodeOverhaulSection::ContextAccounts => {
-                    self.get_context_account_section_content(entrypoint_parser)?
+                    self.get_context_account_section_content(entrypoint_parser)
                 }
                 CodeOverhaulSection::Validations => {
-                    self.get_validations_section_content(entrypoint_parser)?
+                    self.get_validations_section_content(entrypoint_parser)
                 }
                 CodeOverhaulSection::MiroFrameUrl => {
                     CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder()
                 }
-            };
-            result
+            }
         } else {
             "".to_string()
         };
@@ -158,7 +137,7 @@ impl CodeOverhaulSection {
         let mut state_changes_content_vec = vec![];
         let context_accounts_metadata = bat_metadata
             .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                entry_point_parser.context_accounts.metadata_id,
+                entry_point_parser.context_accounts.metadata_id.clone(),
             )
             .change_context(TemplateError)?;
 
@@ -177,6 +156,7 @@ impl CodeOverhaulSection {
 
         let close_accounts = context_accounts_metadata
             .context_accounts_info
+            .clone()
             .into_iter()
             .filter(|ca_info| ca_info.is_close)
             .collect::<Vec<_>>();
@@ -194,15 +174,12 @@ impl CodeOverhaulSection {
         Ok(state_changes_content_vec.join("\n"))
     }
 
-    fn get_validations_section_content(
-        &self,
-        entrypoint_parser: EntrypointParser,
-    ) -> TemplateResult<String> {
+    fn get_validations_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
         if entrypoint_parser.handler.is_none() {
-            return Ok(format!(
+            return format!(
                 "- {}",
                 CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
-            ));
+            );
         }
         let handler_function = entrypoint_parser.handler.unwrap();
         let context_source_code = handler_function.to_source_code_parser(None);
@@ -286,16 +263,6 @@ impl CodeOverhaulSection {
         validations_vec.append(&mut filtered_if_validations);
         validations_vec.append(&mut filtered_handler_validations);
 
-        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-
-        let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
-            .change_context(TemplateError)?;
-        co_metadata.validations = validations_vec.clone();
-        co_metadata
-            .update_metadata_file()
-            .change_context(TemplateError)?;
-
         let validations_content = if validations_vec.is_empty() {
             format!(
                 "- {}",
@@ -308,20 +275,16 @@ impl CodeOverhaulSection {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        Ok(validations_content)
+        validations_content
     }
 
-    fn get_signers_section_content(
-        &self,
-        entrypoint_parser: EntrypointParser,
-    ) -> TemplateResult<String> {
+    fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
         let context_source_code = entrypoint_parser
             .context_accounts
             .to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
         // signer names is only the name of the signer
-        let mut signers: Vec<CodeOverhaulSignerMetadata> = vec![];
-
+        let mut signers: Vec<String> = vec![];
         for (line_index, line) in context_lines.lines().enumerate() {
             if !line.contains("pub") {
                 continue;
@@ -356,11 +319,13 @@ impl CodeOverhaulSection {
                 })
                 .collect::<Vec<_>>();
             if signer_comments.is_empty() {
-                signers.push(CodeOverhaulSignerMetadata {
-                    name: signer_name.to_string().clone(),
-                    description: CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                        .to_placeholder(),
-                })
+                let signer_description = format!(
+                    "- {}: {}",
+                    signer_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                        .to_placeholder()
+                );
+                signers.push(signer_description)
             } else if signer_comments.len() == 1 {
                 // prompt the user to state if the comment is correct
                 let signer_description_comment = signer_comments[0].split("// ").last().unwrap();
@@ -371,17 +336,17 @@ impl CodeOverhaulSection {
                 );
                 let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
                 if is_correct {
-                    signers.push(CodeOverhaulSignerMetadata {
-                        name: signer_name.to_string(),
-                        description: signer_description_comment.to_string(),
-                    });
+                    let signer_description =
+                        format!("- {}: {}", signer_name, signer_description_comment);
+                    signers.push(signer_description);
                 } else {
-                    signers.push(CodeOverhaulSignerMetadata {
-                        name: signer_name.to_string(),
-                        description:
-                            CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                                .to_placeholder(),
-                    });
+                    let signer_description = format!(
+                        "- {}: {}",
+                        signer_name,
+                        CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                            .to_placeholder()
+                    );
+                    signers.push(signer_description);
                 }
                 // multiple line description
             } else {
@@ -402,12 +367,13 @@ impl CodeOverhaulSection {
                 )
                 .unwrap();
                 if selections.is_empty() {
-                    signers.push(CodeOverhaulSignerMetadata {
-                        name: signer_name.to_string(),
-                        description:
-                            CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                                .to_placeholder(),
-                    });
+                    let signer_description = format!(
+                        "- {}: {}",
+                        signer_name,
+                        CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                            .to_placeholder()
+                    );
+                    signers.push(signer_description);
                 } else {
                     // take the selections and create the array
                     let signer_total_comment = signer_formatted
@@ -417,35 +383,21 @@ impl CodeOverhaulSection {
                         .map(|line| line.1)
                         .collect::<Vec<_>>()
                         .join(". ");
-                    signers.push(CodeOverhaulSignerMetadata {
-                        name: signer_name.to_string(),
-                        description: signer_total_comment,
-                    });
+                    let signer_description = format!("- {}: {}", signer_name, signer_total_comment);
+                    signers.push(signer_description);
                 }
             }
         }
         if signers.is_empty() {
-            return Ok(CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder());
+            return format!(
+                "- {}",
+                CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder(),
+            );
         }
-        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-        let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
-            .change_context(TemplateError)?;
-        co_metadata.signers = signers.clone();
-        co_metadata
-            .update_metadata_file()
-            .change_context(TemplateError)?;
-        Ok(signers
-            .into_iter()
-            .map(|signer| format!("- {}: {}", signer.name, signer.description))
-            .collect::<Vec<_>>()
-            .join("\n"))
+        signers.join("\n")
     }
 
-    fn get_context_account_section_content(
-        &self,
-        entrypoint_parser: EntrypointParser,
-    ) -> TemplateResult<String> {
+    fn get_context_account_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
         let context_accounts_source_code = entrypoint_parser
             .context_accounts
             .to_source_code_parser(None);
@@ -474,15 +426,8 @@ impl CodeOverhaulSection {
             .map(|line| format!("  {}", line))
             .collect::<Vec<_>>()
             .join("\n");
-        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-        let mut co_metadata = bat_metadata
-            .get_code_overhaul_metadata_by_entry_point_name(entrypoint_parser.name)
-            .change_context(TemplateError)?;
-        co_metadata.context_accounts_content = formatted.clone();
-        co_metadata
-            .update_metadata_file()
-            .change_context(TemplateError)?;
-        Ok(format!("{}\n{}\n{}", "- ```rust", formatted, "  ```"))
+
+        format!("{}\n{}\n{}", "- ```rust", formatted, "  ```")
     }
 
     fn get_function_parameters_section_content(

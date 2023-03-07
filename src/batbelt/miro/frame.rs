@@ -1,15 +1,47 @@
 use super::*;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::MiroItemType;
 use colored::Colorize;
 use error_stack::{IntoReport, Result};
 use serde_json::json;
 
-pub const MIRO_FRAME_WIDTH: u64 = 3500;
-pub const MIRO_FRAME_HEIGHT: u64 = 2500;
+pub const MIRO_FRAME_WIDTH: u64 = 5600;
+pub const MIRO_FRAME_HEIGHT: u64 = 2600;
 pub const MIRO_BOARD_COLUMNS: i64 = 5;
 pub const MIRO_INITIAL_X: i64 = 4800;
 pub const MIRO_INITIAL_Y: i64 = 0;
+
+#[derive(Debug, Clone)]
+pub enum MiroCodeOverhaulConfig {
+    EntryPoint,
+    ContextAccount,
+    Validations,
+    Handler,
+}
+
+impl MiroCodeOverhaulConfig {
+    pub fn get_positions(&self) -> (i64, i64) {
+        match self {
+            MiroCodeOverhaulConfig::EntryPoint => (
+                MIRO_FRAME_WIDTH as i64 * 3 / 10,
+                (MIRO_FRAME_HEIGHT as i64) * 1 / 10,
+            ),
+            MiroCodeOverhaulConfig::ContextAccount => (
+                MIRO_FRAME_WIDTH as i64 * 6 / 10,
+                (MIRO_FRAME_HEIGHT as i64) * 1 / 4,
+            ),
+            MiroCodeOverhaulConfig::Validations => (
+                MIRO_FRAME_WIDTH as i64 * 10 / 12,
+                (MIRO_FRAME_HEIGHT as i64) * 1 / 4,
+            ),
+            MiroCodeOverhaulConfig::Handler => (
+                MIRO_FRAME_WIDTH as i64 * 10 / 12,
+                (MIRO_FRAME_HEIGHT as i64) * 3 / 4,
+            ),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct MiroFrame {
