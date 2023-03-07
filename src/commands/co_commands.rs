@@ -88,6 +88,10 @@ impl CodeOverhaulCommand {
         let started_files_names = co_started_bat_folder
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
+        if started_files_names.is_empty() {
+            return Err(Report::new(CommandError)
+                .attach_printable("code-overhaul's to-review folder is empty"));
+        }
         let prompt_text = "Select the co file to deploy to Miro".to_string();
         let selection = BatDialoguer::select(prompt_text, started_files_names.clone(), None)?;
         let selected_file_name = started_files_names[selection].clone();
