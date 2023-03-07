@@ -51,7 +51,7 @@ use crate::config::BatAuditorConfig;
 pub enum MiroCommand {
     /// Creates the code-overhaul frames
     #[default]
-    CodeOverhaulFrames,
+    InitCO,
     /// Deploys the entrypoint, context accounts and handler to a Miro frame
     Entrypoint {
         /// select all options as true
@@ -95,7 +95,7 @@ impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
         return match self {
-            MiroCommand::CodeOverhaulFrames => self.code_overhaul_action().await,
+            MiroCommand::InitCO => self.code_overhaul_action().await,
             MiroCommand::Entrypoint { select_all, sorted } => {
                 self.entrypoint_action(*select_all, *sorted).await
             }

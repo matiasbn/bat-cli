@@ -69,17 +69,17 @@ impl CodeOverhaulCommand {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         if bat_metadata.miro.code_overhaul.is_empty() {
-            println!("Miro code-overhaul's metadata is not initialized yet.");
-            println!(
-                "This action is {} to proceed with this function.",
+            let message = format!(
+                "Miro code-overhaul's metadata is not initialized yet.\n \
+            This action is {} to proceed with this function.",
                 "required".red()
             );
             let suggestion_message = format!(
                 "Run  {} to deploy the code-overhaul frames",
-                "bat-cli miro code-overhaul".green()
+                "bat-cli miro init-co".green()
             );
             return Err(Report::new(CommandError)
-                .attach_printable("Miro metadata incomplete")
+                .attach_printable(message)
                 .attach(Suggestion(suggestion_message)));
         }
 

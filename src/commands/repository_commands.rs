@@ -32,7 +32,7 @@ pub enum RepositoryCommand {
         select_all: bool,
     },
     /// Commits the open_questions, finding_candidate and threat_modeling notes
-    CommitNotes,
+    UpdateNotes,
     /// Creates a commit for an updated code-overhaul file
     UpdateCodeOverhaul,
 }
@@ -53,7 +53,7 @@ impl BatCommandEnumerator for RepositoryCommand {
             RepositoryCommand::DeleteLocalBranches { select_all } => {
                 self.delete_local_branches(*select_all)
             }
-            RepositoryCommand::CommitNotes => GitCommit::Notes
+            RepositoryCommand::UpdateNotes => GitCommit::Notes
                 .create_commit()
                 .change_context(CommandError),
             RepositoryCommand::UpdateCodeOverhaul => self.execute_update_co_file(),
@@ -66,7 +66,7 @@ impl BatCommandEnumerator for RepositoryCommand {
 
     fn check_correct_branch(&self) -> bool {
         match self {
-            RepositoryCommand::CommitNotes => true,
+            RepositoryCommand::UpdateNotes => true,
             _ => false,
         }
     }
