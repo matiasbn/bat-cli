@@ -197,7 +197,7 @@ impl CodeOverhaulParser {
             .into_report()?
             .as_str()
             .to_string();
-        let validations = self.rust_subsection_matcher(&validations_section_content)?;
+        let validations = self.rust_subsection_matcher(&validations_section_content, true)?;
         self.validations = validations;
         Ok(())
     }
@@ -217,7 +217,7 @@ impl CodeOverhaulParser {
             .as_str()
             .to_string();
         self.context_accounts_content =
-            self.rust_subsection_matcher(&ca_section_content)?[0].clone();
+            self.rust_subsection_matcher(&ca_section_content, false)?[0].clone();
         Ok(())
     }
 
@@ -257,10 +257,15 @@ impl CodeOverhaulParser {
             .join("\n")
     }
 
-    fn rust_subsection_matcher(&self, content: &str) -> ParserResult<Vec<String>> {
-        let rust_regex = Regex::new(r"- ```rust[\s]+[\s'A -Za-z0-9()?._= @:><!&{}#\[\]]+[\s]+```")
-            .into_report()
-            .change_context(ParserError)?;
+    fn rust_subsection_matcher(
+        &self,
+        content: &str,
+        use_separator: bool,
+    ) -> ParserResult<Vec<String>> {
+        let rust_regex =
+            Regex::new(r"- ```rust[\s]+[\s 'A-Za-z0-9−()?._=@:><!&{}^;/+#\[\],]+[\s]+```")
+                .into_report()
+                .change_context(ParserError)?;
         if rust_regex.is_match(content) {
             return Ok(rust_regex
                 .find_iter(content)
@@ -273,7 +278,11 @@ impl CodeOverhaulParser {
                             if !line.contains("```") {
                                 Some(line.to_string())
                             } else {
-                                None
+                                if use_separator {
+                                    Some("-".repeat(20))
+                                } else {
+                                    None
+                                }
                             }
                         })
                         .collect::<Vec<_>>()
