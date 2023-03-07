@@ -563,7 +563,9 @@ impl MiroCommand {
                 }
             }
         }
-
+        GitCommit::UpdateMetadataJson
+            .create_commit()
+            .change_context(CommandError)?;
         Ok(())
     }
 

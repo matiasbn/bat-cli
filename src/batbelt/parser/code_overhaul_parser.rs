@@ -25,7 +25,7 @@ pub struct CodeOverhaulSigner {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeOverhaulParser {
     pub entry_point_name: String,
-    pub bat_file: BatFile,
+    pub co_started_bat_file: BatFile,
     pub validations: Vec<String>,
     pub signers: Vec<CodeOverhaulSigner>,
     pub context_accounts_content: String,
@@ -44,62 +44,16 @@ impl CodeOverhaulParser {
         }
         let mut new_co_parser = CodeOverhaulParser {
             entry_point_name,
-            bat_file,
+            co_started_bat_file: bat_file,
             validations: vec![],
             signers: vec![],
             context_accounts_content: "".to_string(),
         };
         new_co_parser.get_signers()?;
-        // let co_metadata = bat_metadata
-        //     .get_code_overhaul_metadata_by_entry_point_name(entry_point_name.clone())
-        //     .change_context(ParserError)?;
+        new_co_parser.get_validations()?;
+        new_co_parser.get_context_accounts_content()?;
         Ok(new_co_parser)
     }
-
-    fn get_signers(&mut self) -> ParserResult<()> {
-        let signers_section_regex = Regex::new(r"# Signers:[\s\S]*?#").unwrap();
-        let bat_file_content = self
-            .bat_file
-            .read_content(true)
-            .change_context(ParserError)?;
-        let signers = signers_section_regex
-            .find(&bat_file_content)
-            .ok_or(ParserError)
-            .into_report()?
-            .as_str()
-            .to_string()
-            .lines()
-            .filter_map(|line| {
-                if line.starts_with("- ") {
-                    let mut line_split = line.trim_start_matches("- ").split(": ");
-                    Some(CodeOverhaulSigner {
-                        name: line_split.next().unwrap().to_string(),
-                        description: line_split.next().unwrap().to_string(),
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        self.signers = signers;
-        Ok(())
-    }
-
-    // fn get_validations(&mut self) -> ParserResult<()> {
-    //     let validations_section_regex = Regex::new(r"# Validations:[\s\S]*?#").unwrap();
-    //     let bat_file_content = self
-    //         .bat_file
-    //         .read_content(true)
-    //         .change_context(ParserError)?;
-    //     let validations_section_content = validations_section_regex
-    //         .find(&bat_file_content)
-    //         .ok_or(ParserError)
-    //         .into_report()?
-    //         .as_str()
-    //         .to_string();
-    //     self.signers = signers;
-    //     Ok(())
-    // }
 
     pub async fn get_validations_image_for_miro_co_frame(
         &self,
@@ -111,24 +65,13 @@ impl CodeOverhaulParser {
         let validations_image_content = if self.validations.is_empty() {
             CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
         } else {
-            self.validations.clone().join("\n\n")
+            self.validations
+                .clone()
+                .into_iter()
+                .map(|validation| self.format_trailing_whitespaces(&validation))
+                .collect::<Vec<_>>()
+                .join("\n\n")
         };
-        // let validations_section = CodeOverhaulSection::Validations
-        //     .get_section_content(Some(entrypoint_parser.clone()))
-        //     .change_context(CommandError)?;
-        // let val_sec_formatted = validations_section
-        //     .lines()
-        //     .filter_map(|line| {
-        //         if line.trim() == "# Validations:" {
-        //             return Some("/// Validations".to_string());
-        //         };
-        //         if line.trim() == "- ```rust" || line.trim() == "```" {
-        //             return Some("".to_string());
-        //         }
-        //         Some(line.to_string())
-        //     })
-        //     .collect::<Vec<_>>()
-        //     .join("\n");
         let content = format!("{}\n\n{}", header, validations_image_content);
         let validations_image = self
             .deploy_image_and_update_position(
@@ -150,20 +93,7 @@ impl CodeOverhaulParser {
             MiroCodeOverhaulConfig::ContextAccount.get_positions();
         let header = "/// Context accounts";
         let context_accounts_image_content = self.context_accounts_content.clone();
-        let ca_lines = context_accounts_image_content.lines();
-        let trailing_ws_first_line =
-            BatSonar::get_trailing_whitespaces(ca_lines.clone().next().unwrap());
-        let ca_formatted = ca_lines
-            .map(|line| {
-                let trailing_ws = BatSonar::get_trailing_whitespaces(line);
-                format!(
-                    "{}{}",
-                    " ".repeat(trailing_ws - trailing_ws_first_line),
-                    line.trim()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let ca_formatted = self.format_trailing_whitespaces(&context_accounts_image_content);
         let content = format!("{}\n\n{}", header, ca_formatted);
         let validations_image = self
             .deploy_image_and_update_position(
@@ -176,23 +106,6 @@ impl CodeOverhaulParser {
             .await?;
         Ok(validations_image)
     }
-
-    // let context_accounts_section = CodeOverhaulSection::ContextAccounts
-    // .get_section_content(Some(entrypoint_parser.clone()))
-    // .change_context(CommandError)?;
-    // let ca_formatted = context_accounts_section
-    // .lines()
-    // .filter_map(|line| {
-    // if line.trim() == "# Context accounts:" {
-    // return Some("/// Context accounts".to_string());
-    // };
-    // if line.trim() == "- ```rust" || line.trim() == "```" {
-    // return None;
-    // }
-    // Some(line.to_string())
-    // })
-    // .collect::<Vec<_>>()
-    // .join("\n");
 
     async fn deploy_image_and_update_position(
         &self,
@@ -240,5 +153,135 @@ impl CodeOverhaulParser {
         miro_item.update_item_parent_and_position().await;
 
         Ok(miro_image)
+    }
+
+    fn get_signers(&mut self) -> ParserResult<()> {
+        let signers_section_regex = Regex::new(r"# Signers:[\s\S]*?#").unwrap();
+        let bat_file_content = self
+            .co_started_bat_file
+            .read_content(true)
+            .change_context(ParserError)?;
+        let signers = signers_section_regex
+            .find(&bat_file_content)
+            .ok_or(ParserError)
+            .into_report()?
+            .as_str()
+            .to_string()
+            .lines()
+            .filter_map(|line| {
+                if line.starts_with("- ") {
+                    let mut line_split = line.trim_start_matches("- ").split(": ");
+                    Some(CodeOverhaulSigner {
+                        name: line_split.next().unwrap().to_string(),
+                        description: line_split.next().unwrap().to_string(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        self.signers = signers;
+        Ok(())
+    }
+
+    fn get_validations(&mut self) -> ParserResult<()> {
+        let validations_section_regex = Regex::new(r"# Validations:[\s\S]*?\n# Miro")
+            .into_report()
+            .change_context(ParserError)?;
+        let bat_file_content = self
+            .co_started_bat_file
+            .read_content(true)
+            .change_context(ParserError)?;
+        let validations_section_content = validations_section_regex
+            .find(&bat_file_content)
+            .ok_or(ParserError)
+            .into_report()?
+            .as_str()
+            .to_string();
+        let validations = self.rust_subsection_matcher(&validations_section_content)?;
+        self.validations = validations;
+        Ok(())
+    }
+
+    fn get_context_accounts_content(&mut self) -> ParserResult<()> {
+        let bat_file_content = self
+            .co_started_bat_file
+            .read_content(true)
+            .change_context(ParserError)?;
+        let ca_section_regex = Regex::new(r"# Context accounts:[\s\S]*?\n# Validations")
+            .into_report()
+            .change_context(ParserError)?;
+        let ca_section_content = ca_section_regex
+            .find(&bat_file_content)
+            .ok_or(ParserError)
+            .into_report()?
+            .as_str()
+            .to_string();
+        self.context_accounts_content =
+            self.rust_subsection_matcher(&ca_section_content)?[0].clone();
+        Ok(())
+    }
+
+    fn format_trailing_whitespaces(&self, content: &str) -> String {
+        // let last_line = ca_metadata.content.lines().last().unwrap();
+        // let last_line_tws = BatSonar::get_trailing_whitespaces(last_line);
+        // let trailing_str = " ".repeat(last_line_tws);
+        // let result = format!(
+        //     "{}#[account(\n{}\n{})]\n{}",
+        //     trailing_str,
+        //     ca_metadata
+        //         .validations
+        //         .into_iter()
+        //         .map(|validation| {
+        //             format!("{}\t{}", trailing_str.clone(), validation)
+        //         })
+        //         .collect::<Vec<_>>()
+        //         .join("\n"),
+        //     trailing_str,
+        //     last_line
+        // );
+
+        let content_lines = content.lines();
+        let trailing_ws_first_line =
+            BatSonar::get_trailing_whitespaces(content_lines.clone().next().unwrap());
+        let formatted = content_lines
+            .map(|line| {
+                let trailing_ws = BatSonar::get_trailing_whitespaces(line);
+                format!(
+                    "{}{}",
+                    " ".repeat(trailing_ws - trailing_ws_first_line),
+                    line.trim()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        formatted
+    }
+
+    fn rust_subsection_matcher(&self, content: &str) -> ParserResult<Vec<String>> {
+        let rust_regex = Regex::new(r"- ```rust[\s]+[\s'A -Za-z0-9()?._= @:><!&{}#\[\]]+[\s]+```")
+            .into_report()
+            .change_context(ParserError)?;
+        if rust_regex.is_match(content) {
+            return Ok(rust_regex
+                .find_iter(content)
+                .map(|regex_match| {
+                    regex_match
+                        .as_str()
+                        .to_string()
+                        .lines()
+                        .filter_map(|line| {
+                            if !line.contains("```") {
+                                Some(line.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .collect::<Vec<_>>());
+        }
+        Ok(vec![])
     }
 }
