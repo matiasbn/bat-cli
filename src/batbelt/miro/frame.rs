@@ -51,8 +51,14 @@ impl MiroFrame {
         &mut self,
         api_response: reqwest::Response,
     ) -> Result<(), MiroError> {
-        let response_string = api_response.text().await.unwrap();
-        let value: Value = serde_json::from_str(response_string.as_str()).unwrap();
+        let response_string = api_response
+            .text()
+            .await
+            .into_report()
+            .change_context(MiroError)?;
+        let value: Value = serde_json::from_str(response_string.as_str())
+            .into_report()
+            .change_context(MiroError)?;
         self.parse_value(value)?;
         Ok(())
     }
