@@ -1,7 +1,5 @@
-use crate::batbelt::metadata::structs_source_code_metadata::{
-    StructMetadataType, StructSourceCodeMetadata,
-};
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
+use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::{ParserError, ParserResult};
 use crate::batbelt::sonar::SonarResult;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -121,7 +119,7 @@ impl SolanaAccountParser {
                         if account_param_regex.is_match(line) {
                             let mut line_split = line
                                 .trim()
-                                .trim_end_matches(",")
+                                .trim_end_matches(',')
                                 .trim_start_matches("pub ")
                                 .split(": ");
                             Some(SolanaAccountParserAccount {
