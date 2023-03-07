@@ -491,14 +491,10 @@ impl MiroCommand {
     async fn deploy_co_action(&self) -> Result<(), CommandError> {
         println!("Deploying code-overhaul frames to the Miro board");
 
-        // let miro_board_frames = MiroFrame::get_frames_from_miro()
-        //     .await
-        //     .change_context(CommandError)?;
-
-        let entrypoints_names =
+        let entry_point_names =
             EntrypointParser::get_entrypoint_names(false).change_context(CommandError)?;
 
-        for (entrypoint_index, entrypoint_name) in entrypoints_names.iter().enumerate() {
+        for (entrypoint_index, entrypoint_name) in entry_point_names.iter().enumerate() {
             match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())
                 .change_context(CommandError)
             {
@@ -518,7 +514,7 @@ impl MiroCommand {
                         // the item id is incorrect, is necessary to replace the old metadata
                         Err(_) => {
                             println!(
-                                "Incorrect frame deployed for {}, \nurl: {}\n Updating the Miro metadata\n",
+                                "Incorrect frame deployed for {}, \nurl: {}\nUpdating the Miro metadata\n",
                                 entrypoint_name.clone().red(),
                                 MiroFrame::get_frame_url_by_frame_id(&miro_co_metadata.miro_frame_id)
                                     .change_context(CommandError)?

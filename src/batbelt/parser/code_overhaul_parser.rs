@@ -8,7 +8,7 @@ use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
 use crate::batbelt::parser::{ParserError, ParserResult};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::silicon;
-use crate::batbelt::sonar::{SonarResult, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use crate::commands::miro_commands::MiroCommand;
 use colored::Colorize;
@@ -63,6 +63,23 @@ impl CodeOverhaulParser {
         Ok(validations_image)
     }
 
+    // let validations_section = CodeOverhaulSection::Validations
+    // .get_section_content(Some(entrypoint_parser.clone()))
+    // .change_context(CommandError)?;
+    // let val_sec_formatted = validations_section
+    // .lines()
+    // .filter_map(|line| {
+    // if line.trim() == "# Validations:" {
+    // return Some("/// Validations".to_string());
+    // };
+    // if line.trim() == "- ```rust" || line.trim() == "```" {
+    // return Some("".to_string());
+    // }
+    // Some(line.to_string())
+    // })
+    // .collect::<Vec<_>>()
+    // .join("\n");
+
     pub async fn get_context_accounts_image_for_miro_co_frame(
         &self,
         miro_frame: MiroFrame,
@@ -70,7 +87,21 @@ impl CodeOverhaulParser {
         let (context_accounts_x_position, context_accounts_y_position) = (2200, 350);
         let header = "/// Context accounts";
         let context_accounts_image_content = self.context_accounts_content.clone();
-        let content = format!("{}\n\n{}", header, context_accounts_image_content);
+        let ca_lines = context_accounts_image_content.lines();
+        let trailing_ws_first_line =
+            BatSonar::get_trailing_whitespaces(ca_lines.clone().next().unwrap());
+        let ca_formatted = ca_lines
+            .map(|line| {
+                let trailing_ws = BatSonar::get_trailing_whitespaces(line);
+                format!(
+                    "{}{}",
+                    " ".repeat(trailing_ws - trailing_ws_first_line),
+                    line.trim()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let content = format!("{}\n\n{}", header, ca_formatted);
         let validations_image = self
             .deploy_image_and_update_position(
                 content,
@@ -82,6 +113,23 @@ impl CodeOverhaulParser {
             .await?;
         Ok(validations_image)
     }
+
+    // let context_accounts_section = CodeOverhaulSection::ContextAccounts
+    // .get_section_content(Some(entrypoint_parser.clone()))
+    // .change_context(CommandError)?;
+    // let ca_formatted = context_accounts_section
+    // .lines()
+    // .filter_map(|line| {
+    // if line.trim() == "# Context accounts:" {
+    // return Some("/// Context accounts".to_string());
+    // };
+    // if line.trim() == "- ```rust" || line.trim() == "```" {
+    // return None;
+    // }
+    // Some(line.to_string())
+    // })
+    // .collect::<Vec<_>>()
+    // .join("\n");
 
     async fn deploy_image_and_update_position(
         &self,
