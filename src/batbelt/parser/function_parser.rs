@@ -7,8 +7,8 @@ use crate::batbelt::parser::ParserError;
 use crate::batbelt::metadata::function_dependencies_metadata::{
     FunctionDependenciesMetadata, FunctionDependencyInfo,
 };
-use crate::batbelt::metadata::trait_metadata::TraitMetadataFunction;
-use error_stack::{IntoReport, Report, Result, ResultExt};
+
+use error_stack::{Report, Result, ResultExt};
 use regex::Regex;
 
 #[derive(Clone, Debug)]
@@ -166,13 +166,9 @@ impl FunctionParser {
                     .clone()
                     .into_iter()
                     .find_map(|trait_metadata| {
-                        match trait_metadata
-                            .impl_functions
-                            .clone()
-                            .into_iter()
-                            .find(|impl_func| {
-                                impl_func.trait_signature == impl_function_signature_match
-                            }) {
+                        match trait_metadata.impl_functions.into_iter().find(|impl_func| {
+                            impl_func.trait_signature == impl_function_signature_match
+                        }) {
                             None => None,
                             Some(impl_func) => Some(impl_func.function_source_code_metadata_id),
                         }
