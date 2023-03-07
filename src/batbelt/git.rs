@@ -11,6 +11,7 @@ use std::{process::Command, str};
 use super::path::BatFolder;
 use crate::batbelt::command_line::{execute_command, execute_command_with_child_process};
 
+use crate::batbelt::metadata::BatMetadataCommit;
 use crate::config::BatAuditorConfig;
 use crate::{batbelt::path::BatFile, config::BatConfig, Suggestion};
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -223,17 +224,33 @@ pub fn get_current_branch_name() -> GitResult<String> {
 pub enum GitCommit {
     Init,
     InitAuditor,
-    StartCO { entrypoint_name: String },
-    FinishCO { entrypoint_name: String },
-    UpdateCO { entrypoint_name: String },
-    StartFinding { finding_name: String },
-    FinishFinding { finding_name: String },
-    RejectFinding { finding_name: String },
-    UpdateFinding { finding_name: String },
+    StartCO {
+        entrypoint_name: String,
+    },
+    FinishCO {
+        entrypoint_name: String,
+    },
+    UpdateCO {
+        entrypoint_name: String,
+    },
+    StartFinding {
+        finding_name: String,
+    },
+    FinishFinding {
+        finding_name: String,
+    },
+    RejectFinding {
+        finding_name: String,
+    },
+    UpdateFinding {
+        finding_name: String,
+    },
     AcceptFindings,
     UpdateTemplates,
     Notes,
-    UpdateMetadataJson,
+    UpdateMetadataJson {
+        bat_metadata_commit: BatMetadataCommit,
+    },
 }
 
 impl GitCommit {
@@ -376,7 +393,7 @@ impl GitCommit {
                         .change_context(GitError)?,
                 ]
             }
-            GitCommit::UpdateMetadataJson => {
+            GitCommit::UpdateMetadataJson { .. } => {
                 vec![BatFile::BatMetadataFile
                     .get_path(false)
                     .change_context(GitError)?]
@@ -425,7 +442,9 @@ impl GitCommit {
                 "notes: open_questions, finding_candidates and threat_modeling notes updated"
                     .to_string()
             }
-            GitCommit::UpdateMetadataJson => "metadata: BatMetadata.json updated".to_string(),
+            GitCommit::UpdateMetadataJson {
+                bat_metadata_commit,
+            } => bat_metadata_commit.get_commit_message(),
         };
         Ok(commit_string)
     }

@@ -6,8 +6,8 @@ use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
 };
 use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, MetadataError, MiroMetadata,
-    SourceCodeMetadata,
+    BatMetadata, BatMetadataCommit, BatMetadataParser, BatMetadataType, MetadataError,
+    MiroMetadata, SourceCodeMetadata,
 };
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
@@ -555,9 +555,11 @@ impl MiroCommand {
                 }
             }
         }
-        GitCommit::UpdateMetadataJson
-            .create_commit()
-            .change_context(CommandError)?;
+        GitCommit::UpdateMetadataJson {
+            bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
+        }
+        .create_commit()
+        .change_context(CommandError)?;
         Ok(())
     }
 
