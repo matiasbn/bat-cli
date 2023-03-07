@@ -36,14 +36,8 @@ pub enum CodeOverhaulCommand {
     Start,
     /// Moves the code-overhaul file from to-review to finished
     Finish,
-    /// Update a code-overhaul file by creating a commit
-    Update,
-    /// Counts the to-review, started, finished and total co files
-    Count,
-    /// Opens the co file and the instruction of a started entrypoint
-    Open,
     /// Deploy the Miro diagram
-    DeployDiagram,
+    DeployMiro,
 }
 
 impl BatEnumerator for CodeOverhaulCommand {}
@@ -67,10 +61,7 @@ impl CodeOverhaulCommand {
         return match self {
             CodeOverhaulCommand::Start => self.start_co_file(),
             CodeOverhaulCommand::Finish => self.finish_co_file(),
-            CodeOverhaulCommand::Update => self.update_co_file(),
-            CodeOverhaulCommand::Count => self.count_co_files(),
-            CodeOverhaulCommand::Open => self.open_co(),
-            CodeOverhaulCommand::DeployDiagram => self.deploy_diagram().await,
+            CodeOverhaulCommand::DeployMiro => self.deploy_diagram().await,
         };
     }
 
@@ -572,103 +563,6 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
-    fn count_co_files(&self) -> error_stack::Result<(), CommandError> {
-        let (to_review_count, started_count, finished_count) = self.co_counter()?;
-        println!("to-review co files: {}", format!("{to_review_count}").red());
-        println!("started co files: {}", format!("{started_count}").yellow());
-        println!("finished co files: {}", format!("{finished_count}").green());
-        println!(
-            "total co files: {}",
-            format!("{}", to_review_count + started_count + finished_count).purple()
-        );
-        Ok(())
-    }
-
-    fn co_counter(&self) -> error_stack::Result<(usize, usize, usize), CommandError> {
-        let to_review_count = BatFolder::CodeOverhaulToReview
-            .get_all_files_names(true, None, None)
-            .change_context(CommandError)?
-            .len();
-        let started_count = BatFolder::CodeOverhaulStarted
-            .get_all_files_names(true, None, None)
-            .change_context(CommandError)?
-            .len();
-        let finished_count = BatFolder::CodeOverhaulFinished
-            .get_all_files_names(true, None, None)
-            .change_context(CommandError)?
-            .len();
-        Ok((to_review_count, started_count, finished_count))
-    }
-
-    fn open_co(&self) -> error_stack::Result<(), CommandError> {
-        let _bat_config = BatConfig::get_config().change_context(CommandError)?;
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
-        // list to start
-        if bat_auditor_config.use_code_editor {
-            let options = vec!["started".green(), "finished".yellow()];
-            let prompt_text = format!(
-                "Do you want to open a {} or a {} file?",
-                options[0], options[1]
-            );
-            let selection = batbelt::bat_dialoguer::select(&prompt_text, options.clone(), None)
-                .change_context(CommandError)?;
-            let open_started = selection == 0;
-            let co_folder = if open_started {
-                BatFolder::CodeOverhaulStarted
-            } else {
-                BatFolder::CodeOverhaulFinished
-            };
-            let co_files = co_folder
-                .get_all_files_dir_entries(true, None, None)
-                .change_context(CommandError)?
-                .into_iter()
-                .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
-                .collect::<Vec<_>>();
-            if !co_files.is_empty() {
-                let prompt_text = "Select the code-overhaul file to open:";
-                let selection = batbelt::bat_dialoguer::select(prompt_text, co_files.clone(), None)
-                    .change_context(CommandError)?;
-                let file_name = &co_files[selection].clone();
-                let bat_file = if open_started {
-                    BatFile::CodeOverhaulStarted {
-                        file_name: file_name.clone(),
-                    }
-                } else {
-                    BatFile::CodeOverhaulFinished {
-                        file_name: file_name.clone(),
-                    }
-                };
-                let ep_parser =
-                    EntrypointParser::new_from_name(file_name.clone().trim_end_matches(".md"))
-                        .change_context(CommandError)?;
-
-                bat_file
-                    .open_in_editor(true, None)
-                    .change_context(CommandError)?;
-                if ep_parser.handler.is_some() {
-                    let handler_metadata = ep_parser.handler.unwrap();
-                    let _instruction_file_path = handler_metadata.path;
-                    let _start_line_index = handler_metadata.start_line_index;
-                    // BatAuditorConfig::get_config()
-                    //     .change_context(CommandError)?
-                    //     .code_editor::;
-                }
-                BatFile::ProgramLib
-                    .open_in_editor(true, Some(ep_parser.entry_point_function.start_line_index))
-                    .change_context(CommandError)?;
-                return Ok(());
-            } else {
-                println!("Empty {} folder", options[selection].clone());
-            }
-            BatFile::ProgramLib
-                .open_in_editor(true, None)
-                .change_context(CommandError)?;
-        } else {
-            print!("VSCode integration not enabled");
-        }
-        Ok(())
-    }
-
     fn finish_co_file(&self) -> error_stack::Result<(), CommandError> {
         deprecated_check_correct_branch().change_context(CommandError)?;
         // get to-review files
@@ -830,36 +724,6 @@ impl CodeOverhaulCommand {
                 Some(ep_parser.entry_point_function.start_line_index),
             )?;
         }
-        Ok(())
-    }
-
-    fn update_co_file(&self) -> error_stack::Result<(), CommandError> {
-        println!("Select the code-overhaul file to finish:");
-        let finished_files_names = BatFolder::CodeOverhaulFinished
-            .get_all_files_names(true, None, None)
-            .change_context(CommandError)?;
-
-        if finished_files_names.is_empty() {
-            return Err(Report::new(CommandError).attach_printable(format!(
-                "{}",
-                "no finished files in code-overhaul folder".red()
-            )));
-        }
-
-        let selection = BatDialoguer::select(
-            "Select the code-overhaul file to update:".to_string(),
-            finished_files_names.clone(),
-            None,
-        )
-        .change_context(CommandError)?;
-
-        let finished_file_name = finished_files_names[selection].clone();
-
-        GitCommit::UpdateCO {
-            entrypoint_name: finished_file_name,
-        }
-        .create_commit()
-        .change_context(CommandError)?;
         Ok(())
     }
 }

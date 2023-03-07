@@ -3,6 +3,8 @@ use crate::batbelt::command_line::execute_command;
 
 use crate::batbelt::git::GitCommit;
 
+use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::path::BatFolder;
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use clap::Subcommand;
@@ -17,7 +19,6 @@ pub enum RepositoryCommand {
     /// Merges all the branches into develop branch, and then merge develop into the rest of the branches
     #[default]
     UpdateBranches,
-
     /// Delete local branches
     DeleteLocalBranches {
         /// select all options as true
@@ -32,6 +33,8 @@ pub enum RepositoryCommand {
     },
     /// Commits the open_questions, finding_candidate and threat_modeling notes
     CommitNotes,
+    /// Creates a commit for an updated code-overhaul file
+    UpdateCodeOverhaul,
 }
 
 impl BatEnumerator for RepositoryCommand {}
@@ -53,6 +56,7 @@ impl BatCommandEnumerator for RepositoryCommand {
             RepositoryCommand::CommitNotes => GitCommit::Notes
                 .create_commit()
                 .change_context(CommandError),
+            RepositoryCommand::UpdateCodeOverhaul => self.execute_update_co_file(),
         }
     }
 
@@ -194,6 +198,36 @@ impl RepositoryCommand {
             .collect::<Vec<_>>();
         log::debug!("filtered remote_branches: \n{:#?}", list);
         Ok(list)
+    }
+
+    fn execute_update_co_file(&self) -> CommandResult<()> {
+        println!("Select the code-overhaul file to finish:");
+        let finished_files_names = BatFolder::CodeOverhaulFinished
+            .get_all_files_names(true, None, None)
+            .change_context(CommandError)?;
+
+        if finished_files_names.is_empty() {
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "{}",
+                "no finished files in code-overhaul folder".red()
+            )));
+        }
+
+        let selection = BatDialoguer::select(
+            "Select the code-overhaul file to update:".to_string(),
+            finished_files_names.clone(),
+            None,
+        )
+        .change_context(CommandError)?;
+
+        let finished_file_name = finished_files_names[selection].clone();
+
+        GitCommit::UpdateCO {
+            entrypoint_name: finished_file_name,
+        }
+        .create_commit()
+        .change_context(CommandError)?;
+        Ok(())
     }
 
     fn checkout_branch(&self, branch_name: &str) -> Result<(), CommandError> {
