@@ -226,7 +226,7 @@ impl CAAccountParser {
         if constraints_regex.is_match(sonar_result_content.clone()) {
             let mut matches = constraints_regex
                 .find_iter(sonar_result_content.clone())
-                .map(|reg_match| reg_match.as_str().trim_end_matches(")").trim().to_string())
+                .map(|reg_match| reg_match.as_str().trim_end_matches(')').trim().to_string())
                 .collect::<Vec<_>>();
             account_info.validations.append(&mut matches);
         }
@@ -237,7 +237,7 @@ impl CAAccountParser {
         if has_one_regex.is_match(sonar_result_content.clone()) {
             let mut matches = has_one_regex
                 .find_iter(sonar_result_content.clone())
-                .map(|reg_match| reg_match.as_str().trim_end_matches(")").trim().to_string())
+                .map(|reg_match| reg_match.as_str().trim_end_matches(')').trim().to_string())
                 .collect::<Vec<_>>();
             account_info.validations.append(&mut matches);
         }
@@ -248,7 +248,7 @@ impl CAAccountParser {
         if address_regex.is_match(sonar_result_content.clone()) {
             let mut matches = address_regex
                 .find_iter(sonar_result_content.clone())
-                .map(|reg_match| reg_match.as_str().trim_end_matches(")").trim().to_string())
+                .map(|reg_match| reg_match.as_str().trim_end_matches(')').trim().to_string())
                 .collect::<Vec<_>>();
             account_info.validations.append(&mut matches);
         }

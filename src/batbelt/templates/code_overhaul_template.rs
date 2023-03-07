@@ -1,6 +1,4 @@
-use crate::batbelt;
-use crate::batbelt::metadata::functions_source_code_metadata::get_function_parameters;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::parser::function_parser::FunctionParser;
@@ -9,7 +7,7 @@ use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlac
     CompleteWithNotes, CompleteWithTheRestOfStateChanges,
 };
 use crate::batbelt::templates::{TemplateError, TemplateResult};
-use colored::Colorize;
+
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
 
@@ -102,7 +100,7 @@ impl CodeOverhaulSection {
             let entrypoint_parser = ep_parser.unwrap();
             match self {
                 CodeOverhaulSection::StateChanges => {
-                    self.get_state_changes_content(entrypoint_parser.clone())?
+                    self.get_state_changes_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
                 CodeOverhaulSection::Signers => self.get_signers_section_content(entrypoint_parser),
@@ -138,7 +136,7 @@ impl CodeOverhaulSection {
         let mut state_changes_content_vec = vec![];
         let context_accounts_metadata = bat_metadata
             .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                entry_point_parser.context_accounts.metadata_id.clone(),
+                entry_point_parser.context_accounts.metadata_id,
             )
             .change_context(TemplateError)?;
 
@@ -157,7 +155,6 @@ impl CodeOverhaulSection {
 
         let close_accounts = context_accounts_metadata
             .context_accounts_info
-            .clone()
             .into_iter()
             .filter(|ca_info| ca_info.is_close)
             .collect::<Vec<_>>();
@@ -181,7 +178,7 @@ impl CodeOverhaulSection {
     ) -> TemplateResult<String> {
         log::debug!(
             "get_validations_section_content entrypoint_parser \n{:#?}",
-            entrypoint_parser.clone()
+            entrypoint_parser
         );
         if entrypoint_parser.handler.is_none() {
             return Ok(format!(
@@ -216,7 +213,7 @@ impl CodeOverhaulSection {
                 }
                 result
             });
-        log::debug!("if_validations:\n{:#?}", if_validations.clone());
+        log::debug!("if_validations:\n{:#?}", if_validations);
         // any if that contains an if validation is considered a validation
         let mut filtered_if_validations = handler_if_validations
             .results
@@ -236,7 +233,7 @@ impl CodeOverhaulSection {
 
         let handler_validations =
             BatSonar::new_from_path(&instruction_file_path, None, SonarResultType::Validation);
-        log::debug!("handler_validations:\n{:#?}", handler_validations.clone());
+        log::debug!("handler_validations:\n{:#?}", handler_validations);
 
         // if there are validations in if_validations, then filter them from handler validations to avoid repetition
         let mut filtered_handler_validations = if if_validations.is_empty() {
@@ -271,7 +268,7 @@ impl CodeOverhaulSection {
 
         log::debug!(
             "context_accounts_metadata:\n{:#?}",
-            context_accounts_metadata.clone()
+            context_accounts_metadata
         );
 
         let mut ca_accounts_results = context_accounts_metadata
@@ -500,7 +497,6 @@ impl CodeOverhaulSection {
             FunctionParser::new_from_metadata(handler_function).change_context(TemplateError)?;
         let filtered_parameters = handler_function_parser
             .parameters
-            .clone()
             .into_iter()
             .filter(|parameter| !parameter.parameter_type.contains("Context<"))
             .collect::<Vec<_>>();

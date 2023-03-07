@@ -8,9 +8,9 @@ use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::MiroItemType;
 use crate::batbelt::parser::ParserError;
-use crate::batbelt::path::BatFile;
+
 use crate::batbelt::silicon;
-use crate::batbelt::sonar::BatSonar;
+
 use crate::batbelt::{self, path::BatFolder};
 use crate::config::BatConfig;
 use error_stack::{Result, ResultExt};

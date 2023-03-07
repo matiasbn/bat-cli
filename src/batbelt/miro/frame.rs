@@ -1,6 +1,6 @@
 use super::*;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::miro::image::MiroImage;
+
 use crate::batbelt::miro::MiroItemType;
 use colored::Colorize;
 use error_stack::{IntoReport, Result};
@@ -25,15 +25,15 @@ impl MiroCodeOverhaulConfig {
         match self {
             MiroCodeOverhaulConfig::EntryPoint => (
                 MIRO_FRAME_WIDTH as i64 * 3 / 10,
-                (MIRO_FRAME_HEIGHT as i64) * 1 / 10,
+                (MIRO_FRAME_HEIGHT as i64) / 10,
             ),
             MiroCodeOverhaulConfig::ContextAccount => (
                 MIRO_FRAME_WIDTH as i64 * 6 / 10,
-                (MIRO_FRAME_HEIGHT as i64) * 1 / 4,
+                (MIRO_FRAME_HEIGHT as i64) / 4,
             ),
             MiroCodeOverhaulConfig::Validations => (
                 MIRO_FRAME_WIDTH as i64 * 10 / 12,
-                (MIRO_FRAME_HEIGHT as i64) * 1 / 4,
+                (MIRO_FRAME_HEIGHT as i64) / 4,
             ),
             MiroCodeOverhaulConfig::Handler => (
                 MIRO_FRAME_WIDTH as i64 * 10 / 12,
@@ -417,7 +417,6 @@ mod api {
 
 #[cfg(debug_assertions)]
 mod miro_frame_test {
-    use super::*;
 
     #[test]
     fn test_get_miro_frame_url() {

@@ -1,6 +1,6 @@
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId, MetadataResult};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
 
 use crate::batbelt::parser::ParserError;
 
@@ -65,10 +65,10 @@ impl FunctionParser {
                     .clone()
                     .dependencies
                     .into_iter()
-                    .map(|func_dep| func_dep.function_metadata_id.clone())
+                    .map(|func_dep| func_dep.function_metadata_id)
                     .collect();
                 new_function_parser.external_dependencies =
-                    function_dep_metadata.clone().external_dependencies;
+                    function_dep_metadata.external_dependencies;
                 return Ok(new_function_parser);
             }
             Err(_) => {
