@@ -26,8 +26,6 @@ use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeScreenshotOptions;
 use crate::commands::miro_commands::MiroCommand;
 
-use std::fs;
-
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
 )]
@@ -466,10 +464,7 @@ impl CodeOverhaulCommand {
         let miro_placeholder =
             CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder();
         if started_co_bat_file_content.contains(&miro_placeholder) {
-            let entrypoint_name = finished_endpoint
-                .clone()
-                .trim_end_matches(".md")
-                .to_string();
+            let entrypoint_name = finished_endpoint.trim_end_matches(".md").to_string();
             if let Ok(miro_co_metadata) =
                 MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name)
                     .change_context(CommandError)
@@ -485,7 +480,7 @@ impl CodeOverhaulCommand {
             }
         }
 
-        self.check_code_overhaul_file_completed(started_co_bat_file.clone())?;
+        self.check_code_overhaul_file_completed(started_co_bat_file)?;
         execute_command(
             "mv",
             &[&started_co_bat_file_path, &finished_co_folder_path],
