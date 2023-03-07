@@ -131,11 +131,12 @@ fn bump() -> Result<String, PackageError> {
         .collect::<Vec<_>>()
         .join(".");
     println!("Bumping the version {new_version} on Cargo.toml");
-    fs::write(
-        "Cargo.toml",
-        cargo_toml.replace(version_line, &format!("version = \"{new_version}\"")),
-    )
-    .unwrap();
+    let mut cargo_toml_vec = cargo_toml
+        .lines()
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>();
+    cargo_toml_vec[version_line_index] = format!("version = \"{new_version}\"");
+    fs::write("Cargo.toml", &cargo_toml_vec.join("\n")).unwrap();
 
     // create commit with new version
     println!("Creating commit for version bump {new_version}");
