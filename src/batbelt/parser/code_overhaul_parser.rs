@@ -277,12 +277,10 @@ impl CodeOverhaulParser {
                         .filter_map(|line| {
                             if !line.contains("```") {
                                 Some(line.to_string())
+                            } else if use_separator {
+                                Some("-".repeat(20))
                             } else {
-                                if use_separator {
-                                    Some("-".repeat(20))
-                                } else {
-                                    None
-                                }
+                                None
                             }
                         })
                         .collect::<Vec<_>>()
