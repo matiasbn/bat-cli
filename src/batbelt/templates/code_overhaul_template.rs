@@ -3,6 +3,7 @@ use crate::batbelt::metadata::functions_source_code_metadata::get_function_param
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
+use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithTheRestOfStateChanges,
@@ -106,13 +107,13 @@ impl CodeOverhaulSection {
                 CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
                 CodeOverhaulSection::Signers => self.get_signers_section_content(entrypoint_parser),
                 CodeOverhaulSection::FunctionParameters => {
-                    self.get_function_parameters_section_content(entrypoint_parser)
+                    self.get_function_parameters_section_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::ContextAccounts => {
                     self.get_context_account_section_content(entrypoint_parser)
                 }
                 CodeOverhaulSection::Validations => {
-                    self.get_validations_section_content(entrypoint_parser)
+                    self.get_validations_section_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::MiroFrameUrl => {
                     CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder()
@@ -174,19 +175,21 @@ impl CodeOverhaulSection {
         Ok(state_changes_content_vec.join("\n"))
     }
 
-    fn get_validations_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
+    fn get_validations_section_content(
+        &self,
+        entrypoint_parser: EntrypointParser,
+    ) -> TemplateResult<String> {
         log::debug!(
             "get_validations_section_content entrypoint_parser \n{:#?}",
             entrypoint_parser.clone()
         );
         if entrypoint_parser.handler.is_none() {
-            return format!(
+            return Ok(format!(
                 "- {}",
                 CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
-            );
+            ));
         }
         let handler_function = entrypoint_parser.handler.unwrap();
-        let context_source_code = handler_function.to_source_code_parser(None);
         let instruction_file_path = handler_function.path.clone();
         let handler_if_validations = BatSonar::new_from_path(
             &instruction_file_path,
@@ -259,25 +262,47 @@ impl CodeOverhaulSection {
             "filtered_handler_validations:\n{:#?}",
             filtered_handler_validations.clone()
         );
+        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+        let context_accounts_metadata = bat_metadata
+            .get_context_accounts_metadata_by_struct_source_code_metadata_id(
+                entrypoint_parser.context_accounts.metadata_id,
+            )
+            .change_context(TemplateError)?;
 
-        let ca_accounts_only_validations = BatSonar::new_scanned(
-            &context_source_code.get_source_code_content(),
-            SonarResultType::ContextAccountsOnlyValidation,
-        );
         log::debug!(
-            "ca_accounts_only_validations:\n{:#?}",
-            ca_accounts_only_validations.clone()
+            "context_accounts_metadata:\n{:#?}",
+            context_accounts_metadata.clone()
         );
 
-        let mut ca_accounts_results = ca_accounts_only_validations
-            .results
-            .iter()
-            .map(|result| result.content.clone())
+        let mut ca_accounts_results = context_accounts_metadata
+            .context_accounts_info
+            .into_iter()
+            .filter_map(|ca_metadata| {
+                if !ca_metadata.validations.is_empty() {
+                    let last_line = ca_metadata.content.lines().last().unwrap();
+                    let last_line_tws = BatSonar::get_trailing_whitespaces(last_line);
+                    let trailing_str = " ".repeat(last_line_tws);
+                    let result = format!(
+                        "{}#[account(\n{}\n{})]\n{}",
+                        trailing_str,
+                        ca_metadata
+                            .validations
+                            .into_iter()
+                            .map(|validation| {
+                                format!("{}\t{}", trailing_str.clone(), validation)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        trailing_str,
+                        last_line
+                    );
+                    Some(result)
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>();
-        log::debug!(
-            "ca_accounts_only_validations:\n{:#?}",
-            ca_accounts_only_validations.clone()
-        );
+        log::debug!("ca_accounts_results:\n{:#?}", ca_accounts_results.clone());
 
         let mut validations_vec: Vec<String> = vec![];
         validations_vec.append(&mut ca_accounts_results);
@@ -296,7 +321,7 @@ impl CodeOverhaulSection {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        validations_content
+        Ok(validations_content)
     }
 
     fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
@@ -454,39 +479,48 @@ impl CodeOverhaulSection {
     fn get_function_parameters_section_content(
         &self,
         entrypoint_parser: EntrypointParser,
-    ) -> String {
+    ) -> TemplateResult<String> {
         if entrypoint_parser.handler.is_none() {
-            return format!(
+            return Ok(format!(
                 "- {}",
                 CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
-            );
+            ));
         }
         let handler_function = entrypoint_parser.handler.unwrap();
-        let handler_function_parameters = get_function_parameters(
-            handler_function
-                .to_source_code_parser(None)
-                .get_source_code_content(),
-        );
-        let function_parameters_content = if handler_function_parameters.is_empty() {
+        let handler_function_parser =
+            FunctionParser::new_from_metadata(handler_function).change_context(TemplateError)?;
+        let filtered_parameters = handler_function_parser
+            .parameters
+            .clone()
+            .into_iter()
+            .filter(|parameter| !parameter.parameter_type.contains("Context<"))
+            .collect::<Vec<_>>();
+        let function_parameters_content = if filtered_parameters.is_empty() {
             format!(
                 "- {}",
                 CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
             )
         } else {
-            handler_function_parameters
+            filtered_parameters
                 .iter()
                 .fold("".to_string(), |result, parameter| {
-                    if parameter.contains("Context<") {
-                        return result;
-                    }
                     if result.is_empty() {
-                        format!("- {}", parameter.trim_end_matches(','))
+                        format!(
+                            "- {}: {}",
+                            parameter.parameter_name,
+                            parameter.parameter_type.trim_end_matches(',')
+                        )
                     } else {
-                        format!("{}\n- {}", result, parameter.trim_end_matches(','))
+                        format!(
+                            "{}\n- {}: {}",
+                            result,
+                            parameter.parameter_name,
+                            parameter.parameter_type.trim_end_matches(',')
+                        )
                     }
                 })
         };
-        function_parameters_content
+        Ok(function_parameters_content)
     }
 }
 
