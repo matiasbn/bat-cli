@@ -1,17 +1,16 @@
-use crate::batbelt::metadata::{BatMetadata, MetadataId};
 use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
 use crate::batbelt::miro::image::MiroImage;
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::MiroItemType;
-use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
+
 use crate::batbelt::parser::{ParserError, ParserResult};
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::silicon;
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::sonar::BatSonar;
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use crate::commands::miro_commands::MiroCommand;
 use colored::Colorize;
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, ResultExt};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -39,7 +38,7 @@ impl CodeOverhaulParser {
         if !bat_file.file_exists().change_context(ParserError)? {
             return Err(Report::new(ParserError).attach_printable(format!(
                 "code-overhaul file started not found for entrypoint: {}",
-                entry_point_name.clone()
+                entry_point_name
             )));
         }
         let mut new_co_parser = CodeOverhaulParser {
@@ -244,7 +243,8 @@ impl CodeOverhaulParser {
         let content_lines = content.lines();
         let trailing_ws_first_line =
             BatSonar::get_trailing_whitespaces(content_lines.clone().next().unwrap());
-        let formatted = content_lines
+
+        content_lines
             .map(|line| {
                 let trailing_ws = BatSonar::get_trailing_whitespaces(line);
                 format!(
@@ -254,8 +254,7 @@ impl CodeOverhaulParser {
                 )
             })
             .collect::<Vec<_>>()
-            .join("\n");
-        formatted
+            .join("\n")
     }
 
     fn rust_subsection_matcher(&self, content: &str) -> ParserResult<Vec<String>> {

@@ -46,7 +46,7 @@ impl SonarCommand {
     fn execute_run(&self) -> CommandResult<()> {
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         // backup miro metadata
-        let miro_metadata = bat_metadata.miro.clone();
+        let miro_metadata = bat_metadata.miro;
         // backup co metadata
 
         TemplateGenerator::create_metadata_json().change_context(CommandError)?;

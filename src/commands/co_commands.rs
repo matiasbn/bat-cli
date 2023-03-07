@@ -4,28 +4,28 @@ use crate::batbelt::git::{deprecated_check_correct_branch, GitCommit};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{
-    CodeOverhaulSection, CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
+    CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
 };
-use crate::batbelt::{silicon, BatEnumerator};
+use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
-use crate::config::{BatAuditorConfig, BatConfig};
+
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
-use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use error_stack::{FutureExt, Report, ResultExt};
 
-use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerInfo, SignerType};
+use crate::batbelt::metadata::miro_metadata::{SignerInfo, SignerType};
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MiroMetadata};
 use crate::batbelt::miro::connector::ConnectorOptions;
 use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
 use crate::batbelt::miro::image::MiroImage;
-use crate::batbelt::miro::item::MiroItem;
+
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
-use crate::batbelt::miro::{MiroConfig, MiroItemType};
+use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeScreenshotOptions;
 use crate::commands::miro_commands::MiroCommand;
-use regex::Regex;
+
 use std::fs;
 
 #[derive(
@@ -59,11 +59,11 @@ impl BatCommandEnumerator for CodeOverhaulCommand {
 
 impl CodeOverhaulCommand {
     pub async fn execute_command(&self) -> CommandResult<()> {
-        return match self {
+        match self {
             CodeOverhaulCommand::Start => self.start_co_file(),
             CodeOverhaulCommand::Finish => self.finish_co_file(),
             CodeOverhaulCommand::DeployMiro => self.deploy_diagram().await,
-        };
+        }
     }
 
     async fn deploy_diagram(&self) -> CommandResult<()> {

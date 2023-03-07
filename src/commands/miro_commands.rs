@@ -1,5 +1,4 @@
 use crate::batbelt;
-use std::fs;
 
 use colored::{ColoredString, Colorize};
 
@@ -13,37 +12,30 @@ use crate::batbelt::metadata::{
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
-use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
+use crate::batbelt::miro::connector::create_connector;
 use crate::batbelt::miro::frame::MiroFrame;
 
-use crate::batbelt::miro::{MiroConfig, MiroItemType};
+use crate::batbelt::miro::MiroConfig;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 
 use crate::batbelt::miro::image::MiroImage;
 
 use crate::batbelt::git::GitCommit;
-use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerInfo, SignerType};
-use crate::batbelt::miro::item::MiroItem;
-use crate::batbelt::miro::sticky_note::MiroStickyNote;
+use crate::batbelt::metadata::miro_metadata::MiroCodeOverhaulMetadata;
+
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 
-use crate::batbelt::path::{BatFile, BatFolder};
-use crate::batbelt::templates::code_overhaul_template::{
-    CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
-};
-use crate::batbelt::{silicon, BatEnumerator};
+use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
-use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
+use error_stack::{FutureExt, Result, ResultExt};
 use inflector::Inflector;
-use regex::Regex;
 
 use super::CommandError;
 use crate::batbelt::miro::frame::{
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
-use crate::config::BatAuditorConfig;
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -94,7 +86,7 @@ impl BatCommandEnumerator for MiroCommand {
 impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
-        return match self {
+        match self {
             MiroCommand::DeployCOFrames => self.deploy_co_action().await,
             MiroCommand::Entrypoint { select_all, sorted } => {
                 self.entrypoint_action(*select_all, *sorted).await
@@ -103,7 +95,7 @@ impl MiroCommand {
             MiroCommand::FunctionDependencies { select_all } => {
                 self.function_action(*select_all).await
             }
-        };
+        }
     }
 
     async fn entrypoint_action(&self, select_all: bool, sorted: bool) -> Result<(), CommandError> {
@@ -498,7 +490,7 @@ impl MiroCommand {
             match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())
                 .change_context(CommandError)
             {
-                Ok(mut miro_co_metadata) => {
+                Ok(miro_co_metadata) => {
                     match MiroFrame::new_from_item_id(&miro_co_metadata.miro_frame_id)
                         .await
                         .change_context(CommandError)
@@ -520,7 +512,7 @@ impl MiroCommand {
                                     .change_context(CommandError)?
                             );
                             let new_frame = self
-                                .deploy_miro_frame_for_co(&entrypoint_name, entrypoint_index)
+                                .deploy_miro_frame_for_co(entrypoint_name, entrypoint_index)
                                 .await?;
                             let new_co_metadata = MiroCodeOverhaulMetadata {
                                 metadata_id: miro_co_metadata.metadata_id.clone(),
@@ -553,7 +545,7 @@ impl MiroCommand {
                     };
 
                     let miro_frame = self
-                        .deploy_miro_frame_for_co(&entrypoint_name, entrypoint_index)
+                        .deploy_miro_frame_for_co(entrypoint_name, entrypoint_index)
                         .await?;
 
                     miro_co_metadata.miro_frame_id = miro_frame.item_id.clone();
