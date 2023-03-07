@@ -26,8 +26,6 @@ use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
 use crate::batbelt::parser::source_code_parser::SourceCodeScreenshotOptions;
 use crate::commands::miro_commands::MiroCommand;
 
-use std::fs;
-
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
 )]
@@ -88,6 +86,10 @@ impl CodeOverhaulCommand {
         let started_files_names = co_started_bat_folder
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
+        if started_files_names.is_empty() {
+            return Err(Report::new(CommandError)
+                .attach_printable("code-overhaul's to-review folder is empty"));
+        }
         let prompt_text = "Select the co file to deploy to Miro".to_string();
         let selection = BatDialoguer::select(prompt_text, started_files_names.clone(), None)?;
         let selected_file_name = started_files_names[selection].clone();
@@ -450,15 +452,38 @@ impl CodeOverhaulCommand {
         let finished_co_folder_path = BatFolder::CodeOverhaulFinished
             .get_path(true)
             .change_context(CommandError)?;
-        let started_co_file_path = BatFile::CodeOverhaulStarted {
+        let started_co_bat_file = BatFile::CodeOverhaulStarted {
             file_name: finished_endpoint.clone(),
+        };
+        let started_co_bat_file_path = started_co_bat_file
+            .get_path(true)
+            .change_context(CommandError)?;
+        let started_co_bat_file_content = started_co_bat_file
+            .read_content(true)
+            .change_context(CommandError)?;
+        let miro_placeholder =
+            CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder();
+        if started_co_bat_file_content.contains(&miro_placeholder) {
+            let entrypoint_name = finished_endpoint.trim_end_matches(".md").to_string();
+            if let Ok(miro_co_metadata) =
+                MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name)
+                    .change_context(CommandError)
+            {
+                let miro_frame_url =
+                    MiroFrame::get_frame_url_by_frame_id(&miro_co_metadata.miro_frame_id)
+                        .change_context(CommandError)?;
+                let new_content =
+                    started_co_bat_file_content.replace(&miro_placeholder, &miro_frame_url);
+                started_co_bat_file
+                    .write_content(true, &new_content)
+                    .change_context(CommandError)?;
+            }
         }
-        .get_path(true)
-        .change_context(CommandError)?;
-        self.check_code_overhaul_file_completed(started_co_file_path.clone())?;
+
+        self.check_code_overhaul_file_completed(started_co_bat_file)?;
         execute_command(
             "mv",
-            &[&started_co_file_path, &finished_co_folder_path],
+            &[&started_co_bat_file_path, &finished_co_folder_path],
             false,
         )
         .change_context(CommandError)?;
@@ -474,15 +499,16 @@ impl CodeOverhaulCommand {
 
     fn check_code_overhaul_file_completed(
         &self,
-        file_path: String,
+        bat_file: BatFile,
     ) -> error_stack::Result<(), CommandError> {
-        let file_data = fs::read_to_string(file_path).unwrap();
+        let file_data = bat_file.read_content(true).change_context(CommandError)?;
+        let file_name = bat_file.get_file_name().change_context(CommandError)?;
         if file_data.contains(
             &CoderOverhaulTemplatePlaceholders::CompleteWithTheRestOfStateChanges.to_placeholder(),
         ) {
-            return Err(Report::new(CommandError).attach_printable(
-                "Please complete the \"What it does?\" section of the {file_name} file",
-            ));
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "Please complete the \"State changes\" section of the {file_name} file"
+            )));
         }
 
         if file_data
@@ -500,9 +526,9 @@ impl CodeOverhaulCommand {
         if file_data.contains(
             &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
         ) {
-            return Err(Report::new(CommandError).attach_printable(
-                "Please complete the \"Signers\" section of the {file_name} file",
-            ));
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "Please complete the \"Signers\" section of the {file_name} file"
+            )));
         }
 
         if file_data
@@ -520,9 +546,13 @@ impl CodeOverhaulCommand {
         if file_data
             .contains(&CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder())
         {
-            return Err(Report::new(CommandError).attach_printable(
-                "Please complete the \"Miro board frame\" section of the {file_name} file",
-            ));
+            let user_decided_to_continue = batbelt::bat_dialoguer::select_yes_or_no(
+                "Miro frame url section is not completed, do you want to proceed anyway?",
+            )
+            .change_context(CommandError)?;
+            if !user_decided_to_continue {
+                return Err(Report::new(CommandError).attach_printable("Aborted by the user"));
+            }
         }
         Ok(())
     }

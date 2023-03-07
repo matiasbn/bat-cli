@@ -136,9 +136,14 @@ impl MiroFrame {
     pub async fn get_frames_from_miro() -> Result<Vec<MiroFrame>, MiroError> {
         let response = MiroItem::get_items_on_board(Some(MiroItemType::Frame), None)
             .await
-            .unwrap();
-        let response_string = response.text().await.unwrap();
-        let response: Value = serde_json::from_str(response_string.as_str()).unwrap();
+            .ok()
+            .ok_or(MiroError)
+            .into_report()?;
+        let response_string = response.text().await.ok().ok_or(MiroError).into_report()?;
+        let response: Value = serde_json::from_str(response_string.as_str())
+            .ok()
+            .ok_or(MiroError)
+            .into_report()?;
         debug!("MiroItem::get_items_on_board:\n {}", response);
         let mut data: Vec<Value> = response["data"]
             .as_array()
@@ -152,9 +157,14 @@ impl MiroFrame {
             let response =
                 MiroItem::get_items_on_board(Some(MiroItemType::Frame), Some(cursor.to_string()))
                     .await
-                    .unwrap();
-            let response_string = response.text().await.unwrap();
-            let response: Value = serde_json::from_str(response_string.as_str()).unwrap();
+                    .ok()
+                    .ok_or(MiroError)
+                    .into_report()?;
+            let response_string = response.text().await.ok().ok_or(MiroError).into_report()?;
+            let response: Value = serde_json::from_str(response_string.as_str())
+                .ok()
+                .ok_or(MiroError)
+                .into_report()?;
             let mut cursor_data: Vec<Value> = response["data"]
                 .as_array()
                 .ok_or(MiroError)
