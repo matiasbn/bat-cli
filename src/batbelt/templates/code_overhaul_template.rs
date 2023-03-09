@@ -162,7 +162,7 @@ impl CodeOverhaulSection {
             .collect::<Vec<_>>();
         for acc in close_accounts {
             state_changes_content_vec.push(format!(
-                "- Closes `{}`[{}]. Rent exemption goes to {:#?}",
+                "- Closes `{}`[{}]. Rent exemption goes to `{}`",
                 acc.account_name, acc.account_struct_name, acc.rent_exemption_account
             ))
         }
