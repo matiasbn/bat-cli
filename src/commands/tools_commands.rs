@@ -292,20 +292,11 @@ impl ToolCommand {
                     let handler_metadata = ep_parser.handler.unwrap();
                     let _instruction_file_path = handler_metadata.path;
                     let _start_line_index = handler_metadata.start_line_index;
-                    // BatAuditorConfig::get_config()
-                    //     .change_context(CommandError)?
-                    //     .code_editor::;
                 }
-                BatFile::ProgramLib
-                    .open_in_editor(true, Some(ep_parser.entry_point_function.start_line_index))
-                    .change_context(CommandError)?;
                 return Ok(());
             } else {
                 println!("Empty {} folder", options[selection].clone());
             }
-            BatFile::ProgramLib
-                .open_in_editor(true, None)
-                .change_context(CommandError)?;
         } else {
             print!("VSCode integration not enabled");
         }
