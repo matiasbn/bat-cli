@@ -149,7 +149,7 @@ impl CodeOverhaulSection {
             .collect::<Vec<_>>();
         for acc in init_accounts {
             state_changes_content_vec.push(format!(
-                "- Initializes `{}`[{}] funded by `{}`",
+                "- Initializes `{}`[{}], funded by `{}`",
                 acc.account_name, acc.account_struct_name, acc.rent_exemption_account
             ))
         }
@@ -168,6 +168,7 @@ impl CodeOverhaulSection {
         }
 
         let mut_program_state_accounts = context_accounts_metadata
+            .clone()
             .context_accounts_info
             .into_iter()
             .filter(|ca_info| {
@@ -200,6 +201,20 @@ impl CodeOverhaulSection {
             ));
         }
 
+        let mut_unchecked_accounts = context_accounts_metadata
+            .clone()
+            .context_accounts_info
+            .into_iter()
+            .filter(|ca_info| {
+                ca_info.is_mut && ca_info.solana_account_type == SolanaAccountType::UncheckedAccount
+            });
+        for mut_unchecked_account in mut_unchecked_accounts {
+            state_changes_content_vec.push(format!(
+                "- Updates `{}`[{}]",
+                mut_unchecked_account.clone().account_name,
+                mut_unchecked_account.clone().account_struct_name,
+            ));
+        }
         state_changes_content_vec.push(format!(
             "- `{}`",
             CompleteWithTheRestOfStateChanges.to_placeholder()

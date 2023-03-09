@@ -65,7 +65,7 @@ enum BatCommands {
     Reload,
     /// code-overhaul files management
     #[command(subcommand)]
-    CO(CodeOverhaulCommand),
+    CodeOverhaul(CodeOverhaulCommand),
     /// Execute the BatSonar to create metadata files for all Sonar result types
     Sonar,
     // /// Execute specific BatSonar commands
@@ -99,7 +99,7 @@ impl BatCommands {
                 skip_initial_commit,
             } => commands::project_commands::initialize_bat_project(*skip_initial_commit).await,
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
-            BatCommands::CO(command) => command.execute_command().await,
+            BatCommands::CodeOverhaul(command) => command.execute_command().await,
             BatCommands::Finding(FindingCommand::Create) => {
                 commands::finding_commands::start_finding()
             }
@@ -157,7 +157,7 @@ impl BatCommands {
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
-            BatCommands::CO(command) => (
+            BatCommands::CodeOverhaul(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
@@ -193,9 +193,11 @@ impl BatCommands {
         BatCommands::get_type_vec()
             .into_iter()
             .filter_map(|command| match command {
-                BatCommands::CO(_) => Some(CodeOverhaulCommand::get_bat_package_json_commands(
-                    command.to_string().to_kebab_case(),
-                )),
+                BatCommands::CodeOverhaul(_) => {
+                    Some(CodeOverhaulCommand::get_bat_package_json_commands(
+                        command.to_string().to_kebab_case(),
+                    ))
+                }
                 BatCommands::Finding(_) => Some(FindingCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
