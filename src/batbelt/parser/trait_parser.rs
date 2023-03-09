@@ -6,7 +6,7 @@ use crate::batbelt::parser::{ParserError, ParserResult};
 
 use crate::batbelt::metadata::trait_metadata::{TraitMetadata, TraitMetadataFunction};
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
-use error_stack::{Result, ResultExt};
+use error_stack::{IntoReport, Result, ResultExt};
 use regex::Regex;
 
 #[derive(Clone, Debug)]
@@ -107,12 +107,21 @@ impl TraitParser {
 
     fn get_from_to(&mut self) -> Result<(), ParserError> {
         let name = self.name.clone();
-        let match_regex = Regex::new(r"[A-Za-z0-9]+<[<A-Za-z0-9>]+> for [A-Za-z0-9]+").unwrap();
-        let _generic_type_regex = Regex::new(r"").unwrap();
-        if match_regex.is_match(&name) {
+        let impl_for = Regex::new(r"[\w<>$:()_ ]+ for [\w<>$:()_ ]+")
+            .into_report()
+            .change_context(ParserError)?;
+        if impl_for.is_match(&name) {
             let mut splitted = name.split(" for ");
-            self.impl_from = splitted.next().unwrap().to_string();
-            self.impl_to = splitted.next().unwrap().to_string();
+            self.impl_from = splitted
+                .next()
+                .ok_or(ParserError)
+                .into_report()?
+                .to_string();
+            self.impl_to = splitted
+                .next()
+                .ok_or(ParserError)
+                .into_report()?
+                .to_string();
         } else {
             self.impl_to = name;
         }

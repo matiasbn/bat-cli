@@ -68,7 +68,8 @@ impl TemplateGenerator {
         ".idea\n\
         package.json\n\
         BatAuditor.toml\n\
-        Batlog.log"
+        Batlog.log\n\
+        BatMetadata_backup.json"
             .to_string()
     }
 

@@ -236,12 +236,7 @@ impl BatMetadata {
 
     pub fn check_metadata_is_initialized(&self) -> Result<(), MetadataError> {
         if !self.initialized {
-            return Err(MetadataErrorReports::MetadataNotInitialized
-                .get_error_report()
-                .attach(Suggestion(format!(
-                    "Initialize Metadata by running {}",
-                    "bat-cli sonar".green()
-                ))));
+            return Err(MetadataErrorReports::MetadataNotInitialized.get_error_report());
         }
         Ok(())
     }
