@@ -181,6 +181,17 @@ impl ToolCommand {
                 return Ok(());
             }
         }
+        for enum_metadata in bat_metadata.source_code.enums_source_code {
+            if enum_metadata.metadata_id == metadata_id {
+                println!("Metadata found:\n{:#?}", enum_metadata);
+                CodeEditor::open_file_in_editor(
+                    &enum_metadata.path,
+                    Some(enum_metadata.start_line_index),
+                )
+                .change_context(CommandError)?;
+                return Ok(());
+            }
+        }
         if let Some(trait_metadata) = bat_metadata
             .traits
             .clone()
