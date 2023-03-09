@@ -207,7 +207,7 @@ impl CAAccountParser {
     }
 
     fn get_is_init(sonar_result_content: &str) -> ParserResult<bool> {
-        let init_regex = Regex::new(r"\(?\s?init(_if_necessary)?[, ]?")
+        let init_regex = Regex::new(r"\(?\s?init(_if_necessary)?,")
             .into_report()
             .change_context(ParserError)?;
         Ok(init_regex.is_match(sonar_result_content))
