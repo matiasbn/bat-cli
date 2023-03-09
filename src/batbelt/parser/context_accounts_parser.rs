@@ -1,3 +1,4 @@
+use crate::batbelt::metadata::{BatMetadata, MetadataId};
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use regex::Regex;
 use serde::{Deserialize, Serialize};

@@ -30,6 +30,7 @@ use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::BatEnumerator;
@@ -923,10 +924,6 @@ impl MiroCommand {
             }
             miro_co_metadata.signers = signers_info.clone();
 
-            // Deploy images
-
-            // let (entrypoint_x_position, entrypoint_y_position) = (1300, 250);
-            // let (handler_x_position, handler_y_position) = (2900, 1400);
             let (entrypoint_x_position, entrypoint_y_position) =
                 MiroCodeOverhaulConfig::EntryPoint.get_positions();
             let (handler_x_position, handler_y_position) =
@@ -1060,7 +1057,56 @@ impl MiroCommand {
                 .await
                 .change_context(CommandError)?;
             }
-            // // Deploy mut_accounts
+            // Deploy mut_accounts
+            let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+            let context_accounts_metadata = bat_metadata
+                .get_context_accounts_metadata_by_struct_source_code_metadata_id(
+                    entrypoint_parser.context_accounts.metadata_id,
+                )
+                .change_context(CommandError)?;
+            let mut_program_owned_accounts = context_accounts_metadata
+                .context_accounts_info
+                .into_iter()
+                .filter(|ca_info| {
+                    ca_info.is_mut
+                        && ca_info.solana_account_type == SolanaAccountType::ProgramStateAccount
+                });
+            for mut_account in mut_program_owned_accounts {
+                let struct_metadata_vec = SourceCodeMetadata::get_filtered_structs(
+                    Some(mut_account.account_struct_name),
+                    Some(StructMetadataType::SolanaAccount),
+                )
+                .change_context(CommandError)?;
+
+                if struct_metadata_vec.len() != 1 {
+                    return Err(Report::new(CommandError).attach_printable(format!(
+                        "Error looking for Solana Accounts, expected 1 result, got:\n{:#?}",
+                        struct_metadata_vec
+                    )));
+                }
+
+                let struct_metadata = struct_metadata_vec[0].clone();
+                struct_metadata
+                    .to_source_code_parser(Some(miro_command_functions::parse_screenshot_name(
+                        &struct_metadata.name,
+                        &co_miro_frame.title,
+                    )))
+                    .deploy_screenshot_to_miro_frame(
+                        co_miro_frame.clone(),
+                        0,
+                        co_miro_frame.height as i64,
+                        SourceCodeScreenshotOptions {
+                            include_path: true,
+                            offset_to_start_line: true,
+                            filter_comments: false,
+                            font_size: None,
+                            filters: None,
+                            show_line_number: true,
+                        },
+                    )
+                    .await
+                    .change_context(CommandError)?;
+            }
 
             // if mut_accounts.len() > 0 {
             //     let structs_section = metadata_markdown
