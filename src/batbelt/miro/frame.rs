@@ -4,6 +4,7 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::miro::MiroItemType;
 use colored::Colorize;
 use error_stack::{IntoReport, Result};
+use regex::Regex;
 use serde_json::json;
 
 pub const MIRO_FRAME_WIDTH: u64 = 5600;
@@ -203,7 +204,9 @@ impl MiroFrame {
         Ok(())
     }
 
-    pub async fn prompt_select_frame() -> MiroResult<Self> {
+    pub async fn prompt_select_frame(
+        title_regex_filter_vec: Option<Vec<Regex>>,
+    ) -> MiroResult<Self> {
         MiroConfig::check_miro_enabled()?;
 
         println!(
@@ -212,6 +215,20 @@ impl MiroFrame {
             "Miro board".yellow()
         );
         let mut miro_frames: Vec<MiroFrame> = MiroFrame::get_frames_from_miro().await?;
+
+        if let Some(regex_filter_vec) = title_regex_filter_vec {
+            miro_frames = miro_frames
+                .into_iter()
+                .filter(|frame| {
+                    for filter in regex_filter_vec.clone() {
+                        if filter.is_match(&frame.title) {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .collect::<Vec<_>>();
+        }
 
         log::info!("miro_frames:\n{:#?}", miro_frames);
 

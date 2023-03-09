@@ -26,7 +26,7 @@ use log::Level;
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
 )]
-pub enum ToolsCommands {
+pub enum ToolCommand {
     /// Opens a file from metadata to code editor. If code editor is None, then prints the path
     #[default]
     OpenMetadata,
@@ -40,41 +40,41 @@ pub enum ToolsCommands {
     CountCodeOverhaul,
 }
 
-impl BatEnumerator for ToolsCommands {}
+impl BatEnumerator for ToolCommand {}
 
-impl BatCommandEnumerator for ToolsCommands {
+impl BatCommandEnumerator for ToolCommand {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
-            ToolsCommands::OpenMetadata => self.execute_open_metadata(),
-            ToolsCommands::CustomizePackageJson => self.execute_package_json(),
-            ToolsCommands::OpenMetadataById => self.execute_get_metadata(),
-            ToolsCommands::OpenCodeOverhaulFiles => self.execute_open_co(),
-            ToolsCommands::CountCodeOverhaul => self.execute_count_co_files(),
+            ToolCommand::OpenMetadata => self.execute_open_metadata(),
+            ToolCommand::CustomizePackageJson => self.execute_package_json(),
+            ToolCommand::OpenMetadataById => self.execute_get_metadata(),
+            ToolCommand::OpenCodeOverhaulFiles => self.execute_open_co(),
+            ToolCommand::CountCodeOverhaul => self.execute_count_co_files(),
         }
     }
 
     fn check_metadata_is_initialized(&self) -> bool {
         match self {
-            ToolsCommands::OpenMetadata => true,
-            ToolsCommands::CustomizePackageJson => false,
-            ToolsCommands::OpenMetadataById => true,
-            ToolsCommands::OpenCodeOverhaulFiles => true,
-            ToolsCommands::CountCodeOverhaul => false,
+            ToolCommand::OpenMetadata => true,
+            ToolCommand::CustomizePackageJson => false,
+            ToolCommand::OpenMetadataById => true,
+            ToolCommand::OpenCodeOverhaulFiles => true,
+            ToolCommand::CountCodeOverhaul => false,
         }
     }
 
     fn check_correct_branch(&self) -> bool {
         match self {
-            ToolsCommands::OpenMetadata => false,
-            ToolsCommands::CustomizePackageJson => false,
-            ToolsCommands::OpenMetadataById => false,
-            ToolsCommands::OpenCodeOverhaulFiles => false,
-            ToolsCommands::CountCodeOverhaul => false,
+            ToolCommand::OpenMetadata => false,
+            ToolCommand::CustomizePackageJson => false,
+            ToolCommand::OpenMetadataById => false,
+            ToolCommand::OpenCodeOverhaulFiles => false,
+            ToolCommand::CountCodeOverhaul => false,
         }
     }
 }
 
-impl ToolsCommands {
+impl ToolCommand {
     fn execute_open_metadata(&self) -> CommandResult<()> {
         let selected_bat_metadata_type =
             BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
@@ -124,7 +124,7 @@ impl ToolsCommands {
                 .clone()
                 .into_iter()
                 .enumerate()
-                .map(|(idx, level)| ToolsCommands::colored_from_index(&level.to_string(), idx))
+                .map(|(idx, level)| ToolCommand::colored_from_index(&level.to_string(), idx))
                 .collect::<Vec<_>>(),
             None,
         )?;
