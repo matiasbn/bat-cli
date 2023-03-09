@@ -192,7 +192,7 @@ impl CodeOverhaulCommand {
         );
         let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
         if deploy_frame {
-            MiroCommand::DeployCOScreenshots {
+            MiroCommand::CodeOverhaulScreenshots {
                 entry_point_name: Some(entrypoint_name.to_string()),
             }
             .execute_command()

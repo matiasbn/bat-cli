@@ -4,6 +4,7 @@ use clap::Subcommand;
 use colored::{ColoredString, Colorize};
 use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
+use regex::Regex;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::git::GitCommit;
@@ -40,15 +41,15 @@ use super::CommandError;
 pub enum MiroCommand {
     /// Creates the code-overhaul frames
     #[default]
-    DeployCOFrames,
-    /// Creates the code-overhaul frames
-    DeployCOScreenshots {
+    CodeOverhaulFrames,
+    /// Deploys the code-overhaul screenshots
+    CodeOverhaulScreenshots {
         /// If provided, skips the co file selection process
         #[arg(long)]
         entry_point_name: Option<String>,
     },
-    /// Deploys the entrypoint, context accounts and handler to a Miro frame
-    Entrypoint {
+    /// Deploys the entry point function, context accounts and handler function screenshots to a Miro frame
+    EntrypointScreenshots {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
@@ -90,12 +91,12 @@ impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
         match self {
-            MiroCommand::DeployCOFrames => self.deploy_co_frames().await,
-            MiroCommand::DeployCOScreenshots { entry_point_name } => {
+            MiroCommand::CodeOverhaulFrames => self.deploy_co_frames().await,
+            MiroCommand::CodeOverhaulScreenshots { entry_point_name } => {
                 self.deploy_co_screenshots(entry_point_name.clone()).await
             }
-            MiroCommand::Entrypoint { select_all, sorted } => {
-                self.entrypoint(*select_all, *sorted).await
+            MiroCommand::EntrypointScreenshots { select_all, sorted } => {
+                self.entrypoint_screenshots(*select_all, *sorted).await
             }
             MiroCommand::Metadata { select_all } => self.metadata(*select_all).await,
             MiroCommand::FunctionDependencies { select_all } => {
@@ -104,10 +105,18 @@ impl MiroCommand {
         }
     }
 
-    async fn entrypoint(&self, select_all: bool, sorted: bool) -> Result<(), CommandError> {
-        let selected_miro_frame = MiroFrame::prompt_select_frame()
-            .await
+    async fn entrypoint_screenshots(
+        &self,
+        select_all: bool,
+        sorted: bool,
+    ) -> Result<(), CommandError> {
+        let code_overhaul_frame_title_regex = Regex::new(r"co: [A-Za-z0-9_]+")
+            .into_report()
             .change_context(CommandError)?;
+        let selected_miro_frame =
+            MiroFrame::prompt_select_frame(Some(vec![code_overhaul_frame_title_regex]))
+                .await
+                .change_context(CommandError)?;
         // get entrypoints name
         let entrypoints_names =
             EntrypointParser::get_entrypoint_names(sorted).change_context(CommandError)?;
@@ -241,7 +250,7 @@ impl MiroCommand {
     }
 
     async fn metadata(&self, select_all: bool) -> Result<(), CommandError> {
-        let selected_miro_frame = MiroFrame::prompt_select_frame()
+        let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
         let mut continue_selection = true;
@@ -427,7 +436,7 @@ impl MiroCommand {
     }
 
     async fn function_dependencies(&self, _select_all: bool) -> Result<(), CommandError> {
-        let selected_miro_frame = MiroFrame::prompt_select_frame()
+        let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
