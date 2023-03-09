@@ -5,6 +5,7 @@ use colored::{ColoredString, Colorize};
 use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 use regex::Regex;
+use strum::IntoEnumIterator;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::git::GitCommit;
@@ -50,9 +51,9 @@ pub enum MiroCommand {
     },
     /// Deploys the entry point function, context accounts and handler function screenshots to a Miro frame
     EntrypointScreenshots {
-        /// select all options as true
+        /// if true, deploy screenshots for al entry points
         #[arg(short, long)]
-        select_all: bool,
+        select_all_entry_points: bool,
         /// shows the list of entrypoints sorted by name
         #[arg(long)]
         sorted: bool,
@@ -95,8 +96,12 @@ impl MiroCommand {
             MiroCommand::CodeOverhaulScreenshots { entry_point_name } => {
                 self.deploy_co_screenshots(entry_point_name.clone()).await
             }
-            MiroCommand::EntrypointScreenshots { select_all, sorted } => {
-                self.entrypoint_screenshots(*select_all, *sorted).await
+            MiroCommand::EntrypointScreenshots {
+                select_all_entry_points,
+                sorted,
+            } => {
+                self.entrypoint_screenshots(*select_all_entry_points, *sorted)
+                    .await
             }
             MiroCommand::Metadata { select_all } => self.metadata(*select_all).await,
             MiroCommand::FunctionDependencies { select_all } => {
@@ -1298,15 +1303,8 @@ pub mod miro_command_functions {
     }
 }
 
-// #[test]
-// fn test_screaming_snake_case() {
-//     let function_name = "handle_thing";
-//     let frame_name = "points-store actors";
-//     let expected_output = "handle_thing-frame:POINTS_STORE_ACTORS";
-//     println!("{}", parse_screenshot_name(function_name, frame_name));
-//     assert_eq!(
-//         parse_screenshot_name(function_name, frame_name),
-//         expected_output,
-//         "incorrect output"
-//     )
-// }
+#[test]
+fn test_enum_display() {
+    let bat_package_json_command = MiroCommand::get_package_json_commands("miro".to_string());
+    println!("{:#?}", bat_package_json_command);
+}

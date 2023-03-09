@@ -11,7 +11,7 @@ use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::BatFile;
 use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
-use crate::commands::{BatCommandEnumerator, CommandResult};
+use crate::commands::{BatCommandEnumerator, BatPackageJsonCommand, CommandResult};
 
 use crate::batbelt::git::GitAction;
 use crate::batbelt::BatEnumerator;
@@ -25,7 +25,7 @@ use error_stack::{FutureExt, IntoReport, Result};
 use error_stack::{Report, ResultExt};
 
 use crate::commands::project_commands::ProjectCommands;
-use crate::commands::tools_commands::ToolsCommands;
+use crate::commands::tools_commands::ToolCommand;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
@@ -76,7 +76,7 @@ enum BatCommands {
     Finding(FindingCommand),
     /// utils tools
     #[command(subcommand)]
-    Tools(ToolsCommands),
+    Tool(ToolCommand),
     /// Miro integration
     #[command(subcommand)]
     Miro(MiroCommand),
@@ -116,7 +116,7 @@ impl BatCommands {
             // BatCommands::SonarSpecific(command) => command.execute_command(),
             BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
-            BatCommands::Tools(command) => command.execute_command(),
+            BatCommands::Tool(command) => command.execute_command(),
             BatCommands::Repo(command) => command.execute_command(),
             // only for dev
             #[cfg(debug_assertions)]
@@ -153,7 +153,7 @@ impl BatCommands {
             //     command.check_metadata_is_initialized(),
             //     command.check_correct_branch(),
             // ),
-            BatCommands::Tools(command) => (
+            BatCommands::Tool(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
@@ -189,59 +189,36 @@ impl BatCommands {
         Ok(())
     }
 
-    pub fn get_kebab_commands() -> Vec<(Vec<String>, String)> {
+    pub fn get_bat_package_json_commands() -> Vec<BatPackageJsonCommand> {
         BatCommands::get_type_vec()
             .into_iter()
             .filter_map(|command| match command {
-                BatCommands::CO(_) => Some((
-                    CodeOverhaulCommand::get_type_vec()
-                        .into_iter()
-                        .map(|command_type| command_type.to_string().to_kebab_case())
-                        .collect::<Vec<_>>(),
+                BatCommands::CO(_) => Some(CodeOverhaulCommand::get_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Finding(_) => Some((
-                    FindingCommand::get_type_vec()
-                        .into_iter()
-                        .map(|command_type| command_type.to_string().to_kebab_case())
-                        .collect::<Vec<_>>(),
+                BatCommands::Finding(_) => Some(FindingCommand::get_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Tools(_) => Some((
-                    ToolsCommands::get_type_vec()
-                        .into_iter()
-                        .map(|command_type| command_type.to_string().to_kebab_case())
-                        .collect::<Vec<_>>(),
+                BatCommands::Tool(_) => Some(ToolCommand::get_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Miro(_) => Some((
-                    MiroCommand::get_type_vec()
-                        .into_iter()
-                        .map(|command_type| command_type.to_string().to_kebab_case())
-                        .collect::<Vec<_>>(),
+                BatCommands::Miro(_) => Some(MiroCommand::get_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                // BatCommands::SonarSpecific(_) => Some((
-                //     SonarSpecificCommand::get_type_vec()
-                //         .into_iter()
-                //         .map(|command_type| command_type.to_string().to_kebab_case())
-                //         .collect::<Vec<_>>(),
-                //     command.to_string().to_kebab_case(),
-                // )),
-                BatCommands::Sonar => Some((vec![], command.to_string().to_kebab_case())),
-                BatCommands::Repo(_) => Some((
-                    RepositoryCommand::get_type_vec()
-                        .into_iter()
-                        .map(|command_type| command_type.to_string().to_kebab_case())
-                        .collect::<Vec<_>>(),
+                BatCommands::Repo(_) => Some(RepositoryCommand::get_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Reload => {
-                    Some((vec![], BatCommands::Reload.to_string().to_kebab_case()))
-                }
+                BatCommands::Sonar => Some(BatPackageJsonCommand {
+                    command_name: command.to_string().to_kebab_case(),
+                    command_options: vec![],
+                }),
+                BatCommands::Reload => Some(BatPackageJsonCommand {
+                    command_name: command.to_string().to_kebab_case(),
+                    command_options: vec![],
+                }),
                 _ => None,
             })
-            .collect::<Vec<(Vec<_>, String)>>()
+            .collect::<Vec<_>>()
     }
 }
 
