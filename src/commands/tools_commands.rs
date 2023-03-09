@@ -19,6 +19,7 @@ use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 
 use crate::batbelt;
+use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::config::BatAuditorConfig;
 use log::Level;
@@ -101,6 +102,14 @@ impl ToolCommand {
                     start_line_index,
                     ..
                 } = TraitSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
+                (path, start_line_index)
+            }
+            BatMetadataType::Enum => {
+                let EnumSourceCodeMetadata {
+                    path,
+                    start_line_index,
+                    ..
+                } = EnumSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
         };

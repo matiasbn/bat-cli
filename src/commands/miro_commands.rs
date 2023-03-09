@@ -59,7 +59,7 @@ pub enum MiroCommand {
         sorted: bool,
     },
     /// Creates an screenshot in a determined frame from metadata
-    Metadata {
+    MetadataScreenshots {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
@@ -103,7 +103,9 @@ impl MiroCommand {
                 self.entrypoint_screenshots(*select_all_entry_points, *sorted)
                     .await
             }
-            MiroCommand::Metadata { select_all } => self.metadata(*select_all).await,
+            MiroCommand::MetadataScreenshots { select_all } => {
+                self.metadata_screenshots(*select_all).await
+            }
             MiroCommand::FunctionDependencies { select_all } => {
                 self.function_dependencies(*select_all).await
             }
@@ -254,7 +256,7 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn metadata(&self, select_all: bool) -> Result<(), CommandError> {
+    async fn metadata_screenshots(&self, select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
@@ -296,7 +298,11 @@ impl MiroCommand {
                             format!(
                                 "{}: {}:{}",
                                 struct_metadata.name.clone(),
-                                struct_metadata.path.clone(),
+                                struct_metadata
+                                    .path
+                                    .clone()
+                                    .trim_start_matches("../")
+                                    .to_string(),
                                 struct_metadata.start_line_index.clone()
                             )
                         })
@@ -367,7 +373,11 @@ impl MiroCommand {
                             format!(
                                 "{}: {}:{}",
                                 function_metadata.name.clone(),
-                                function_metadata.path.clone(),
+                                function_metadata
+                                    .path
+                                    .clone()
+                                    .trim_start_matches("../")
+                                    .to_string(),
                                 function_metadata.start_line_index.clone()
                             )
                         })

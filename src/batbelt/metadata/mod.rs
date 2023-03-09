@@ -1,5 +1,6 @@
 pub mod context_accounts_metadata;
 pub mod entrypoint_metadata;
+pub mod enums_source_code_metadata;
 pub mod function_dependencies_metadata;
 pub mod functions_source_code_metadata;
 pub mod miro_metadata;
@@ -41,6 +42,9 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+use crate::batbelt::metadata::enums_source_code_metadata::{
+    EnumMetadataType, EnumSourceCodeMetadata,
+};
 use serde_json::{json, Value};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
@@ -96,6 +100,7 @@ impl BatMetadata {
                 functions_source_code: vec![],
                 structs_source_code: vec![],
                 traits_source_code: vec![],
+                enums_source_code: vec![],
             },
             entry_points: vec![],
             function_dependencies: vec![],
@@ -382,6 +387,7 @@ pub struct SourceCodeMetadata {
     pub functions_source_code: Vec<FunctionSourceCodeMetadata>,
     pub structs_source_code: Vec<StructSourceCodeMetadata>,
     pub traits_source_code: Vec<TraitSourceCodeMetadata>,
+    pub enums_source_code: Vec<EnumSourceCodeMetadata>,
 }
 
 impl SourceCodeMetadata {
@@ -453,11 +459,21 @@ impl SourceCodeMetadata {
         bat_metadata.save_metadata()?;
         Ok(())
     }
+
     pub fn update_traits(&self, new_vec: Vec<TraitSourceCodeMetadata>) -> MetadataResult<()> {
         let mut bat_metadata = BatMetadata::read_metadata()?;
         let mut metadata_vec = new_vec;
         metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
         bat_metadata.source_code.traits_source_code = metadata_vec;
+        bat_metadata.save_metadata()?;
+        Ok(())
+    }
+
+    pub fn update_enums(&self, new_vec: Vec<EnumSourceCodeMetadata>) -> MetadataResult<()> {
+        let mut bat_metadata = BatMetadata::read_metadata()?;
+        let mut metadata_vec = new_vec;
+        metadata_vec.sort_by_key(|metadata_item| metadata_item.name());
+        bat_metadata.source_code.enums_source_code = metadata_vec;
         bat_metadata.save_metadata()?;
         Ok(())
     }
@@ -524,6 +540,25 @@ impl SourceCodeMetadata {
             })
             .collect::<Vec<_>>())
     }
+    pub fn get_filtered_enums(
+        trait_name: Option<String>,
+        trait_type: Option<EnumMetadataType>,
+    ) -> MetadataResult<Vec<EnumSourceCodeMetadata>> {
+        Ok(BatMetadata::read_metadata()?
+            .source_code
+            .enums_source_code
+            .into_iter()
+            .filter(|enum_metadata| {
+                if trait_name.is_some() && trait_name.clone().unwrap() != enum_metadata.name {
+                    return false;
+                };
+                if trait_type.is_some() && trait_type.unwrap() != enum_metadata.enum_type {
+                    return false;
+                };
+                true
+            })
+            .collect::<Vec<_>>())
+    }
 }
 
 #[derive(
@@ -542,6 +577,7 @@ pub enum BatMetadataType {
     Struct,
     Function,
     Trait,
+    Enum,
 }
 
 impl BatMetadataType {

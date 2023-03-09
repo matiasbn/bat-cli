@@ -108,6 +108,12 @@ impl SonarCommand {
         .print_interactive()
         .change_context(CommandError)?;
 
+        BatSonarInteractive::SonarStart {
+            sonar_result_type: SonarResultType::Enum,
+        }
+        .print_interactive()
+        .change_context(CommandError)?;
+
         self.execute_source_code()?;
         self.execute_context_accounts()?;
         self.execute_entry_points()?;

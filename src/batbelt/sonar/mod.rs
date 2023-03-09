@@ -267,7 +267,6 @@ impl SonarResult {
     pub fn is_valid_result(&self) -> bool {
         match self.result_type {
             SonarResultType::IfValidation => self.is_valid_if_validation(),
-            SonarResultType::ContextAccountsOnlyValidation => self.is_valid_ca_only_validation(),
             _ => true,
         }
     }
@@ -276,14 +275,11 @@ impl SonarResult {
         match self.result_type {
             SonarResultType::Function => self.get_name(),
             SonarResultType::Struct => self.get_name(),
+            SonarResultType::Enum => self.get_name(),
             SonarResultType::Module => self.get_name(),
             SonarResultType::ContextAccountsAll => self.get_name(),
             SonarResultType::Trait => self.get_name(),
             SonarResultType::TraitImpl => self.get_name(),
-            SonarResultType::ContextAccountsOnlyValidation => {
-                self.get_name();
-                self.format_ca_only_validations()
-            }
             SonarResultType::ContextAccountsNoValidation => {
                 self.get_name();
                 self.format_ca_no_validations()
@@ -294,7 +290,10 @@ impl SonarResult {
 
     fn get_name(&mut self) {
         match self.result_type {
-            SonarResultType::Function | SonarResultType::Struct | SonarResultType::Module => {
+            SonarResultType::Function
+            | SonarResultType::Struct
+            | SonarResultType::Module
+            | SonarResultType::Enum => {
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
                 let mut first_line_tokenized = first_line.trim().split(' ');
@@ -353,8 +352,7 @@ impl SonarResult {
                 self.name = name.clone();
                 log::debug!("name: {}", name);
             }
-            SonarResultType::ContextAccountsAll
-            | SonarResultType::ContextAccountsOnlyValidation => {
+            SonarResultType::ContextAccountsAll => {
                 let content = self.content.clone();
                 let mut last_line = content.lines().last().unwrap().trim().split(' ');
                 last_line.next().unwrap();
@@ -520,13 +518,13 @@ pub enum SonarResultType {
     Function,
     Struct,
     Module,
+    Enum,
     If,
     IfValidation,
     Validation,
     Trait,
     TraitImpl,
     ContextAccountsAll,
-    ContextAccountsOnlyValidation,
     ContextAccountsNoValidation,
 }
 
@@ -534,7 +532,6 @@ impl SonarResultType {
     pub fn get_context_accounts_sonar_result_types(&self) -> Vec<SonarResultType> {
         vec![
             SonarResultType::ContextAccountsAll,
-            SonarResultType::ContextAccountsOnlyValidation,
             SonarResultType::ContextAccountsNoValidation,
         ]
     }
@@ -570,6 +567,9 @@ impl SonarFilter {
             SonarFilter::Open(SonarResultType::Struct) => vec!["struct", "pub struct"],
             SonarFilter::EndOfOpen(SonarResultType::Struct) => vec!["{", ";"],
             SonarFilter::Closure(SonarResultType::Struct) => vec!["}", ";"],
+            SonarFilter::Open(SonarResultType::Enum) => vec!["enum", "pub enum"],
+            SonarFilter::EndOfOpen(SonarResultType::Enum) => vec!["{", ";"],
+            SonarFilter::Closure(SonarResultType::Enum) => vec!["}", ";"],
             SonarFilter::Open(SonarResultType::Trait) => vec!["trait", "pub trait"],
             SonarFilter::EndOfOpen(SonarResultType::Trait) => vec!["{", ";"],
             SonarFilter::Closure(SonarResultType::Trait) => vec!["}", ";"],
@@ -600,11 +600,6 @@ impl SonarFilter {
             }
             SonarFilter::EndOfOpen(SonarResultType::ContextAccountsNoValidation) => vec!["(", ">,"],
             SonarFilter::Closure(SonarResultType::ContextAccountsNoValidation) => vec!["pub", "}"],
-            SonarFilter::Open(SonarResultType::ContextAccountsOnlyValidation) => {
-                vec!["#[account"]
-            }
-            SonarFilter::EndOfOpen(SonarResultType::ContextAccountsOnlyValidation) => vec!["("],
-            SonarFilter::Closure(SonarResultType::ContextAccountsOnlyValidation) => vec!["pub"],
         }
     }
 }
@@ -672,6 +667,36 @@ fn test_get_structs() {
     assert_eq!(first_result.content, expected_first_struct);
     assert_eq!(first_result.name, "StructName");
     assert_eq!(second_result.content, expected_second_struct);
+    assert_eq!(second_result.name, "create_fleet");
+}
+#[test]
+fn test_get_enums() {
+    let expected_first_enum = "            pub enum StructName {
+                handle_create_game_2(&ctx, key_index, free_create)
+            }"
+    .to_string();
+    let expected_first_function = format!(
+        "{}\n{}\n{}\n{}",
+        "       pub fn create_game_1<'info>() -> Result<()> {",
+        expected_first_enum,
+        "           handle_create_game_1(&ctx, key_index, free_create)",
+        "       }"
+    );
+    let expected_second_enum = "        enum create_fleet {
+            sector: [i64; 2],
+        ) -> Result<()> {
+            handle_create_fleet(&ctx, key_index, stats.into(), sector)
+        }"
+    .to_string();
+
+    let content = format!("{}\n\n{}", expected_first_function, expected_second_enum);
+    let mut bat_sonar = BatSonar::new_scanned(&content, SonarResultType::Enum);
+    bat_sonar.scan_content_to_get_results();
+    let first_result = bat_sonar.results[0].clone();
+    let second_result = bat_sonar.results[1].clone();
+    assert_eq!(first_result.content, expected_first_enum);
+    assert_eq!(first_result.name, "StructName");
+    assert_eq!(second_result.content, expected_second_enum);
     assert_eq!(second_result.name, "create_fleet");
 }
 #[test]
@@ -814,53 +839,6 @@ fn test_get_context_accounts_no_validations() {
     ";
     let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsNoValidation);
     assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
-}
-
-#[test]
-fn test_context_accounts_only_validations() {
-    let test_text = "
-    #[derive(Accounts, Debug)]
-    pub struct thing<'info> {
-        pub acc_1: Signer<'info>,
-    
-        pub acc_2: AccountLoader<'info, Pf>,
-    
-        #[account(mut, has_one = thing_to_test)]
-        pub acc_3: Signer<'info>,
-    
-        #[account(
-            mut,
-            has_one
-                =
-                    thing,
-        )]
-        pub acc_4: AccountLoader<'info, Rc>,
-    
-        #[account(
-            mut,
-            has_one
-                =
-                    thing,)]
-        pub acc_5: AccountLoader<'info, Rc>,
-    
-        #[account(
-            has_one = thing,
-        )]
-        pub acc_5: AccountLoader<'info, A>,
-    
-        #[account(
-            has_one = thing,)]
-        pub acc_6: AccountLoader<'info, A>,
-    
-        pub acc_7: Account<'info, Mint>,
-    
-        pub acc_8: Program<'info, B>,
-    }
-    ";
-    let accounts = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsOnlyValidation);
-
-    // Only crafting_process, token_from and mint includes #[account
-    assert_eq!(accounts.results.len(), 3, "incorrect length");
 }
 
 #[cfg(test)]
