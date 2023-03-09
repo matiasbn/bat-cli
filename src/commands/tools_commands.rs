@@ -28,15 +28,15 @@ use log::Level;
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
 )]
 pub enum ToolCommand {
-    /// Opens a file from metadata to code editor. If code editor is None, then prints the path
+    /// Opens a file from source code metadata to code editor. If code editor is None, then prints the path
     #[default]
-    OpenMetadata,
+    OpenSourceCode,
     /// Customize the package.json according to certain log level
     CustomizePackageJson,
     /// Opens the co file and the instruction file of a started entrypoint
-    OpenCodeOverhaulFiles,
+    OpenCodeOverhaulFile,
     /// Search source code metadata by id and opens on code editor, if is source_code
-    OpenMetadataById,
+    GetMetadataById,
     /// Counts the to-review, started, finished and total co files
     CountCodeOverhaul,
 }
@@ -46,30 +46,30 @@ impl BatEnumerator for ToolCommand {}
 impl BatCommandEnumerator for ToolCommand {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
-            ToolCommand::OpenMetadata => self.execute_open_metadata(),
+            ToolCommand::OpenSourceCode => self.execute_open_metadata(),
             ToolCommand::CustomizePackageJson => self.execute_package_json(),
-            ToolCommand::OpenMetadataById => self.execute_get_metadata(),
-            ToolCommand::OpenCodeOverhaulFiles => self.execute_open_co(),
+            ToolCommand::GetMetadataById => self.execute_get_metadata(),
+            ToolCommand::OpenCodeOverhaulFile => self.execute_open_co(),
             ToolCommand::CountCodeOverhaul => self.execute_count_co_files(),
         }
     }
 
     fn check_metadata_is_initialized(&self) -> bool {
         match self {
-            ToolCommand::OpenMetadata => true,
+            ToolCommand::OpenSourceCode => true,
             ToolCommand::CustomizePackageJson => false,
-            ToolCommand::OpenMetadataById => true,
-            ToolCommand::OpenCodeOverhaulFiles => true,
+            ToolCommand::GetMetadataById => true,
+            ToolCommand::OpenCodeOverhaulFile => true,
             ToolCommand::CountCodeOverhaul => false,
         }
     }
 
     fn check_correct_branch(&self) -> bool {
         match self {
-            ToolCommand::OpenMetadata => false,
+            ToolCommand::OpenSourceCode => false,
             ToolCommand::CustomizePackageJson => false,
-            ToolCommand::OpenMetadataById => false,
-            ToolCommand::OpenCodeOverhaulFiles => false,
+            ToolCommand::GetMetadataById => false,
+            ToolCommand::OpenCodeOverhaulFile => false,
             ToolCommand::CountCodeOverhaul => false,
         }
     }
@@ -286,7 +286,7 @@ impl ToolCommand {
                         .change_context(CommandError)?;
 
                 bat_file
-                    .open_in_editor(true, None)
+                    .open_in_editor(false, None)
                     .change_context(CommandError)?;
                 if ep_parser.handler.is_some() {
                     let handler_metadata = ep_parser.handler.unwrap();
