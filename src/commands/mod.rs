@@ -54,7 +54,15 @@ where
             if command_with_options_regex.is_match(&command) {
                 let option_flags = boolean_flag_regex
                     .find_iter(&command)
-                    .map(|flag_match| flag_match.as_str().split(": ").next().unwrap().to_string())
+                    .map(|flag_match| {
+                        flag_match
+                            .as_str()
+                            .split(": ")
+                            .next()
+                            .unwrap()
+                            .to_string()
+                            .to_kebab_case()
+                    })
                     .collect::<Vec<_>>();
                 json_command_options.command_option_flags = option_flags;
             }
