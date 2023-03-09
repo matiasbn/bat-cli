@@ -14,7 +14,7 @@ use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{cmp, fs};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeOverhaulSigner {
@@ -360,6 +360,13 @@ impl CodeOverhaulParser {
             Regex::new(r"(- ```rust\n)[\s 'A-Za-z0-9−()?._=@:><!&{}^\-;/+#\[\],*`]+?(  ```)")
                 .into_report()
                 .change_context(ParserError)?;
+        let mut max_trailing_ws = 0;
+        let mut max_line_length = 0;
+        for line in content.lines() {
+            max_line_length = cmp::max(max_line_length, line.len());
+            max_trailing_ws = cmp::max(max_trailing_ws, BatSonar::get_trailing_whitespaces(line));
+        }
+
         if rust_regex.is_match(content) {
             return Ok(rust_regex
                 .find_iter(content)
@@ -372,7 +379,7 @@ impl CodeOverhaulParser {
                             if !line.contains("```") {
                                 Some(line.to_string())
                             } else if use_separator {
-                                Some("-".repeat(20))
+                                Some("-".repeat(max_line_length + max_trailing_ws))
                             } else {
                                 None
                             }
