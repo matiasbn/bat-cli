@@ -173,6 +173,8 @@ impl CodeOverhaulSection {
             .into_iter()
             .filter(|ca_info| {
                 ca_info.is_mut
+                    && !ca_info.is_close
+                    && !ca_info.is_init
                     && ca_info.solana_account_type == SolanaAccountType::ProgramStateAccount
             });
         for mut_program_state_acc in mut_program_state_accounts {
