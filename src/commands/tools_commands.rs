@@ -290,8 +290,10 @@ impl ToolCommand {
                     .change_context(CommandError)?;
                 if ep_parser.handler.is_some() {
                     let handler_metadata = ep_parser.handler.unwrap();
-                    let _instruction_file_path = handler_metadata.path;
-                    let _start_line_index = handler_metadata.start_line_index;
+                    let instruction_file_path = handler_metadata.path;
+                    let start_line_index = handler_metadata.start_line_index;
+                    CodeEditor::open_file_in_editor(&instruction_file_path, Some(start_line_index))
+                        .change_context(CommandError)?;
                 }
                 return Ok(());
             } else {
