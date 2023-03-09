@@ -357,7 +357,7 @@ impl CodeOverhaulParser {
         use_separator: bool,
     ) -> ParserResult<Vec<String>> {
         let rust_regex =
-            Regex::new(r"- ```rust[\s]+[\s 'A-Za-z0-9−()?._=@:><!&{}^;/+#\[\],`]+[\s]+```")
+            Regex::new(r"(- ```rust\n)[\s 'A-Za-z0-9−()?._=@:><!&{}^\-;/+#\[\],*`]+?(  ```)")
                 .into_report()
                 .change_context(ParserError)?;
         if rust_regex.is_match(content) {

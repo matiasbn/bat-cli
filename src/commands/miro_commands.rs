@@ -60,8 +60,8 @@ pub enum MiroCommand {
         #[arg(long)]
         sorted: bool,
     },
-    /// Creates an screenshot in a determined frame from metadata
-    MetadataScreenshots {
+    /// Creates an screenshot in a determined frame from source code
+    SourceCodeScreenshots {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
@@ -105,8 +105,8 @@ impl MiroCommand {
                 self.entrypoint_screenshots(*select_all_entry_points, *sorted)
                     .await
             }
-            MiroCommand::MetadataScreenshots { select_all } => {
-                self.metadata_screenshots(*select_all).await
+            MiroCommand::SourceCodeScreenshots { select_all } => {
+                self.source_code_screenshots(*select_all).await
             }
             MiroCommand::FunctionDependencies { select_all } => {
                 self.function_dependencies(*select_all).await
@@ -258,7 +258,7 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn metadata_screenshots(&self, select_all: bool) -> Result<(), CommandError> {
+    async fn source_code_screenshots(&self, select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
@@ -1141,10 +1141,10 @@ impl MiroCommand {
         } else {
             // update screenshots
             let options = vec![
-                "Entrypoint function".to_string().bright_green(),
-                "Context accounts".to_string().bright_yellow(),
-                "Validations".to_string().bright_red(),
-                "Handler function".to_string().bright_cyan(),
+                "Entrypoint function".to_string(),
+                "Context accounts".to_string(),
+                "Validations".to_string(),
+                "Handler function".to_string(),
             ];
             let prompt_text = "Which screenshots you want to update?".to_string();
             let selections = BatDialoguer::multiselect(prompt_text, options.clone(), None, true)?;
