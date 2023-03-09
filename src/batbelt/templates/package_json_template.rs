@@ -15,9 +15,9 @@ pub struct PackageJsonTemplate;
 impl PackageJsonTemplate {
     pub fn create_package_with_init_script() -> Result<(), TemplateError> {
         let (script_key, script_value) = if cfg!(debug_assertions) {
-            ("cargo::run::init", "cargo run init")
+            ("init", "cargo run init")
         } else {
-            ("bat-cli::init", "bat-cli init")
+            ("init", "bat-cli init")
         };
         let package_json = json!({
         "name": "bat_project",
@@ -77,18 +77,18 @@ impl PackageJsonTemplate {
         };
         let (script_key_prefix, script_value_prefix) = if cfg!(debug_assertions) {
             if verbosity_flag.is_empty() {
-                ("cargo::run".to_string(), "cargo run".to_string())
+                ("".to_string(), "cargo run".to_string())
             } else {
                 (
-                    format!("cargo::run::{}", verbosity_level_name),
+                    format!("{}::", verbosity_level_name),
                     format!("cargo run -- -{}", verbosity_flag),
                 )
             }
         } else if verbosity_flag.is_empty() {
-            ("bat-cli".to_string(), "bat-cli".to_string())
+            ("".to_string(), "bat-cli".to_string())
         } else {
             (
-                format!("bat-cli::{}", verbosity_level_name),
+                format!("{}::", verbosity_level_name),
                 format!("bat-cli -{}", verbosity_flag),
             )
         };
@@ -100,26 +100,54 @@ impl PackageJsonTemplate {
                 command_options,
             } = bat_command;
             if command_options.is_empty() {
-                let script_key = format!("{}::{}", script_key_prefix, command_name);
+                let script_key = format!("{}{}", script_key_prefix, command_name);
                 let script_value = format!("{} {}", script_value_prefix, command_name);
                 scripts_map.insert(script_key, script_value.into());
                 continue;
             }
             for command_option in command_options {
+                let command_option_clone = command_option.clone();
+
                 let BatPackageJsonCommandOptions {
                     command_option_name,
                     command_option_flags,
                 } = command_option;
-                if command_option_flags.is_empty() {
-                    let script_key = format!(
-                        "{}::{}::{}",
-                        script_key_prefix, command_name, command_option_name
-                    );
-                    let script_value = format!(
-                        "{} {} {}",
-                        script_value_prefix, command_name, command_option_name
-                    );
-                    scripts_map.insert(script_key, script_value.into());
+
+                let script_key = format!(
+                    "{}{}::{}",
+                    script_key_prefix, command_name, command_option_name
+                );
+                let script_value = format!(
+                    "{} {} {}",
+                    script_value_prefix, command_name, command_option_name
+                );
+                scripts_map.insert(script_key, script_value.into());
+
+                if !command_option_flags.is_empty() {
+                    let combinations_vec = command_option_clone.clone().get_combinations_vec();
+                    for combination in combinations_vec {
+                        let key_string = combination
+                            .clone()
+                            .into_iter()
+                            .fold("".to_string(), |result, current| {
+                                format!("{}::{}", result, current)
+                            });
+                        let value_string = combination
+                            .clone()
+                            .into_iter()
+                            .fold("".to_string(), |result, current| {
+                                format!("{} --{}", result, current)
+                            });
+                        let script_key = format!(
+                            "{}{}::{}{}",
+                            script_key_prefix, command_name, command_option_name, key_string
+                        );
+                        let script_value = format!(
+                            "{} {} {} {}",
+                            script_value_prefix, command_name, command_option_name, value_string
+                        );
+                        scripts_map.insert(script_key, script_value.into());
+                    }
                 }
             }
         }

@@ -48,7 +48,7 @@ where
                     .next()
                     .unwrap()
                     .to_string()
-                    .to_snake_case(),
+                    .to_kebab_case(),
                 command_option_flags: vec![],
             };
             if command_with_options_regex.is_match(&command) {
@@ -78,6 +78,27 @@ pub struct BatPackageJsonCommand {
 pub struct BatPackageJsonCommandOptions {
     pub command_option_name: String,
     pub command_option_flags: Vec<String>,
+}
+
+impl BatPackageJsonCommandOptions {
+    pub fn get_combinations_vec(&self) -> Vec<Vec<String>> {
+        let mut result = vec![];
+        for (option_flag_index, option_flag) in
+            self.command_option_flags.clone().into_iter().enumerate()
+        {
+            let mut inner_vec = vec![];
+            inner_vec.push(option_flag.clone());
+            result.push(inner_vec.clone());
+            let mut idx = option_flag_index + 1;
+            while idx < self.command_option_flags.len() {
+                inner_vec.push(self.command_option_flags[idx].clone());
+                result.push(inner_vec.clone());
+                idx += 1;
+            }
+        }
+        result.sort_by(|vec_a, vec_b| vec_a.len().cmp(&vec_b.len()));
+        result
+    }
 }
 
 // {
