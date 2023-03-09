@@ -1,45 +1,38 @@
-use crate::{batbelt, Suggestion};
 use std::fs;
 
+use clap::Subcommand;
 use colored::{ColoredString, Colorize};
+use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
+use inflector::Inflector;
 
+use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
 };
+use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerInfo, SignerType};
+use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::{
     BatMetadata, BatMetadataCommit, BatMetadataParser, BatMetadataType, MetadataError,
     MiroMetadata, SourceCodeMetadata,
 };
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-
-use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
 use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
-
-use crate::batbelt::miro::MiroConfig;
-
-use crate::batbelt::bat_dialoguer::BatDialoguer;
-
-use crate::batbelt::miro::image::{MiroImage, MiroImageType};
-
-use crate::batbelt::git::GitCommit;
-use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerInfo, SignerType};
-
-use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
-
-use crate::batbelt::BatEnumerator;
-use crate::commands::{BatCommandEnumerator, CommandResult};
-use clap::Subcommand;
-use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
-use inflector::Inflector;
-
-use super::CommandError;
 use crate::batbelt::miro::frame::{
     MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X, MIRO_INITIAL_Y,
 };
+use crate::batbelt::miro::image::{MiroImage, MiroImageType};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
+use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
+use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::path::BatFolder;
+use crate::batbelt::BatEnumerator;
+use crate::commands::{BatCommandEnumerator, CommandResult};
+use crate::{batbelt, Suggestion};
+
+use super::CommandError;
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -97,22 +90,21 @@ impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
         match self {
-            MiroCommand::DeployCOFrames => self.deploy_co_action().await,
+            MiroCommand::DeployCOFrames => self.deploy_co_frames().await,
             MiroCommand::DeployCOScreenshots { entry_point_name } => {
-                self.deploy_co_screenshots_action(entry_point_name.clone())
-                    .await
+                self.deploy_co_screenshots(entry_point_name.clone()).await
             }
             MiroCommand::Entrypoint { select_all, sorted } => {
-                self.entrypoint_action(*select_all, *sorted).await
+                self.entrypoint(*select_all, *sorted).await
             }
-            MiroCommand::Metadata { select_all } => self.metadata_action(*select_all).await,
+            MiroCommand::Metadata { select_all } => self.metadata(*select_all).await,
             MiroCommand::FunctionDependencies { select_all } => {
-                self.function_action(*select_all).await
+                self.function_dependencies(*select_all).await
             }
         }
     }
 
-    async fn entrypoint_action(&self, select_all: bool, sorted: bool) -> Result<(), CommandError> {
+    async fn entrypoint(&self, select_all: bool, sorted: bool) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame()
             .await
             .change_context(CommandError)?;
@@ -248,7 +240,7 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn metadata_action(&self, select_all: bool) -> Result<(), CommandError> {
+    async fn metadata(&self, select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame()
             .await
             .change_context(CommandError)?;
@@ -434,7 +426,7 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn function_action(&self, _select_all: bool) -> Result<(), CommandError> {
+    async fn function_dependencies(&self, _select_all: bool) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame()
             .await
             .change_context(CommandError)?;
@@ -495,7 +487,7 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn deploy_co_action(&self) -> Result<(), CommandError> {
+    async fn deploy_co_frames(&self) -> Result<(), CommandError> {
         println!("Deploying code-overhaul frames to the Miro board");
 
         let entry_point_names =
@@ -582,46 +574,64 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn deploy_co_screenshots_action(
-        &self,
-        entry_point_name: Option<String>,
-    ) -> CommandResult<()> {
+    async fn deploy_co_screenshots(&self, entry_point_name: Option<String>) -> CommandResult<()> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
+
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        if bat_metadata.miro.code_overhaul.is_empty() {
+            let message = format!(
+                "Miro code-overhaul's metadata is not initialized yet.\n \
+            This action is {} to proceed with this function.",
+                "required".red()
+            );
+            let suggestion_message = format!(
+                "Run  {} to deploy the code-overhaul frames",
+                "bat-cli miro deploy-co-frames".green()
+            );
+            return Err(Report::new(CommandError)
+                .attach_printable(message)
+                .attach(Suggestion(suggestion_message)));
+        }
+
+        let co_started_bat_folder = BatFolder::CodeOverhaulStarted;
+        let co_finished_bat_folder = BatFolder::CodeOverhaulFinished;
+        let mut started_files_names = co_started_bat_folder
+            .get_all_files_names(true, None, None)
+            .change_context(CommandError)?;
+        let mut finished_files_names = co_finished_bat_folder
+            .get_all_files_names(true, None, None)
+            .change_context(CommandError)?;
+        if started_files_names.is_empty() && finished_files_names.is_empty() {
+            return Err(Report::new(CommandError)
+                .attach_printable("code-overhaul's to-review and finished folders are empty"));
+        }
+
+        let mut co_files_names = vec![];
+        co_files_names.append(&mut started_files_names.clone());
+        co_files_names.append(&mut finished_files_names.clone());
+        co_files_names.sort();
 
         let entrypoint_name = match entry_point_name {
             None => {
-                let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
-                if bat_metadata.miro.code_overhaul.is_empty() {
-                    let message = format!(
-                        "Miro code-overhaul's metadata is not initialized yet.\n \
-            This action is {} to proceed with this function.",
-                        "required".red()
-                    );
-                    let suggestion_message = format!(
-                        "Run  {} to deploy the code-overhaul frames",
-                        "bat-cli miro deploy-co-frames".green()
-                    );
-                    return Err(Report::new(CommandError)
-                        .attach_printable(message)
-                        .attach(Suggestion(suggestion_message)));
-                }
-
-                let co_started_bat_folder = BatFolder::CodeOverhaulStarted;
-                let started_files_names = co_started_bat_folder
-                    .get_all_files_names(true, None, None)
-                    .change_context(CommandError)?;
-                if started_files_names.is_empty() {
-                    return Err(Report::new(CommandError)
-                        .attach_printable("code-overhaul's to-review folder is empty"));
-                }
                 let prompt_text = "Select the co file to deploy to Miro".to_string();
-                let selection =
-                    BatDialoguer::select(prompt_text, started_files_names.clone(), None)?;
-                let selected_file_name = started_files_names[selection].clone();
+                let selection = BatDialoguer::select(prompt_text, co_files_names.clone(), None)?;
+                let selected_file_name = co_files_names[selection].clone();
                 let entrypoint_name = selected_file_name.trim_end_matches(".md").to_string();
                 entrypoint_name
             }
-            Some(ep_name) => ep_name,
+            Some(ep_name) => {
+                let entrypoint_name = ep_name.trim_end_matches(".md").to_string();
+                let co_file_name = format!("{}.md", entrypoint_name.clone());
+                if !co_files_names.contains(&co_file_name) {
+                    return Err(Report::new(CommandError).attach_printable(format!(
+                        "code-overhaul's file with name {} not found on {} and {} folders",
+                        co_file_name.clone(),
+                        "to-review".bright_red(),
+                        "finished".bright_red()
+                    )));
+                }
+                entrypoint_name
+            }
         };
 
         let (co_miro_frame, mut miro_co_metadata) =

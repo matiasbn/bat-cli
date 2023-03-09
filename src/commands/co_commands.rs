@@ -63,7 +63,6 @@ impl CodeOverhaulCommand {
     }
 
     fn execute_finish(&self) -> error_stack::Result<(), CommandError> {
-        deprecated_check_correct_branch().change_context(CommandError)?;
         // get to-review files
         let started_entrypoints = BatFolder::CodeOverhaulStarted
             .get_all_files_dir_entries(true, None, None)
@@ -215,7 +214,7 @@ mod co_commands_functions {
             &CoderOverhaulTemplatePlaceholders::CompleteWithTheRestOfStateChanges.to_placeholder(),
         ) {
             return Err(Report::new(CommandError).attach_printable(format!(
-                "Please complete the \"State changes\" section of the {file_name} file"
+                "Please complete the \"State changes\" section of the {file_name} file or delete the {} placeholder", CoderOverhaulTemplatePlaceholders::CompleteWithTheRestOfStateChanges.to_placeholder()
             )));
         }
 

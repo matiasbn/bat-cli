@@ -25,7 +25,7 @@ pub struct CodeOverhaulSigner {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeOverhaulParser {
     pub entry_point_name: String,
-    pub co_started_bat_file: BatFile,
+    pub co_bat_file: BatFile,
     pub validations: Vec<String>,
     pub signers: Vec<CodeOverhaulSigner>,
     pub context_accounts_content: String,
@@ -33,22 +33,37 @@ pub struct CodeOverhaulParser {
 
 impl CodeOverhaulParser {
     pub fn new_from_entry_point_name(entry_point_name: String) -> ParserResult<Self> {
-        let bat_file = BatFile::CodeOverhaulStarted {
+        let entry_point_name = entry_point_name.trim_end_matches(".md").to_string();
+        let bat_file_started = BatFile::CodeOverhaulStarted {
             file_name: entry_point_name.clone(),
         };
-        if !bat_file.file_exists().change_context(ParserError)? {
-            return Err(Report::new(ParserError).attach_printable(format!(
-                "code-overhaul file started not found for entrypoint: {}",
-                entry_point_name
-            )));
-        }
+        let bat_file_finished = BatFile::CodeOverhaulFinished {
+            file_name: entry_point_name.clone(),
+        };
+
         let mut new_co_parser = CodeOverhaulParser {
-            entry_point_name,
-            co_started_bat_file: bat_file,
+            entry_point_name: entry_point_name.clone(),
+            co_bat_file: BatFile::Generic {
+                file_path: "".to_string(),
+            },
             validations: vec![],
             signers: vec![],
             context_accounts_content: "".to_string(),
         };
+
+        if bat_file_started.file_exists().change_context(ParserError)? {
+            new_co_parser.co_bat_file = bat_file_started;
+        } else if bat_file_finished
+            .file_exists()
+            .change_context(ParserError)?
+        {
+            new_co_parser.co_bat_file = bat_file_finished;
+        } else {
+            return Err(Report::new(ParserError).attach_printable(format!(
+                "code-overhaul file not found on to-review or finished for entrypoint: {}",
+                entry_point_name
+            )));
+        }
         new_co_parser.get_signers()?;
         new_co_parser.get_validations()?;
         new_co_parser.get_context_accounts_content()?;
@@ -250,7 +265,7 @@ impl CodeOverhaulParser {
     fn get_signers(&mut self) -> ParserResult<()> {
         let signers_section_regex = Regex::new(r"# Signers:[\s\S]*?#").unwrap();
         let bat_file_content = self
-            .co_started_bat_file
+            .co_bat_file
             .read_content(true)
             .change_context(ParserError)?;
         let signers = signers_section_regex
@@ -285,7 +300,7 @@ impl CodeOverhaulParser {
             .into_report()
             .change_context(ParserError)?;
         let bat_file_content = self
-            .co_started_bat_file
+            .co_bat_file
             .read_content(true)
             .change_context(ParserError)?;
         let validations_section_content = validations_section_regex
@@ -301,7 +316,7 @@ impl CodeOverhaulParser {
 
     fn get_context_accounts_content(&mut self) -> ParserResult<()> {
         let bat_file_content = self
-            .co_started_bat_file
+            .co_bat_file
             .read_content(true)
             .change_context(ParserError)?;
         let ca_section_regex = Regex::new(r"# Context accounts:[\s\S]*?\n# Validations")
