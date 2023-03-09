@@ -210,12 +210,25 @@ mod co_commands_functions {
     ) -> error_stack::Result<(), CommandError> {
         let file_data = bat_file.read_content(true).change_context(CommandError)?;
         let file_name = bat_file.get_file_name().change_context(CommandError)?;
-        if file_data.contains(
-            &CoderOverhaulTemplatePlaceholders::CompleteWithTheRestOfStateChanges.to_placeholder(),
-        ) {
-            return Err(Report::new(CommandError).attach_printable(format!(
-                "Please complete the \"State changes\" section of the {file_name} file or delete the {} placeholder", CoderOverhaulTemplatePlaceholders::CompleteWithTheRestOfStateChanges.to_placeholder()
-            )));
+        let mut suggestions_vec = vec![];
+        let state_changes_checked_placeholders =
+            CoderOverhaulTemplatePlaceholders::get_state_changes_checked_placeholders_vec();
+        for checked_placeholder in state_changes_checked_placeholders {
+            if file_data.contains(&checked_placeholder) {
+                suggestions_vec.push(Suggestion(format!(
+                    "Delete or update the `{}` place holder from the State changes section",
+                    checked_placeholder.clone().bright_red()
+                )))
+            }
+        }
+        if !suggestions_vec.is_empty() {
+            let mut report = Report::new(CommandError).attach_printable(format!(
+                "\"State changes\" section of the {file_name} is not finished"
+            ));
+            for suggestion in suggestions_vec {
+                report = report.attach(suggestion);
+            }
+            return Err(report);
         }
 
         if file_data
@@ -233,9 +246,15 @@ mod co_commands_functions {
         if file_data.contains(
             &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
         ) {
-            return Err(Report::new(CommandError).attach_printable(format!(
-                "Please complete the \"Signers\" section of the {file_name} file"
-            )));
+            return Err(Report::new(CommandError)
+                .attach_printable(format!(
+                    "Please complete the \"Signers\" section of the {file_name} file"
+                ))
+                .attach(Suggestion(format!(
+                    "Delete {} from the Signers section",
+                    CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                        .to_placeholder()
+                ))));
         }
 
         if file_data

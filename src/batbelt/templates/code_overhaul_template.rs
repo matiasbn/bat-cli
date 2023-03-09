@@ -215,6 +215,107 @@ impl CodeOverhaulSection {
                 mut_unchecked_account.clone().account_struct_name,
             ));
         }
+
+        let mut_token_accounts = context_accounts_metadata
+            .clone()
+            .context_accounts_info
+            .into_iter()
+            .filter(|ca_info| {
+                ca_info.is_mut && ca_info.solana_account_type == SolanaAccountType::TokenAccount
+            })
+            .collect::<Vec<_>>();
+
+        for (mut_token_account_index, mut_token_account) in
+            mut_token_accounts.clone().into_iter().enumerate()
+        {
+            let mut destination_index = 0;
+            while destination_index < mut_token_accounts.len() {
+                if destination_index == mut_token_account_index {
+                    destination_index += 1;
+                    continue;
+                }
+                state_changes_content_vec.push(format!(
+                    "- Transfers `{}` tokens from `{}` to `{}`",
+                    CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
+                    mut_token_account.clone().account_name,
+                    mut_token_accounts.clone()[destination_index].account_name,
+                ));
+                destination_index += 1;
+            }
+            state_changes_content_vec.push(format!(
+                "- Transfers `{}` tokens from `{}` to `{}`",
+                CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
+                mut_token_account.clone().account_name,
+                CoderOverhaulTemplatePlaceholders::CompleteWithDestinationTokenAccount
+                    .to_placeholder(),
+            ));
+
+            destination_index = 0;
+
+            while destination_index < mut_token_accounts.len() {
+                if destination_index == mut_token_account_index {
+                    destination_index += 1;
+                    continue;
+                }
+                state_changes_content_vec.push(format!(
+                    "- Delegates `{}` tokens from `{}` to `{}`",
+                    CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
+                    mut_token_account.clone().account_name,
+                    mut_token_accounts.clone()[destination_index].account_name,
+                ));
+                destination_index += 1;
+            }
+            state_changes_content_vec.push(format!(
+                "- Delegates `{}` tokens from `{}` to `{}`",
+                CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
+                mut_token_account.clone().account_name,
+                CoderOverhaulTemplatePlaceholders::CompleteWithDestinationTokenAccount
+                    .to_placeholder(),
+            ));
+        }
+
+        let mut_mint_accounts = context_accounts_metadata
+            .clone()
+            .context_accounts_info
+            .into_iter()
+            .filter(|ca_info| {
+                ca_info.is_mut && ca_info.solana_account_type == SolanaAccountType::Mint
+            })
+            .collect::<Vec<_>>();
+
+        for mut_mint_account in mut_mint_accounts {
+            for mut_token_account in mut_token_accounts.clone() {
+                state_changes_content_vec.push(format!(
+                    "- Mints `{}` tokens from `{}` mint to `{}`",
+                    CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
+                    mut_mint_account.clone().account_name,
+                    mut_token_account.clone().account_name,
+                ));
+            }
+            state_changes_content_vec.push(format!(
+                "- Mints `{}` tokens from `{}` mint to `{}`",
+                CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
+                mut_mint_account.clone().account_name,
+                CoderOverhaulTemplatePlaceholders::CompleteWithDestinationTokenAccount
+                    .to_placeholder(),
+            ));
+            for mut_token_account in mut_token_accounts.clone() {
+                state_changes_content_vec.push(format!(
+                    "- Burns `{}` tokens from `{}` mint to `{}`",
+                    CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
+                    mut_mint_account.clone().account_name,
+                    mut_token_account.clone().account_name,
+                ));
+            }
+            state_changes_content_vec.push(format!(
+                "- Burns `{}` tokens from `{}` mint to `{}`",
+                CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
+                mut_mint_account.clone().account_name,
+                CoderOverhaulTemplatePlaceholders::CompleteWithDestinationTokenAccount
+                    .to_placeholder(),
+            ));
+        }
+
         state_changes_content_vec.push(format!(
             "- `{}`",
             CompleteWithTheRestOfStateChanges.to_placeholder()
@@ -429,25 +530,8 @@ impl CodeOverhaulSection {
                 let signer_description =
                     format!("- {}: {}", signer_name, signer_description_comment);
                 signers.push(signer_description);
-                // let prompt_text = format!(
-                //     "is this a proper description of the signer {}?: '{}'",
-                //     signer_name.red(),
-                //     signer_description_comment
-                // );
-                // let is_correct = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
-                // if is_correct {
-                // } else {
-                //     let signer_description = format!(
-                //         "- {}: {}",
-                //         signer_name,
-                //         CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                //             .to_placeholder()
-                //     );
-                //     signers.push(signer_description);
-                // }
                 // multiple line description
             } else {
-                // prompt the user to select the lines that contains the description and join them
                 let signer_formatted = signer_comments
                     .iter()
                     .map(|line| line.split("// ").last().unwrap().to_string())
@@ -455,43 +539,6 @@ impl CodeOverhaulSection {
                     .join(". ");
                 let signer_description = format!("- {}: {}", signer_name, signer_formatted);
                 signers.push(signer_description);
-                // let signer_total_comment = signer_formatted
-                //     .into_iter()
-                //     .enumerate()
-                //     .filter(|line| selections.contains(&line.0))
-                //     .map(|line| line.1)
-                //     .collect::<Vec<_>>();
-                // let prompt_text = format!(
-                //     "Use the spacebar to select the lines that describes the signer {}.
-                //         Hit enter if is not a proper description:",
-                //     signer_name.red()
-                // );
-                // let selections = batbelt::bat_dialoguer::multiselect(
-                //     &prompt_text,
-                //     signer_formatted.clone(),
-                //     Some(&vec![false; signer_formatted.clone().len()]),
-                // )
-                // .unwrap();
-                // if selections.is_empty() {
-                //     let signer_description = format!(
-                //         "- {}: {}",
-                //         signer_name,
-                //         CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
-                //             .to_placeholder()
-                //     );
-                //     signers.push(signer_description);
-                // } else {
-                //     // take the selections and create the array
-                //     let signer_total_comment = signer_formatted
-                //         .into_iter()
-                //         .enumerate()
-                //         .filter(|line| selections.contains(&line.0))
-                //         .map(|line| line.1)
-                //         .collect::<Vec<_>>()
-                //         .join(". ");
-                //     let signer_description = format!("- {}: {}", signer_name, signer_total_comment);
-                //     signers.push(signer_description);
-                // }
             }
         }
         if signers.is_empty() {
@@ -592,11 +639,20 @@ pub enum CoderOverhaulTemplatePlaceholders {
     CompleteWithNotes,
     CompleteWithSignerDescription,
     CompleteWithMiroFrameUrl,
+    CompleteWithDestinationTokenAccount,
+    CompleteWithAmount,
 }
 
 impl CoderOverhaulTemplatePlaceholders {
     pub fn to_placeholder(&self) -> String {
         self.to_string().to_screaming_snake_case()
+    }
+    pub fn get_state_changes_checked_placeholders_vec() -> Vec<String> {
+        vec![
+            Self::CompleteWithTheRestOfStateChanges.to_placeholder(),
+            Self::CompleteWithAmount.to_placeholder(),
+            Self::CompleteWithDestinationTokenAccount.to_placeholder(),
+        ]
     }
 }
 
