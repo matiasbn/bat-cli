@@ -9,7 +9,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::silicon;
 use crate::batbelt::sonar::BatSonar;
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
-use crate::commands::miro_commands::MiroCommand;
+use crate::commands::miro_commands::{miro_command_functions, MiroCommand};
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
 use regex::Regex;
@@ -101,7 +101,7 @@ impl CodeOverhaulParser {
         x_position: i64,
         y_position: i64,
     ) -> ParserResult<MiroImage> {
-        let file_name = MiroCommand::parse_screenshot_name(title, &miro_frame.title);
+        let file_name = miro_command_functions::parse_screenshot_name(title, &miro_frame.title);
 
         let sc_path = self.create_screenshot_with_silicon(content.clone(), &file_name)?;
 
@@ -153,7 +153,8 @@ impl CodeOverhaulParser {
                 .change_context(ParserError)?;
 
         let validations_content = self.get_validations_image_content();
-        let file_name = MiroCommand::parse_screenshot_name("validations", &miro_frame.title);
+        let file_name =
+            miro_command_functions::parse_screenshot_name("validations", &miro_frame.title);
 
         let validations_path =
             self.create_screenshot_with_silicon(validations_content, &file_name)?;
@@ -189,7 +190,8 @@ impl CodeOverhaulParser {
                 .change_context(ParserError)?;
 
         let ca_content = self.get_context_accounts_image_content();
-        let file_name = MiroCommand::parse_screenshot_name("context_accounts", &miro_frame.title);
+        let file_name =
+            miro_command_functions::parse_screenshot_name("context_accounts", &miro_frame.title);
 
         let ca_path = self.create_screenshot_with_silicon(ca_content, &file_name)?;
         println!(
@@ -340,7 +342,7 @@ impl CodeOverhaulParser {
         use_separator: bool,
     ) -> ParserResult<Vec<String>> {
         let rust_regex =
-            Regex::new(r"- ```rust[\s]+[\s 'A-Za-z0-9−()?._=@:><!&{}^;/+#\[\],]+[\s]+```")
+            Regex::new(r"- ```rust[\s]+[\s 'A-Za-z0-9−()?._=@:><!&{}^;/+#\[\],`]+[\s]+```")
                 .into_report()
                 .change_context(ParserError)?;
         if rust_regex.is_match(content) {
