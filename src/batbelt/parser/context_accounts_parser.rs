@@ -160,15 +160,23 @@ impl CAAccountParser {
         if !sonar_result_content.contains("#[account(") {
             return Ok(account_info);
         }
-        account_info.is_mut = Self::get_is_mut(sonar_result_content)?;
         account_info.seeds = Self::get_seeds(sonar_result_content)?;
         account_info.is_pda = !account_info.seeds.is_empty();
+        account_info.is_mut = Self::get_is_mut(sonar_result_content)?;
         account_info.is_init = Self::get_is_init(sonar_result_content)?;
+        account_info.is_close = Self::get_is_close(sonar_result_content)?;
         account_info.rent_exemption_account =
             Self::get_rent_exemption_account(sonar_result_content)?;
         account_info.validations = Self::get_validations(sonar_result_content)?;
 
         Ok(account_info)
+    }
+
+    fn get_is_close(sonar_result_content: &str) -> ParserResult<bool> {
+        let close_regex = Regex::new(r"(close = [\w_:]+)")
+            .into_report()
+            .change_context(ParserError)?;
+        Ok(close_regex.is_match(sonar_result_content))
     }
 
     fn get_is_mut(sonar_result_content: &str) -> ParserResult<bool> {
