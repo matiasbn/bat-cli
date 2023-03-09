@@ -1305,7 +1305,7 @@ pub mod miro_command_functions {
 
 #[test]
 fn test_enum_display() {
-    let bat_package_json_command = MiroCommand::get_package_json_commands("miro".to_string());
+    let bat_package_json_command = MiroCommand::get_bat_package_json_commands("miro".to_string());
     for option in bat_package_json_command.clone().command_options {
         let combinations_vec = option.get_combinations_vec();
         println!("{:#?}", combinations_vec);

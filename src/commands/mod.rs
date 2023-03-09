@@ -31,7 +31,7 @@ where
     fn execute_command(&self) -> CommandResult<()>;
     fn check_metadata_is_initialized(&self) -> bool;
     fn check_correct_branch(&self) -> bool;
-    fn get_package_json_commands(command_name: String) -> BatPackageJsonCommand {
+    fn get_bat_package_json_commands(command_name: String) -> BatPackageJsonCommand {
         let command_with_options_regex = Regex::new(r"\w+ \{\s*([\s\w]+: false,\n)+\}").unwrap();
         let boolean_flag_regex = Regex::new(r"\w+: false,").unwrap();
 

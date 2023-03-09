@@ -193,19 +193,19 @@ impl BatCommands {
         BatCommands::get_type_vec()
             .into_iter()
             .filter_map(|command| match command {
-                BatCommands::CO(_) => Some(CodeOverhaulCommand::get_package_json_commands(
+                BatCommands::CO(_) => Some(CodeOverhaulCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Finding(_) => Some(FindingCommand::get_package_json_commands(
+                BatCommands::Finding(_) => Some(FindingCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Tool(_) => Some(ToolCommand::get_package_json_commands(
+                BatCommands::Tool(_) => Some(ToolCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Miro(_) => Some(MiroCommand::get_package_json_commands(
+                BatCommands::Miro(_) => Some(MiroCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Repo(_) => Some(RepositoryCommand::get_package_json_commands(
+                BatCommands::Repo(_) => Some(RepositoryCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Sonar => Some(BatPackageJsonCommand {
