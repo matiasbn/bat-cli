@@ -82,7 +82,7 @@ enum BatCommands {
     Miro(MiroCommand),
     /// Git actions to manage repository
     #[command(subcommand)]
-    Repo(RepositoryCommand),
+    Repository(RepositoryCommand),
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageCommand),
@@ -117,7 +117,7 @@ impl BatCommands {
             BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tool(command) => command.execute_command(),
-            BatCommands::Repo(command) => command.execute_command(),
+            BatCommands::Repository(command) => command.execute_command(),
             // only for dev
             #[cfg(debug_assertions)]
             BatCommands::Package(PackageCommand::Format) => {
@@ -169,7 +169,7 @@ impl BatCommands {
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
-            BatCommands::Repo(command) => (
+            BatCommands::Repository(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
@@ -207,9 +207,11 @@ impl BatCommands {
                 BatCommands::Miro(_) => Some(MiroCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Repo(_) => Some(RepositoryCommand::get_bat_package_json_commands(
-                    command.to_string().to_kebab_case(),
-                )),
+                BatCommands::Repository(_) => {
+                    Some(RepositoryCommand::get_bat_package_json_commands(
+                        command.to_string().to_kebab_case(),
+                    ))
+                }
                 BatCommands::Sonar => Some(BatPackageJsonCommand {
                     command_name: command.to_string().to_kebab_case(),
                     command_options: vec![],

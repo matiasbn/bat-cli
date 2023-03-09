@@ -46,9 +46,9 @@ impl BatEnumerator for ToolCommand {}
 impl BatCommandEnumerator for ToolCommand {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
-            ToolCommand::OpenSourceCode => self.execute_open_metadata(),
+            ToolCommand::OpenSourceCode => self.execute_open_source_code(),
             ToolCommand::CustomizePackageJson => self.execute_package_json(),
-            ToolCommand::GetMetadataById => self.execute_get_metadata(),
+            ToolCommand::GetMetadataById => self.execute_get_metadata_by_id(),
             ToolCommand::OpenCodeOverhaulFile => self.execute_open_co(),
             ToolCommand::CountCodeOverhaul => self.execute_count_co_files(),
         }
@@ -76,7 +76,7 @@ impl BatCommandEnumerator for ToolCommand {
 }
 
 impl ToolCommand {
-    fn execute_open_metadata(&self) -> CommandResult<()> {
+    fn execute_open_source_code(&self) -> CommandResult<()> {
         let selected_bat_metadata_type =
             BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
         let (path, start_line_index) = match selected_bat_metadata_type {
@@ -145,7 +145,7 @@ impl ToolCommand {
             .change_context(CommandError)
     }
 
-    fn execute_get_metadata(&self) -> CommandResult<()> {
+    fn execute_get_metadata_by_id(&self) -> CommandResult<()> {
         let metadata_id = BatDialoguer::input("Metadata id:".to_string())?;
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         for function_metadata in bat_metadata.source_code.functions_source_code {
