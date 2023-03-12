@@ -32,6 +32,7 @@ use log4rs::encode::pattern::PatternEncoder;
 
 use log4rs::Config;
 use package::PackageCommand;
+use regex::Regex;
 pub mod batbelt;
 pub mod commands;
 pub mod config;
@@ -224,6 +225,20 @@ impl BatCommands {
             })
             .collect::<Vec<_>>()
     }
+
+    pub fn get_pretty_command(&self) -> CommandResult<String> {
+        let multi_line_command_regex = Regex::new(r#"[\w]+(\([\w\s,]+\))+"#)
+            .into_report()
+            .change_context(CommandError)?;
+        let command_string = format!("{self:#?}");
+        if multi_line_command_regex.is_match(&command_string) {
+            let mut command_string_lines = command_string.lines();
+            let command_name = command_string_lines.next().unwrap().to_kebab_case();
+            let command_option = command_string_lines.next().unwrap().trim().to_kebab_case();
+            return Ok(format!("{} {}", command_name, command_option));
+        }
+        Ok(self.to_string().to_kebab_case())
+    }
 }
 
 fn init_log(cli: Cli) -> CommandResult<()> {
@@ -289,7 +304,7 @@ async fn main() -> CommandResult<()> {
             println!(
                 "{} {} script successfully executed!",
                 "bat-cli".green(),
-                cli.command.to_string().to_kebab_case().green()
+                cli.command.get_pretty_command()?.green()
             );
             Ok(())
         }
@@ -297,7 +312,7 @@ async fn main() -> CommandResult<()> {
             eprintln!(
                 "{} {} script finished with error",
                 "bat-cli".red(),
-                cli.command.to_string().to_kebab_case().red()
+                cli.command.get_pretty_command()?.red()
             );
             log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)

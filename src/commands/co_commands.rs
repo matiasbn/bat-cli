@@ -116,7 +116,6 @@ impl CodeOverhaulCommand {
             .write_content(false, &co_summary_content)
             .change_context(CommandError)?;
 
-        println!("Code overhaul summary file updated");
         Ok(())
     }
 
