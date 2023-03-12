@@ -1,7 +1,7 @@
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
 
-use crate::batbelt::git::{get_not_committed_files, GitCommit};
+use crate::batbelt::git::{get_current_branch_name, get_not_committed_files, GitCommit};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::path::{BatFile, BatFolder};
@@ -86,6 +86,7 @@ impl RepositoryCommand {
 
     fn merge_all_to_develop(&self) -> Result<(), CommandError> {
         let branches_list = self.get_local_branches_filtered()?;
+        let current_branch = get_current_branch_name().change_context(CommandError)?;
         self.checkout_branch("develop")?;
         for branch_name in branches_list {
             log::debug!("branch_name: {}", branch_name);
@@ -93,11 +94,13 @@ impl RepositoryCommand {
             execute_command("git", &["merge", &branch_name, "-m", &message], false)
                 .change_context(CommandError)?;
         }
+        self.checkout_branch(&current_branch)?;
         Ok(())
     }
 
     fn merge_develop_to_all(&self) -> Result<(), CommandError> {
         let branches_list = self.get_local_branches_filtered()?;
+        let current_branch = get_current_branch_name().change_context(CommandError)?;
         for branch_name in branches_list {
             log::debug!("branch_name: {}", branch_name);
             let message = format!("Merge branch develop into '{}'", branch_name);
@@ -112,13 +115,14 @@ impl RepositoryCommand {
             // execute_command("git", &["merge", "develop", "-m", &message])
             //     .change_context(CommandError)?;
         }
-        self.checkout_branch("develop")?;
+        self.checkout_branch(&current_branch)?;
         Ok(())
     }
 
     fn fetch_remote_branches(&self, select_all: bool) -> Result<(), CommandError> {
         let branches_list = self.get_remote_branches_filtered()?;
         let prompt_test = format!("Select the branches {}", "to fetch".green());
+        let current_branch = get_current_branch_name().change_context(CommandError)?;
         let selections = batbelt::bat_dialoguer::multiselect(
             &prompt_test,
             branches_list.clone(),
@@ -136,7 +140,7 @@ impl RepositoryCommand {
             )
             .change_context(CommandError)?;
         }
-        self.checkout_branch("develop")?;
+        self.checkout_branch(&current_branch)?;
         Ok(())
     }
 
