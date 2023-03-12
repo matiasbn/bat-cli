@@ -288,18 +288,20 @@ impl CodeOverhaulSection {
             ));
         }
 
-        let mut_unchecked_accounts = context_accounts_metadata
+        let mut_unknown_accounts = context_accounts_metadata
             .clone()
             .context_accounts_info
             .into_iter()
             .filter(|ca_info| {
-                ca_info.is_mut && ca_info.solana_account_type == SolanaAccountType::UncheckedAccount
+                ca_info.is_mut
+                    && (ca_info.solana_account_type == SolanaAccountType::UncheckedAccount
+                        || ca_info.solana_account_type == SolanaAccountType::Other)
             });
-        for mut_unchecked_account in mut_unchecked_accounts {
+        for mut_unkown_account in mut_unknown_accounts {
             state_changes_content_vec.push(format!(
                 "- Updates `{}`[{}]",
-                mut_unchecked_account.clone().account_name,
-                mut_unchecked_account.clone().account_struct_name,
+                mut_unkown_account.clone().account_name,
+                mut_unkown_account.clone().account_struct_name,
             ));
         }
 

@@ -189,13 +189,13 @@ impl CAAccountParser {
     }
 
     fn get_is_mut(sonar_result_content: &str) -> ParserResult<bool> {
-        let mut_regex_1 = Regex::new(r"\(mut,")
+        let mut_regex_1 = Regex::new(r#"\(mut,"#)
             .into_report()
             .change_context(ParserError)?;
-        let mut_regex_2 = Regex::new(r"\s+mut,")
+        let mut_regex_2 = Regex::new(r#"\s+mut,"#)
             .into_report()
             .change_context(ParserError)?;
-        let mut_regex_3 = Regex::new(r"\(mut\)")
+        let mut_regex_3 = Regex::new(r#"\(mut\)"#)
             .into_report()
             .change_context(ParserError)?;
         Ok(mut_regex_1.is_match(sonar_result_content)
