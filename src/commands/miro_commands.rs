@@ -818,6 +818,14 @@ impl MiroCommand {
                         .attach(Suggestion(suggestion_message)));
                 }
             };
+
+        if co_miro_frame.frame_url.is_some() {
+            println!(
+                "Miro frame url: {}",
+                co_miro_frame.clone().frame_url.unwrap().green()
+            );
+        }
+
         if !miro_co_metadata.images_deployed {
             let entrypoint_parser =
                 EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
