@@ -46,9 +46,13 @@ pub struct CAAccountParser {
 }
 
 impl CAAccountParser {
-    fn new(acc_type_info: CAAccountTypeInfo, acc_attribute: CAAccountAttributeInfo) -> Self {
+    fn new(
+        acc_type_info: CAAccountTypeInfo,
+        acc_attribute: CAAccountAttributeInfo,
+        sonar_result_content: &str,
+    ) -> Self {
         Self {
-            content: acc_type_info.content,
+            content: sonar_result_content.to_string(),
             solana_account_type: acc_type_info.solana_account_type,
             account_struct_name: acc_type_info.account_struct_name,
             account_wrapper_name: acc_type_info.account_wrapper_name,
@@ -76,8 +80,12 @@ impl CAAccountParser {
             )));
         }
         let account_attribute_info = Self::get_account_attribute_info(&sonar_result.content)?;
-        let account_type_info = Self::get_account_type_info(sonar_result)?;
-        let new_parser = Self::new(account_type_info, account_attribute_info);
+        let account_type_info = Self::get_account_type_info(sonar_result.clone())?;
+        let new_parser = Self::new(
+            account_type_info,
+            account_attribute_info,
+            &sonar_result.content,
+        );
         Ok(new_parser)
     }
 
