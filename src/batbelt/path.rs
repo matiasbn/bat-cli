@@ -411,6 +411,16 @@ impl BatFolder {
     }
 }
 
+pub fn prettify_source_code_path(path: &str) -> BatPathResult<String> {
+    let bat_config = BatConfig::get_config().change_context(BatPathError)?;
+    let splitter = format!("{}/src/", bat_config.program_name);
+    let path = path.split(&splitter).last().unwrap();
+    let path_to_include = format!("{}{}", splitter, path)
+        .trim_start_matches('/')
+        .to_string();
+    Ok(path_to_include)
+}
+
 pub fn get_file_path(file_type: BatFile, canonicalize: bool) -> Result<String, BatPathError> {
     file_type.get_path(canonicalize)
 }

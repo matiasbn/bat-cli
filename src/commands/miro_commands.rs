@@ -298,18 +298,13 @@ impl MiroCommand {
                     let struct_metadata_names = struct_metadata_vec
                         .iter()
                         .map(|struct_metadata| {
-                            format!(
-                                "{}: {}:{}",
+                            miro_command_functions::get_formatted_path(
                                 struct_metadata.name.clone(),
-                                struct_metadata
-                                    .path
-                                    .clone()
-                                    .trim_start_matches("../")
-                                    .to_string(),
-                                struct_metadata.start_line_index.clone()
+                                struct_metadata.path.clone(),
+                                struct_metadata.start_line_index,
                             )
                         })
-                        .collect::<Vec<_>>();
+                        .collect::<Result<Vec<_>, _>>()?;
                     let prompt_text = format!("Please enter the {}", "struct to deploy".green());
                     let selections = BatDialoguer::multiselect(
                         prompt_text,
@@ -373,18 +368,13 @@ impl MiroCommand {
                     let function_metadata_names = function_metadata_vec
                         .iter()
                         .map(|function_metadata| {
-                            format!(
-                                "{}: {}:{}",
+                            miro_command_functions::get_formatted_path(
                                 function_metadata.name.clone(),
-                                function_metadata
-                                    .path
-                                    .clone()
-                                    .trim_start_matches("../")
-                                    .to_string(),
-                                function_metadata.start_line_index.clone()
+                                function_metadata.path.clone(),
+                                function_metadata.start_line_index,
                             )
                         })
-                        .collect::<Vec<_>>();
+                        .collect::<Result<Vec<_>, _>>()?;
                     let prompt_text = format!("Please enter the {}", "function to deploy".green());
                     let selections = BatDialoguer::multiselect(
                         prompt_text,
@@ -448,18 +438,13 @@ impl MiroCommand {
                     let trait_metadata_names = trait_metadata_vec
                         .iter()
                         .map(|trait_metadata| {
-                            format!(
-                                "{}: {}:{}",
+                            miro_command_functions::get_formatted_path(
                                 trait_metadata.name.clone(),
-                                trait_metadata
-                                    .path
-                                    .clone()
-                                    .trim_start_matches("../")
-                                    .to_string(),
-                                trait_metadata.start_line_index.clone()
+                                trait_metadata.path.clone(),
+                                trait_metadata.start_line_index,
                             )
                         })
-                        .collect::<Vec<_>>();
+                        .collect::<Result<Vec<_>, _>>()?;
                     let prompt_text = format!("Please enter the {}", "trait to deploy".green());
                     let selections = BatDialoguer::multiselect(
                         prompt_text,
@@ -521,18 +506,13 @@ impl MiroCommand {
                     let enum_metadata_names = enum_metadata_vec
                         .iter()
                         .map(|enum_metadata| {
-                            format!(
-                                "{}: {}:{}",
+                            miro_command_functions::get_formatted_path(
                                 enum_metadata.name.clone(),
-                                enum_metadata
-                                    .path
-                                    .clone()
-                                    .trim_start_matches("../")
-                                    .to_string(),
-                                enum_metadata.start_line_index.clone()
+                                enum_metadata.path.clone(),
+                                enum_metadata.start_line_index,
                             )
                         })
-                        .collect::<Vec<_>>();
+                        .collect::<Result<Vec<_>, _>>()?;
                     let prompt_text = format!("Please enter the {}", "enum to deploy".green());
                     let selections = BatDialoguer::multiselect(
                         prompt_text,
@@ -620,7 +600,7 @@ impl MiroCommand {
                         f_meta.start_line_index,
                     )
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()?;
             let prompt_text = "Select the Function to deploy";
             let seleted_function_index = batbelt::bat_dialoguer::select(
                 prompt_text,
@@ -1232,6 +1212,7 @@ impl MiroCommand {
 
 pub mod miro_command_functions {
     use super::*;
+    use crate::batbelt::path::prettify_source_code_path;
 
     pub async fn deploy_miro_frame_for_co(
         entry_point_name: &str,
@@ -1253,13 +1234,18 @@ pub mod miro_command_functions {
         Ok(miro_frame)
     }
 
-    pub fn get_formatted_path(name: String, path: String, start_line_index: usize) -> String {
-        format!(
+    pub fn get_formatted_path(
+        name: String,
+        path: String,
+        start_line_index: usize,
+    ) -> CommandResult<String> {
+        Ok(format!(
             "{}: {}:{}",
-            name.blue(),
-            path.trim_start_matches("../"),
+            name,
+            prettify_source_code_path(&path.trim_start_matches("../"))
+                .change_context(CommandError)?,
             start_line_index
-        )
+        ))
     }
 
     pub async fn prompt_deploy_dependencies(
@@ -1357,7 +1343,7 @@ pub mod miro_command_functions {
             .clone()
             .into_iter()
             .map(|dep| get_formatted_path(dep.name, dep.path.clone(), dep.start_line_index))
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let multi_selection = BatDialoguer::multiselect(
             prompt_text,
