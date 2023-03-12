@@ -138,11 +138,7 @@ impl ToolCommand {
             None,
         )?;
         let level_selected = log_level_vec[selection];
-        PackageJsonTemplate::create_package_json(Some(level_selected))
-            .change_context(CommandError)?;
-        BatFile::PackageJson
-            .open_in_editor(false, None)
-            .change_context(CommandError)
+        PackageJsonTemplate::create_package_json(Some(level_selected)).change_context(CommandError)
     }
 
     fn execute_get_metadata_by_id(&self) -> CommandResult<()> {

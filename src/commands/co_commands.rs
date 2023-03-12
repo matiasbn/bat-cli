@@ -4,7 +4,7 @@ use crate::batbelt::git::GitCommit;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{
-    CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
+    CodeOverhaulSection, CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
 };
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
@@ -75,12 +75,21 @@ impl CodeOverhaulCommand {
             let co_file_content = finished_co_file
                 .read_content(false)
                 .change_context(CommandError)?;
-            let state_changes_section_content =
-                co_commands_functions::extract_section_content("State changes", &co_file_content)?;
-            let notes_section_content =
-                co_commands_functions::extract_section_content("Notes", &co_file_content)?;
-            let miro_frame_url_section_content =
-                co_commands_functions::extract_section_content("Miro frame url", &co_file_content)?;
+            let state_changes_section_content = co_commands_functions::extract_section_content(
+                &co_file_content,
+                &CodeOverhaulSection::StateChanges.to_markdown_header(),
+                &CodeOverhaulSection::Notes.to_markdown_header(),
+            )?;
+            let notes_section_content = co_commands_functions::extract_section_content(
+                &co_file_content,
+                &CodeOverhaulSection::Notes.to_markdown_header(),
+                &CodeOverhaulSection::Signers.to_markdown_header(),
+            )?;
+            let miro_frame_url_section_content = co_commands_functions::extract_section_content(
+                &co_file_content,
+                &CodeOverhaulSection::MiroFrameUrl.to_markdown_header(),
+                "",
+            )?;
             let co_file_name = finished_co_file
                 .get_file_name()
                 .change_context(CommandError)?
@@ -89,9 +98,9 @@ impl CodeOverhaulCommand {
             let finished_file_summary = format!(
                 "# {}\n\n{}\n\n{}\n\n{}",
                 co_file_name,
-                state_changes_section_content.trim(),
-                notes_section_content.trim(),
-                miro_frame_url_section_content.trim()
+                state_changes_section_content,
+                notes_section_content,
+                miro_frame_url_section_content
             );
             co_summary_content = if co_summary_content.is_empty() {
                 finished_file_summary
@@ -331,20 +340,28 @@ mod co_commands_functions {
     }
 
     pub fn extract_section_content(
-        section_name: &str,
         co_file_content: &str,
+        section_header: &str,
+        next_section_header: &str,
     ) -> CommandResult<String> {
-        let content_regex = r"[\w\s\-`\[\]:./=?]+";
-        let section_content_regex = Regex::new(&format!(r"(# {}:){}", section_name, content_regex))
-            .into_report()
-            .change_context(CommandError)?;
+        let section_content_regex = Regex::new(&format!(
+            r#"({})[\s\S]+({})"#,
+            section_header, next_section_header
+        ))
+        .into_report()
+        .change_context(CommandError)?;
+        log::debug!("{co_file_content}");
+        log::debug!("{section_header}");
+        log::debug!("{next_section_header}");
         let section_content = section_content_regex
             .find(&co_file_content)
             .ok_or(CommandError)
             .into_report()?
             .as_str()
             .to_string()
-            .replace("#", "##")
+            .replace(section_header, &section_header.replace("#", "##"))
+            .trim_end_matches(next_section_header)
+            .trim()
             .to_string();
         Ok(section_content)
     }
