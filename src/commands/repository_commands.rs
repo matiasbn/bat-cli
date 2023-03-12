@@ -1,10 +1,10 @@
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
 
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::{get_not_committed_files, GitCommit};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::path::BatFolder;
+use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use clap::Subcommand;
@@ -213,6 +213,8 @@ impl RepositoryCommand {
 
     fn execute_update_co_file(&self) -> CommandResult<()> {
         println!("Select the code-overhaul file to finish:");
+        let co_finished_folder = BatFolder::CodeOverhaulFinished;
+
         let finished_files_names = BatFolder::CodeOverhaulFinished
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
@@ -224,9 +226,34 @@ impl RepositoryCommand {
             )));
         }
 
+        let not_committed_files = get_not_committed_files().change_context(CommandError)?;
+
+        let co_finished_path = co_finished_folder
+            .get_path(false)
+            .change_context(CommandError)?;
+
+        let not_committed_finished = not_committed_files
+            .into_iter()
+            .filter_map(|file_path| {
+                if file_path.contains(&co_finished_path) {
+                    Some(BatFile::Generic { file_path }.get_file_name())
+                } else {
+                    None
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .change_context(CommandError)?;
+
+        if not_committed_finished.is_empty() {
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "{}",
+                "All finished co files are up to date".green()
+            )));
+        }
+
         let selection = BatDialoguer::select(
             "Select the code-overhaul file to update:".to_string(),
-            finished_files_names.clone(),
+            not_committed_finished.clone(),
             None,
         )
         .change_context(CommandError)?;
