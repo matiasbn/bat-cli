@@ -322,19 +322,23 @@ impl CodeOverhaulSection {
                     continue;
                 }
                 state_changes_content_vec.push(format!(
-                    "- Transfers `{}` tokens from `{}` to `{}`",
+                    "- Transfers `{}` tokens from `{}`[authority={}] to `{}`[authority={}]",
                     CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
                     mut_token_account.clone().account_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
                     mut_token_accounts.clone()[destination_index].account_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
                 ));
                 destination_index += 1;
             }
             state_changes_content_vec.push(format!(
-                "- Transfers `{}` tokens from `{}` to `{}`",
+                "- Transfers `{}` tokens from `{}`[authority={}] to `{}`[authority={}]",
                 CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
                 mut_token_account.clone().account_name,
+                CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
                 CoderOverhaulTemplatePlaceholders::CompleteWithDestinationTokenAccount
                     .to_placeholder(),
+                CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
             ));
 
             destination_index = 0;
@@ -345,19 +349,23 @@ impl CodeOverhaulSection {
                     continue;
                 }
                 state_changes_content_vec.push(format!(
-                    "- Delegates `{}` tokens from `{}` to `{}`",
+                    "- Delegates `{}` tokens from `{}`[authority={}] to `{}`[authority={}]",
                     CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
                     mut_token_account.clone().account_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
                     mut_token_accounts.clone()[destination_index].account_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
                 ));
                 destination_index += 1;
             }
             state_changes_content_vec.push(format!(
-                "- Delegates `{}` tokens from `{}` to `{}`",
+                "- Delegates `{}` tokens from `{}`[authority={}] to `{}`[authority={}]",
                 CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
                 mut_token_account.clone().account_name,
+                CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
                 CoderOverhaulTemplatePlaceholders::CompleteWithDestinationTokenAccount
                     .to_placeholder(),
+                CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
             ));
         }
 
@@ -373,33 +381,37 @@ impl CodeOverhaulSection {
         for mut_mint_account in mut_mint_accounts {
             for mut_token_account in mut_token_accounts.clone() {
                 state_changes_content_vec.push(format!(
-                    "- Mints `{}` tokens from `{}` mint to `{}`",
+                    "- Mints `{}` tokens from `{}` token_mint to `{}`[authority={}]",
                     CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
                     mut_mint_account.clone().account_name,
                     mut_token_account.clone().account_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
                 ));
             }
             state_changes_content_vec.push(format!(
-                "- Mints `{}` tokens from `{}` mint to `{}`",
+                "- Mints `{}` tokens from `{}` token_mint to `{}`[authority={}]",
                 CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
                 mut_mint_account.clone().account_name,
                 CoderOverhaulTemplatePlaceholders::CompleteWithDestinationTokenAccount
                     .to_placeholder(),
+                CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
             ));
             for mut_token_account in mut_token_accounts.clone() {
                 state_changes_content_vec.push(format!(
-                    "- Burns `{}` tokens from `{}` mint to `{}`",
+                    "- Burns `{}` tokens from `{}` token_mint to `{}`[authority={}]",
                     CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
                     mut_mint_account.clone().account_name,
                     mut_token_account.clone().account_name,
+                    CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
                 ));
             }
             state_changes_content_vec.push(format!(
-                "- Burns `{}` tokens from `{}` mint to `{}`",
+                "- Burns `{}` tokens from `{}` token_mint to `{}`[authority={}]",
                 CoderOverhaulTemplatePlaceholders::CompleteWithAmount.to_placeholder(),
                 mut_mint_account.clone().account_name,
                 CoderOverhaulTemplatePlaceholders::CompleteWithDestinationTokenAccount
                     .to_placeholder(),
+                CoderOverhaulTemplatePlaceholders::CompleteWithTokenAuthority.to_placeholder(),
             ));
         }
 
@@ -736,6 +748,7 @@ pub enum CoderOverhaulTemplatePlaceholders {
     CompleteWithMiroFrameUrl,
     CompleteWithDestinationTokenAccount,
     CompleteWithAmount,
+    CompleteWithTokenAuthority,
 }
 
 impl CoderOverhaulTemplatePlaceholders {
@@ -747,6 +760,7 @@ impl CoderOverhaulTemplatePlaceholders {
             Self::CompleteWithTheRestOfStateChanges.to_placeholder(),
             Self::CompleteWithAmount.to_placeholder(),
             Self::CompleteWithDestinationTokenAccount.to_placeholder(),
+            Self::CompleteWithTokenAuthority.to_placeholder(),
         ]
     }
 }
