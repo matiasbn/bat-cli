@@ -92,11 +92,9 @@ impl CodeOverhaulCommand {
             )?;
             let co_file_name = finished_co_file
                 .get_file_name()
-                .change_context(CommandError)?
-                .trim_end_matches(".md")
-                .to_string();
+                .change_context(CommandError)?;
             let finished_file_summary = format!(
-                "# {}\n\n{}\n\n{}\n\n{}\n\n## File path:\n\n[{}](code-overhaul/finished/{}.md)",
+                "# {}\n\n{}\n\n{}\n\n{}\n\n## Code overhaul file path:\n\n[{}](code-overhaul/finished/{})",
                 co_file_name,
                 state_changes_section_content,
                 notes_section_content,

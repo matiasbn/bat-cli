@@ -225,7 +225,7 @@ impl CAAccountParser {
     fn get_validations(sonar_result_content: &str) -> ParserResult<Vec<String>> {
         let mut validations = vec![];
 
-        let constraints_regex = Regex::new(r"constraint = [\sA-Za-z0-9()?._= @:><!&{}]+[,\n]?")
+        let constraints_regex = Regex::new(r"constraint = [\sA-Za-z0-9()?._= @:><!&{}*]+[,\n]?")
             .into_report()
             .change_context(ParserError)?;
         if constraints_regex.is_match(sonar_result_content) {

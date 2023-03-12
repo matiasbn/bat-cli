@@ -178,6 +178,7 @@ impl CodeOverhaulSection {
                     && !ca_info.is_init
                     && ca_info.solana_account_type == SolanaAccountType::ProgramStateAccount
             });
+
         for mut_program_state_acc in mut_program_state_accounts {
             let solana_acc_parser =
                 SolanaAccountParser::new_from_struct_name_and_solana_account_type(
@@ -592,8 +593,9 @@ impl CodeOverhaulSection {
     ) -> TemplateResult<String> {
         if entrypoint_parser.handler.is_none() {
             return Ok(format!(
-                "- {}",
-                CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
+                "{}",
+                CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
+                    .to_placeholder()
             ));
         }
         let handler_function = entrypoint_parser.handler.unwrap();
@@ -606,8 +608,9 @@ impl CodeOverhaulSection {
             .collect::<Vec<_>>();
         let function_parameters_content = if filtered_parameters.is_empty() {
             format!(
-                "- {}",
-                CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
+                "{}",
+                CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
+                    .to_placeholder()
             )
         } else {
             let mut parameters = vec![];
@@ -643,7 +646,7 @@ impl CodeOverhaulSection {
 pub enum CoderOverhaulTemplatePlaceholders {
     PermissionlessFunction,
     NoValidationsDetected,
-    NoFunctionParametersDetected,
+    NoHandlerFunctionParametersDetected,
     CompleteWithTheRestOfStateChanges,
     CompleteWithNotes,
     CompleteWithSignerDescription,
