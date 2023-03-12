@@ -1057,6 +1057,7 @@ impl MiroCommand {
                 .await
                 .change_context(CommandError)?;
             }
+
             // Deploy mut_accounts
             let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
             let context_accounts_metadata = bat_metadata
@@ -1107,83 +1108,6 @@ impl MiroCommand {
                     .await
                     .change_context(CommandError)?;
             }
-
-            // if mut_accounts.len() > 0 {
-            //     let structs_section = metadata_markdown
-            //         .get_section(&MetadataSection::Structs.to_sentence_case())
-            //         .unwrap();
-            //     let structs_subsection = metadata_markdown.get_section_subsections(structs_section);
-            //     for mut_account in mut_accounts {
-            //         let mut_account_section = structs_subsection.iter().find_map(|subsection| {
-            //             let struct_md_section =
-            //                 StructMetadata::from_markdown_section(subsection.clone());
-            //             if struct_md_section.struct_type == StructMetadataType::SolanaAccount
-            //                 && struct_md_section.name == mut_account[1]
-            //             {
-            //                 Some(struct_md_section)
-            //             } else {
-            //                 None
-            //             }
-            //         });
-            //         if let Some(mut_section) = mut_account_section {
-            //             let mut_acc_source_code = SourceCodeParser::new(
-            //                 CodeOverhaulSection::Validations.to_title(),
-            //                 mut_section.path.clone(),
-            //                 mut_section.start_line_index,
-            //                 mut_section.end_line_index,
-            //             );
-            //             let mut_acc_screenshot_path =
-            //                 mut_acc_source_code.create_screenshot(options.clone());
-            //             let mut mut_acc_miro_image = MiroImage::new_from_file_path(
-            //                 &mut_acc_screenshot_path,
-            //                 &entrypoint_frame.item_id,
-            //             );
-            //             mut_acc_miro_image.deploy().await;
-            //             mut_acc_miro_image.update_position(400, 400).await;
-            //             // fs::remove_file(mut_acc_screenshot_path).unwrap();
-            //         }
-            //     }
-            // }
-            // Remove screenshots
-            // fs::remove_file(handler_screenshot_path).unwrap();
-            // fs::remove_file(co_screenshot_path).unwrap();
-            // fs::remove_file(validations_screenshot_path).unwrap();
-            // fs::remove_file(entrypoint_screenshot_path).unwrap();
-            //
-            //
-            // create_git_commit(
-            //     GitCommit::DeployMiro,
-            //     Some(vec![selected_co_started_path.to_string()]),
-            // )
-            // .unwrap();
-            // Ok(())
-            // } else {
-            //     update images
-            //     let prompt_text = format!("select the images to update for {selected_folder}");
-            //     let selections = batbelt::cli_inputs::multiselect(
-            //         &prompt_text,
-            //         CO_FIGURES.to_vec(),
-            //         Some(&vec![true, true, true, true]),
-            //     )?;
-            //     if !selections.is_empty() {
-            //         for selection in selections.iter() {
-            //             let snapshot_path_vec = &snapshot_paths.clone().collect::<Vec<_>>();
-            //             let snapshot_path = &snapshot_path_vec.as_slice()[*selection];
-            //             let file_name = snapshot_path.split('/').last().unwrap();
-            //             println!("Updating: {file_name}");
-            //             let item_id =
-            //                 batbelt::helpers::get::get_screenshot_id(file_name, &selected_co_started_path);
-            //             let mut screenshot_image =
-            //                 MiroImage::new_from_item_id(&item_id, MiroImageType::FromPath).await;
-            //             screenshot_image.update_from_path(&snapshot_path).await;
-            //         }
-            //         create_git_commit(
-            //             GitCommit::UpdateMiro,
-            //             Some(vec![selected_folder.to_string()]),
-            //         )?;
-            //     } else {
-            //         println!("No files selected");
-            //     }
         } else {
             // update screenshots
             let options = vec![

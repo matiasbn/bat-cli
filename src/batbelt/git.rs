@@ -127,24 +127,6 @@ impl GitAction {
     }
 }
 
-pub fn deprecated_check_correct_branch() -> GitResult<()> {
-    let expected_auditor_branch = get_auditor_branch_name()?;
-    let current_branch = get_current_branch_name()?;
-    if current_branch != expected_auditor_branch {
-        let message = format!(
-            "Incorrect branch: \n -current: {}\n -expected: {}",
-            current_branch, expected_auditor_branch
-        );
-        return Err(Report::new(GitError).attach_printable(message)).attach(Suggestion(format!(
-            "run \"{} {}\" or \"{}\" to move to the correct branch",
-            "git checkout".green(),
-            expected_auditor_branch.green(),
-            "bat-cli refresh".green()
-        )));
-    }
-    Ok(())
-}
-
 pub fn get_auditor_branch_name() -> GitResult<String> {
     let bat_config = BatConfig::get_config().change_context(GitError)?;
     let bat_auditor_config = BatAuditorConfig::get_config().change_context(GitError)?;
@@ -233,6 +215,7 @@ pub enum GitCommit {
     UpdateCO {
         entrypoint_name: String,
     },
+    UpdateCOSummary,
     StartFinding {
         finding_name: String,
     },
@@ -313,6 +296,11 @@ impl GitCommit {
                 }
                 .get_path(true)
                 .change_context(GitError)?]
+            }
+            GitCommit::UpdateCOSummary => {
+                vec![BatFile::CodeOverhaulSummaryFile
+                    .get_path(true)
+                    .change_context(GitError)?]
             }
             GitCommit::StartFinding { finding_name } => {
                 vec![BatFile::FindingToReview {
@@ -421,6 +409,9 @@ impl GitCommit {
             }
             GitCommit::UpdateCO { entrypoint_name } => {
                 format!("co: {} updated", entrypoint_name)
+            }
+            GitCommit::UpdateCOSummary => {
+                format!("co: code_overhaul_summary.md updated")
             }
             GitCommit::StartFinding { finding_name } => {
                 format!("finding: {} started", finding_name)

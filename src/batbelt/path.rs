@@ -38,6 +38,7 @@ pub enum BatFile {
     GitIgnore,
     PackageJson,
     RobotFile,
+    CodeOverhaulSummaryFile,
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
     CodeOverhaulFinished { file_name: String },
@@ -82,6 +83,12 @@ impl BatFile {
             BatFile::ThreatModeling => {
                 format!(
                     "{}/threat_modeling.md",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
+            BatFile::CodeOverhaulSummaryFile => {
+                format!(
+                    "{}/code_overhaul_summary.md",
                     BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }

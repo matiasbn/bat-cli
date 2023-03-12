@@ -1,6 +1,6 @@
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::{execute_command, CodeEditor};
-use crate::batbelt::git::{deprecated_check_correct_branch, GitCommit};
+use crate::batbelt::git::GitCommit;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{
@@ -14,6 +14,7 @@ use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use regex::Regex;
 
 use crate::batbelt::metadata::miro_metadata::{SignerInfo, SignerType};
 use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser, MiroMetadata};
@@ -36,6 +37,8 @@ pub enum CodeOverhaulCommand {
     Start,
     /// Moves the code-overhaul file from to-review to finished
     Finish,
+    /// creates a code-overhaul summary from the code-overhaul finished notes
+    Summary,
 }
 
 impl BatEnumerator for CodeOverhaulCommand {}
@@ -59,7 +62,51 @@ impl CodeOverhaulCommand {
         match self {
             CodeOverhaulCommand::Start => self.execute_start().await,
             CodeOverhaulCommand::Finish => self.execute_finish(),
+            CodeOverhaulCommand::Summary => self.execute_summary(),
         }
+    }
+
+    fn execute_summary(&self) -> CommandResult<()> {
+        let mut co_summary_content = String::new();
+        let co_finished_bat_files_vec = BatFolder::CodeOverhaulFinished
+            .get_all_bat_files(true, None, None)
+            .change_context(CommandError)?;
+        for finished_co_file in co_finished_bat_files_vec {
+            let co_file_content = finished_co_file
+                .read_content(false)
+                .change_context(CommandError)?;
+            let state_changes_section_content =
+                co_commands_functions::extract_section_content("State changes", &co_file_content)?;
+            let notes_section_content =
+                co_commands_functions::extract_section_content("Notes", &co_file_content)?;
+            let miro_frame_url_section_content =
+                co_commands_functions::extract_section_content("Miro frame url", &co_file_content)?;
+            let co_file_name = finished_co_file
+                .get_file_name()
+                .change_context(CommandError)?
+                .trim_end_matches(".md")
+                .to_string();
+            let finished_file_summary = format!(
+                "# {}\n\n{}\n\n{}\n\n{}",
+                co_file_name,
+                state_changes_section_content.trim(),
+                notes_section_content.trim(),
+                miro_frame_url_section_content.trim()
+            );
+            co_summary_content = if co_summary_content.is_empty() {
+                finished_file_summary
+            } else {
+                format!("{}\n\n{}", co_summary_content, finished_file_summary)
+            }
+        }
+
+        let code_overhaul_summary_bat_file = BatFile::CodeOverhaulSummaryFile;
+        code_overhaul_summary_bat_file
+            .write_content(false, &co_summary_content)
+            .change_context(CommandError)?;
+
+        println!("Code overhaul summary file updated");
+        Ok(())
     }
 
     fn execute_finish(&self) -> error_stack::Result<(), CommandError> {
@@ -281,5 +328,24 @@ mod co_commands_functions {
             }
         }
         Ok(())
+    }
+
+    pub fn extract_section_content(
+        section_name: &str,
+        co_file_content: &str,
+    ) -> CommandResult<String> {
+        let content_regex = r"[\w\s\-`\[\]:./=?]+";
+        let section_content_regex = Regex::new(&format!(r"(# {}:){}", section_name, content_regex))
+            .into_report()
+            .change_context(CommandError)?;
+        let section_content = section_content_regex
+            .find(&co_file_content)
+            .ok_or(CommandError)
+            .into_report()?
+            .as_str()
+            .to_string()
+            .replace("#", "##")
+            .to_string();
+        Ok(section_content)
     }
 }

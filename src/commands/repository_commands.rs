@@ -35,6 +35,8 @@ pub enum RepositoryCommand {
     UpdateNotes,
     /// Creates a commit for an updated code-overhaul file
     UpdateCodeOverhaul,
+    /// Creates a commit for the code_overhaul_summary.md file
+    UpdateCodeOverhaulSummary,
 }
 
 impl BatEnumerator for RepositoryCommand {}
@@ -57,6 +59,7 @@ impl BatCommandEnumerator for RepositoryCommand {
                 .create_commit()
                 .change_context(CommandError),
             RepositoryCommand::UpdateCodeOverhaul => self.execute_update_co_file(),
+            RepositoryCommand::UpdateCodeOverhaulSummary => self.update_code_overhaul_summary(),
         }
     }
 
@@ -73,6 +76,14 @@ impl BatCommandEnumerator for RepositoryCommand {
 }
 
 impl RepositoryCommand {
+    fn update_code_overhaul_summary(&self) -> CommandResult<()> {
+        GitCommit::UpdateCOSummary
+            .create_commit()
+            .change_context(CommandError)?;
+        println!("Commit created for code_overhaul_summary.md file");
+        Ok(())
+    }
+
     fn merge_all_to_develop(&self) -> Result<(), CommandError> {
         let branches_list = self.get_local_branches_filtered()?;
         self.checkout_branch("develop")?;
