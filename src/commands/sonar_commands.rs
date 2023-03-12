@@ -67,7 +67,6 @@ impl SonarCommand {
         only_traits: bool,
         only_function_dependencies: bool,
     ) -> CommandResult<()> {
-        // if not skip source code, it should be run completely
         let metadata_bat_file = BatFile::BatMetadataFile;
         // in case the file does not exist, so the BatMetadata can be read
         if !metadata_bat_file
@@ -105,6 +104,7 @@ impl SonarCommand {
             .write_content(false, &metadata_content)
             .change_context(CommandError)?;
 
+        // if not skip source code, it should be run completely
         if !skip_source_code {
             // create new file
             TemplateGenerator::create_metadata_json().change_context(CommandError)?;
