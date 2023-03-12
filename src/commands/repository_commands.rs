@@ -34,7 +34,7 @@ pub enum RepositoryCommand {
     /// Commits the open_questions, finding_candidate and threat_modeling notes
     UpdateNotes,
     /// Creates a commit for an updated code-overhaul file
-    UpdateCodeOverhaul,
+    UpdateCodeOverhaulFile,
     /// Creates a commit for the code_overhaul_summary.md file
     UpdateCodeOverhaulSummary,
 }
@@ -58,7 +58,7 @@ impl BatCommandEnumerator for RepositoryCommand {
             RepositoryCommand::UpdateNotes => GitCommit::Notes
                 .create_commit()
                 .change_context(CommandError),
-            RepositoryCommand::UpdateCodeOverhaul => self.execute_update_co_file(),
+            RepositoryCommand::UpdateCodeOverhaulFile => self.execute_update_co_file(),
             RepositoryCommand::UpdateCodeOverhaulSummary => self.update_code_overhaul_summary(),
         }
     }
