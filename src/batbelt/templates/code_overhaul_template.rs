@@ -1,4 +1,4 @@
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use crate::batbelt::parser::function_parser::FunctionParser;
@@ -8,6 +8,7 @@ use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlac
 };
 use crate::batbelt::templates::{TemplateError, TemplateResult};
 
+use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
@@ -609,24 +610,30 @@ impl CodeOverhaulSection {
                 CoderOverhaulTemplatePlaceholders::NoFunctionParametersDetected.to_placeholder()
             )
         } else {
-            filtered_parameters
-                .iter()
-                .fold("".to_string(), |result, parameter| {
-                    if result.is_empty() {
-                        format!(
-                            "- {}: {}",
-                            parameter.parameter_name,
-                            parameter.parameter_type.trim_end_matches(',')
-                        )
-                    } else {
-                        format!(
-                            "{}\n- {}: {}",
-                            result,
-                            parameter.parameter_name,
-                            parameter.parameter_type.trim_end_matches(',')
-                        )
-                    }
-                })
+            let mut parameters = vec![];
+            for parameter in filtered_parameters {
+                parameters.push(format!(
+                    "- {}: {}",
+                    parameter.parameter_name,
+                    parameter.parameter_type.trim_end_matches(',')
+                ));
+                if let Ok(struct_metadata) = SourceCodeMetadata::find_struct(
+                    parameter.parameter_type.trim_start_matches("&").to_string(),
+                    StructMetadataType::Other,
+                ) {
+                    parameters.push(format!(
+                        "- ``` rust\n{}\n  ```",
+                        struct_metadata
+                            .to_source_code_parser(None)
+                            .get_source_code_content()
+                            .lines()
+                            .map(|line| format!("  {line}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ));
+                }
+            }
+            parameters.join("\n")
         };
         Ok(function_parameters_content)
     }

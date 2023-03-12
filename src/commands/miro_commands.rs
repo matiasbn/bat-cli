@@ -936,7 +936,7 @@ impl MiroCommand {
                             SourceCodeScreenshotOptions {
                                 include_path: true,
                                 offset_to_start_line: true,
-                                filter_comments: true,
+                                filter_comments: false,
                                 font_size: None,
                                 filters: None,
                                 show_line_number: true,

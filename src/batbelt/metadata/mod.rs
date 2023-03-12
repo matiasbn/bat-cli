@@ -498,6 +498,25 @@ impl SourceCodeMetadata {
             .collect::<Vec<_>>())
     }
 
+    pub fn find_struct(
+        struct_name: String,
+        struct_type: StructMetadataType,
+    ) -> MetadataResult<StructSourceCodeMetadata> {
+        match BatMetadata::read_metadata()?
+            .source_code
+            .structs_source_code
+            .into_iter()
+            .find(|struct_metadata| {
+                struct_metadata.struct_type == struct_type && struct_metadata.name == struct_name
+            }) {
+            None => Err(Report::new(MetadataError).attach_printable(format!(
+                "Metadata not found for struct with name {} and struct type {}",
+                struct_name, struct_type
+            ))),
+            Some(struct_metadata) => Ok(struct_metadata),
+        }
+    }
+
     pub fn get_filtered_functions(
         function_name: Option<String>,
         function_type: Option<FunctionMetadataType>,
