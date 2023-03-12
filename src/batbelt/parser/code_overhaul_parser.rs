@@ -386,7 +386,7 @@ impl CodeOverhaulParser {
         content: &str,
         use_separator: bool,
     ) -> ParserResult<Vec<String>> {
-        let rust_regex = Regex::new(r"(```rust\n)[\s\S]+(```)")
+        let rust_regex = Regex::new(r#"```rust([\s\S]*?)```"#)
             .into_report()
             .change_context(ParserError)?;
         let mut max_trailing_ws = 0;
