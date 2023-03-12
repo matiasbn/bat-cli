@@ -546,8 +546,8 @@ impl CodeOverhaulSection {
         }
         if signers.is_empty() {
             return format!(
-                "- {}",
-                CoderOverhaulTemplatePlaceholders::NoSignersDetected.to_placeholder(),
+                "{}",
+                CoderOverhaulTemplatePlaceholders::PermissionlessFunction.to_placeholder(),
             );
         }
         signers.join("\n")
@@ -641,7 +641,7 @@ impl CodeOverhaulSection {
 
 #[derive(strum_macros::Display)]
 pub enum CoderOverhaulTemplatePlaceholders {
-    NoSignersDetected,
+    PermissionlessFunction,
     NoValidationsDetected,
     NoFunctionParametersDetected,
     CompleteWithTheRestOfStateChanges,
