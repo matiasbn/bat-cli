@@ -283,7 +283,7 @@ impl BatConfig {
         let commit_hash_url: String = if !cfg!(debug_assertions) {
             bat_dialoguer::input("Commit hash url:").change_context(BatConfigError)?
         } else {
-            "test_hash".to_string()
+            "https://github.com/test_repo/test_program/commit/641bdb72210edcafe555102f2ecd2952a7b60722".to_string()
         };
 
         let starting_date: String = if !cfg!(debug_assertions) {

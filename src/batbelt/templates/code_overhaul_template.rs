@@ -1,19 +1,24 @@
+use error_stack::{IntoReport, Result, ResultExt};
+use inflector::Inflector;
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+
+use crate::batbelt::git::GitAction;
+use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
+use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-
 use crate::batbelt::parser::function_parser::FunctionParser;
+use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
+use crate::batbelt::parser::ParserResult;
+use crate::batbelt::path::BatFile;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
     CompleteWithNotes, CompleteWithTheRestOfStateChanges,
 };
 use crate::batbelt::templates::{TemplateError, TemplateResult};
-
-use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
-use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
-use crate::batbelt::BatEnumerator;
-use error_stack::{Result, ResultExt};
-use inflector::Inflector;
-use serde::{Deserialize, Serialize};
+use crate::batbelt::{BatEnumerator, ShareableData};
+use crate::config::BatConfig;
 
 pub struct CodeOverhaulTemplate {
     pub entrypoint_name: String,
@@ -37,19 +42,19 @@ impl CodeOverhaulTemplate {
 
     pub fn get_markdown_content(&self) -> TemplateResult<String> {
         let state_changes_content = CodeOverhaulSection::StateChanges
-            .get_section_content(self.entrypoint_parser.clone())?;
-        let notes_content =
-            CodeOverhaulSection::Notes.get_section_content(self.entrypoint_parser.clone())?;
-        let signers_content =
-            CodeOverhaulSection::Signers.get_section_content(self.entrypoint_parser.clone())?;
+            .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
+        let notes_content = CodeOverhaulSection::Notes
+            .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
+        let signers_content = CodeOverhaulSection::Signers
+            .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
         let function_parameters_content = CodeOverhaulSection::HandlerFunctionParameters
-            .get_section_content(self.entrypoint_parser.clone())?;
+            .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
         let context_accounts_content = CodeOverhaulSection::ContextAccounts
-            .get_section_content(self.entrypoint_parser.clone())?;
-        let validations_content =
-            CodeOverhaulSection::Validations.get_section_content(self.entrypoint_parser.clone())?;
+            .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
+        let validations_content = CodeOverhaulSection::Validations
+            .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
         let miro_frame_url_content = CodeOverhaulSection::MiroFrameUrl
-            .get_section_content(self.entrypoint_parser.clone())?;
+            .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
 
         Ok(format!(
             "{state_changes_content}\
@@ -109,7 +114,7 @@ impl CodeOverhaulSection {
         format!("{}:", self.to_string().to_sentence_case())
     }
 
-    pub fn get_section_content(
+    pub fn get_section_content_for_start_co_file(
         &self,
         ep_parser: Option<EntrypointParser>,
     ) -> TemplateResult<String> {
@@ -119,7 +124,7 @@ impl CodeOverhaulSection {
                 CodeOverhaulSection::StateChanges => {
                     self.get_state_changes_content(entrypoint_parser)?
                 }
-                CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
+                CodeOverhaulSection::Notes => self.get_notes_content(entrypoint_parser)?,
                 CodeOverhaulSection::Signers => self.get_signers_section_content(entrypoint_parser),
                 CodeOverhaulSection::HandlerFunctionParameters => {
                     self.get_handler_function_parameters_section_content(entrypoint_parser)?
@@ -143,6 +148,69 @@ impl CodeOverhaulSection {
             self.to_markdown_header(),
             section_content
         ))
+    }
+
+    fn get_notes_content(&self, entry_point_parser: EntrypointParser) -> TemplateResult<String> {
+        let context_accounts_struct_source_code_metadata_id =
+            entry_point_parser.context_accounts.metadata_id;
+        let context_accounts_metadata =
+            ContextAccountsMetadata::find_context_accounts_metadata_by_struct_metadata_id(
+                context_accounts_struct_source_code_metadata_id,
+            )
+            .change_context(TemplateError)?;
+        let context_accounts_sc_metadata = SourceCodeMetadata::find_struct(
+            context_accounts_metadata.name.clone(),
+            StructMetadataType::ContextAccounts,
+        )
+        .change_context(TemplateError)?;
+        let ca_sc_metadata_file_content = BatFile::Generic {
+            file_path: context_accounts_sc_metadata.path.clone(),
+        }
+        .read_content(false)
+        .change_context(TemplateError)?;
+        let ca_sc_file_content_lines = ca_sc_metadata_file_content.lines();
+        let ca_info_with_validation = context_accounts_metadata
+            .context_accounts_info
+            .clone()
+            .into_iter()
+            .filter_map(|ca_info| {
+                if !ca_info.validations.is_empty() {
+                    Some(ca_info.validations.clone())
+                } else {
+                    None
+                }
+            });
+        if ca_info_with_validation.clone().count() == 0 {
+            return Ok(format!("- {}", CompleteWithNotes.to_placeholder()));
+        }
+
+        let mut result = vec![];
+        result.push(format!("- [ ] check validations:"));
+        for ca_info_validations_vec in ca_info_with_validation.clone() {
+            for ca_info_validation in ca_info_validations_vec.clone() {
+                let validation_line = ca_sc_file_content_lines
+                    .clone()
+                    .position(|line| line.contains(&ca_info_validation))
+                    .ok_or(TemplateError)
+                    .into_report()?;
+                let shared_permalink = ShareableData::new(String::new());
+                GitAction::GetRepositoryPermalink {
+                    file_path: context_accounts_sc_metadata.path.clone(),
+                    start_line_index: validation_line + 1,
+                    permalink: shared_permalink.original,
+                }
+                .execute_action()
+                .change_context(TemplateError)?;
+                // let permalink = format!("{}", &*shared_permalink.cloned.borrow());
+                result.push(format!(
+                    "  - [ ] [{}]({})",
+                    ca_info_validation,
+                    *shared_permalink.cloned.borrow()
+                ));
+            }
+        }
+        result.push(format!("- {}", CompleteWithNotes.to_placeholder()));
+        Ok(result.join("\n"))
     }
 
     fn get_state_changes_content(

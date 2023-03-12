@@ -15,6 +15,7 @@ use crate::batbelt::metadata::BatMetadataCommit;
 use crate::config::BatAuditorConfig;
 use crate::{batbelt::path::BatFile, config::BatConfig, Suggestion};
 use error_stack::{IntoReport, Report, Result, ResultExt};
+use regex::Regex;
 
 #[derive(Debug)]
 pub struct GitError;
@@ -31,14 +32,25 @@ type GitResult<T> = Result<T, GitError>;
 
 #[derive(Debug, PartialEq, strum_macros::Display)]
 pub enum GitAction {
-    CreateBranch { branch_name: String },
+    CreateBranch {
+        branch_name: String,
+    },
     CheckoutAuditorBranch,
     Init,
     RemoteAddProjectRepo,
     AddAll,
-    CheckGitIsInitialized { is_initialized: Rc<RefCell<bool>> },
-    CheckBranchDontExist { branch_name: String },
+    CheckGitIsInitialized {
+        is_initialized: Rc<RefCell<bool>>,
+    },
+    CheckBranchDontExist {
+        branch_name: String,
+    },
     CheckCorrectBranch,
+    GetRepositoryPermalink {
+        file_path: String,
+        start_line_index: usize,
+        permalink: Rc<RefCell<String>>,
+    },
 }
 
 impl GitAction {
@@ -91,6 +103,54 @@ impl GitAction {
                 let auditor_branch_name = get_auditor_branch_name()?;
                 if get_current_branch_name()? != auditor_branch_name {
                     self.checkout_branch(&auditor_branch_name)?
+                }
+                return Ok(());
+            }
+            GitAction::GetRepositoryPermalink {
+                file_path,
+                start_line_index,
+                permalink,
+            } => {
+                let github_compatible_commit_hash_url_regex =
+                    Regex::new(r#"https://github.com/[\w-]+/[\w-]+/commit/\w{40}"#)
+                        .into_report()
+                        .change_context(GitError)?;
+                let commit_hash_url = BatConfig::get_config()
+                    .change_context(GitError)?
+                    .commit_hash_url;
+                if github_compatible_commit_hash_url_regex.is_match(&commit_hash_url) {
+                    let commit_hash_regex = Regex::new(r#"\w{40}"#)
+                        .into_report()
+                        .change_context(GitError)?;
+                    let commit_hash = commit_hash_regex
+                        .find(&commit_hash_url)
+                        .ok_or(GitError)
+                        .into_report()?
+                        .as_str()
+                        .to_string();
+                    let github_url_prefix_regex = Regex::new(r#"https://github.com/[\w-]+/[\w-]+"#)
+                        .into_report()
+                        .change_context(GitError)?;
+                    let github_url_prefix = github_url_prefix_regex
+                        .find(&commit_hash_url)
+                        .ok_or(GitError)
+                        .into_report()?
+                        .as_str()
+                        .to_string();
+                    let mut program_path_formatted = file_path.trim_start_matches("../").split("/");
+                    program_path_formatted
+                        .next()
+                        .ok_or(GitError)
+                        .into_report()?;
+                    let program_path = program_path_formatted.collect::<Vec<_>>().join("/");
+                    let permalink_result = format!(
+                        "{}/blob/{}/{}#L{}",
+                        github_url_prefix, commit_hash, program_path, start_line_index
+                    );
+                    *permalink.borrow_mut() = permalink_result.clone();
+                } else {
+                    println!("Commit hash url format is not compatible, got {}, expected https://github.com/github_handle/repository_name/commit/commit_hash", commit_hash_url.red());
+                    *permalink.borrow_mut() = "".to_string();
                 }
                 return Ok(());
             }

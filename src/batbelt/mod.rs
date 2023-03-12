@@ -17,9 +17,11 @@ pub mod sonar;
 pub mod templates;
 
 pub type ShareableDataType<T> = Rc<RefCell<T>>;
+
+#[derive(Clone)]
 pub struct ShareableData<T>
 where
-    T: Sized,
+    T: Sized + Clone,
 {
     pub original: ShareableDataType<T>,
     pub cloned: ShareableDataType<T>,
@@ -27,7 +29,7 @@ where
 
 impl<T> ShareableData<T>
 where
-    T: Sized,
+    T: Sized + Clone,
 {
     pub fn new(data_to_share: T) -> Self {
         let original = Rc::new(RefCell::new(data_to_share));

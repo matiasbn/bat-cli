@@ -266,7 +266,7 @@ impl CodeOverhaulCommand {
             }
         }
         let prompt_text = format!(
-            "Do you want to deploy the code-overhaul frame for {} now?",
+            "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
             entrypoint_name.clone().bright_green()
         );
         let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
