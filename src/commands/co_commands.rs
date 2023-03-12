@@ -126,15 +126,22 @@ impl CodeOverhaulCommand {
             .into_iter()
             .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
             .collect::<Vec<_>>();
-        let prompt_text = "Select the code-overhaul to finish:";
-        let selection = BatDialoguer::select(
-            prompt_text.to_string(),
-            started_entrypoints_names.clone(),
-            None,
-        )
-        .change_context(CommandError)?;
 
-        let finished_endpoint = started_entrypoints_names[selection].clone();
+        let finished_endpoint = if started_entrypoints_names.len() == 1 {
+            let selected = started_entrypoints_names[0].clone();
+            println!("Moving {} to finished", selected.green());
+            selected
+        } else {
+            let prompt_text = "Select the code-overhaul to finish:";
+            let selection = BatDialoguer::select(
+                prompt_text.to_string(),
+                started_entrypoints_names.clone(),
+                None,
+            )
+            .change_context(CommandError)?;
+            started_entrypoints_names[selection].clone()
+        };
+
         let finished_co_folder_path = BatFolder::CodeOverhaulFinished
             .get_path(true)
             .change_context(CommandError)?;
@@ -283,6 +290,9 @@ mod co_commands_functions {
             for suggestion in suggestions_vec {
                 report = report.attach(suggestion);
             }
+            bat_file
+                .open_in_editor(false, None)
+                .change_context(CommandError)?;
             return Err(report);
         }
 
@@ -301,6 +311,9 @@ mod co_commands_functions {
         if file_data.contains(
             &CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription.to_placeholder(),
         ) {
+            bat_file
+                .open_in_editor(false, None)
+                .change_context(CommandError)?;
             return Err(Report::new(CommandError)
                 .attach_printable(format!(
                     "Please complete the \"Signers\" section of the {file_name} file"
