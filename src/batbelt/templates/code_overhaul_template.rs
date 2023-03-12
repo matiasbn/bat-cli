@@ -39,7 +39,7 @@ impl CodeOverhaulTemplate {
             CodeOverhaulSection::Notes.get_section_content(self.entrypoint_parser.clone())?;
         let signers_content =
             CodeOverhaulSection::Signers.get_section_content(self.entrypoint_parser.clone())?;
-        let function_parameters_content = CodeOverhaulSection::FunctionParameters
+        let function_parameters_content = CodeOverhaulSection::HandlerFunctionParameters
             .get_section_content(self.entrypoint_parser.clone())?;
         let context_accounts_content = CodeOverhaulSection::ContextAccounts
             .get_section_content(self.entrypoint_parser.clone())?;
@@ -78,7 +78,7 @@ pub enum CodeOverhaulSection {
     StateChanges,
     Notes,
     Signers,
-    FunctionParameters,
+    HandlerFunctionParameters,
     ContextAccounts,
     Validations,
     MiroFrameUrl,
@@ -105,8 +105,8 @@ impl CodeOverhaulSection {
                 }
                 CodeOverhaulSection::Notes => format!("- {}", CompleteWithNotes.to_placeholder()),
                 CodeOverhaulSection::Signers => self.get_signers_section_content(entrypoint_parser),
-                CodeOverhaulSection::FunctionParameters => {
-                    self.get_function_parameters_section_content(entrypoint_parser)?
+                CodeOverhaulSection::HandlerFunctionParameters => {
+                    self.get_handler_function_parameters_section_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::ContextAccounts => {
                     self.get_context_account_section_content(entrypoint_parser)
@@ -585,7 +585,7 @@ impl CodeOverhaulSection {
         format!("{}\n{}\n{}", "- ```rust", formatted, "  ```")
     }
 
-    fn get_function_parameters_section_content(
+    fn get_handler_function_parameters_section_content(
         &self,
         entrypoint_parser: EntrypointParser,
     ) -> TemplateResult<String> {

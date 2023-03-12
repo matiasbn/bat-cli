@@ -30,6 +30,7 @@ use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::batbelt::path::BatFolder;
@@ -821,7 +822,8 @@ impl MiroCommand {
 
         if co_miro_frame.frame_url.is_some() {
             println!(
-                "Miro frame url: {}",
+                "Miro frame url for {}: {}",
+                miro_co_metadata.entry_point_name.clone().green(),
                 co_miro_frame.clone().frame_url.unwrap().green()
             );
         }
@@ -1036,7 +1038,7 @@ impl MiroCommand {
             .change_context(CommandError)?;
 
             if !miro_co_metadata.handler_image_id.is_empty() {
-                println!("validations screenshot to handler screenshot in Miro");
+                println!("Connecting validations screenshot to handler screenshot in Miro");
                 batbelt::miro::connector::create_connector(
                     &miro_co_metadata.validations_image_id,
                     &miro_co_metadata.handler_image_id,
@@ -1095,6 +1097,50 @@ impl MiroCommand {
                     )
                     .await
                     .change_context(CommandError)?;
+            }
+
+            // Deploy handler parameters
+            if let Some(handler_meta) = entrypoint_parser.handler.clone() {
+                let handler_function_parser =
+                    FunctionParser::new_from_metadata(handler_meta).change_context(CommandError)?;
+                for handler_function_parameter in handler_function_parser.parameters {
+                    // parameters are most likely Structs
+                    if let Ok(parameter_metadata_vec) = SourceCodeMetadata::get_filtered_structs(
+                        Some(
+                            handler_function_parameter
+                                .parameter_type
+                                .trim_start_matches("&")
+                                .to_string(),
+                        ),
+                        Some(StructMetadataType::Other),
+                    ) {
+                        if parameter_metadata_vec.len() == 1 {
+                            let parameter_metadata = parameter_metadata_vec[0].clone();
+                            parameter_metadata
+                                .to_source_code_parser(Some(
+                                    miro_command_functions::parse_screenshot_name(
+                                        &parameter_metadata.name,
+                                        &co_miro_frame.title,
+                                    ),
+                                ))
+                                .deploy_screenshot_to_miro_frame(
+                                    co_miro_frame.clone(),
+                                    0,
+                                    co_miro_frame.height as i64,
+                                    SourceCodeScreenshotOptions {
+                                        include_path: true,
+                                        offset_to_start_line: true,
+                                        filter_comments: false,
+                                        font_size: None,
+                                        filters: None,
+                                        show_line_number: true,
+                                    },
+                                )
+                                .await
+                                .change_context(CommandError)?;
+                        }
+                    }
+                }
             }
         } else {
             // update screenshots
