@@ -6,9 +6,11 @@ use crate::batbelt::miro::MiroItemType;
 use crate::batbelt::metadata::MiroMetadata;
 use crate::batbelt::parser::{ParserError, ParserResult};
 use crate::batbelt::path::{BatFile, BatFolder};
-use crate::batbelt::silicon;
 use crate::batbelt::sonar::BatSonar;
-use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
+use crate::batbelt::templates::code_overhaul_template::{
+    CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
+};
+use crate::batbelt::{silicon, BatEnumerator};
 use crate::commands::miro_commands::{miro_command_functions, MiroCommand};
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
@@ -23,12 +25,22 @@ pub struct CodeOverhaulSigner {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeOverhaulSectionsContent {
+    pub state_changes: String,
+    pub notes: String,
+    pub signers: String,
+    pub handler_function_parameters: String,
+    pub context_accounts: String,
+    pub validations: String,
+    pub miro_frame_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeOverhaulParser {
     pub entry_point_name: String,
     pub co_bat_file: BatFile,
-    pub validations: Vec<String>,
     pub signers: Vec<CodeOverhaulSigner>,
-    pub context_accounts_content: String,
+    pub section_content: CodeOverhaulSectionsContent,
 }
 
 impl CodeOverhaulParser {
@@ -41,40 +53,64 @@ impl CodeOverhaulParser {
             file_name: entry_point_name.clone(),
         };
 
-        let mut new_co_parser = CodeOverhaulParser {
-            entry_point_name: entry_point_name.clone(),
-            co_bat_file: BatFile::Generic {
-                file_path: "".to_string(),
-            },
-            validations: vec![],
-            signers: vec![],
-            context_accounts_content: "".to_string(),
-        };
-
-        if bat_file_started.file_exists().change_context(ParserError)? {
-            new_co_parser.co_bat_file = bat_file_started;
+        let co_bat_file = if bat_file_started.file_exists().change_context(ParserError)? {
+            bat_file_started
         } else if bat_file_finished
             .file_exists()
             .change_context(ParserError)?
         {
-            new_co_parser.co_bat_file = bat_file_finished;
+            bat_file_finished
         } else {
             return Err(Report::new(ParserError).attach_printable(format!(
                 "code-overhaul file not found on to-review or finished for entrypoint: {}",
                 entry_point_name
             )));
-        }
-        new_co_parser.get_signers()?;
-        new_co_parser.get_validations()?;
-        new_co_parser.get_context_accounts_content()?;
+        };
+
+        let mut new_co_parser = CodeOverhaulParser {
+            entry_point_name,
+            co_bat_file,
+            signers: vec![],
+            section_content: CodeOverhaulSectionsContent {
+                state_changes: "".to_string(),
+                notes: "".to_string(),
+                signers: "".to_string(),
+                handler_function_parameters: "".to_string(),
+                context_accounts: "".to_string(),
+                validations: "".to_string(),
+                miro_frame_url: "".to_string(),
+            },
+        };
+
+        new_co_parser.get_sections_content()?;
+        new_co_parser.parse_signers()?;
         Ok(new_co_parser)
+    }
+
+    fn get_sections_content(&mut self) -> ParserResult<()> {
+        self.section_content = CodeOverhaulSectionsContent {
+            state_changes: self
+                .extract_section_content_from_co_file(CodeOverhaulSection::StateChanges)?,
+            notes: self.extract_section_content_from_co_file(CodeOverhaulSection::Notes)?,
+            signers: self.extract_section_content_from_co_file(CodeOverhaulSection::Signers)?,
+            handler_function_parameters: self.extract_section_content_from_co_file(
+                CodeOverhaulSection::HandlerFunctionParameters,
+            )?,
+            context_accounts: self
+                .extract_section_content_from_co_file(CodeOverhaulSection::ContextAccounts)?,
+            validations: self
+                .extract_section_content_from_co_file(CodeOverhaulSection::Validations)?,
+            miro_frame_url: self
+                .extract_section_content_from_co_file(CodeOverhaulSection::MiroFrameUrl)?,
+        };
+        Ok(())
     }
 
     pub async fn deploy_new_validations_image_for_miro_co_frame(
         &self,
         miro_frame: MiroFrame,
     ) -> ParserResult<MiroImage> {
-        let content = self.get_validations_image_content();
+        let content = self.get_validations_image_content()?;
         let (validations_x_position, validations_y_position) =
             MiroCodeOverhaulConfig::Validations.get_positions();
         let validations_image = self
@@ -93,7 +129,7 @@ impl CodeOverhaulParser {
         &self,
         miro_frame: MiroFrame,
     ) -> ParserResult<MiroImage> {
-        let content = self.get_context_accounts_image_content();
+        let content = self.get_context_accounts_image_content()?;
         let (context_accounts_x_position, context_accounts_y_position) =
             MiroCodeOverhaulConfig::ContextAccount.get_positions();
         let validations_image = self
@@ -167,7 +203,7 @@ impl CodeOverhaulParser {
                 .await
                 .change_context(ParserError)?;
 
-        let validations_content = self.get_validations_image_content();
+        let validations_content = self.get_validations_image_content()?;
         let file_name =
             miro_command_functions::parse_screenshot_name("validations", &miro_frame.title);
 
@@ -204,7 +240,7 @@ impl CodeOverhaulParser {
                 .await
                 .change_context(ParserError)?;
 
-        let ca_content = self.get_context_accounts_image_content();
+        let ca_content = self.get_context_accounts_image_content()?;
         let file_name =
             miro_command_functions::parse_screenshot_name("context_accounts", &miro_frame.title);
 
@@ -239,46 +275,41 @@ impl CodeOverhaulParser {
         Ok(sc_path)
     }
 
-    fn get_validations_image_content(&self) -> String {
+    fn get_validations_image_content(&self) -> ParserResult<String> {
         let header = "/// Validations";
-        let validations_image_content = if self.validations.is_empty() {
-            CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
-        } else {
-            self.validations
-                .clone()
-                .into_iter()
-                .collect::<Vec<_>>()
-                .join("\n\n")
-        };
+        let validations_image_content =
+            if self.section_content.validations.contains(
+                &CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder(),
+            ) {
+                CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
+            } else {
+                self.rust_subsection_matcher(&self.section_content.validations.clone(), true)?
+                    .join("\n\n")
+            };
         let content = format!("{}\n\n{}", header, validations_image_content);
-        content
+        Ok(content)
     }
 
-    fn get_context_accounts_image_content(&self) -> String {
+    fn get_context_accounts_image_content(&self) -> ParserResult<String> {
         let header = "/// Context accounts";
-        let context_accounts_image_content = self.context_accounts_content.clone();
+        let context_accounts_image_content =
+            self.rust_subsection_matcher(&self.section_content.context_accounts, false)?[0].clone();
         let ca_formatted = self.format_trailing_whitespaces(&context_accounts_image_content);
         let content = format!("{}\n\n{}", header, ca_formatted);
-        content
+        Ok(content)
     }
 
-    fn get_signers(&mut self) -> ParserResult<()> {
-        let signers_section_regex = Regex::new(r"# Signers:[\s\S]*?#").unwrap();
-        let bat_file_content = self
-            .co_bat_file
-            .read_content(true)
-            .change_context(ParserError)?;
-        let signers = signers_section_regex
-            .find(&bat_file_content)
-            .ok_or(ParserError)
-            .into_report()?
-            .as_str()
-            .to_string()
+    fn parse_signers(&mut self) -> ParserResult<()> {
+        let signers = self
+            .section_content
+            .signers
+            .clone()
             .lines()
             .filter_map(|line| {
                 if line.starts_with("- ")
+                    && line.contains(":")
                     && !line.contains(
-                    &CoderOverhaulTemplatePlaceholders::PermissionlessFunction.to_placeholder(),
+                        &CoderOverhaulTemplatePlaceholders::PermissionlessFunction.to_placeholder(),
                     )
                 {
                     let mut line_split = line.trim_start_matches("- ").split(": ");
@@ -295,42 +326,41 @@ impl CodeOverhaulParser {
         Ok(())
     }
 
-    fn get_validations(&mut self) -> ParserResult<()> {
-        let validations_section_regex = Regex::new(r"# Validations:[\s\S]*?\n# Miro")
-            .into_report()
-            .change_context(ParserError)?;
+    fn extract_section_content_from_co_file(
+        &self,
+        code_overhaul_section: CodeOverhaulSection,
+    ) -> ParserResult<String> {
         let bat_file_content = self
             .co_bat_file
             .read_content(true)
             .change_context(ParserError)?;
-        let validations_section_content = validations_section_regex
+        let section_header = code_overhaul_section.to_markdown_header();
+        let next_section_header = if code_overhaul_section.get_index_of_type_vec() + 1
+            < CodeOverhaulSection::get_type_vec().len()
+        {
+            CodeOverhaulSection::from_index(code_overhaul_section.get_index_of_type_vec() + 1)
+                .to_markdown_header()
+        } else {
+            "".to_string()
+        };
+        log::debug!("{bat_file_content}");
+        log::debug!("{section_header}");
+        log::debug!("{next_section_header}");
+        let section_content_regex = Regex::new(&format!(
+            r#"({})[\s\S]+({})"#,
+            section_header, next_section_header
+        ))
+        .into_report()
+        .change_context(ParserError)?;
+        let section_content = section_content_regex
             .find(&bat_file_content)
             .ok_or(ParserError)
             .into_report()?
             .as_str()
+            .trim_end_matches(&next_section_header)
+            .trim()
             .to_string();
-        let validations = self.rust_subsection_matcher(&validations_section_content, true)?;
-        self.validations = validations;
-        Ok(())
-    }
-
-    fn get_context_accounts_content(&mut self) -> ParserResult<()> {
-        let bat_file_content = self
-            .co_bat_file
-            .read_content(true)
-            .change_context(ParserError)?;
-        let ca_section_regex = Regex::new(r"# Context accounts:[\s\S]*?\n# Validations")
-            .into_report()
-            .change_context(ParserError)?;
-        let ca_section_content = ca_section_regex
-            .find(&bat_file_content)
-            .ok_or(ParserError)
-            .into_report()?
-            .as_str()
-            .to_string();
-        self.context_accounts_content =
-            self.rust_subsection_matcher(&ca_section_content, false)?[0].clone();
-        Ok(())
+        Ok(section_content)
     }
 
     fn format_trailing_whitespaces(&self, content: &str) -> String {

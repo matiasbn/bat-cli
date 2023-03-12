@@ -1,6 +1,6 @@
 use colored::Colorize;
 use dialoguer::{console::Term, theme::ColorfulTheme, Input, MultiSelect, Select};
-use error_stack::Result;
+use error_stack::{IntoReport, Result, ResultExt};
 
 use crate::commands::CommandError;
 
@@ -26,7 +26,12 @@ impl BatDialoguer {
             if let Some(def) = default {
                 dialog = dialog.defaults(def);
             }
-            let result = dialog.interact_on_opt(&Term::stderr()).unwrap().unwrap();
+            let result = dialog
+                .interact_on_opt(&Term::stderr())
+                .into_report()
+                .change_context(CommandError)?
+                .ok_or(CommandError)
+                .into_report()?;
             log::debug!("force_select: {}", force_select);
             log::debug!("multiselect_result:\n{:#?}", result);
             if force_select && result.is_empty() {
@@ -59,7 +64,12 @@ impl BatDialoguer {
             dialog = dialog.default(0);
         }
 
-        Ok(dialog.interact_on_opt(&Term::stderr()).unwrap().unwrap())
+        Ok(dialog
+            .interact_on_opt(&Term::stderr())
+            .into_report()
+            .change_context(CommandError)?
+            .ok_or(CommandError)
+            .into_report()?)
     }
 
     pub fn select_yes_or_no(prompt_text: String) -> Result<bool, CommandError> {
@@ -72,9 +82,10 @@ impl BatDialoguer {
             .default(0);
         let opt = dialog
             .interact_on_opt(&Term::stderr())
-            .ok()
-            .ok_or(CommandError)?
-            .ok_or(CommandError)?;
+            .into_report()
+            .change_context(CommandError)?
+            .ok_or(CommandError)
+            .into_report()?;
 
         Ok(opt == 0)
     }
@@ -85,8 +96,8 @@ impl BatDialoguer {
         let dialog: String = input
             .with_prompt(&prompt_text)
             .interact_text()
-            .ok()
-            .ok_or(CommandError)?;
+            .into_report()
+            .change_context(CommandError)?;
 
         Ok(dialog)
     }

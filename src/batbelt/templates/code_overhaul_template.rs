@@ -10,8 +10,10 @@ use crate::batbelt::templates::{TemplateError, TemplateResult};
 
 use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
+use crate::batbelt::BatEnumerator;
 use error_stack::{Result, ResultExt};
 use inflector::Inflector;
+use serde::{Deserialize, Serialize};
 
 pub struct CodeOverhaulTemplate {
     pub entrypoint_name: String,
@@ -74,8 +76,19 @@ impl CodeOverhaulTemplate {
     }
 }
 
-#[derive(strum_macros::Display)]
+#[derive(
+    Default,
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    strum_macros::EnumIter,
+    strum_macros::Display,
+    PartialOrd,
+    PartialEq,
+)]
 pub enum CodeOverhaulSection {
+    #[default]
     StateChanges,
     Notes,
     Signers,
@@ -84,6 +97,8 @@ pub enum CodeOverhaulSection {
     Validations,
     MiroFrameUrl,
 }
+
+impl BatEnumerator for CodeOverhaulSection {}
 
 impl CodeOverhaulSection {
     pub fn to_markdown_header(&self) -> String {

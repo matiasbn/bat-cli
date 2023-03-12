@@ -72,24 +72,31 @@ impl CodeOverhaulCommand {
             .get_all_bat_files(true, None, None)
             .change_context(CommandError)?;
         for finished_co_file in co_finished_bat_files_vec {
-            let co_file_content = finished_co_file
-                .read_content(false)
+            let entry_point_name = finished_co_file
+                .get_file_name()
+                .change_context(CommandError)?
+                .trim_end_matches(".md")
+                .to_string();
+            let co_parser = CodeOverhaulParser::new_from_entry_point_name(entry_point_name)
                 .change_context(CommandError)?;
-            let state_changes_section_content = co_commands_functions::extract_section_content(
-                &co_file_content,
+            let state_changes_section_content = co_parser.section_content.state_changes.replace(
                 &CodeOverhaulSection::StateChanges.to_markdown_header(),
+                &CodeOverhaulSection::StateChanges
+                    .to_markdown_header()
+                    .replace("#", "##"),
+            );
+            let notes_section_content = co_parser.section_content.notes.replace(
                 &CodeOverhaulSection::Notes.to_markdown_header(),
-            )?;
-            let notes_section_content = co_commands_functions::extract_section_content(
-                &co_file_content,
-                &CodeOverhaulSection::Notes.to_markdown_header(),
-                &CodeOverhaulSection::Signers.to_markdown_header(),
-            )?;
-            let miro_frame_url_section_content = co_commands_functions::extract_section_content(
-                &co_file_content,
+                &CodeOverhaulSection::Notes
+                    .to_markdown_header()
+                    .replace("#", "##"),
+            );
+            let miro_frame_url_section_content = co_parser.section_content.miro_frame_url.replace(
                 &CodeOverhaulSection::MiroFrameUrl.to_markdown_header(),
-                "",
-            )?;
+                &CodeOverhaulSection::MiroFrameUrl
+                    .to_markdown_header()
+                    .replace("#", "##"),
+            );
             let co_file_name = finished_co_file
                 .get_file_name()
                 .change_context(CommandError)?;
@@ -119,27 +126,34 @@ impl CodeOverhaulCommand {
 
     fn execute_finish(&self) -> error_stack::Result<(), CommandError> {
         // get to-review files
-        let started_entrypoints = BatFolder::CodeOverhaulStarted
+        let started_entrypoint_direntry_vec = BatFolder::CodeOverhaulStarted
             .get_all_files_dir_entries(true, None, None)
             .change_context(CommandError)?;
-        let started_entrypoints_names = started_entrypoints
+        let started_entrypoint_names = started_entrypoint_direntry_vec
             .into_iter()
             .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
             .collect::<Vec<_>>();
 
-        let finished_endpoint = if started_entrypoints_names.len() == 1 {
-            let selected = started_entrypoints_names[0].clone();
+        if started_entrypoint_names.is_empty() {
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "{} folder is empty",
+                "code-overhaul/started".green()
+            )));
+        }
+
+        let finished_endpoint = if started_entrypoint_names.len() == 1 {
+            let selected = started_entrypoint_names[0].clone();
             println!("Moving {} to finished", selected.green());
             selected
         } else {
             let prompt_text = "Select the code-overhaul to finish:";
             let selection = BatDialoguer::select(
                 prompt_text.to_string(),
-                started_entrypoints_names.clone(),
+                started_entrypoint_names.clone(),
                 None,
             )
             .change_context(CommandError)?;
-            started_entrypoints_names[selection].clone()
+            started_entrypoint_names[selection].clone()
         };
 
         let finished_co_folder_path = BatFolder::CodeOverhaulFinished
@@ -196,8 +210,10 @@ impl CodeOverhaulCommand {
             .change_context(CommandError)?;
 
         if review_files.is_empty() {
-            return Err(Report::new(CommandError)
-                .attach_printable("no to-review files in code-overhaul folder"));
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "{} folder is empty",
+                "code-overhaul/to-review".green()
+            )));
         }
         let prompt_text = "Select the code-overhaul file to start:";
         let selection = BatDialoguer::select(prompt_text.to_string(), review_files.clone(), None)
@@ -328,9 +344,10 @@ mod co_commands_functions {
         if file_data
             .contains(&CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder())
         {
-            let user_decided_to_continue = batbelt::bat_dialoguer::select_yes_or_no(
-                "Validations section not completed, do you want to proceed anyway?",
-            )
+            let user_decided_to_continue = BatDialoguer::select_yes_or_no(format!(
+                "{} section not completed, do you want to proceed anyway?",
+                "Validations".green()
+            ))
             .change_context(CommandError)?;
             if !user_decided_to_continue {
                 return Err(Report::new(CommandError).attach_printable("Aborted by the user"));

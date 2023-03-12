@@ -61,6 +61,14 @@ where
         Self::get_type_vec()[index].clone()
     }
 
+    fn get_index_of_type_vec(&self) -> usize {
+        let type_vec = Self::get_type_vec();
+        type_vec
+            .into_iter()
+            .position(|self_type| self_type.to_string() == self.to_string())
+            .unwrap()
+    }
+
     fn get_type_vec() -> Vec<Self> {
         Self::iter().collect::<Vec<_>>()
     }
