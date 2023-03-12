@@ -432,7 +432,7 @@ impl CodeOverhaulSection {
         );
         if entrypoint_parser.handler.is_none() {
             return Ok(format!(
-                "- {}",
+                "{}",
                 CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
             ));
         }
@@ -568,7 +568,7 @@ impl CodeOverhaulSection {
         } else {
             validations_vec
                 .iter()
-                .map(|validation| format!("- ```rust\n{}\n  ```", validation))
+                .map(|validation| format!("```rust\n{}\n```", validation))
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -679,7 +679,7 @@ impl CodeOverhaulSection {
             .collect::<Vec<_>>()
             .join("\n");
 
-        format!("{}\n{}\n{}", "- ```rust", formatted, "  ```")
+        format!("{}\n{}\n{}", "```rust", formatted, "```")
     }
 
     fn get_handler_function_parameters_section_content(
@@ -720,7 +720,7 @@ impl CodeOverhaulSection {
                     StructMetadataType::Other,
                 ) {
                     parameters.push(format!(
-                        "- ```rust\n{}\n  ```",
+                        "```rust\n{}\n```",
                         struct_metadata
                             .to_source_code_parser(None)
                             .get_source_code_content()
