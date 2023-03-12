@@ -79,6 +79,7 @@ impl CodeOverhaulCommand {
                 .to_string();
             let co_parser = CodeOverhaulParser::new_from_entry_point_name(entry_point_name)
                 .change_context(CommandError)?;
+            log::debug!("co_parser:\n{:#?}", co_parser);
             let state_changes_section_content = co_parser.section_content.state_changes.replace(
                 &CodeOverhaulSection::StateChanges.to_markdown_header(),
                 &CodeOverhaulSection::StateChanges

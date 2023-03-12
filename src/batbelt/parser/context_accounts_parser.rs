@@ -223,41 +223,20 @@ impl CAAccountParser {
     }
 
     fn get_validations(sonar_result_content: &str) -> ParserResult<Vec<String>> {
-        let mut validations = vec![];
-
-        let constraints_regex = Regex::new(r"constraint = [\sA-Za-z0-9()?._= @:><!&{}*]+[,\n]?")
-            .into_report()
-            .change_context(ParserError)?;
-        if constraints_regex.is_match(sonar_result_content) {
-            let mut matches = constraints_regex
+        // let validation_regex = Regex::new(r"constraint = [\sA-Za-z0-9()?._= @:><!&{}*]+[,\n]?")
+        let validation_regex =
+            Regex::new(r"(constraint|has_one|address) = [\w()?.= @:><!&{}\*]+\n?")
+                .into_report()
+                .change_context(ParserError)?;
+        if validation_regex.is_match(sonar_result_content) {
+            let matches = validation_regex
                 .find_iter(sonar_result_content)
                 .map(|reg_match| reg_match.as_str().trim_end_matches(')').trim().to_string())
                 .collect::<Vec<_>>();
-            validations.append(&mut matches);
+            log::debug!("validation_matches:\n{matches:#?}");
+            return Ok(matches);
         }
-
-        let has_one_regex = Regex::new(r"has_one = [\sA-Za-z0-9()?._= @:><!&{}]+[,\n]?")
-            .into_report()
-            .change_context(ParserError)?;
-        if has_one_regex.is_match(sonar_result_content) {
-            let mut matches = has_one_regex
-                .find_iter(sonar_result_content)
-                .map(|reg_match| reg_match.as_str().trim_end_matches(')').trim().to_string())
-                .collect::<Vec<_>>();
-            validations.append(&mut matches);
-        }
-
-        let address_regex = Regex::new(r"address = [\sA-Za-z0-9()?._= @:><!&{}]+[,\n]?")
-            .into_report()
-            .change_context(ParserError)?;
-        if address_regex.is_match(sonar_result_content) {
-            let mut matches = address_regex
-                .find_iter(sonar_result_content)
-                .map(|reg_match| reg_match.as_str().trim_end_matches(')').trim().to_string())
-                .collect::<Vec<_>>();
-            validations.append(&mut matches);
-        }
-        Ok(validations)
+        Ok(vec![])
     }
 
     fn get_rent_exemption_account(sonar_result_content: &str) -> ParserResult<String> {

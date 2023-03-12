@@ -68,7 +68,23 @@ enum BatCommands {
     #[command(subcommand)]
     CodeOverhaul(CodeOverhaulCommand),
     /// Execute the BatSonar to create metadata files for all Sonar result types
-    Sonar,
+    Sonar {
+        /// Skips the source code (functions, structs, enums and traits) process
+        #[arg(long)]
+        skip_source_code: bool,
+        /// Runs Sonar only for Context Accounts
+        #[arg(long)]
+        only_context_accounts: bool,
+        /// Runs Sonar only for entry points
+        #[arg(long)]
+        only_entry_points: bool,
+        /// Runs Sonar only for traits implemenetations and definitions data
+        #[arg(long)]
+        only_traits: bool,
+        /// Runs Sonar only for function dependencies
+        #[arg(long)]
+        only_function_dependencies: bool,
+    },
     // /// Execute specific BatSonar commands
     // #[command(subcommand)]
     // SonarSpecific(SonarSpecificCommand),
@@ -113,7 +129,20 @@ impl BatCommands {
             BatCommands::Finding(FindingCommand::AcceptAll) => {
                 commands::finding_commands::accept_all()
             }
-            BatCommands::Sonar => SonarCommand::Run.execute_command(),
+            BatCommands::Sonar {
+                skip_source_code,
+                only_context_accounts,
+                only_entry_points,
+                only_traits,
+                only_function_dependencies,
+            } => SonarCommand::Run {
+                skip_source_code: *skip_source_code,
+                only_context_accounts: *only_context_accounts,
+                only_entry_points: *only_entry_points,
+                only_traits: *only_traits,
+                only_function_dependencies: *only_function_dependencies,
+            }
+            .execute_command(),
             // BatCommands::SonarSpecific(command) => command.execute_command(),
             BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
@@ -146,14 +175,24 @@ impl BatCommands {
             BatCommands::Package(_) => {
                 return Ok(());
             }
-            BatCommands::Sonar => (
-                SonarCommand::Run.check_metadata_is_initialized(),
-                SonarCommand::Run.check_correct_branch(),
+            BatCommands::Sonar { .. } => (
+                SonarCommand::Run {
+                    skip_source_code: false,
+                    only_context_accounts: false,
+                    only_entry_points: false,
+                    only_traits: false,
+                    only_function_dependencies: false,
+                }
+                .check_metadata_is_initialized(),
+                SonarCommand::Run {
+                    skip_source_code: false,
+                    only_context_accounts: false,
+                    only_entry_points: false,
+                    only_traits: false,
+                    only_function_dependencies: false,
+                }
+                .check_correct_branch(),
             ),
-            // BatCommands::SonarSpecific(command) => (
-            //     command.check_metadata_is_initialized(),
-            //     command.check_correct_branch(),
-            // ),
             BatCommands::Tool(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
@@ -213,10 +252,9 @@ impl BatCommands {
                         command.to_string().to_kebab_case(),
                     ))
                 }
-                BatCommands::Sonar => Some(BatPackageJsonCommand {
-                    command_name: command.to_string().to_kebab_case(),
-                    command_options: vec![],
-                }),
+                BatCommands::Sonar { .. } => Some(SonarCommand::get_bat_package_json_commands(
+                    command.to_string().to_kebab_case(),
+                )),
                 BatCommands::Reload => Some(BatPackageJsonCommand {
                     command_name: command.to_string().to_kebab_case(),
                     command_options: vec![],
