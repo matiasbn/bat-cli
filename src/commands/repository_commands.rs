@@ -258,7 +258,7 @@ impl RepositoryCommand {
         )
         .change_context(CommandError)?;
 
-        let finished_file_name = finished_files_names[selection].clone();
+        let finished_file_name = not_committed_finished[selection].clone();
 
         GitCommit::UpdateCO {
             entrypoint_name: finished_file_name,
