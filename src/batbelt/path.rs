@@ -249,14 +249,17 @@ impl BatFolder {
         let bat_config = BatConfig::get_config().change_context(BatPathError)?;
 
         let path = match self {
-            BatFolder::Notes => "./notes".to_string(),
-            BatFolder::ProjectFolderPath => format!("./{}", bat_config.project_name),
+            BatFolder::Notes => "notes".to_string(),
+            BatFolder::ProjectFolderPath => format!("{}", bat_config.project_name),
             BatFolder::AuditorNotes => {
                 let bat_auditor_config =
                     BatAuditorConfig::get_config().change_context(BatPathError)?;
 
-                let auditor_notes_folder_path =
-                    format!("./notes/{}-notes", bat_auditor_config.auditor_name);
+                let auditor_notes_folder_path = format!(
+                    "{}/{}-notes",
+                    Self::Notes.get_path(canonicalize)?,
+                    bat_auditor_config.auditor_name
+                );
                 auditor_notes_folder_path
             }
             BatFolder::AuditorFigures => {

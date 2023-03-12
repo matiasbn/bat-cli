@@ -96,11 +96,13 @@ impl CodeOverhaulCommand {
                 .trim_end_matches(".md")
                 .to_string();
             let finished_file_summary = format!(
-                "# {}\n\n{}\n\n{}\n\n{}",
+                "# {}\n\n{}\n\n{}\n\n{}\n\n ## File path:\n\n [{}](code-overhaul/finished/{}.md)",
                 co_file_name,
                 state_changes_section_content,
                 notes_section_content,
-                miro_frame_url_section_content
+                miro_frame_url_section_content,
+                co_file_name,
+                co_file_name
             );
             co_summary_content = if co_summary_content.is_empty() {
                 finished_file_summary
