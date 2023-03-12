@@ -280,11 +280,14 @@ impl BatConfig {
             "test_client".to_string()
         };
 
-        let commit_hash_url: String = if !cfg!(debug_assertions) {
+        let mut commit_hash_url: String = if !cfg!(debug_assertions) {
             bat_dialoguer::input("Commit hash url:").change_context(BatConfigError)?
         } else {
-            "https://github.com/test_repo/test_program/commit/641bdb72210edcafe555102f2ecd2952a7b60722".to_string()
+            "github.com/test_repo/test_program/commit/641bdb72210edcafe555102f2ecd2952a7b60722"
+                .to_string()
         };
+
+        commit_hash_url = Self::normalize_commit_hash_url(&commit_hash_url)?;
 
         let starting_date: String = if !cfg!(debug_assertions) {
             bat_dialoguer::input("Starting date, example: (01/01/2023):")
@@ -329,6 +332,16 @@ impl BatConfig {
             .into_report()
             .change_context(BatConfigError)?
             .normalize(Some(&["moveToWidget", "cot"]))
+            .into_report()
+            .change_context(BatConfigError)?;
+        Ok(url)
+    }
+
+    fn normalize_commit_hash_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
+        let url = normalizer::UrlNormalizer::new(url_to_normalize)
+            .into_report()
+            .change_context(BatConfigError)?
+            .normalize(None)
             .into_report()
             .change_context(BatConfigError)?;
         Ok(url)

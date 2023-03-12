@@ -55,7 +55,7 @@ struct Cli {
 enum BatCommands {
     /// Creates a Bat project
     #[default]
-    Create,
+    New,
     /// Initializes the project from the Bat.toml config file
     Init {
         /// Skips the initial commit process
@@ -111,7 +111,7 @@ impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         self.validate_command()?;
         match self {
-            BatCommands::Create => commands::project_commands::create_bat_project(),
+            BatCommands::New => commands::project_commands::create_bat_project(),
             BatCommands::Init {
                 skip_initial_commit,
             } => commands::project_commands::initialize_bat_project(*skip_initial_commit).await,
@@ -163,7 +163,7 @@ impl BatCommands {
 
     fn validate_command(&self) -> CommandResult<()> {
         let (check_metadata, check_branch) = match self {
-            BatCommands::Create => {
+            BatCommands::New => {
                 return Ok(());
             }
             BatCommands::Init { .. } => {
@@ -323,7 +323,7 @@ async fn run() -> CommandResult<()> {
     Suggestion::set_report();
     // env_logger selectively
     match cli.command {
-        BatCommands::Package(..) | BatCommands::Create => {
+        BatCommands::Package(..) | BatCommands::New => {
             env_logger::init();
             Ok(())
         }
