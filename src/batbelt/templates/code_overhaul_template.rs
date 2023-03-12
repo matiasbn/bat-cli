@@ -622,7 +622,7 @@ impl CodeOverhaulSection {
                     StructMetadataType::Other,
                 ) {
                     parameters.push(format!(
-                        "- ``` rust\n{}\n  ```",
+                        "- ```rust\n{}\n  ```",
                         struct_metadata
                             .to_source_code_parser(None)
                             .get_source_code_content()

@@ -1,3 +1,4 @@
+use crate::batbelt::path::prettify_source_code_path;
 use colored::Colorize;
 use error_stack::Result;
 use std::error::Error;
@@ -28,7 +29,7 @@ pub fn parse_formatted_path(name: String, path: String, start_line_index: usize)
     format!(
         "{}: {}:{}",
         name.blue(),
-        path.trim_start_matches("../"),
+        prettify_source_code_path(path.trim_start_matches("../")).unwrap(),
         start_line_index
     )
 }
