@@ -35,9 +35,12 @@ pub type BatConfigResult<T> = Result<T, BatConfigError>;
 pub struct BatAuditorConfig {
     pub auditor_name: String,
     pub miro_oauth_access_token: String,
+    #[serde(default)]
     pub use_code_editor: bool,
+    #[serde(default)]
     pub code_editor: CodeEditor,
-    // pub external_bat_metadata: Vec<String>,
+    #[serde(default)]
+    pub external_bat_metadata: Vec<String>,
 }
 
 impl BatAuditorConfig {
@@ -47,32 +50,88 @@ impl BatAuditorConfig {
             miro_oauth_access_token: "".to_string(),
             use_code_editor: false,
             code_editor: Default::default(),
-            // external_bat_metadata: vec![],
+            external_bat_metadata: vec![],
         };
         bat_auditor_config.prompt_auditor_name()?;
         bat_auditor_config.prompt_miro_integration()?;
         bat_auditor_config.prompt_code_editor_integration()?;
+        bat_auditor_config.prompt_external_bat_metadata()?;
         bat_auditor_config.save()?;
         Ok(bat_auditor_config)
     }
 
-    fn prompt_external_bat_metadata(&mut self) -> BatConfigResult<()> {
-        let bat_config = BatConfig::get_config()?;
-        let auditor_names = bat_config.auditor_names;
-        let add_external_metadata = BatDialoguer::select_yes_or_no(format!(
-            "Do you want to add external {} files?",
-            BatFile::BatMetadataFile
-                .get_file_name()
-                .change_context(BatConfigError)?
-        ))
-        .change_context(BatConfigError)?;
-        if add_external_metadata {}
-        let prompt_text = "Select your name:".to_string();
-        let selection = BatDialoguer::select(prompt_text, auditor_names.clone(), None)
-            .change_context(BatConfigError)?;
-        let auditor_name = auditor_names.get(selection).unwrap().clone();
-        self.auditor_name = auditor_name;
-        Ok(())
+    pub fn prompt_external_bat_metadata(&mut self) -> BatConfigResult<()> {
+        let prompt_text = if self.external_bat_metadata.is_empty() {
+            format!(
+                "Do you want to add external {} files?",
+                BatFile::BatMetadataFile
+                    .get_file_name()
+                    .change_context(BatConfigError)?
+                    .bright_green()
+            )
+        } else {
+            format!(
+                "Do you want to update the external {} files?",
+                BatFile::BatMetadataFile
+                    .get_file_name()
+                    .change_context(BatConfigError)?
+                    .bright_green()
+            )
+        };
+        let add_external_metadata =
+            BatDialoguer::select_yes_or_no(prompt_text).change_context(BatConfigError)?;
+        return if add_external_metadata {
+            println!(
+                "Looking for {} files on the parent directory (..) \n",
+                "BatMetadata.json".bright_green()
+            );
+            let bat_metadata_folders = WalkDir::new("..")
+                .into_iter()
+                .map(|f| f.unwrap())
+                .filter(|f| {
+                    f.file_type().is_dir()
+                        && ![".", "target"]
+                            .iter()
+                            .any(|y| f.file_name().to_str().unwrap().contains(y))
+                })
+                .filter(|f| {
+                    let path = f.path();
+                    let dir = fs::read_dir(path).unwrap();
+                    let file_names = dir
+                        .map(|f| f.unwrap().file_name().to_str().unwrap().to_string())
+                        .collect::<Vec<_>>();
+
+                    file_names.contains(&"BatMetadata.json".to_string())
+                })
+                .map(|f| {
+                    format!(
+                        "{}/BatMetadata.json",
+                        f.path().to_str().unwrap().to_string()
+                    )
+                })
+                .collect::<Vec<_>>();
+            if bat_metadata_folders.is_empty() {
+                println!(
+                    "0 folders with {} file were found on the parent directory (..) \n",
+                    "BatMetadata.json".bright_green()
+                );
+                println!(
+                    "You can add folders with {} manually on BatAuditor.toml, section {}",
+                    "BatMetadata.json".bright_green(),
+                    "external_bat_metadata".bright_blue()
+                );
+                return Ok(());
+            }
+            println!(
+                "Adding these {} files to external_bat_metadata :\n{:#?}",
+                "BatMetadata.json".bright_green(),
+                bat_metadata_folders
+            );
+            self.external_bat_metadata = bat_metadata_folders;
+            Ok(())
+        } else {
+            Ok(())
+        };
     }
 
     fn prompt_auditor_name(&mut self) -> BatConfigResult<()> {
@@ -117,41 +176,14 @@ impl BatAuditorConfig {
         let path = BatFile::BatAuditorToml
             .get_path(true)
             .change_context(BatConfigError)?;
-        let bat_config_result = Figment::new()
+        let bat_auditor_config: BatAuditorConfig = Figment::new()
             .merge(Toml::file(path))
             .extract()
             .into_report()
             .change_context(BatConfigError)
-            .attach_printable("Error parsing BatAuditor.toml");
-        return match bat_config_result {
-            Ok(bat_auditor_config) => Ok(bat_auditor_config),
-            Err(error) => {
-                log::error!("Error parsing BatAuditor \n {}", error);
-                let frames_errors = error
-                    .frames()
-                    .filter_map(|frame| {
-                        let downcast = frame.downcast_ref::<figment::Error>();
-                        if downcast.is_some() {
-                            Some(downcast.unwrap())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                for frame_error in frames_errors {
-                    match frame_error.clone().kind {
-                        Kind::MissingField(missing_field) => {
-                            println!("{} field missing on BatAuditor.toml", missing_field.red());
-                        }
-                        _ => {}
-                    }
-                }
-                println!("\nCreating {} again\n", "BatAuditor.toml".bright_green());
-                Self::new_with_prompt()?;
-                let new_config = Self::get_config()?;
-                return Ok(new_config);
-            }
-        };
+            .attach_printable("Error parsing BatAuditor.toml")?;
+        bat_auditor_config.save()?;
+        Ok(bat_auditor_config)
     }
 
     pub fn save(&self) -> Result<(), BatConfigError> {

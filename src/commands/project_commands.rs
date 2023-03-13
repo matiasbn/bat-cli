@@ -59,6 +59,13 @@ impl ProjectCommands {
             .change_context(CommandError)?
         {
             BatAuditorConfig::new_with_prompt().change_context(CommandError)?;
+        } else {
+            let mut bat_auditor_config =
+                BatAuditorConfig::get_config().change_context(CommandError)?;
+            bat_auditor_config
+                .prompt_external_bat_metadata()
+                .change_context(CommandError)?;
+            bat_auditor_config.save().change_context(CommandError)?;
         }
         let auditor_notes_bat_folder = BatFolder::AuditorNotes;
         if !auditor_notes_bat_folder
@@ -136,6 +143,7 @@ impl ProjectCommands {
                 miro_oauth_access_token: "".to_string(),
                 use_code_editor: false,
                 code_editor: Default::default(),
+                external_bat_metadata: vec![],
             };
             bat_auditor_config.save().change_context(CommandError)?;
 

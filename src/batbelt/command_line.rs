@@ -22,9 +22,9 @@ use crate::config::BatAuditorConfig;
     PartialEq,
 )]
 pub enum CodeEditor {
-    #[default]
     CLion,
     VSCode,
+    #[default]
     None,
 }
 
