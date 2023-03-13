@@ -11,6 +11,7 @@ use crate::batbelt::parser::ParserError;
 
 use crate::batbelt::silicon;
 
+use crate::batbelt::path::prettify_source_code_path;
 use crate::batbelt::{self, path::BatFolder};
 use crate::config::BatConfig;
 use error_stack::{Result, ResultExt};
@@ -135,16 +136,8 @@ impl SourceCodeParser {
             .to_vec();
         let mut content = content_vec.join("\n");
         if options.include_path {
-            log::debug!("self:\n{:#?}", self);
-            let bat_config = BatConfig::get_config().change_context(ParserError)?;
-            log::debug!("program_name: {}", bat_config.program_name);
-            let splitter = format!("{}/src/", bat_config.program_name);
-            log::debug!("splitter: {}", splitter);
-            let path = self.path.split(&splitter).last().unwrap();
-            log::debug!("splitted_path_lasth: {}", path);
-            let path_to_include = format!("{}{}", splitter, path)
-                .trim_start_matches('/')
-                .to_string();
+            let path_to_include =
+                prettify_source_code_path(&self.path).change_context(ParserError)?;
             log::debug!("path_to_include: {}", path_to_include);
             content = format!("// {}\n\n{}", path_to_include, content);
             offset = if options.offset_to_start_line {
