@@ -288,7 +288,7 @@ impl BatConfig {
             bat_dialoguer::input("Auditor names (comma separated, example: alice,bob):")
                 .change_context(BatConfigError)?
         } else {
-            "test_user".to_string()
+            "test_user,test_user2".to_string()
         };
         let auditor_names: Vec<String> = auditor_names_prompt
             .split(',')

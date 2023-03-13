@@ -174,6 +174,9 @@ mod project_commands_functions {
             .create_folders_for_current_auditor()
             .change_context(CommandError)?;
         initialize_code_overhaul_files()?;
+        GitCommit::InitAuditor
+            .create_commit()
+            .change_context(CommandError)?;
         Ok(())
     }
 
