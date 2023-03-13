@@ -20,6 +20,7 @@ use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 
+use crate::commands::sonar_commands::SonarCommand;
 use std::path::Path;
 use std::process::Command;
 
@@ -110,6 +111,20 @@ impl ProjectCommands {
         }
 
         PackageJsonTemplate::create_package_json(None).change_context(CommandError)?;
+
+        println!(
+            "\n\nRunning Sonar to update {}\n\n",
+            "BatMetadata.json!".bright_green()
+        );
+
+        SonarCommand::Run {
+            skip_source_code: false,
+            only_context_accounts: false,
+            only_entry_points: false,
+            only_traits: false,
+            only_function_dependencies: false,
+        }
+        .execute_command()?;
 
         // create auditors branches from develop
         for auditor_name in bat_config.auditor_names {
