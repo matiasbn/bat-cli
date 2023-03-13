@@ -12,6 +12,7 @@ use crate::batbelt::command_line::CodeEditor;
 use crate::batbelt::path::BatFile;
 use crate::batbelt::{bat_dialoguer, BatEnumerator};
 
+use crate::batbelt::git::GitCommit;
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use figment::error::Kind;
@@ -206,6 +207,7 @@ pub struct BatConfig {
     pub miro_board_url: String,
     pub auditor_names: Vec<String>,
     pub program_lib_path: String,
+    #[serde(default)]
     pub program_name: String,
     pub project_repository_url: String,
 }
@@ -420,12 +422,27 @@ impl BatConfig {
         let path = BatFile::BatToml
             .get_path(true)
             .change_context(BatConfigError)?;
-        let bat_config: BatConfig = Figment::new()
+        let mut bat_config: BatConfig = Figment::new()
             .merge(Toml::file(path))
             .extract()
             .into_report()
             .change_context(BatConfigError)
             .attach_printable("Error parsing Bat.toml")?;
+        if bat_config.program_name.is_empty() {
+            bat_config.program_name = bat_config
+                .program_lib_path
+                .clone()
+                .trim_end_matches("/src/lib.rs")
+                .split("/")
+                .last()
+                .unwrap()
+                .to_string();
+            bat_config.save()?;
+
+            GitCommit::UpdateBatToml
+                .create_commit()
+                .change_context(BatConfigError)?;
+        }
         Ok(bat_config)
     }
 

@@ -299,6 +299,7 @@ pub enum GitCommit {
     UpdateMetadataJson {
         bat_metadata_commit: BatMetadataCommit,
     },
+    UpdateBatToml,
 }
 
 impl GitCommit {
@@ -446,6 +447,9 @@ impl GitCommit {
                         .change_context(GitError)?,
                 ]
             }
+            GitCommit::UpdateBatToml => {
+                vec![BatFile::BatToml.get_path(true).change_context(GitError)?]
+            }
             GitCommit::UpdateMetadataJson { .. } => {
                 vec![BatFile::BatMetadataFile
                     .get_path(false)
@@ -498,6 +502,7 @@ impl GitCommit {
                 "notes: open_questions, finding_candidates and threat_modeling notes updated"
                     .to_string()
             }
+            GitCommit::UpdateBatToml => "repo: Bat.toml updated to last version".to_string(),
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit,
             } => bat_metadata_commit.get_commit_message(),
