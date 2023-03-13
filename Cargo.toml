@@ -4,9 +4,9 @@ version = "0.8.0"
 edition = "2021"
 description = "Blockchain Auditor Toolkit (BAT)"
 license = "MIT"
-homepage = "https://github.com/matiasbn/bat-cli"
-documentation = "https://github.com/matiasbn/bat-cli"
-repository = "https://github.com/matiasbn/bat-cli.git"
+homepage = "https://github.com/luckysevenio/bat-cli"
+documentation = "https://github.com/luckysevenio/bat-cli"
+repository = "https://github.com/luckysevenio/bat-cli.git"
 readme = "README.md"
 exclude = ["package.json", "z-Bat-bkp.toml", "README.md"]
 
