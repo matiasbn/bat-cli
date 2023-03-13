@@ -66,6 +66,74 @@ pub type MetadataResult<T> = Result<T, MetadataError>;
 
 pub type MetadataId = String;
 
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
+pub enum BatMetadataEnvVariables {
+    UseExternalMetadata,
+    BatMetadataFileSelected,
+}
+
+impl BatEnumerator for BatMetadataEnvVariables {}
+
+impl BatMetadataEnvVariables {
+    pub fn set_use_external_metadata_to_true() -> MetadataResult<()> {
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(MetadataError)?;
+        if bat_auditor_config.external_bat_metadata.is_empty() {
+            return Err(Report::new(MetadataError)
+                .attach_printable("external_bat_metadata vector is empty on BatAuditor.toml"))
+            .attach(Suggestion(format!(
+                "run {} to add external BatMetadata.json files",
+                "bat-cli reload".bright_green()
+            )));
+        }
+        let use_external = Self::UseExternalMetadata;
+        let new_value = "true";
+        use_external.set_value(new_value);
+        Ok(())
+    }
+
+    pub fn set_use_external_metadata_to_false() {
+        let use_external = Self::UseExternalMetadata;
+        let new_value = "false";
+        use_external.set_value(new_value);
+    }
+
+    pub fn assert_use_external_metadata() -> bool {
+        let use_external = Self::UseExternalMetadata;
+        match use_external.read_value() {
+            Ok(value) => value == "true".to_string(),
+            Err(_) => false,
+        }
+    }
+
+    pub fn get_variable_key(&self) -> String {
+        self.to_string().to_screaming_snake_case()
+    }
+
+    pub fn set_value(&self, new_value: &str) {
+        let key = self.get_variable_key();
+        env::set_var(key, new_value);
+    }
+
+    pub fn read_value(&self) -> MetadataResult<String> {
+        let key = self.get_variable_key();
+        env::var(key).into_report().change_context(MetadataError)
+    }
+
+    pub fn clean_value(&self) {
+        let key = self.get_variable_key();
+        env::remove_var(key)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub enum BatMetadataCommit {
     RunSonarMetadataCommit,
@@ -130,37 +198,8 @@ impl BatMetadata {
         s
     }
 
-    // set = Some -> writes bool env
-    // set = None -> reads env
-    pub fn parse_external_metadata_env(set_value: Option<bool>) -> MetadataResult<bool> {
-        let env_variable_name = "USE_EXTERNAL_METADATA";
-        match set_value {
-            // read
-            None => {
-                let env_var = env::var(env_variable_name);
-                Ok(env_var.is_ok() && env_var.unwrap() == "true".to_string())
-            }
-            // write
-            Some(new_value) => {
-                let bat_auditor_config =
-                    BatAuditorConfig::get_config().change_context(MetadataError)?;
-                if new_value == true && bat_auditor_config.external_bat_metadata.is_empty() {
-                    return Err(Report::new(MetadataError).attach_printable(
-                        "external_bat_metadata vector is empty on BatAuditor.toml",
-                    ))
-                    .attach(Suggestion(format!(
-                        "run {} to add external BatMetadata.json files",
-                        "bat-cli reload".bright_green()
-                    )));
-                }
-                env::set_var(env_variable_name, if new_value { "true" } else { "false" });
-                Ok(new_value == true)
-            }
-        }
-    }
-
     pub fn read_metadata() -> MetadataResult<Self> {
-        if Self::parse_external_metadata_env(None)? {
+        if BatMetadataEnvVariables::assert_use_external_metadata() {
             return Self::read_external_metadata();
         }
         let metadata_json_bat_file = BatFile::BatMetadataFile;
@@ -188,25 +227,29 @@ impl BatMetadata {
         Ok(bat_metadata)
     }
 
-    pub fn read_external_metadata() -> MetadataResult<Self> {
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(MetadataError)?;
-        if bat_auditor_config.external_bat_metadata.is_empty() {
-            return Err(Report::new(MetadataError)
-                .attach_printable("external_bat_metadata vector is empty on BatAuditor.toml"))
-            .attach(Suggestion(format!(
-                "run {} to add external BatMetadata.json files",
-                "bat-cli reload".bright_green()
-            )));
-        }
-        let prompt_text = format!("Select the {} file to use:", "BatMetadata.json".green());
-        let selection = BatDialoguer::select(
-            prompt_text,
-            bat_auditor_config.external_bat_metadata.clone(),
-            None,
-        )
-        .change_context(MetadataError)?;
-        let external_bat_metadata_selected =
-            bat_auditor_config.external_bat_metadata[selection].clone();
+    fn read_external_metadata() -> MetadataResult<Self> {
+        let external_bat_metadata_selected = match BatMetadataEnvVariables::BatMetadataFileSelected
+            .read_value()
+        {
+            Ok(external_bat_path) => external_bat_path,
+            Err(_) => {
+                let bat_auditor_config =
+                    BatAuditorConfig::get_config().change_context(MetadataError)?;
+                let prompt_text = format!("Select the {} file to use:", "BatMetadata.json".green());
+                let selection = BatDialoguer::select(
+                    prompt_text,
+                    bat_auditor_config.external_bat_metadata.clone(),
+                    None,
+                )
+                .change_context(MetadataError)?;
+                let external_bat_metadata_selected =
+                    bat_auditor_config.external_bat_metadata[selection].clone();
+                BatMetadataEnvVariables::UseExternalMetadata
+                    .set_value(&external_bat_metadata_selected);
+                external_bat_metadata_selected
+            }
+        };
+
         let metadata_json_bat_file = BatFile::Generic {
             file_path: external_bat_metadata_selected.clone(),
         };

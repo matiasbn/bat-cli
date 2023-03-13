@@ -17,8 +17,8 @@ use crate::batbelt::metadata::miro_metadata::{MiroCodeOverhaulMetadata, SignerIn
 use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::traits_source_code_metadata::TraitMetadataType;
 use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataCommit, BatMetadataParser, BatMetadataType, MetadataError,
-    MiroMetadata, SourceCodeMetadata,
+    BatMetadata, BatMetadataCommit, BatMetadataEnvVariables, BatMetadataParser, BatMetadataType,
+    MetadataError, MiroMetadata, SourceCodeMetadata,
 };
 use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
 use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
@@ -117,16 +117,22 @@ impl MiroCommand {
                 select_all,
                 use_external,
             } => {
-                BatMetadata::parse_external_metadata_env(Some(*use_external))
-                    .change_context(CommandError)?;
+                if *use_external {
+                    BatMetadataEnvVariables::set_use_external_metadata_to_true()
+                        .change_context(CommandError)?;
+                }
+
                 self.source_code_screenshots(*select_all).await
             }
             MiroCommand::FunctionDependencies {
                 select_all,
                 use_external,
             } => {
-                BatMetadata::parse_external_metadata_env(Some(*use_external))
-                    .change_context(CommandError)?;
+                if *use_external {
+                    BatMetadataEnvVariables::set_use_external_metadata_to_true()
+                        .change_context(CommandError)?;
+                }
+
                 self.function_dependencies(*select_all).await
             }
         }
@@ -149,7 +155,7 @@ impl MiroCommand {
             EntrypointParser::get_entrypoint_names(sorted).change_context(CommandError)?;
 
         // prompt the user to select an entrypoint
-        let prompt_text = "Please select the entrypoints to deploy";
+        let prompt_text = "Select the entry points to deploy";
         let selected_entrypoints_index = batbelt::bat_dialoguer::multiselect(
             prompt_text,
             entrypoints_names.clone(),
@@ -593,6 +599,7 @@ impl MiroCommand {
                 selected_miro_frame.title.yellow()
             );
             continue_selection = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
+            BatMetadataEnvVariables::BatMetadataFileSelected.clean_value();
         }
         Ok(())
     }
