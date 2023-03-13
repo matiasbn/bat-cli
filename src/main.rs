@@ -56,13 +56,7 @@ enum BatCommands {
     /// Creates a Bat project
     #[default]
     New,
-    /// Initializes the project from the Bat.toml config file
-    Init {
-        /// Skips the initial commit process
-        #[arg(short, long)]
-        skip_initial_commit: bool,
-    },
-    /// Refresh the project
+    /// Reload the Bat project files (ideal to resume work from git clone)
     Reload,
     /// code-overhaul files management
     #[command(subcommand)]
@@ -111,10 +105,7 @@ impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         self.validate_command()?;
         match self {
-            BatCommands::New => commands::project_commands::create_bat_project(),
-            BatCommands::Init {
-                skip_initial_commit,
-            } => commands::project_commands::initialize_bat_project(*skip_initial_commit).await,
+            BatCommands::New => ProjectCommands::New.execute_command(),
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
             BatCommands::Finding(FindingCommand::Create) => {
@@ -164,9 +155,6 @@ impl BatCommands {
     fn validate_command(&self) -> CommandResult<()> {
         let (check_metadata, check_branch) = match self {
             BatCommands::New => {
-                return Ok(());
-            }
-            BatCommands::Init { .. } => {
                 return Ok(());
             }
             BatCommands::Reload => {
@@ -352,7 +340,6 @@ async fn main() -> CommandResult<()> {
                 "bat-cli".red(),
                 cli.command.get_pretty_command()?.red()
             );
-            log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)
         }
     }

@@ -13,34 +13,6 @@ use crate::BatCommands;
 pub struct PackageJsonTemplate;
 
 impl PackageJsonTemplate {
-    pub fn create_package_with_init_script() -> Result<(), TemplateError> {
-        let (script_key, script_value) = if cfg!(debug_assertions) {
-            ("init", "cargo run init")
-        } else {
-            ("init", "bat-cli init")
-        };
-        let package_json = json!({
-        "name": "bat_project",
-        "version": "1.0.0",
-        "description": "Bat project",
-        "main": "index.js",
-        "scripts":{
-              script_key: script_value
-            },
-        "author": "",
-        "license": "ISC"
-        });
-
-        let content = serde_json::to_string_pretty(&package_json)
-            .into_report()
-            .change_context(TemplateError)?;
-
-        BatFile::PackageJson
-            .write_content(false, &content)
-            .change_context(TemplateError)?;
-        Ok(())
-    }
-
     pub fn create_package_json(log_level: Option<Level>) -> Result<(), TemplateError> {
         BatFile::PackageJson
             .write_content(false, &Self::get_package_json_content(log_level)?)

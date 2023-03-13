@@ -37,6 +37,7 @@ pub struct BatAuditorConfig {
     pub miro_oauth_access_token: String,
     pub use_code_editor: bool,
     pub code_editor: CodeEditor,
+    // pub external_bat_metadata: Vec<String>,
 }
 
 impl BatAuditorConfig {
@@ -46,12 +47,32 @@ impl BatAuditorConfig {
             miro_oauth_access_token: "".to_string(),
             use_code_editor: false,
             code_editor: Default::default(),
+            // external_bat_metadata: vec![],
         };
         bat_auditor_config.prompt_auditor_name()?;
         bat_auditor_config.prompt_miro_integration()?;
         bat_auditor_config.prompt_code_editor_integration()?;
         bat_auditor_config.save()?;
         Ok(bat_auditor_config)
+    }
+
+    fn prompt_external_bat_metadata(&mut self) -> BatConfigResult<()> {
+        let bat_config = BatConfig::get_config()?;
+        let auditor_names = bat_config.auditor_names;
+        let add_external_metadata = BatDialoguer::select_yes_or_no(format!(
+            "Do you want to add external {} files?",
+            BatFile::BatMetadataFile
+                .get_file_name()
+                .change_context(BatConfigError)?
+        ))
+        .change_context(BatConfigError)?;
+        if add_external_metadata {}
+        let prompt_text = "Select your name:".to_string();
+        let selection = BatDialoguer::select(prompt_text, auditor_names.clone(), None)
+            .change_context(BatConfigError)?;
+        let auditor_name = auditor_names.get(selection).unwrap().clone();
+        self.auditor_name = auditor_name;
+        Ok(())
     }
 
     fn prompt_auditor_name(&mut self) -> BatConfigResult<()> {
@@ -283,7 +304,7 @@ impl BatConfig {
         let mut commit_hash_url: String = if !cfg!(debug_assertions) {
             bat_dialoguer::input("Commit hash url:").change_context(BatConfigError)?
         } else {
-            "github.com/test_repo/test_program/commit/641bdb72210edcafe555102f2ecd2952a7b60722"
+            "https://github.com/test_repo/test_program/commit/641bdb72210edcafe555102f2ecd2952a7b60722"
                 .to_string()
         };
 
@@ -330,9 +351,17 @@ impl BatConfig {
     fn normalize_miro_board_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
         let url = normalizer::UrlNormalizer::new(url_to_normalize)
             .into_report()
+            .attach_printable(format!(
+                "Error normalizing Miro board url, got {}",
+                url_to_normalize
+            ))
             .change_context(BatConfigError)?
             .normalize(Some(&["moveToWidget", "cot"]))
             .into_report()
+            .attach_printable(format!(
+                "Error normalizing Miro board url, got {}",
+                url_to_normalize
+            ))
             .change_context(BatConfigError)?;
         Ok(url)
     }
@@ -340,9 +369,17 @@ impl BatConfig {
     fn normalize_commit_hash_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
         let url = normalizer::UrlNormalizer::new(url_to_normalize)
             .into_report()
+            .attach_printable(format!(
+                "Error normalizing commit hash url, got {}",
+                url_to_normalize
+            ))
             .change_context(BatConfigError)?
             .normalize(None)
             .into_report()
+            .attach_printable(format!(
+                "Error normalizing commit hash url, got {}",
+                url_to_normalize
+            ))
             .change_context(BatConfigError)?;
         Ok(url)
     }

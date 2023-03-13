@@ -457,10 +457,10 @@ impl GitCommit {
 
     fn get_commit_message(&self) -> GitResult<String> {
         let bat_config = BatConfig::get_config().change_context(GitError)?;
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(GitError)?;
         let commit_string = match self {
             GitCommit::Init => "initial commit".to_string(),
             GitCommit::InitAuditor => {
+                let bat_auditor_config = BatAuditorConfig::get_config().change_context(GitError)?;
                 format!(
                     "co: project {} initialized for {}",
                     bat_config.project_name, bat_auditor_config.auditor_name
