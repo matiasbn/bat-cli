@@ -294,7 +294,7 @@ pub enum GitCommit {
         finding_name: String,
     },
     AcceptFindings,
-    UpdateTemplates,
+    BatReload,
     Notes,
     UpdateMetadataJson {
         bat_metadata_commit: BatMetadataCommit,
@@ -425,7 +425,7 @@ impl GitCommit {
                         .change_context(GitError)?,
                 ]
             }
-            GitCommit::UpdateTemplates => {
+            GitCommit::BatReload => {
                 vec![
                     BatFolder::CodeOverhaulToReview
                         .get_path(true)
@@ -493,7 +493,7 @@ impl GitCommit {
             GitCommit::AcceptFindings => {
                 "finding: to-review findings moved to accepted".to_string()
             }
-            GitCommit::UpdateTemplates => "templates: templates update".to_string(),
+            GitCommit::BatReload => "reload: project files updated".to_string(),
             GitCommit::Notes => {
                 "notes: open_questions, finding_candidates and threat_modeling notes updated"
                     .to_string()

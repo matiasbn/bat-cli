@@ -85,7 +85,7 @@ impl ProjectCommands {
             project_commands_functions::update_package_json()?;
             project_commands_functions::update_git_ignore()?;
 
-            GitCommit::UpdateTemplates
+            GitCommit::BatReload
                 .create_commit()
                 .change_context(CommandError)?;
         }
