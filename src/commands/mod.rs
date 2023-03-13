@@ -7,6 +7,7 @@ pub mod sonar_commands;
 pub mod tools_commands;
 
 use crate::batbelt::BatEnumerator;
+use crate::BatCommands;
 use inflector::Inflector;
 use regex::Regex;
 use std::{error::Error, fmt};
@@ -31,7 +32,7 @@ where
     fn execute_command(&self) -> CommandResult<()>;
     fn check_metadata_is_initialized(&self) -> bool;
     fn check_correct_branch(&self) -> bool;
-    fn get_package_json_commands(command_name: String) -> BatPackageJsonCommand {
+    fn get_bat_package_json_commands(command_name: String) -> BatPackageJsonCommand {
         let command_with_options_regex = Regex::new(r"\w+ \{\s*([\s\w]+: false,\n)+\}").unwrap();
         let boolean_flag_regex = Regex::new(r"\w+: false,").unwrap();
 
@@ -89,23 +90,39 @@ pub struct BatPackageJsonCommandOptions {
 }
 
 impl BatPackageJsonCommandOptions {
-    pub fn get_combinations_vec(&self) -> Vec<Vec<String>> {
-        let mut result = vec![];
-        for (option_flag_index, option_flag) in
-            self.command_option_flags.clone().into_iter().enumerate()
-        {
-            let mut inner_vec = vec![];
-            inner_vec.push(option_flag.clone());
-            result.push(inner_vec.clone());
-            let mut idx = option_flag_index + 1;
-            while idx < self.command_option_flags.len() {
-                inner_vec.push(self.command_option_flags[idx].clone());
+    pub fn get_combinations_vec(&self, command_name: &str) -> Vec<Vec<String>> {
+        if command_name == "sonar" {
+            let skip_source_code_flag = self.command_option_flags[0].clone();
+            self.command_option_flags
+                .clone()
+                .into_iter()
+                .enumerate()
+                .filter_map(|(flag_index, flag)| {
+                    if flag_index != 0 {
+                        Some(vec![skip_source_code_flag.clone(), flag.clone()])
+                    } else {
+                        Some(vec![skip_source_code_flag.clone()])
+                    }
+                })
+                .collect::<Vec<Vec<String>>>()
+        } else {
+            let mut result = vec![];
+            for (option_flag_index, option_flag) in
+                self.command_option_flags.clone().into_iter().enumerate()
+            {
+                let mut inner_vec = vec![];
+                inner_vec.push(option_flag.clone());
                 result.push(inner_vec.clone());
-                idx += 1;
+                let mut idx = option_flag_index + 1;
+                while idx < self.command_option_flags.len() {
+                    inner_vec.push(self.command_option_flags[idx].clone());
+                    result.push(inner_vec.clone());
+                    idx += 1;
+                }
             }
+            result.sort_by(|vec_a, vec_b| vec_a.len().cmp(&vec_b.len()));
+            result
         }
-        result.sort_by(|vec_a, vec_b| vec_a.len().cmp(&vec_b.len()));
-        result
     }
 }
 

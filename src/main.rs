@@ -32,6 +32,7 @@ use log4rs::encode::pattern::PatternEncoder;
 
 use log4rs::Config;
 use package::PackageCommand;
+use regex::Regex;
 pub mod batbelt;
 pub mod commands;
 pub mod config;
@@ -54,20 +55,30 @@ struct Cli {
 enum BatCommands {
     /// Creates a Bat project
     #[default]
-    Create,
-    /// Initializes the project from the Bat.toml config file
-    Init {
-        /// Skips the initial commit process
-        #[arg(short, long)]
-        skip_initial_commit: bool,
-    },
-    /// Refresh the project
+    New,
+    /// Reload the Bat project files (ideal to resume work from git clone)
     Reload,
     /// code-overhaul files management
     #[command(subcommand)]
-    CO(CodeOverhaulCommand),
+    CodeOverhaul(CodeOverhaulCommand),
     /// Execute the BatSonar to create metadata files for all Sonar result types
-    Sonar,
+    Sonar {
+        /// Skips the source code (functions, structs, enums and traits) process
+        #[arg(long)]
+        skip_source_code: bool,
+        /// Runs Sonar only for Context Accounts
+        #[arg(long)]
+        only_context_accounts: bool,
+        /// Runs Sonar only for entry points
+        #[arg(long)]
+        only_entry_points: bool,
+        /// Runs Sonar only for traits implemenetations and definitions data
+        #[arg(long)]
+        only_traits: bool,
+        /// Runs Sonar only for function dependencies
+        #[arg(long)]
+        only_function_dependencies: bool,
+    },
     // /// Execute specific BatSonar commands
     // #[command(subcommand)]
     // SonarSpecific(SonarSpecificCommand),
@@ -82,7 +93,7 @@ enum BatCommands {
     Miro(MiroCommand),
     /// Git actions to manage repository
     #[command(subcommand)]
-    Repo(RepositoryCommand),
+    Repository(RepositoryCommand),
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageCommand),
@@ -94,12 +105,9 @@ impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         self.validate_command()?;
         match self {
-            BatCommands::Create => commands::project_commands::create_bat_project(),
-            BatCommands::Init {
-                skip_initial_commit,
-            } => commands::project_commands::initialize_bat_project(*skip_initial_commit).await,
+            BatCommands::New => ProjectCommands::New.execute_command(),
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
-            BatCommands::CO(command) => command.execute_command().await,
+            BatCommands::CodeOverhaul(command) => command.execute_command().await,
             BatCommands::Finding(FindingCommand::Create) => {
                 commands::finding_commands::start_finding()
             }
@@ -112,12 +120,25 @@ impl BatCommands {
             BatCommands::Finding(FindingCommand::AcceptAll) => {
                 commands::finding_commands::accept_all()
             }
-            BatCommands::Sonar => SonarCommand::Run.execute_command(),
+            BatCommands::Sonar {
+                skip_source_code,
+                only_context_accounts,
+                only_entry_points,
+                only_traits,
+                only_function_dependencies,
+            } => SonarCommand::Run {
+                skip_source_code: *skip_source_code,
+                only_context_accounts: *only_context_accounts,
+                only_entry_points: *only_entry_points,
+                only_traits: *only_traits,
+                only_function_dependencies: *only_function_dependencies,
+            }
+            .execute_command(),
             // BatCommands::SonarSpecific(command) => command.execute_command(),
             BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tool(command) => command.execute_command(),
-            BatCommands::Repo(command) => command.execute_command(),
+            BatCommands::Repository(command) => command.execute_command(),
             // only for dev
             #[cfg(debug_assertions)]
             BatCommands::Package(PackageCommand::Format) => {
@@ -133,10 +154,7 @@ impl BatCommands {
 
     fn validate_command(&self) -> CommandResult<()> {
         let (check_metadata, check_branch) = match self {
-            BatCommands::Create => {
-                return Ok(());
-            }
-            BatCommands::Init { .. } => {
+            BatCommands::New => {
                 return Ok(());
             }
             BatCommands::Reload => {
@@ -145,19 +163,29 @@ impl BatCommands {
             BatCommands::Package(_) => {
                 return Ok(());
             }
-            BatCommands::Sonar => (
-                SonarCommand::Run.check_metadata_is_initialized(),
-                SonarCommand::Run.check_correct_branch(),
+            BatCommands::Sonar { .. } => (
+                SonarCommand::Run {
+                    skip_source_code: false,
+                    only_context_accounts: false,
+                    only_entry_points: false,
+                    only_traits: false,
+                    only_function_dependencies: false,
+                }
+                .check_metadata_is_initialized(),
+                SonarCommand::Run {
+                    skip_source_code: false,
+                    only_context_accounts: false,
+                    only_entry_points: false,
+                    only_traits: false,
+                    only_function_dependencies: false,
+                }
+                .check_correct_branch(),
             ),
-            // BatCommands::SonarSpecific(command) => (
-            //     command.check_metadata_is_initialized(),
-            //     command.check_correct_branch(),
-            // ),
             BatCommands::Tool(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
-            BatCommands::CO(command) => (
+            BatCommands::CodeOverhaul(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
@@ -169,7 +197,7 @@ impl BatCommands {
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
-            BatCommands::Repo(command) => (
+            BatCommands::Repository(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
@@ -193,25 +221,28 @@ impl BatCommands {
         BatCommands::get_type_vec()
             .into_iter()
             .filter_map(|command| match command {
-                BatCommands::CO(_) => Some(CodeOverhaulCommand::get_package_json_commands(
+                BatCommands::CodeOverhaul(_) => {
+                    Some(CodeOverhaulCommand::get_bat_package_json_commands(
+                        command.to_string().to_kebab_case(),
+                    ))
+                }
+                BatCommands::Finding(_) => Some(FindingCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Finding(_) => Some(FindingCommand::get_package_json_commands(
+                BatCommands::Tool(_) => Some(ToolCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Tool(_) => Some(ToolCommand::get_package_json_commands(
+                BatCommands::Miro(_) => Some(MiroCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Miro(_) => Some(MiroCommand::get_package_json_commands(
+                BatCommands::Repository(_) => {
+                    Some(RepositoryCommand::get_bat_package_json_commands(
+                        command.to_string().to_kebab_case(),
+                    ))
+                }
+                BatCommands::Sonar { .. } => Some(SonarCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Repo(_) => Some(RepositoryCommand::get_package_json_commands(
-                    command.to_string().to_kebab_case(),
-                )),
-                BatCommands::Sonar => Some(BatPackageJsonCommand {
-                    command_name: command.to_string().to_kebab_case(),
-                    command_options: vec![],
-                }),
                 BatCommands::Reload => Some(BatPackageJsonCommand {
                     command_name: command.to_string().to_kebab_case(),
                     command_options: vec![],
@@ -219,6 +250,20 @@ impl BatCommands {
                 _ => None,
             })
             .collect::<Vec<_>>()
+    }
+
+    pub fn get_pretty_command(&self) -> CommandResult<String> {
+        let multi_line_command_regex = Regex::new(r#"[\w]+(\([\w\s,]+\))+"#)
+            .into_report()
+            .change_context(CommandError)?;
+        let command_string = format!("{self:#?}");
+        if multi_line_command_regex.is_match(&command_string) {
+            let mut command_string_lines = command_string.lines();
+            let command_name = command_string_lines.next().unwrap().to_kebab_case();
+            let command_option = command_string_lines.next().unwrap().trim().to_kebab_case();
+            return Ok(format!("{} {}", command_name, command_option));
+        }
+        Ok(self.to_string().to_kebab_case())
     }
 }
 
@@ -266,7 +311,7 @@ async fn run() -> CommandResult<()> {
     Suggestion::set_report();
     // env_logger selectively
     match cli.command {
-        BatCommands::Package(..) | BatCommands::Create => {
+        BatCommands::Package(..) | BatCommands::New => {
             env_logger::init();
             Ok(())
         }
@@ -285,7 +330,7 @@ async fn main() -> CommandResult<()> {
             println!(
                 "{} {} script successfully executed!",
                 "bat-cli".green(),
-                cli.command.to_string().to_kebab_case().green()
+                cli.command.get_pretty_command()?.green()
             );
             Ok(())
         }
@@ -293,9 +338,8 @@ async fn main() -> CommandResult<()> {
             eprintln!(
                 "{} {} script finished with error",
                 "bat-cli".red(),
-                cli.command.to_string().to_kebab_case().red()
+                cli.command.get_pretty_command()?.red()
             );
-            log::error!("{:#?} error report:\n {:#?}", cli.command, error);
             Err(error)
         }
     }

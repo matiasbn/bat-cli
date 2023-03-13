@@ -31,7 +31,7 @@ impl SignerType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SignerInfo {
     pub signer_text: String,
     pub sticky_note_id: String,
@@ -55,7 +55,7 @@ impl SignerInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MiroCodeOverhaulMetadata {
     pub metadata_id: String,
     pub entry_point_name: String,

@@ -21,6 +21,7 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
 
+use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -123,6 +124,7 @@ impl BatSonarInteractive {
                 let mut structs_result = vec![];
                 let mut functions_result = vec![];
                 let mut traits_result = vec![];
+                let mut enums_result = vec![];
                 let program_dir_clone = program_dir_entries.clone();
                 let metadata_type = metadata_types_vec[i];
                 let metadata_type_color = metadata_types_colored[i].clone();
@@ -166,6 +168,16 @@ impl BatSonarInteractive {
                                 total += trait_res.len();
                                 traits_result.append(&mut trait_res);
                             }
+                            BatMetadataType::Enum => {
+                                let mut enum_res =
+                                    EnumSourceCodeMetadata::create_metadata_from_dir_entry(
+                                        entry.clone(),
+                                    )
+                                    .unwrap();
+
+                                total += enum_res.len();
+                                enums_result.append(&mut enum_res);
+                            }
                         };
                         pb.inc(1);
                         thread::sleep(Duration::from_millis(200));
@@ -188,6 +200,12 @@ impl BatSonarInteractive {
                         bat_metadata
                             .source_code
                             .update_traits(traits_result.clone())
+                            .unwrap();
+                    }
+                    if !enums_result.is_empty() {
+                        bat_metadata
+                            .source_code
+                            .update_enums(enums_result.clone())
                             .unwrap();
                     }
                 })

@@ -1,5 +1,6 @@
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::CodeEditor;
+use std::env;
 
 use crate::batbelt::path::{BatFile, BatFolder};
 
@@ -19,6 +20,7 @@ use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 
 use crate::batbelt;
+use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::config::BatAuditorConfig;
 use log::Level;
@@ -27,15 +29,15 @@ use log::Level;
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
 )]
 pub enum ToolCommand {
-    /// Opens a file from metadata to code editor. If code editor is None, then prints the path
+    /// Opens a file from source code metadata to code editor. If code editor is None, then prints the path
     #[default]
-    OpenMetadata,
+    OpenSourceCode,
     /// Customize the package.json according to certain log level
     CustomizePackageJson,
     /// Opens the co file and the instruction file of a started entrypoint
-    OpenCodeOverhaulFiles,
+    OpenCodeOverhaulFile,
     /// Search source code metadata by id and opens on code editor, if is source_code
-    OpenMetadataById,
+    GetMetadataById,
     /// Counts the to-review, started, finished and total co files
     CountCodeOverhaul,
 }
@@ -45,37 +47,37 @@ impl BatEnumerator for ToolCommand {}
 impl BatCommandEnumerator for ToolCommand {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
-            ToolCommand::OpenMetadata => self.execute_open_metadata(),
+            ToolCommand::OpenSourceCode => self.execute_open_source_code(),
             ToolCommand::CustomizePackageJson => self.execute_package_json(),
-            ToolCommand::OpenMetadataById => self.execute_get_metadata(),
-            ToolCommand::OpenCodeOverhaulFiles => self.execute_open_co(),
+            ToolCommand::GetMetadataById => self.execute_get_metadata_by_id(),
+            ToolCommand::OpenCodeOverhaulFile => self.execute_open_co(),
             ToolCommand::CountCodeOverhaul => self.execute_count_co_files(),
         }
     }
 
     fn check_metadata_is_initialized(&self) -> bool {
         match self {
-            ToolCommand::OpenMetadata => true,
+            ToolCommand::OpenSourceCode => true,
             ToolCommand::CustomizePackageJson => false,
-            ToolCommand::OpenMetadataById => true,
-            ToolCommand::OpenCodeOverhaulFiles => true,
+            ToolCommand::GetMetadataById => true,
+            ToolCommand::OpenCodeOverhaulFile => true,
             ToolCommand::CountCodeOverhaul => false,
         }
     }
 
     fn check_correct_branch(&self) -> bool {
         match self {
-            ToolCommand::OpenMetadata => false,
+            ToolCommand::OpenSourceCode => false,
             ToolCommand::CustomizePackageJson => false,
-            ToolCommand::OpenMetadataById => false,
-            ToolCommand::OpenCodeOverhaulFiles => false,
+            ToolCommand::GetMetadataById => false,
+            ToolCommand::OpenCodeOverhaulFile => false,
             ToolCommand::CountCodeOverhaul => false,
         }
     }
 }
 
 impl ToolCommand {
-    fn execute_open_metadata(&self) -> CommandResult<()> {
+    fn execute_open_source_code(&self) -> CommandResult<()> {
         let selected_bat_metadata_type =
             BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
         let (path, start_line_index) = match selected_bat_metadata_type {
@@ -101,6 +103,14 @@ impl ToolCommand {
                     start_line_index,
                     ..
                 } = TraitSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
+                (path, start_line_index)
+            }
+            BatMetadataType::Enum => {
+                let EnumSourceCodeMetadata {
+                    path,
+                    start_line_index,
+                    ..
+                } = EnumSourceCodeMetadata::prompt_selection().change_context(CommandError)?;
                 (path, start_line_index)
             }
         };
@@ -129,14 +139,10 @@ impl ToolCommand {
             None,
         )?;
         let level_selected = log_level_vec[selection];
-        PackageJsonTemplate::create_package_json(Some(level_selected))
-            .change_context(CommandError)?;
-        BatFile::PackageJson
-            .open_in_editor(false, None)
-            .change_context(CommandError)
+        PackageJsonTemplate::create_package_json(Some(level_selected)).change_context(CommandError)
     }
 
-    fn execute_get_metadata(&self) -> CommandResult<()> {
+    fn execute_get_metadata_by_id(&self) -> CommandResult<()> {
         let metadata_id = BatDialoguer::input("Metadata id:".to_string())?;
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         for function_metadata in bat_metadata.source_code.functions_source_code {
@@ -167,6 +173,17 @@ impl ToolCommand {
                 CodeEditor::open_file_in_editor(
                     &trait_metadata.path,
                     Some(trait_metadata.start_line_index),
+                )
+                .change_context(CommandError)?;
+                return Ok(());
+            }
+        }
+        for enum_metadata in bat_metadata.source_code.enums_source_code {
+            if enum_metadata.metadata_id == metadata_id {
+                println!("Metadata found:\n{:#?}", enum_metadata);
+                CodeEditor::open_file_in_editor(
+                    &enum_metadata.path,
+                    Some(enum_metadata.start_line_index),
                 )
                 .change_context(CommandError)?;
                 return Ok(());
@@ -266,26 +283,19 @@ impl ToolCommand {
                         .change_context(CommandError)?;
 
                 bat_file
-                    .open_in_editor(true, None)
+                    .open_in_editor(false, None)
                     .change_context(CommandError)?;
                 if ep_parser.handler.is_some() {
                     let handler_metadata = ep_parser.handler.unwrap();
-                    let _instruction_file_path = handler_metadata.path;
-                    let _start_line_index = handler_metadata.start_line_index;
-                    // BatAuditorConfig::get_config()
-                    //     .change_context(CommandError)?
-                    //     .code_editor::;
+                    let instruction_file_path = handler_metadata.path;
+                    let start_line_index = handler_metadata.start_line_index;
+                    CodeEditor::open_file_in_editor(&instruction_file_path, Some(start_line_index))
+                        .change_context(CommandError)?;
                 }
-                BatFile::ProgramLib
-                    .open_in_editor(true, Some(ep_parser.entry_point_function.start_line_index))
-                    .change_context(CommandError)?;
                 return Ok(());
             } else {
                 println!("Empty {} folder", options[selection].clone());
             }
-            BatFile::ProgramLib
-                .open_in_editor(true, None)
-                .change_context(CommandError)?;
         } else {
             print!("VSCode integration not enabled");
         }

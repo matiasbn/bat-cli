@@ -38,6 +38,7 @@ pub enum BatFile {
     GitIgnore,
     PackageJson,
     RobotFile,
+    CodeOverhaulSummaryFile,
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
     CodeOverhaulFinished { file_name: String },
@@ -82,6 +83,12 @@ impl BatFile {
             BatFile::ThreatModeling => {
                 format!(
                     "{}/threat_modeling.md",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
+            BatFile::CodeOverhaulSummaryFile => {
+                format!(
+                    "{}/code_overhaul_summary.md",
                     BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
@@ -242,14 +249,17 @@ impl BatFolder {
         let bat_config = BatConfig::get_config().change_context(BatPathError)?;
 
         let path = match self {
-            BatFolder::Notes => "./notes".to_string(),
-            BatFolder::ProjectFolderPath => format!("./{}", bat_config.project_name),
+            BatFolder::Notes => "notes".to_string(),
+            BatFolder::ProjectFolderPath => format!("{}", bat_config.project_name),
             BatFolder::AuditorNotes => {
                 let bat_auditor_config =
                     BatAuditorConfig::get_config().change_context(BatPathError)?;
 
-                let auditor_notes_folder_path =
-                    format!("./notes/{}-notes", bat_auditor_config.auditor_name);
+                let auditor_notes_folder_path = format!(
+                    "{}/{}-notes",
+                    Self::Notes.get_path(canonicalize)?,
+                    bat_auditor_config.auditor_name
+                );
                 auditor_notes_folder_path
             }
             BatFolder::AuditorFigures => {
@@ -399,6 +409,16 @@ impl BatFolder {
     pub fn folder_exists(&self) -> BatPathResult<bool> {
         Ok(Path::new(&self.get_path(false)?).is_dir())
     }
+}
+
+pub fn prettify_source_code_path(path: &str) -> BatPathResult<String> {
+    let bat_config = BatConfig::get_config().change_context(BatPathError)?;
+    let splitter = format!("{}/src/", bat_config.program_name);
+    let path = path.split(&splitter).last().unwrap();
+    let path_to_include = format!("{}{}", splitter, path)
+        .trim_start_matches('/')
+        .to_string();
+    Ok(path_to_include)
 }
 
 pub fn get_file_path(file_type: BatFile, canonicalize: bool) -> Result<String, BatPathError> {

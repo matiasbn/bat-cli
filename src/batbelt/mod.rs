@@ -17,9 +17,11 @@ pub mod sonar;
 pub mod templates;
 
 pub type ShareableDataType<T> = Rc<RefCell<T>>;
+
+#[derive(Clone)]
 pub struct ShareableData<T>
 where
-    T: Sized,
+    T: Sized + Clone,
 {
     pub original: ShareableDataType<T>,
     pub cloned: ShareableDataType<T>,
@@ -27,7 +29,7 @@ where
 
 impl<T> ShareableData<T>
 where
-    T: Sized,
+    T: Sized + Clone,
 {
     pub fn new(data_to_share: T) -> Self {
         let original = Rc::new(RefCell::new(data_to_share));
@@ -59,6 +61,14 @@ where
 
     fn from_index(index: usize) -> Self {
         Self::get_type_vec()[index].clone()
+    }
+
+    fn get_index_of_type_vec(&self) -> usize {
+        let type_vec = Self::get_type_vec();
+        type_vec
+            .into_iter()
+            .position(|self_type| self_type.to_string() == self.to_string())
+            .unwrap()
     }
 
     fn get_type_vec() -> Vec<Self> {

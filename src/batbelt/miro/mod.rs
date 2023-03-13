@@ -328,8 +328,8 @@ pub mod helpers {
     //         );
     //         Ok((
     //             context_account_lines
-    //                 .replace("\n- ```rust", "")
-    //                 .replace("\n  ```", ""),
+    //                 .replace("\n```rust", "")
+    //                 .replace("\n```", ""),
     //             snapshot_image_path,
     //             snapshot_markdown_path,
     //             None,

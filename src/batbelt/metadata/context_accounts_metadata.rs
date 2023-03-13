@@ -1,5 +1,7 @@
-use crate::batbelt::metadata::{BatMetadata, MetadataId, MetadataResult};
+use crate::batbelt::metadata::{BatMetadata, MetadataError, MetadataId, MetadataResult};
 use crate::batbelt::parser::context_accounts_parser::CAAccountParser;
+use colored::Colorize;
+use error_stack::{IntoReport, ResultExt};
 
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +26,26 @@ impl ContextAccountsMetadata {
             struct_source_code_metadata_id,
             context_accounts_info,
         }
+    }
+
+    pub fn find_context_accounts_metadata_by_struct_metadata_id(
+        struct_source_code_metadata_id: MetadataId,
+    ) -> MetadataResult<ContextAccountsMetadata> {
+        let bat_metadata = BatMetadata::read_metadata()?;
+        let context_accounts_metadata = bat_metadata
+            .context_accounts
+            .clone()
+            .into_iter()
+            .find(|ca_metadata| {
+                ca_metadata.struct_source_code_metadata_id == struct_source_code_metadata_id
+            })
+            .ok_or(MetadataError)
+            .into_report()
+            .attach_printable(format!(
+                "Context accounts metadata not found for struct metadata id: {}",
+                struct_source_code_metadata_id.green()
+            ))?;
+        Ok(context_accounts_metadata)
     }
 
     pub fn update_metadata_file(&self) -> MetadataResult<()> {

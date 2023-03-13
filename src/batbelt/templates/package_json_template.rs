@@ -13,34 +13,6 @@ use crate::BatCommands;
 pub struct PackageJsonTemplate;
 
 impl PackageJsonTemplate {
-    pub fn create_package_with_init_script() -> Result<(), TemplateError> {
-        let (script_key, script_value) = if cfg!(debug_assertions) {
-            ("init", "cargo run init")
-        } else {
-            ("init", "bat-cli init")
-        };
-        let package_json = json!({
-        "name": "bat_project",
-        "version": "1.0.0",
-        "description": "Bat project",
-        "main": "index.js",
-        "scripts":{
-              script_key: script_value
-            },
-        "author": "",
-        "license": "ISC"
-        });
-
-        let content = serde_json::to_string_pretty(&package_json)
-            .into_report()
-            .change_context(TemplateError)?;
-
-        BatFile::PackageJson
-            .write_content(false, &content)
-            .change_context(TemplateError)?;
-        Ok(())
-    }
-
     pub fn create_package_json(log_level: Option<Level>) -> Result<(), TemplateError> {
         BatFile::PackageJson
             .write_content(false, &Self::get_package_json_content(log_level)?)
@@ -112,19 +84,26 @@ impl PackageJsonTemplate {
                     command_option_name,
                     command_option_flags,
                 } = command_option;
-
-                let script_key = format!(
-                    "{}{}::{}",
-                    script_key_prefix, command_name, command_option_name
-                );
-                let script_value = format!(
-                    "{} {} {}",
-                    script_value_prefix, command_name, command_option_name
-                );
-                scripts_map.insert(script_key, script_value.into());
+                if command_name == "sonar" {
+                    let script_key = format!("{}{}", script_key_prefix, command_name);
+                    let script_value = format!("{} {}", script_value_prefix, command_name);
+                    scripts_map.insert(script_key.clone(), script_value.clone().into());
+                } else {
+                    let script_key = format!(
+                        "{}{}::{}",
+                        script_key_prefix, command_name, command_option_name
+                    );
+                    let script_value = format!(
+                        "{} {} {}",
+                        script_value_prefix, command_name, command_option_name
+                    );
+                    scripts_map.insert(script_key.clone(), script_value.clone().into());
+                };
 
                 if !command_option_flags.is_empty() {
-                    let combinations_vec = command_option_clone.clone().get_combinations_vec();
+                    let combinations_vec = command_option_clone
+                        .clone()
+                        .get_combinations_vec(&command_name);
                     for combination in combinations_vec {
                         let key_string = combination
                             .clone()
@@ -138,15 +117,28 @@ impl PackageJsonTemplate {
                             .fold("".to_string(), |result, current| {
                                 format!("{} --{}", result, current)
                             });
-                        let script_key = format!(
-                            "{}{}::{}{}",
-                            script_key_prefix, command_name, command_option_name, key_string
-                        );
-                        let script_value = format!(
-                            "{} {} {} {}",
-                            script_value_prefix, command_name, command_option_name, value_string
-                        );
-                        scripts_map.insert(script_key, script_value.into());
+                        if command_name == "sonar" {
+                            let script_key =
+                                format!("{}{}{}", script_key_prefix, command_name, key_string);
+                            let script_value = format!(
+                                "{} {} {}",
+                                script_value_prefix, command_name, value_string
+                            );
+                            scripts_map.insert(script_key.clone(), script_value.clone().into());
+                        } else {
+                            let script_key = format!(
+                                "{}{}::{}{}",
+                                script_key_prefix, command_name, command_option_name, key_string
+                            );
+                            let script_value = format!(
+                                "{} {} {} {}",
+                                script_value_prefix,
+                                command_name,
+                                command_option_name,
+                                value_string
+                            );
+                            scripts_map.insert(script_key, script_value.into());
+                        }
                     }
                 }
             }
