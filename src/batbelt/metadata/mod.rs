@@ -10,8 +10,8 @@ pub mod traits_source_code_metadata;
 
 use colored::Colorize;
 use std::error::Error;
-use std::fmt;
 use std::fmt::{Debug, Display};
+use std::{env, fmt};
 
 use crate::batbelt::path::BatFile;
 
@@ -42,9 +42,11 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::{
     EnumMetadataType, EnumSourceCodeMetadata,
 };
+use crate::config::{BatAuditorConfig, BatConfig};
 use serde_json::{json, Value};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
@@ -68,6 +70,7 @@ pub type MetadataId = String;
 pub enum BatMetadataCommit {
     RunSonarMetadataCommit,
     MiroMetadataCommit,
+    UpdateMetadataVersion,
 }
 
 impl BatMetadataCommit {
@@ -77,12 +80,18 @@ impl BatMetadataCommit {
                 "metadata: bat-cli sonar executed".to_string()
             }
             BatMetadataCommit::MiroMetadataCommit => "metadata: miro metadata updated".to_string(),
+            BatMetadataCommit::UpdateMetadataVersion => {
+                "metadata: BatMetadata.json updated to last version".to_string()
+            }
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BatMetadata {
+    // #[serde(default = "project_name_default")]
+    #[serde(default)]
+    pub project_name: String,
     pub initialized: bool,
     pub source_code: SourceCodeMetadata,
     pub entry_points: Vec<EntrypointMetadata>,
@@ -92,23 +101,23 @@ pub struct BatMetadata {
     pub miro: MiroMetadata,
 }
 
+// fn project_name_default() -> String {
+//     let bat_config = BatConfig::get_config().unwrap();
+//     bat_config.project_name
+// }
+
 impl BatMetadata {
     pub fn new_empty() -> Self {
+        let bat_config = BatConfig::get_config().unwrap();
         Self {
+            project_name: bat_config.project_name,
             initialized: false,
-            source_code: SourceCodeMetadata {
-                functions_source_code: vec![],
-                structs_source_code: vec![],
-                traits_source_code: vec![],
-                enums_source_code: vec![],
-            },
+            source_code: Default::default(),
             entry_points: vec![],
             function_dependencies: vec![],
             traits: vec![],
             context_accounts: vec![],
-            miro: MiroMetadata {
-                code_overhaul: vec![],
-            },
+            miro: Default::default(),
         }
     }
 
@@ -121,8 +130,86 @@ impl BatMetadata {
         s
     }
 
+    // set = Some -> writes bool env
+    // set = None -> reads env
+    pub fn parse_external_metadata_env(set_value: Option<bool>) -> MetadataResult<bool> {
+        let env_variable_name = "USE_EXTERNAL_METADATA";
+        match set_value {
+            // read
+            None => {
+                let env_var = env::var(env_variable_name);
+                Ok(env_var.is_ok() && env_var.unwrap() == "true".to_string())
+            }
+            // write
+            Some(new_value) => {
+                let bat_auditor_config =
+                    BatAuditorConfig::get_config().change_context(MetadataError)?;
+                if new_value == true && bat_auditor_config.external_bat_metadata.is_empty() {
+                    return Err(Report::new(MetadataError).attach_printable(
+                        "external_bat_metadata vector is empty on BatAuditor.toml",
+                    ))
+                    .attach(Suggestion(format!(
+                        "run {} to add external BatMetadata.json files",
+                        "bat-cli reload".bright_green()
+                    )));
+                }
+                env::set_var(env_variable_name, if new_value { "true" } else { "false" });
+                Ok(new_value == true)
+            }
+        }
+    }
+
     pub fn read_metadata() -> MetadataResult<Self> {
+        if Self::parse_external_metadata_env(None)? {
+            return Self::read_external_metadata();
+        }
         let metadata_json_bat_file = BatFile::BatMetadataFile;
+        let bat_metadata_value: Value = serde_json::from_str(
+            &metadata_json_bat_file
+                .read_content(true)
+                .change_context(MetadataError)?,
+        )
+        .into_report()
+        .change_context(MetadataError)?;
+        let mut bat_metadata: BatMetadata = serde_json::from_value(bat_metadata_value)
+            .into_report()
+            .change_context(MetadataError)?;
+        if bat_metadata.project_name.is_empty() {
+            bat_metadata.project_name = BatConfig::get_config()
+                .change_context(MetadataError)?
+                .project_name;
+            bat_metadata.save_metadata()?;
+            GitCommit::UpdateMetadataJson {
+                bat_metadata_commit: BatMetadataCommit::UpdateMetadataVersion,
+            }
+            .create_commit()
+            .change_context(MetadataError)?;
+        }
+        Ok(bat_metadata)
+    }
+
+    pub fn read_external_metadata() -> MetadataResult<Self> {
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(MetadataError)?;
+        if bat_auditor_config.external_bat_metadata.is_empty() {
+            return Err(Report::new(MetadataError)
+                .attach_printable("external_bat_metadata vector is empty on BatAuditor.toml"))
+            .attach(Suggestion(format!(
+                "run {} to add external BatMetadata.json files",
+                "bat-cli reload".bright_green()
+            )));
+        }
+        let prompt_text = format!("Select the {} file to use:", "BatMetadata.json".green());
+        let selection = BatDialoguer::select(
+            prompt_text,
+            bat_auditor_config.external_bat_metadata.clone(),
+            None,
+        )
+        .change_context(MetadataError)?;
+        let external_bat_metadata_selected =
+            bat_auditor_config.external_bat_metadata[selection].clone();
+        let metadata_json_bat_file = BatFile::Generic {
+            file_path: external_bat_metadata_selected.clone(),
+        };
         let bat_metadata_value: Value = serde_json::from_str(
             &metadata_json_bat_file
                 .read_content(true)
@@ -132,15 +219,31 @@ impl BatMetadata {
         .change_context(MetadataError)?;
         let bat_metadata: BatMetadata = serde_json::from_value(bat_metadata_value)
             .into_report()
+            .attach_printable(format!(
+                "{} file at path {} is incompatible with this bat-cli version",
+                "BatMetadata.json".bright_green(),
+                external_bat_metadata_selected.clone()
+            ))
+            .attach(Suggestion(format!(
+                "run {} at {} to update the BatMetadata.json version",
+                "bat-cli sonar".bright_green(),
+                external_bat_metadata_selected.clone().bright_yellow()
+            )))
             .change_context(MetadataError)?;
         Ok(bat_metadata)
     }
 
     pub fn save_metadata(&self) -> MetadataResult<()> {
+        let bat_config = BatConfig::get_config().change_context(MetadataError)?;
+        if self.project_name != bat_config.project_name {
+            return Err(Report::new(MetadataError).attach_printable(format!(
+                "Error saving {}, expected project_name {:#?}, got {:#?}",
+                "BatMetadata.json".bright_green(),
+                bat_config.project_name,
+                self.project_name
+            )));
+        }
         let metadata_json_bat_file = BatFile::BatMetadataFile;
-        // metadata_json_bat_file
-        //     .create_empty(false)
-        //     .change_context(MetadataError)?;
         let metadata_json = json!(&self);
         let metadata_json_pretty = serde_json::to_string_pretty(&metadata_json)
             .into_report()
@@ -346,7 +449,7 @@ impl MetadataErrorReports {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct MiroMetadata {
     pub code_overhaul: Vec<MiroCodeOverhaulMetadata>,
 }
@@ -382,7 +485,7 @@ impl MiroMetadata {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct SourceCodeMetadata {
     pub functions_source_code: Vec<FunctionSourceCodeMetadata>,
     pub structs_source_code: Vec<StructSourceCodeMetadata>,

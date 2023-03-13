@@ -67,12 +67,18 @@ pub enum MiroCommand {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
+        /// use external BetMetadata.json files
+        #[arg(long)]
+        use_external: bool,
     },
     /// Creates screenshot for a function and it dependencies
     FunctionDependencies {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
+        /// use external BetMetadata.json files
+        #[arg(long)]
+        use_external: bool,
     },
 }
 
@@ -107,10 +113,20 @@ impl MiroCommand {
                 self.entrypoint_screenshots(*select_all_entry_points, *sorted)
                     .await
             }
-            MiroCommand::SourceCodeScreenshots { select_all } => {
+            MiroCommand::SourceCodeScreenshots {
+                select_all,
+                use_external,
+            } => {
+                BatMetadata::parse_external_metadata_env(Some(*use_external))
+                    .change_context(CommandError)?;
                 self.source_code_screenshots(*select_all).await
             }
-            MiroCommand::FunctionDependencies { select_all } => {
+            MiroCommand::FunctionDependencies {
+                select_all,
+                use_external,
+            } => {
+                BatMetadata::parse_external_metadata_env(Some(*use_external))
+                    .change_context(CommandError)?;
                 self.function_dependencies(*select_all).await
             }
         }

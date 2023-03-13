@@ -11,7 +11,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::batbelt::BatEnumerator;
-use crate::config::BatConfig;
+use crate::config::{BatAuditorConfig, BatConfig};
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 
@@ -34,8 +34,8 @@ pub type TemplateResult<T> = Result<T, TemplateError>;
 pub struct TemplateGenerator;
 
 impl TemplateGenerator {
-    pub fn create_project() -> Result<(), TemplateError> {
-        Self::create_project_folder()?;
+    pub fn create_new_project_folders(&self) -> Result<(), TemplateError> {
+        self.create_project_folder()?;
         let project_path = BatFolder::ProjectFolderPath
             .get_path(true)
             .change_context(TemplateError)?;
@@ -52,19 +52,19 @@ impl TemplateGenerator {
         env::set_current_dir(&project_path)
             .into_report()
             .change_context(TemplateError)?;
-        Self::create_init_notes_folder()?;
+        self.create_init_notes_folder()?;
         BatFile::GitIgnore
-            .write_content(false, &Self::get_git_ignore_content())
+            .write_content(false, &self.get_git_ignore_content())
             .change_context(TemplateError)?;
-        Self::create_readme()?;
-        Self::create_metadata_json()?;
-        PackageJsonTemplate::create_package_with_init_script()?;
+        self.create_readme()?;
+        self.create_metadata_json()?;
         BatFile::Batlog
             .create_empty(false)
             .change_context(TemplateError)?;
         Ok(())
     }
-    pub fn get_git_ignore_content() -> String {
+
+    pub fn get_git_ignore_content(&self) -> String {
         ".idea\n\
         package.json\n\
         BatAuditor.toml\n\
@@ -73,7 +73,7 @@ impl TemplateGenerator {
             .to_string()
     }
 
-    pub fn create_metadata_json() -> TemplateResult<()> {
+    pub fn create_metadata_json(&self) -> TemplateResult<()> {
         let metadata_json_bat_file = BatFile::BatMetadataFile;
         let new_bat_metadata = BatMetadata::new_empty();
         metadata_json_bat_file
@@ -85,7 +85,7 @@ impl TemplateGenerator {
         Ok(())
     }
 
-    fn create_project_folder() -> Result<(), TemplateError> {
+    fn create_project_folder(&self) -> Result<(), TemplateError> {
         let bat_config = BatConfig::get_config().change_context(TemplateError)?;
         fs::create_dir(format!("./{}", bat_config.project_name))
             .into_report()
@@ -93,14 +93,14 @@ impl TemplateGenerator {
         Ok(())
     }
 
-    fn create_init_notes_folder() -> Result<(), TemplateError> {
+    fn create_init_notes_folder(&self) -> Result<(), TemplateError> {
         fs::create_dir("./notes")
             .into_report()
             .change_context(TemplateError)?;
         Ok(())
     }
 
-    fn create_readme() -> Result<(), TemplateError> {
+    fn create_readme(&self) -> Result<(), TemplateError> {
         let bat_config = BatConfig::get_config().change_context(TemplateError)?;
         let content = format!(
             r#"# Project Name
@@ -136,28 +136,28 @@ impl TemplateGenerator {
         Ok(())
     }
 
-    pub fn create_auditor_folders() -> Result<(), TemplateError> {
+    pub fn create_folders_for_current_auditor(&self) -> Result<(), TemplateError> {
         let auditor_notes_path = BatFolder::AuditorNotes
             .get_path(false)
             .change_context(TemplateError)?;
-        Self::create_dir(&auditor_notes_path, false)?;
+        self.create_dir(&auditor_notes_path, false)?;
         // Code overhaul
-        Self::create_code_overhaul_folders()?;
+        self.create_code_overhaul_folders()?;
 
         // Figures
-        let auditor_figues = BatFolder::AuditorFigures
+        let auditor_figures = BatFolder::AuditorFigures
             .get_path(false)
             .change_context(TemplateError)?;
-        Self::create_dir(&auditor_figues, true)?;
+        self.create_dir(&auditor_figures, true)?;
 
         // findings
-        Self::create_findings_folders()?;
+        self.create_findings_folders()?;
 
         NoteTemplate::create_notes_templates()?;
         Ok(())
     }
 
-    fn create_code_overhaul_folders() -> Result<(), TemplateError> {
+    fn create_code_overhaul_folders(&self) -> Result<(), TemplateError> {
         let finished_co_path = BatFolder::CodeOverhaulFinished
             .get_path(false)
             .change_context(TemplateError)?;
@@ -167,13 +167,13 @@ impl TemplateGenerator {
         let to_review_co_path = BatFolder::CodeOverhaulToReview
             .get_path(false)
             .change_context(TemplateError)?;
-        Self::create_dir(&finished_co_path, true)?;
-        Self::create_dir(&started_co_path, true)?;
-        Self::create_dir(&to_review_co_path, false)?;
+        self.create_dir(&finished_co_path, true)?;
+        self.create_dir(&started_co_path, true)?;
+        self.create_dir(&to_review_co_path, false)?;
         Ok(())
     }
 
-    fn create_findings_folders() -> Result<(), TemplateError> {
+    fn create_findings_folders(&self) -> Result<(), TemplateError> {
         let accepted_path = BatFolder::FindingsAccepted
             .get_path(false)
             .change_context(TemplateError)?;
@@ -183,9 +183,9 @@ impl TemplateGenerator {
         let to_review_path = BatFolder::FindingsToReview
             .get_path(false)
             .change_context(TemplateError)?;
-        Self::create_dir(&accepted_path, true)?;
-        Self::create_dir(&rejected_path, true)?;
-        Self::create_dir(&to_review_path, true)?;
+        self.create_dir(&accepted_path, true)?;
+        self.create_dir(&rejected_path, true)?;
+        self.create_dir(&to_review_path, true)?;
         Ok(())
     }
 
@@ -195,7 +195,7 @@ impl TemplateGenerator {
         Ok(())
     }
 
-    fn create_dir(path: &str, create_git_keep: bool) -> Result<(), TemplateError> {
+    fn create_dir(&self, path: &str, create_git_keep: bool) -> Result<(), TemplateError> {
         fs::create_dir_all(path)
             .into_report()
             .change_context(TemplateError)?;
@@ -205,7 +205,7 @@ impl TemplateGenerator {
         Ok(())
     }
 
-    pub fn create_robot_file() -> Result<(), TemplateError> {
+    pub fn create_robot_file(&self) -> Result<(), TemplateError> {
         let robot_file_path = BatFile::RobotFile
             .get_path(false)
             .change_context(TemplateError)?;
@@ -227,14 +227,14 @@ impl TemplateGenerator {
         bat_readme
             .write_content(true, &updated_content)
             .change_context(TemplateError)?;
-        let robot_content = Self::robot_file_content(&ending_date)?;
+        let robot_content = self.robot_file_content(&ending_date)?;
         fs::write(robot_file_path, robot_content)
             .into_report()
             .change_context(TemplateError)?;
         Ok(())
     }
 
-    fn robot_file_content(ending_date: &str) -> Result<String, TemplateError> {
+    fn robot_file_content(&self, ending_date: &str) -> Result<String, TemplateError> {
         let bat_config = BatConfig::get_config().change_context(TemplateError)?;
         let content = format!(
             r#"# EXECUTIVE SUMMARY

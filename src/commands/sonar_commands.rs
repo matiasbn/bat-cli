@@ -73,7 +73,9 @@ impl SonarCommand {
             .file_exists()
             .change_context(CommandError)?
         {
-            TemplateGenerator::create_metadata_json().change_context(CommandError)?;
+            TemplateGenerator
+                .create_metadata_json()
+                .change_context(CommandError)?;
         }
         let metadata_bkp_bat_file = BatFile::Generic {
             file_path: "BatMetadata_backup.json".to_string(),
@@ -107,7 +109,9 @@ impl SonarCommand {
         // if not skip source code, it should be run completely
         if !skip_source_code {
             // create new file
-            TemplateGenerator::create_metadata_json().change_context(CommandError)?;
+            TemplateGenerator
+                .create_metadata_json()
+                .change_context(CommandError)?;
 
             // reload miro backup
             let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
