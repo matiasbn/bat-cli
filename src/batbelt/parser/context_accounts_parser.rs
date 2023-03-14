@@ -100,7 +100,7 @@ impl CAAccountParser {
             .trim_end_matches(',')
             .to_string();
 
-        let account_name = context_account_content
+        let account_name = last_line
             .trim()
             .trim_start_matches("pub ")
             .split(":")
