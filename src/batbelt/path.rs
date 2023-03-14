@@ -38,6 +38,7 @@ pub enum BatFile {
     GitIgnore,
     PackageJson,
     RobotFile,
+    ProgramAccountsMetadataFile,
     CodeOverhaulSummaryFile,
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
@@ -83,6 +84,12 @@ impl BatFile {
             BatFile::ThreatModeling => {
                 format!(
                     "{}/threat_modeling.md",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
+            BatFile::ProgramAccountsMetadataFile => {
+                format!(
+                    "{}/program_accounts_metadata.json",
                     BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
@@ -418,14 +425,6 @@ pub fn prettify_source_code_path(path: &str) -> BatPathResult<String> {
     let prefix = prefix_with_program.trim_end_matches(program_name);
     let pretty_path = path.trim_start_matches(prefix);
     Ok(pretty_path.to_string())
-}
-
-pub fn get_file_path(file_type: BatFile, canonicalize: bool) -> Result<String, BatPathError> {
-    file_type.get_path(canonicalize)
-}
-
-pub fn get_folder_path(folder_type: BatFolder, canonicalize: bool) -> Result<String, BatPathError> {
-    folder_type.get_path(canonicalize)
 }
 
 pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, BatPathError> {

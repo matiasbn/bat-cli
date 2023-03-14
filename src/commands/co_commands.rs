@@ -17,6 +17,7 @@ use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use regex::Regex;
 
 use crate::batbelt::metadata::miro_metadata::{SignerInfo, SignerType};
+use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser, MiroMetadata};
 use crate::batbelt::miro::connector::ConnectorOptions;
 use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
@@ -39,6 +40,8 @@ pub enum CodeOverhaulCommand {
     Finish,
     /// creates a code-overhaul summary from the code-overhaul finished notes
     Summary,
+    /// creates program accounts metadata
+    CreateProgramAccountsMetadata,
 }
 
 impl BatEnumerator for CodeOverhaulCommand {}
@@ -63,7 +66,17 @@ impl CodeOverhaulCommand {
             CodeOverhaulCommand::Start => self.execute_start().await,
             CodeOverhaulCommand::Finish => self.execute_finish(),
             CodeOverhaulCommand::Summary => self.execute_summary(),
+            CodeOverhaulCommand::CreateProgramAccountsMetadata => {
+                self.execute_program_accounts_metadata()
+            }
         }
+    }
+
+    fn execute_program_accounts_metadata(&self) -> CommandResult<()> {
+        ProgramAccountMetadata::create_program_accounts_metadata_file()
+            .change_context(CommandError)?;
+        println!("Programs account metadata created");
+        Ok(())
     }
 
     fn execute_summary(&self) -> CommandResult<()> {

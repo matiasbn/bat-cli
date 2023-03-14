@@ -86,7 +86,7 @@ impl CAAccountParser {
     }
 
     pub fn get_context_account_regex() -> ParserResult<Regex> {
-        Regex::new(r#"([ ]+#\[account\([\s\w,()?.= @:><!&{};\*]+\)\][\s]*)?[ ]+pub [\w]+: [\w]+(<[\w ,']+>)"#).into_report().change_context(ParserError)
+        Regex::new(r#"([ ]+#\[account\([\s\w,()?.= @:><!&{};\*\[\]]+\)\][\s]*)?[ ]+pub [\w]+: [\w]+(<[\w ,']+>)"#).into_report().change_context(ParserError)
     }
 
     pub fn get_account_type_info(

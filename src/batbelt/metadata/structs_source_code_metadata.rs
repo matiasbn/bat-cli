@@ -137,7 +137,8 @@ impl StructSourceCodeMetadata {
         {
             return Ok(true);
         }
-        let lib_file_path = batbelt::path::get_file_path(BatFile::ProgramLib, false)
+        let lib_file_path = BatFile::ProgramLib
+            .get_path(false)
             .change_context(MetadataError)?;
         let entrypoints = BatSonar::new_from_path(
             &lib_file_path,

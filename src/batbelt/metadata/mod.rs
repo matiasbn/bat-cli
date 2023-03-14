@@ -4,6 +4,7 @@ pub mod enums_source_code_metadata;
 pub mod function_dependencies_metadata;
 pub mod functions_source_code_metadata;
 pub mod miro_metadata;
+pub mod program_accounts_metadata;
 pub mod structs_source_code_metadata;
 pub mod trait_metadata;
 pub mod traits_source_code_metadata;
@@ -46,6 +47,7 @@ use crate::batbelt::git::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::{
     EnumMetadataType, EnumSourceCodeMetadata,
 };
+use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
 use crate::config::{BatAuditorConfig, BatConfig};
 use serde_json::{json, Value};
 use strum::IntoEnumIterator;
@@ -65,95 +67,6 @@ impl Error for MetadataError {}
 pub type MetadataResult<T> = Result<T, MetadataError>;
 
 pub type MetadataId = String;
-
-#[derive(
-    Debug,
-    PartialEq,
-    Clone,
-    Copy,
-    strum_macros::Display,
-    strum_macros::EnumIter,
-    Serialize,
-    Deserialize,
-)]
-pub enum BatMetadataEnvVariables {
-    UseExternalMetadata,
-    BatMetadataFileSelected,
-}
-
-impl BatEnumerator for BatMetadataEnvVariables {}
-
-impl BatMetadataEnvVariables {
-    pub fn set_use_external_metadata_to_true() -> MetadataResult<()> {
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(MetadataError)?;
-        if bat_auditor_config.external_bat_metadata.is_empty() {
-            return Err(Report::new(MetadataError)
-                .attach_printable("external_bat_metadata vector is empty on BatAuditor.toml"))
-            .attach(Suggestion(format!(
-                "run {} to add external BatMetadata.json files",
-                "bat-cli reload".bright_green()
-            )));
-        }
-        let use_external = Self::UseExternalMetadata;
-        let new_value = "true";
-        use_external.set_value(new_value);
-        Ok(())
-    }
-
-    pub fn set_use_external_metadata_to_false() {
-        let use_external = Self::UseExternalMetadata;
-        let new_value = "false";
-        use_external.set_value(new_value);
-    }
-
-    pub fn assert_use_external_metadata() -> bool {
-        let use_external = Self::UseExternalMetadata;
-        match use_external.read_value() {
-            Ok(value) => value == "true".to_string(),
-            Err(_) => false,
-        }
-    }
-
-    pub fn get_variable_key(&self) -> String {
-        self.to_string().to_screaming_snake_case()
-    }
-
-    pub fn set_value(&self, new_value: &str) {
-        let key = self.get_variable_key();
-        env::set_var(key, new_value);
-    }
-
-    pub fn read_value(&self) -> MetadataResult<String> {
-        let key = self.get_variable_key();
-        env::var(key).into_report().change_context(MetadataError)
-    }
-
-    pub fn clean_value(&self) {
-        let key = self.get_variable_key();
-        env::remove_var(key)
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub enum BatMetadataCommit {
-    RunSonarMetadataCommit,
-    MiroMetadataCommit,
-    UpdateMetadataVersion,
-}
-
-impl BatMetadataCommit {
-    pub fn get_commit_message(&self) -> String {
-        match self {
-            BatMetadataCommit::RunSonarMetadataCommit => {
-                "metadata: bat-cli sonar executed".to_string()
-            }
-            BatMetadataCommit::MiroMetadataCommit => "metadata: miro metadata updated".to_string(),
-            BatMetadataCommit::UpdateMetadataVersion => {
-                "metadata: BatMetadata.json updated to last version".to_string()
-            }
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BatMetadata {
@@ -390,6 +303,95 @@ impl BatMetadata {
             return Err(MetadataErrorReports::MetadataNotInitialized.get_error_report());
         }
         Ok(())
+    }
+}
+
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Copy,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    Serialize,
+    Deserialize,
+)]
+pub enum BatMetadataEnvVariables {
+    UseExternalMetadata,
+    BatMetadataFileSelected,
+}
+
+impl BatEnumerator for BatMetadataEnvVariables {}
+
+impl BatMetadataEnvVariables {
+    pub fn set_use_external_metadata_to_true() -> MetadataResult<()> {
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(MetadataError)?;
+        if bat_auditor_config.external_bat_metadata.is_empty() {
+            return Err(Report::new(MetadataError)
+                .attach_printable("external_bat_metadata vector is empty on BatAuditor.toml"))
+            .attach(Suggestion(format!(
+                "run {} to add external BatMetadata.json files",
+                "bat-cli reload".bright_green()
+            )));
+        }
+        let use_external = Self::UseExternalMetadata;
+        let new_value = "true";
+        use_external.set_value(new_value);
+        Ok(())
+    }
+
+    pub fn set_use_external_metadata_to_false() {
+        let use_external = Self::UseExternalMetadata;
+        let new_value = "false";
+        use_external.set_value(new_value);
+    }
+
+    pub fn assert_use_external_metadata() -> bool {
+        let use_external = Self::UseExternalMetadata;
+        match use_external.read_value() {
+            Ok(value) => value == "true".to_string(),
+            Err(_) => false,
+        }
+    }
+
+    pub fn get_variable_key(&self) -> String {
+        self.to_string().to_screaming_snake_case()
+    }
+
+    pub fn set_value(&self, new_value: &str) {
+        let key = self.get_variable_key();
+        env::set_var(key, new_value);
+    }
+
+    pub fn read_value(&self) -> MetadataResult<String> {
+        let key = self.get_variable_key();
+        env::var(key).into_report().change_context(MetadataError)
+    }
+
+    pub fn clean_value(&self) {
+        let key = self.get_variable_key();
+        env::remove_var(key)
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub enum BatMetadataCommit {
+    RunSonarMetadataCommit,
+    MiroMetadataCommit,
+    UpdateMetadataVersion,
+}
+
+impl BatMetadataCommit {
+    pub fn get_commit_message(&self) -> String {
+        match self {
+            BatMetadataCommit::RunSonarMetadataCommit => {
+                "metadata: bat-cli sonar executed".to_string()
+            }
+            BatMetadataCommit::MiroMetadataCommit => "metadata: miro metadata updated".to_string(),
+            BatMetadataCommit::UpdateMetadataVersion => {
+                "metadata: BatMetadata.json updated to last version".to_string()
+            }
+        }
     }
 }
 

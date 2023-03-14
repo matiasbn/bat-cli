@@ -80,16 +80,6 @@ impl BatSonar {
         new_sonar.scan_content_to_get_results();
         new_sonar
     }
-    pub fn get_entrypoints_results() -> Result<Self, BatSonarError> {
-        let lib_file_path = batbelt::path::get_file_path(BatFile::ProgramLib, false)
-            .change_context(BatSonarError)?;
-        let entrypoints = BatSonar::new_from_path(
-            &lib_file_path,
-            Some("#[program]"),
-            SonarResultType::Function,
-        );
-        Ok(entrypoints)
-    }
 
     pub fn scan_content_to_get_results(&mut self) {
         let content_lines = self.content.lines();
