@@ -16,9 +16,9 @@ use crate::batbelt::path::BatFile;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProgramAccountMetadata {
     pub program_account_name: String,
-    pub init_data: Vec<InitProgramAccountMetadata>,
-    pub mut_data: Vec<MutProgramAccountMetadata>,
-    pub close_entry_points: Vec<String>,
+    pub init_account: Vec<InitProgramAccountMetadata>,
+    pub mut_account: Vec<MutProgramAccountMetadata>,
+    pub close_account_entry_points: Vec<String>,
 }
 
 impl ProgramAccountMetadata {
@@ -35,9 +35,9 @@ impl ProgramAccountMetadata {
         for program_account_name in sc_names.clone() {
             let mut program_account_metadata = Self {
                 program_account_name,
-                init_data: vec![],
-                mut_data: vec![],
-                close_entry_points: vec![],
+                init_account: vec![],
+                mut_account: vec![],
+                close_account_entry_points: vec![],
             };
             program_account_metadata.parse_init_data()?;
             program_account_metadata.parse_mut_data()?;
@@ -49,9 +49,9 @@ impl ProgramAccountMetadata {
 
         for program_account_metadata in program_account_metadata_vec {
             let json_value = json!({
-                "init_data": program_account_metadata.init_data,
-                "mut_data": program_account_metadata.mut_data,
-                "close_entry_points": program_account_metadata.close_entry_points,
+                "init_account": program_account_metadata.init_account,
+                "mut_account": program_account_metadata.mut_account,
+                "close_account_entry_points": program_account_metadata.close_account_entry_points,
             });
             program_accounts_map.insert(program_account_metadata.program_account_name, json_value);
         }
@@ -106,7 +106,7 @@ impl ProgramAccountMetadata {
             ProgramAccountField::get_init_vec_from_program_account_name(
                 self.program_account_name.clone(),
             )?;
-        self.mut_data = entry_point_names
+        self.mut_account = entry_point_names
             .into_iter()
             .map(|ep_name| MutProgramAccountMetadata {
                 entry_point_name: ep_name.clone(),
@@ -152,7 +152,7 @@ impl ProgramAccountMetadata {
             ProgramAccountField::get_init_vec_from_program_account_name(
                 self.program_account_name.clone(),
             )?;
-        self.init_data = entry_point_names
+        self.init_account = entry_point_names
             .into_iter()
             .map(|ep_name| InitProgramAccountMetadata {
                 entry_point_name: ep_name.clone(),
@@ -183,7 +183,7 @@ impl ProgramAccountMetadata {
                 }
             })
             .collect::<Vec<_>>();
-        self.close_entry_points = bat_metadata
+        self.close_account_entry_points = bat_metadata
             .entry_points
             .into_iter()
             .filter_map(|ep_metadata| {
