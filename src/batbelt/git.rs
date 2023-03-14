@@ -301,6 +301,7 @@ pub enum GitCommit {
     },
     UpdateBatToml,
     ProgramAccountMetadataCreated,
+    ProgramAccountMetadataUpdated,
 }
 
 impl GitCommit {
@@ -453,6 +454,11 @@ impl GitCommit {
                     .get_path(true)
                     .change_context(GitError)?]
             }
+            GitCommit::ProgramAccountMetadataUpdated => {
+                vec![BatFile::ProgramAccountsMetadataFile
+                    .get_path(true)
+                    .change_context(GitError)?]
+            }
             GitCommit::UpdateBatToml => {
                 vec![BatFile::BatToml.get_path(true).change_context(GitError)?]
             }
@@ -511,6 +517,9 @@ impl GitCommit {
             GitCommit::UpdateBatToml => "repo: Bat.toml updated to last version".to_string(),
             GitCommit::ProgramAccountMetadataCreated => {
                 "metadata: program_account_metadata created".to_string()
+            }
+            GitCommit::ProgramAccountMetadataUpdated => {
+                "metadata: program_account_metadata updated".to_string()
             }
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit,

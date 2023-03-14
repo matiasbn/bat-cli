@@ -37,6 +37,8 @@ pub enum RepositoryCommand {
     UpdateCodeOverhaulFile,
     /// Creates a commit for the code_overhaul_summary.md file
     UpdateCodeOverhaulSummary,
+    /// Creates a commit for the code_overhaul_summary.md file
+    UpdateProgramAccountsMetadata,
 }
 
 impl BatEnumerator for RepositoryCommand {}
@@ -58,6 +60,11 @@ impl BatCommandEnumerator for RepositoryCommand {
             RepositoryCommand::UpdateNotes => GitCommit::Notes
                 .create_commit()
                 .change_context(CommandError),
+            RepositoryCommand::UpdateProgramAccountsMetadata => {
+                GitCommit::ProgramAccountMetadataUpdated
+                    .create_commit()
+                    .change_context(CommandError)
+            }
             RepositoryCommand::UpdateCodeOverhaulFile => self.execute_update_co_file(),
             RepositoryCommand::UpdateCodeOverhaulSummary => self.update_code_overhaul_summary(),
         }
