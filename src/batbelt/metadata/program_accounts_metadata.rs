@@ -80,7 +80,9 @@ impl ProgramAccountMetadata {
                     .clone()
                     .into_iter()
                     .any(|ca_info| {
-                        ca_info.account_struct_name == self.program_account_name && ca_info.is_mut
+                        ca_info.account_struct_name == self.program_account_name
+                            && ca_info.is_mut
+                            && !ca_info.is_close
                     })
                 {
                     Some(ca_metadata.struct_source_code_metadata_id)
