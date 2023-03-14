@@ -26,8 +26,10 @@ pub enum SolanaAccountType {
 }
 
 impl SolanaAccountType {
-    pub fn from_sonar_result(sonar_result: SonarResult) -> Result<Self, ParserError> {
-        let last_line = sonar_result.content.lines();
+    pub fn from_context_account_content(
+        context_account_content: &str,
+    ) -> Result<Self, ParserError> {
+        let last_line = context_account_content.lines();
         let last_line = last_line.last().unwrap();
 
         if last_line.contains("Signer<") {

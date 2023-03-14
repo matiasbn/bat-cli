@@ -364,12 +364,13 @@ impl BatSonarInteractive {
                         pb.inc(1);
                         let ca_content =
                             ca_sc.to_source_code_parser(None).get_source_code_content();
-                        let bat_sonar =
-                            BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccountsAll);
-                        let ca_info = bat_sonar
-                            .results
-                            .into_iter()
-                            .map(|result| CAAccountParser::new_from_sonar_result(result).unwrap())
+                        let context_account_regex =
+                            CAAccountParser::get_context_account_regex().unwrap();
+                        let ca_info = context_account_regex
+                            .find_iter(&ca_content)
+                            .map(|result| {
+                                CAAccountParser::new_from_sonar_result(result.as_str()).unwrap()
+                            })
                             .collect::<Vec<_>>();
                         let context_accounts_metadata = ContextAccountsMetadata::new(
                             ca_sc.name.clone(),
