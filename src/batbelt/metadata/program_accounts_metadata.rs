@@ -227,9 +227,9 @@ pub struct MutProgramAccountMetadata {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProgramAccountField {
-    pub key: String,
-    pub value: Option<String>,
-    pub value_type: String,
+    pub account_key: String,
+    pub account_value: Option<String>,
+    pub account_type: String,
 }
 
 impl ProgramAccountField {
@@ -251,9 +251,9 @@ impl ProgramAccountField {
                 let key = field_split.next().unwrap().to_string();
                 let value_type = field_split.next().unwrap().to_string();
                 ProgramAccountField {
-                    key,
-                    value_type,
-                    value: None,
+                    account_key: key,
+                    account_type: value_type,
+                    account_value: None,
                 }
             })
             .collect::<Vec<Self>>();
