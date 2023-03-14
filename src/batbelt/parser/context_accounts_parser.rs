@@ -243,7 +243,7 @@ impl CAAccountParser {
     fn get_validations(sonar_result_content: &str) -> ParserResult<Vec<String>> {
         // let validation_regex = Regex::new(r"constraint = [\sA-Za-z0-9()?._= @:><!&{}*]+[,\n]?")
         let validation_regex =
-            Regex::new(r"(constraint|has_one|address) = [\w()?.= @:><!&{}\*]+\n?")
+            Regex::new(r"(constraint|has_one|address) = [\w()?.= @:><!&{}\*\s;|]+\n?")
                 .into_report()
                 .change_context(ParserError)?;
         if validation_regex.is_match(sonar_result_content) {
