@@ -1,5 +1,7 @@
+use crate::batbelt::git::GitCommit;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
+use lazy_regex::regex;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -59,6 +61,9 @@ impl ProgramAccountMetadata {
             .change_context(MetadataError)?;
         BatFile::ProgramAccountsMetadataFile
             .write_content(false, &json_pretty)
+            .change_context(MetadataError)?;
+        GitCommit::ProgramAccountMetadataCreated
+            .create_commit()
             .change_context(MetadataError)?;
         Ok(())
     }
@@ -238,9 +243,7 @@ impl ProgramAccountField {
         let sc_content = struct_metadata
             .to_source_code_parser(None)
             .get_source_code_content();
-        let field_regex = Regex::new(r#"pub \w+: [\w<>\[\];\s]+"#)
-            .into_report()
-            .change_context(MetadataError)?;
+        let field_regex = regex!(r#"pub \w+: [\w<>\[\];\s]+"#);
         let field_vec = field_regex
             .find_iter(&sc_content)
             .map(|field_match| {
