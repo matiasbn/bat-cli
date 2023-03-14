@@ -65,6 +65,7 @@ impl BatSonarInteractive {
             SonarResultType::Function => BatMetadataType::Function.get_colored_name(true),
             SonarResultType::Struct => BatMetadataType::Struct.get_colored_name(true),
             SonarResultType::Trait => BatMetadataType::Trait.get_colored_name(true),
+            SonarResultType::Enum => BatMetadataType::Enum.get_colored_name(true),
             _ => sonar_result_type.to_string().bright_cyan(),
         };
         pb.enable_steady_tick(Duration::from_millis(100));
