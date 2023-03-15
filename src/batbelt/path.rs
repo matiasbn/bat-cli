@@ -428,7 +428,7 @@ pub fn prettify_source_code_path(path: &str) -> BatPathResult<String> {
 }
 
 pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, BatPathError> {
-    let error_message = format!("Error canonicalizing path: {}", path_to_canonicalize);
+    let error_message = format!("Error canonicalization path: {}", path_to_canonicalize);
     let canonicalized_path = Path::new(&(path_to_canonicalize))
         .canonicalize()
         .into_report()

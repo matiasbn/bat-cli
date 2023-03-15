@@ -2,7 +2,7 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::CodeEditor;
 use std::env;
 
-use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::path::{prettify_source_code_path, BatFile, BatFolder};
 
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
@@ -24,6 +24,7 @@ use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::config::BatAuditorConfig;
 use log::Level;
+use tabled::{Style, Table, Tabled};
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -40,6 +41,8 @@ pub enum ToolCommand {
     GetMetadataById,
     /// Counts the to-review, started, finished and total co files
     CountCodeOverhaul,
+    /// Shows a list of entry points along with the file path
+    ListEntryPointsPath,
 }
 
 impl BatEnumerator for ToolCommand {}
@@ -52,6 +55,7 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::GetMetadataById => self.execute_get_metadata_by_id(),
             ToolCommand::OpenCodeOverhaulFile => self.execute_open_co(),
             ToolCommand::CountCodeOverhaul => self.execute_count_co_files(),
+            ToolCommand::ListEntryPointsPath => self.execute_list_entry_points(),
         }
     }
 
@@ -62,6 +66,7 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::GetMetadataById => true,
             ToolCommand::OpenCodeOverhaulFile => true,
             ToolCommand::CountCodeOverhaul => false,
+            ToolCommand::ListEntryPointsPath => true,
         }
     }
 
@@ -72,11 +77,55 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::GetMetadataById => false,
             ToolCommand::OpenCodeOverhaulFile => false,
             ToolCommand::CountCodeOverhaul => false,
+            ToolCommand::ListEntryPointsPath => false,
         }
     }
 }
 
 impl ToolCommand {
+    fn execute_list_entry_points(&self) -> CommandResult<()> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        let entry_points_metadata = bat_metadata.entry_points;
+        let ep_parser_vec = entry_points_metadata
+            .into_iter()
+            .map(|ep_meta| EntrypointParser::new_from_name(&ep_meta.name))
+            .collect::<Result<Vec<_>, _>>()
+            .change_context(CommandError)?;
+        println!(
+            "Printing {}, with {}:\n",
+            "entry points".bright_green(),
+            "handler path".bright_yellow()
+        );
+
+        #[derive(Tabled)]
+        struct Path {
+            #[tabled(rename = "Entry point name")]
+            entry_point_name: String,
+            #[tabled(rename = "Handler path")]
+            handler_path: String,
+        }
+
+        let mut path_vec: Vec<Path> = vec![];
+
+        for ep_parser in ep_parser_vec {
+            let handler = ep_parser.handler.unwrap();
+            path_vec.push(Path {
+                entry_point_name: ep_parser.name,
+                handler_path: format!(
+                    "{}:{}",
+                    prettify_source_code_path(&handler.path).change_context(CommandError)?,
+                    handler.start_line_index
+                ),
+            });
+        }
+
+        let mut table = Table::new(path_vec);
+        table.with(Style::sharp());
+
+        println!("{}", table.to_string());
+        Ok(())
+    }
+
     fn execute_open_source_code(&self) -> CommandResult<()> {
         let selected_bat_metadata_type =
             BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;

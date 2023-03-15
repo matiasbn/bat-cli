@@ -39,6 +39,7 @@ regex = "1.7.1"
 log4rs = "1.2.0"
 assert_fs = "1.0.10"
 lazy-regex = "2.5.0"
+tabled = "0.10.0"
 
 [profile.dev]
 overflow-checks = true
