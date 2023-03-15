@@ -43,6 +43,7 @@ pub enum BatFile {
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
     CodeOverhaulFinished { file_name: String },
+    CodeOverhaulDeprecated { file_name: String },
     FindingToReview { file_name: String },
     FindingAccepted { file_name: String },
     FindingRejected { file_name: String },
@@ -118,6 +119,13 @@ impl BatFile {
                 format!(
                     "{}/{entrypoint_name}.md",
                     BatFolder::CodeOverhaulFinished.get_path(canonicalize)?
+                )
+            }
+            BatFile::CodeOverhaulDeprecated { file_name } => {
+                let entrypoint_name = file_name.trim_end_matches(".md");
+                format!(
+                    "{}/{entrypoint_name}.md",
+                    BatFolder::CodeOverhaulDeprecated.get_path(canonicalize)?
                 )
             }
             BatFile::FindingToReview { file_name } => {
@@ -244,6 +252,7 @@ pub enum BatFolder {
     CodeOverhaulToReview,
     CodeOverhaulStarted,
     CodeOverhaulFinished,
+    CodeOverhaulDeprecated,
     AuditorNotes,
     AuditorFigures,
     Notes,
@@ -315,6 +324,12 @@ impl BatFolder {
             BatFolder::CodeOverhaulStarted => {
                 format!(
                     "{}/started",
+                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                )
+            }
+            BatFolder::CodeOverhaulDeprecated => {
+                format!(
+                    "{}/deprecated",
                     BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
                 )
             }
@@ -415,6 +430,12 @@ impl BatFolder {
 
     pub fn folder_exists(&self) -> BatPathResult<bool> {
         Ok(Path::new(&self.get_path(false)?).is_dir())
+    }
+
+    pub fn create_folder(&self) -> BatPathResult<()> {
+        fs::create_dir_all(&self.get_path(false)?)
+            .into_report()
+            .change_context(BatPathError)
     }
 }
 

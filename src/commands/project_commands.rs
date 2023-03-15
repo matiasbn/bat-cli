@@ -63,7 +63,7 @@ impl ProjectCommands {
             let mut bat_auditor_config =
                 BatAuditorConfig::get_config().change_context(CommandError)?;
             bat_auditor_config
-                .prompt_external_bat_metadata()
+                .get_external_bat_metadata()
                 .change_context(CommandError)?;
             bat_auditor_config.save().change_context(CommandError)?;
         }
@@ -167,6 +167,8 @@ impl ProjectCommands {
 
 mod project_commands_functions {
     use super::*;
+    use lazy_regex::regex;
+    use walkdir::DirEntry;
 
     pub fn init_auditor_configuration(auditor_name: String) -> CommandResult<()> {
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
@@ -204,23 +206,93 @@ mod project_commands_functions {
     }
 
     pub fn update_co_to_review() -> CommandResult<()> {
-        println!("Updating to-review files in code-overhaul folder");
-        let to_review_file_names = BatFolder::CodeOverhaulToReview
+        println!("Updating code overhaul files");
+        // deprecate old entry points
+        let co_bat_folder = BatFolder::CodeOverhaulFolderPath;
+        let co_dir_file_name = co_bat_folder
             .get_all_bat_files(false, None, None)
             .change_context(CommandError)?;
-        // if the auditor to-review code overhaul folder exists
-        for bat_file in to_review_file_names {
-            bat_file.remove_file().change_context(CommandError)?;
-            let co_template = CodeOverhaulTemplate::new(
-                &bat_file.get_file_name().change_context(CommandError)?,
-                false,
-            )
+        // get new entry points
+        let entry_points_names = EntrypointParser::get_entrypoint_names_from_program_lib(true)
             .change_context(CommandError)?;
-            let co_markdown_content = co_template
-                .get_markdown_content()
-                .change_context(CommandError)?;
-            bat_file
-                .write_content(false, &co_markdown_content)
+        // get new entry points
+
+        let (old_ep, deprecated_ep): (Vec<BatFile>, Vec<BatFile>) =
+            co_dir_file_name.clone().into_iter().partition(|bat_file| {
+                entry_points_names.contains(
+                    &bat_file
+                        .get_file_name()
+                        .unwrap()
+                        .trim_end_matches(".md")
+                        .to_string(),
+                )
+            });
+
+        let (_, new_ep): (Vec<String>, Vec<String>) =
+            entry_points_names.clone().into_iter().partition(|ep_name| {
+                co_dir_file_name.clone().into_iter().any(|bat_file| {
+                    bat_file.get_file_name().unwrap().trim_end_matches(".md") == ep_name
+                })
+            });
+
+        let mut updated_eps = vec![];
+        // create new ep files
+        for ep_name in new_ep {
+            println!(
+                "Creating code overhaul file for new entry point: {}.md",
+                ep_name
+            );
+            let bat_file = BatFile::CodeOverhaulToReview { file_name: ep_name };
+            bat_file.create_empty(false).change_context(CommandError)?;
+            updated_eps.push(bat_file.get_path(false).change_context(CommandError)?);
+        }
+
+        let deprecated_regex = regex!(r#"/code-overhaul/deprecated/"#);
+
+        let filtered_dep = deprecated_ep
+            .into_iter()
+            .filter(|dep_bat_file| {
+                !deprecated_regex.is_match(&dep_bat_file.get_path(false).unwrap())
+            })
+            .collect::<Vec<_>>();
+
+        // move deprecated to dep folder
+        if !filtered_dep.is_empty() {
+            let deprecated_co_bat_folder = BatFolder::CodeOverhaulDeprecated;
+            if !deprecated_co_bat_folder
+                .folder_exists()
+                .change_context(CommandError)?
+            {
+                deprecated_co_bat_folder
+                    .create_folder()
+                    .change_context(CommandError)?;
+            }
+
+            for ep_file in filtered_dep {
+                println!(
+                    "Moving code overhaul file to deprecated folder: {}",
+                    ep_file.get_path(false).unwrap()
+                );
+                let file_content = ep_file.read_content(false).change_context(CommandError)?;
+                let file_name = ep_file.get_file_name().change_context(CommandError)?;
+                let deprecated_file = BatFile::CodeOverhaulDeprecated { file_name };
+                deprecated_file
+                    .write_content(false, &file_content)
+                    .change_context(CommandError)?;
+                ep_file.remove_file().change_context(CommandError)?;
+
+                updated_eps.push(
+                    deprecated_file
+                        .get_path(false)
+                        .change_context(CommandError)?,
+                );
+                updated_eps.push(ep_file.get_path(false).change_context(CommandError)?);
+            }
+        }
+
+        if !updated_eps.is_empty() {
+            GitCommit::CodeOverhaulUpdated { updated_eps }
+                .create_commit()
                 .change_context(CommandError)?;
         }
         Ok(())
@@ -239,7 +311,8 @@ mod project_commands_functions {
     }
 
     pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {
-        let entrypoints_names = EntrypointParser::get_entrypoint_names(false).unwrap();
+        let entrypoints_names =
+            EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
 
         for entrypoint_name in entrypoints_names {
             create_overhaul_file(entrypoint_name.clone())?;
@@ -259,16 +332,11 @@ mod project_commands_functions {
                 "code overhaul file already exists for: {entrypoint_name:?}"
             )));
         }
-        let co_template =
-            CodeOverhaulTemplate::new(&entrypoint_name, false).change_context(CommandError)?;
-        let co_markdown_content = co_template
-            .get_markdown_content()
-            .change_context(CommandError)?;
 
         BatFile::CodeOverhaulToReview {
             file_name: entrypoint_name.clone(),
         }
-        .write_content(false, &co_markdown_content)
+        .write_content(false, "")
         .change_context(CommandError)?;
 
         println!(

@@ -167,9 +167,13 @@ impl TemplateGenerator {
         let to_review_co_path = BatFolder::CodeOverhaulToReview
             .get_path(false)
             .change_context(TemplateError)?;
+        let deprecated_co_path = BatFolder::CodeOverhaulDeprecated
+            .get_path(false)
+            .change_context(TemplateError)?;
         self.create_dir(&finished_co_path, true)?;
         self.create_dir(&started_co_path, true)?;
         self.create_dir(&to_review_co_path, false)?;
+        self.create_dir(&deprecated_co_path, false)?;
         Ok(())
     }
 

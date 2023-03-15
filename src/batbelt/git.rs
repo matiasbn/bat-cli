@@ -302,6 +302,9 @@ pub enum GitCommit {
     UpdateBatToml,
     ProgramAccountMetadataCreated,
     ProgramAccountMetadataUpdated,
+    CodeOverhaulUpdated {
+        updated_eps: Vec<String>,
+    },
 }
 
 impl GitCommit {
@@ -429,12 +432,7 @@ impl GitCommit {
                 ]
             }
             GitCommit::BatReload => {
-                vec![
-                    BatFolder::CodeOverhaulToReview
-                        .get_path(true)
-                        .change_context(GitError)?,
-                    BatFile::GitIgnore.get_path(true).change_context(GitError)?,
-                ]
+                vec![BatFile::GitIgnore.get_path(true).change_context(GitError)?]
             }
             GitCommit::Notes => {
                 vec![
@@ -467,6 +465,9 @@ impl GitCommit {
                     .get_path(false)
                     .change_context(GitError)?]
             }
+            GitCommit::CodeOverhaulUpdated {
+                updated_eps: file_path_vec,
+            } => file_path_vec.clone(),
         };
         Ok(commit_files)
     }
@@ -514,13 +515,14 @@ impl GitCommit {
                 "notes: open_questions, finding_candidates and threat_modeling notes updated"
                     .to_string()
             }
-            GitCommit::UpdateBatToml => "repo: Bat.toml updated to last version".to_string(),
+            GitCommit::UpdateBatToml => "repo: .gitignore updated".to_string(),
             GitCommit::ProgramAccountMetadataCreated => {
                 "metadata: program_account_metadata created".to_string()
             }
             GitCommit::ProgramAccountMetadataUpdated => {
                 "metadata: program_account_metadata updated".to_string()
             }
+            GitCommit::CodeOverhaulUpdated { .. } => "co: entry points updated".to_string(),
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit,
             } => bat_metadata_commit.get_commit_message(),

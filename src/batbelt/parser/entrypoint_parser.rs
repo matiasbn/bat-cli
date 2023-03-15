@@ -149,7 +149,7 @@ impl EntrypointParser {
         })
     }
 
-    pub fn get_entrypoint_names(sorted: bool) -> Result<Vec<String>, ParserError> {
+    pub fn get_entrypoint_names_from_program_lib(sorted: bool) -> Result<Vec<String>, ParserError> {
         let BatConfig {
             program_lib_path, ..
         } = BatConfig::get_config().change_context(ParserError)?;
@@ -171,7 +171,7 @@ impl EntrypointParser {
     }
 
     pub fn get_all_contexts_names() -> Vec<String> {
-        let entrypoints_names = Self::get_entrypoint_names(false).unwrap();
+        let entrypoints_names = Self::get_entrypoint_names_from_program_lib(false).unwrap();
 
         entrypoints_names
             .into_iter()

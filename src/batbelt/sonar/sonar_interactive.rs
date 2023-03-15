@@ -227,7 +227,7 @@ impl BatSonarInteractive {
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
         let entrypoint_names =
-            EntrypointParser::get_entrypoint_names(false).change_context(BatSonarError)?;
+            EntrypointParser::get_entrypoint_names_from_program_lib(false).change_context(BatSonarError)?;
         println!(
             "Getting metadata for {}, analyzing {} entry points",
             "Entry points".green(),

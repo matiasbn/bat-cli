@@ -152,7 +152,7 @@ impl MiroCommand {
                 .change_context(CommandError)?;
         // get entrypoints name
         let entrypoints_names =
-            EntrypointParser::get_entrypoint_names(sorted).change_context(CommandError)?;
+            EntrypointParser::get_entrypoint_names_from_program_lib(sorted).change_context(CommandError)?;
 
         // prompt the user to select an entrypoint
         let prompt_text = "Select the entry points to deploy";
@@ -669,7 +669,7 @@ impl MiroCommand {
         println!("Deploying code-overhaul frames to the Miro board");
 
         let entry_point_names =
-            EntrypointParser::get_entrypoint_names(false).change_context(CommandError)?;
+            EntrypointParser::get_entrypoint_names_from_program_lib(false).change_context(CommandError)?;
 
         for (entrypoint_index, entrypoint_name) in entry_point_names.iter().enumerate() {
             match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())

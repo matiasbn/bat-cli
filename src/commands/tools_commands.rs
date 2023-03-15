@@ -96,7 +96,7 @@ impl ToolCommand {
             .get_all_files_dir_entries(true, None, None)
             .change_context(CommandError)?;
 
-        #[derive(Tabled)]
+        #[derive(Tabled, Clone)]
         struct Path {
             #[tabled(rename = "Code overhaul file")]
             co_file_name: String,
@@ -123,7 +123,8 @@ impl ToolCommand {
                     "to-review" => status.bright_red(),
                     "started" => status.bright_yellow(),
                     "finished" => status.bright_green(),
-                    _ => status.bright_blue(),
+                    "deprecated" => status.bright_blue(),
+                    _ => status.bright_magenta(),
                 };
                 Path {
                     co_file_name,
@@ -133,38 +134,48 @@ impl ToolCommand {
             })
             .collect::<Vec<_>>();
 
-        let to_review_bat_folder = BatFolder::CodeOverhaulToReview;
-        let started_bat_folder = BatFolder::CodeOverhaulStarted;
-        let finished_bat_folder = BatFolder::CodeOverhaulFinished;
+        let to_review_regex = regex!(r#"code-overhaul/to-review"#);
+        let started_regex = regex!(r#"code-overhaul/started"#);
+        let finished_regex = regex!(r#"code-overhaul/finished"#);
+        let deprecated_regex = regex!(r#"code-overhaul/deprecated"#);
 
-        let to_review_dir_entries = to_review_bat_folder
-            .get_all_files_dir_entries(false, None, None)
-            .change_context(CommandError)?;
-        let started_dir_entries = started_bat_folder
-            .get_all_files_dir_entries(false, None, None)
-            .change_context(CommandError)?;
-        let finished_dir_entries = finished_bat_folder
-            .get_all_files_dir_entries(false, None, None)
-            .change_context(CommandError)?;
-
-        let to_review_count = to_review_dir_entries.len();
-        let started_count = started_dir_entries.len();
-        let finished_count = finished_dir_entries.len();
+        let to_review_count = path_vec
+            .clone()
+            .into_iter()
+            .filter(|path| to_review_regex.is_match(&path.co_path))
+            .count();
+        let started_count = path_vec
+            .clone()
+            .into_iter()
+            .filter(|path| started_regex.is_match(&path.co_path))
+            .count();
+        let finished_count = path_vec
+            .clone()
+            .into_iter()
+            .filter(|path| finished_regex.is_match(&path.co_path))
+            .count();
+        let deprecated_count = path_vec
+            .clone()
+            .into_iter()
+            .filter(|path| deprecated_regex.is_match(&path.co_path))
+            .count();
 
         let mut table = Table::new(path_vec);
         table.with(Style::re_structured_text());
         println!("{}", table.to_string());
 
         println!(
-            "{}: {}, {}: {}, {}: {}, {}: {}",
+            "{}: {}, {}: {}, {}: {}, {}: {}; {}: {}",
             "To review".bright_red(),
             to_review_count,
             "Started".bright_yellow(),
             started_count,
             "Finished".bright_green(),
             finished_count,
-            "Total".bright_white(),
-            to_review_count + started_count + finished_count
+            "Deprecated".bright_blue(),
+            deprecated_count,
+            "Total (to review + started + finished)".bright_white(),
+            to_review_count + started_count + finished_count,
         );
 
         Ok(())
