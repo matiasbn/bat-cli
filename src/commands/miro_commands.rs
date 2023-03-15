@@ -747,7 +747,7 @@ impl MiroCommand {
         GitCommit::UpdateMetadataJson {
             bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
         }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
         Ok(())
     }
@@ -1016,7 +1016,7 @@ impl MiroCommand {
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
             }
-            .create_commit()
+            .create_commit(true)
             .change_context(CommandError)?;
 
             println!("Connecting signers to entrypoint");

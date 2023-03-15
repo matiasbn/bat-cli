@@ -59,11 +59,11 @@ impl BatCommandEnumerator for RepositoryCommand {
                 self.delete_local_branches(*select_all)
             }
             RepositoryCommand::CommitNotes => GitCommit::Notes
-                .create_commit()
+                .create_commit(true)
                 .change_context(CommandError),
             RepositoryCommand::CommitProgramAccountsMetadata => {
                 GitCommit::ProgramAccountMetadataUpdated
-                    .create_commit()
+                    .create_commit(true)
                     .change_context(CommandError)
             }
             RepositoryCommand::CommitCodeOverhaulFile => self.execute_update_co_file(),
@@ -86,7 +86,7 @@ impl BatCommandEnumerator for RepositoryCommand {
 impl RepositoryCommand {
     fn update_code_overhaul_summary(&self) -> CommandResult<()> {
         GitCommit::UpdateCOSummary
-            .create_commit()
+            .create_commit(true)
             .change_context(CommandError)?;
         println!("Commit created for code_overhaul_summary.md file");
         Ok(())
@@ -275,7 +275,7 @@ impl RepositoryCommand {
         GitCommit::UpdateCO {
             entrypoint_name: finished_file_name,
         }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
         Ok(())
     }

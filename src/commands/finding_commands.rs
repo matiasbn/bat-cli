@@ -81,7 +81,7 @@ pub fn reject() -> Result<(), CommandError> {
     GitCommit::RejectFinding {
         finding_name: rejected_file_name.clone(),
     }
-    .create_commit()
+    .create_commit(true)
     .change_context(CommandError)?;
 
     println!("{rejected_file_name} file moved to rejected");
@@ -108,7 +108,7 @@ pub fn accept_all() -> Result<(), CommandError> {
         )?;
     }
     GitCommit::AcceptFindings
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
     println!(
         "All findings has been moved to the {} folder",
@@ -127,7 +127,7 @@ pub fn start_finding() -> Result<(), CommandError> {
     GitCommit::StartFinding {
         finding_name: finding_name.clone(),
     }
-    .create_commit()
+    .create_commit(true)
     .change_context(CommandError)?;
 
     BatFile::FindingToReview {
@@ -153,7 +153,7 @@ pub fn finish_finding() -> Result<(), CommandError> {
     GitCommit::FinishFinding {
         finding_name: finding_name.to_string(),
     }
-    .create_commit()
+    .create_commit(true)
     .change_context(CommandError)?;
     Ok(())
 }
@@ -169,7 +169,7 @@ pub fn update_finding() -> Result<(), CommandError> {
 
     let finding_name = to_review_files[selection].clone();
     GitCommit::UpdateFinding { finding_name }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
     Ok(())
 }

@@ -134,7 +134,7 @@ impl BatMetadata {
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit: BatMetadataCommit::UpdateMetadataVersion,
             }
-            .create_commit()
+            .create_commit(true)
             .change_context(MetadataError)?;
         }
         Ok(bat_metadata)

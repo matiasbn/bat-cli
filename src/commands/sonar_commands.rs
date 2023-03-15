@@ -181,7 +181,7 @@ impl SonarCommand {
         GitCommit::UpdateMetadataJson {
             bat_metadata_commit: BatMetadataCommit::RunSonarMetadataCommit,
         }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
 
         Ok(())

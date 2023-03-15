@@ -45,7 +45,7 @@ pub enum GitCommit {
 }
 
 impl GitCommit {
-    pub fn create_commit(&self) -> GitResult<()> {
+    pub fn create_commit(&self, try_ammend: bool) -> GitResult<()> {
         let commit_message = self.get_commit_message()?;
         let commit_files = self.get_commit_files()?;
         for commit_file in commit_files {

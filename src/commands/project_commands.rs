@@ -87,7 +87,7 @@ impl ProjectCommands {
             project_commands_functions::update_git_ignore()?;
 
             GitCommit::BatReload
-                .create_commit()
+                .create_commit(true)
                 .change_context(CommandError)?;
         }
 
@@ -201,7 +201,7 @@ mod project_commands_functions {
             .change_context(CommandError)?;
         initialize_code_overhaul_files()?;
         GitCommit::InitAuditor
-            .create_commit()
+            .create_commit(true)
             .change_context(CommandError)?;
         Ok(())
     }
@@ -294,7 +294,7 @@ mod project_commands_functions {
 
         if !updated_eps.is_empty() {
             GitCommit::CodeOverhaulUpdated { updated_eps }
-                .create_commit()
+                .create_commit(true)
                 .change_context(CommandError)?;
         }
         Ok(())
@@ -366,7 +366,7 @@ mod project_commands_functions {
             .execute_action()
             .change_context(CommandError)?;
         GitCommit::Init
-            .create_commit()
+            .create_commit(true)
             .change_context(CommandError)?;
 
         println!("Creating develop branch");

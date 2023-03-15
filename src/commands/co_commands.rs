@@ -211,7 +211,7 @@ impl CodeOverhaulCommand {
         GitCommit::FinishCO {
             entrypoint_name: finished_endpoint.clone(),
         }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
 
         println!("{} moved to finished", finished_endpoint.green());
@@ -263,7 +263,7 @@ impl CodeOverhaulCommand {
         GitCommit::StartCO {
             entrypoint_name: to_start_file_name.clone(),
         }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
 
         started_bat_file

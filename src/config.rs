@@ -419,7 +419,7 @@ impl BatConfig {
             bat_config.save()?;
 
             GitCommit::UpdateBatToml
-                .create_commit()
+                .create_commit(true)
                 .change_context(BatConfigError)?;
         }
         Ok(bat_config)

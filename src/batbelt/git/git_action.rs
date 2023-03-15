@@ -31,19 +31,19 @@ pub enum GitAction {
         start_line_index: usize,
         permalink: Rc<RefCell<String>>,
     },
-    // GetLastCommitMessage {
-    //     last_commit_message: Rc<RefCell<String>>,
-    // },
+    GetLastCommitMessage {
+        last_commit_message: Rc<RefCell<String>>,
+    },
 }
 
 impl GitAction {
     pub fn execute_action(&self) -> GitResult<()> {
-        let bat_config = BatConfig::get_config().change_context(GitError)?;
         match self {
             GitAction::Init => {
                 execute_command("git", &["init"], false).change_context(GitError)?;
             }
             GitAction::RemoteAddProjectRepo => {
+                let bat_config = BatConfig::get_config().change_context(GitError)?;
                 execute_command(
                     "git",
                     &[
@@ -85,7 +85,7 @@ impl GitAction {
             GitAction::CheckoutAuditorBranch => {
                 let auditor_branch_name = git::get_auditor_branch_name()?;
                 if git::get_current_branch_name()? != auditor_branch_name {
-                    self.checkout_branch(&auditor_branch_name)?
+                    git_action_functions::checkout_branch(&auditor_branch_name)?
                 }
                 return Ok(());
             }
@@ -137,13 +137,23 @@ impl GitAction {
                 }
                 return Ok(());
             }
-            GitAction::CheckCorrectBranch => self.check_correct_branch()?,
+            GitAction::CheckCorrectBranch => git_action_functions::check_correct_branch()?,
             GitAction::CheckBranchDontExist { branch_name: _ } => {}
+            GitAction::GetLastCommitMessage {
+                last_commit_message,
+            } => {
+                let last_commit = git_action_functions::get_last_commit_message()?;
+                *last_commit_message.borrow_mut() = last_commit;
+                return Ok(());
+            }
         }
         Ok(())
     }
+}
 
-    fn check_correct_branch(&self) -> GitResult<()> {
+mod git_action_functions {
+    use super::*;
+    pub fn check_correct_branch() -> GitResult<()> {
         let expected_auditor_branch = git::get_auditor_branch_name()?;
         let current_branch = git::get_current_branch_name()?;
         if current_branch != expected_auditor_branch {
@@ -163,9 +173,42 @@ impl GitAction {
         Ok(())
     }
 
-    fn checkout_branch(&self, branch_name: &str) -> GitResult<()> {
+    pub fn checkout_branch(branch_name: &str) -> GitResult<()> {
         execute_command_with_child_process("git", &["checkout", branch_name])
             .change_context(GitError)?;
         Ok(())
+    }
+
+    pub fn get_last_commit_message() -> GitResult<String> {
+        let last_commit_message = execute_command("git", &["log", "-1", "--pretty=%B"], false)
+            .change_context(GitError)?;
+        Ok(last_commit_message)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::batbelt::ShareableData;
+    use std::env;
+    use std::process::Command;
+
+    #[test]
+    fn test_get_commit() {
+        // let output = Command::new("git")
+        //     .args(["log", " -1", "--pretty=%B"])
+        //     .output()
+        //     .unwrap();
+        // println!("output: {:#?}", output);
+        // let msg = String::from_utf8(output.stdout.to_vec()).unwrap();
+        // env::set_current_dir("../sage-audit").unwrap();
+        // println!("msg: {}", msg);
+        let shared_message = ShareableData::new(String::new());
+        GitAction::GetLastCommitMessage {
+            last_commit_message: shared_message.cloned,
+        }
+        .execute_action()
+        .unwrap();
+        println!("message: {}", shared_message.original.borrow_mut());
     }
 }

@@ -63,7 +63,7 @@ impl ProgramAccountMetadata {
             .write_content(false, &json_pretty)
             .change_context(MetadataError)?;
         GitCommit::ProgramAccountMetadataCreated
-            .create_commit()
+            .create_commit(true)
             .change_context(MetadataError)?;
         Ok(())
     }
