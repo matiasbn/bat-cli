@@ -8,9 +8,10 @@ use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 
 use clap::Subcommand;
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 
 use error_stack::{Report, ResultExt};
+use lazy_regex::regex;
 
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
@@ -24,7 +25,8 @@ use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::config::BatAuditorConfig;
 use log::Level;
-use tabled::{Style, Table, Tabled};
+use tabled::object::Rows;
+use tabled::{Modify, Panel, Style, Table, Tabled, Width};
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -43,6 +45,8 @@ pub enum ToolCommand {
     CountCodeOverhaul,
     /// Shows a list of entry points along with the file path
     ListEntryPointsPath,
+    /// Shows a list of code overhaul files an the state
+    ListCodeOverhaul,
 }
 
 impl BatEnumerator for ToolCommand {}
@@ -56,6 +60,7 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::OpenCodeOverhaulFile => self.execute_open_co(),
             ToolCommand::CountCodeOverhaul => self.execute_count_co_files(),
             ToolCommand::ListEntryPointsPath => self.execute_list_entry_points(),
+            ToolCommand::ListCodeOverhaul => self.execute_list_co(),
         }
     }
 
@@ -67,6 +72,7 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::OpenCodeOverhaulFile => true,
             ToolCommand::CountCodeOverhaul => false,
             ToolCommand::ListEntryPointsPath => true,
+            ToolCommand::ListCodeOverhaul => false,
         }
     }
 
@@ -78,11 +84,92 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::OpenCodeOverhaulFile => false,
             ToolCommand::CountCodeOverhaul => false,
             ToolCommand::ListEntryPointsPath => false,
+            ToolCommand::ListCodeOverhaul => false,
         }
     }
 }
 
 impl ToolCommand {
+    fn execute_list_co(&self) -> CommandResult<()> {
+        let co_bat_folder = BatFolder::CodeOverhaulFolderPath;
+        let co_dir_entries = co_bat_folder
+            .get_all_files_dir_entries(true, None, None)
+            .change_context(CommandError)?;
+
+        #[derive(Tabled)]
+        struct Path {
+            #[tabled(rename = "Code overhaul file")]
+            co_file_name: String,
+            #[tabled(rename = "Code overhaul file path")]
+            co_path: String,
+            #[tabled(rename = "Status")]
+            status: ColoredString,
+        }
+
+        let path_regex = regex!(r#"code-overhaul/[\w\-]+"#);
+        let path_vec = co_dir_entries
+            .into_iter()
+            .map(|dir_entry| {
+                let co_path = dir_entry.path().to_str().unwrap().to_string();
+                let co_file_name = dir_entry.file_name().to_str().unwrap().to_string();
+                let status = path_regex
+                    .find(&co_path)
+                    .unwrap()
+                    .as_str()
+                    .split("/")
+                    .last()
+                    .unwrap();
+                let status = match status {
+                    "to-review" => status.bright_red(),
+                    "started" => status.bright_yellow(),
+                    "finished" => status.bright_green(),
+                    _ => status.bright_blue(),
+                };
+                Path {
+                    co_file_name,
+                    status,
+                    co_path,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let to_review_bat_folder = BatFolder::CodeOverhaulToReview;
+        let started_bat_folder = BatFolder::CodeOverhaulStarted;
+        let finished_bat_folder = BatFolder::CodeOverhaulFinished;
+
+        let to_review_dir_entries = to_review_bat_folder
+            .get_all_files_dir_entries(false, None, None)
+            .change_context(CommandError)?;
+        let started_dir_entries = started_bat_folder
+            .get_all_files_dir_entries(false, None, None)
+            .change_context(CommandError)?;
+        let finished_dir_entries = finished_bat_folder
+            .get_all_files_dir_entries(false, None, None)
+            .change_context(CommandError)?;
+
+        let to_review_count = to_review_dir_entries.len();
+        let started_count = started_dir_entries.len();
+        let finished_count = finished_dir_entries.len();
+
+        let mut table = Table::new(path_vec);
+        table.with(Style::re_structured_text());
+        println!("{}", table.to_string());
+
+        println!(
+            "{}: {}, {}: {}, {}: {}, {}: {}",
+            "To review".bright_red(),
+            to_review_count,
+            "Started".bright_yellow(),
+            started_count,
+            "Finished".bright_green(),
+            finished_count,
+            "Total".bright_white(),
+            to_review_count + started_count + finished_count
+        );
+
+        Ok(())
+    }
+
     fn execute_list_entry_points(&self) -> CommandResult<()> {
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         let entry_points_metadata = bat_metadata.entry_points;
