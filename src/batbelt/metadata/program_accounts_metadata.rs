@@ -23,6 +23,16 @@ pub struct ProgramAccountMetadata {
 
 impl ProgramAccountMetadata {
     pub fn create_program_accounts_metadata_file() -> MetadataResult<()> {
+        let program_metadata_bat_file = BatFile::ProgramAccountsMetadataFile;
+        let file_exists = program_metadata_bat_file
+            .file_exists()
+            .change_context(MetadataError)?;
+        if file_exists {
+            return Err(Report::new(MetadataError).attach_printable(format!(
+                "{} already exists",
+                "program_accounts_metadata.json".bright_green()
+            )));
+        }
         let sc_names = SourceCodeMetadata::get_filtered_structs(
             None,
             Some(StructMetadataType::SolanaAccount),
