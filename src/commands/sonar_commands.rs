@@ -3,7 +3,7 @@ use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::path::BatFile;
 use error_stack::{Result, ResultExt};
 

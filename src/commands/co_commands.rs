@@ -1,6 +1,6 @@
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::{execute_command, CodeEditor};
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{

@@ -10,7 +10,7 @@ use error_stack::{IntoReport, Result};
 
 use crate::batbelt;
 
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::git_commit::GitCommit;
 
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile::GitIgnore;

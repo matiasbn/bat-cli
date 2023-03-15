@@ -1,4 +1,4 @@
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
 use lazy_regex::regex;

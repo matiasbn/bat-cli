@@ -2,12 +2,12 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::templates::finding_template::FindingTemplate;
 use crate::batbelt::{
-    git::GitCommit,
     path::{BatFile, BatFolder},
     BatEnumerator,
 };
 use colored::Colorize;
 
+use crate::batbelt::git::git_commit::GitCommit;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 use error_stack::{Report, Result, ResultExt};

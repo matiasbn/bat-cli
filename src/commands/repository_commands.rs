@@ -1,9 +1,10 @@
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
 
-use crate::batbelt::git::{get_current_branch_name, get_not_committed_files, GitCommit};
+use crate::batbelt::git::{get_current_branch_name, get_not_committed_files};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
+use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
