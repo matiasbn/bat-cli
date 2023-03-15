@@ -43,7 +43,7 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::{
     EnumMetadataType, EnumSourceCodeMetadata,
 };
@@ -134,7 +134,7 @@ impl BatMetadata {
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit: BatMetadataCommit::UpdateMetadataVersion,
             }
-            .create_commit()
+            .create_commit(true)
             .change_context(MetadataError)?;
         }
         Ok(bat_metadata)

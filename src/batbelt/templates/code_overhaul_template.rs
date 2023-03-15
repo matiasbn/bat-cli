@@ -3,7 +3,7 @@ use inflector::Inflector;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::batbelt::git::GitAction;
+use crate::batbelt::git::git_action::GitAction;
 use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};

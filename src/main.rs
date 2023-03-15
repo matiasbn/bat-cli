@@ -13,9 +13,9 @@ use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::{BatCommandEnumerator, BatPackageJsonCommand, CommandResult};
 
-use crate::batbelt::git::GitAction;
 use crate::batbelt::BatEnumerator;
 use crate::commands::repository_commands::RepositoryCommand;
+use batbelt::git::git_action::GitAction;
 
 use commands::co_commands::CodeOverhaulCommand;
 use commands::finding_commands::FindingCommand;

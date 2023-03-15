@@ -12,7 +12,7 @@ use crate::batbelt::command_line::CodeEditor;
 use crate::batbelt::path::BatFile;
 use crate::batbelt::{bat_dialoguer, BatEnumerator};
 
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use figment::error::Kind;
@@ -419,7 +419,7 @@ impl BatConfig {
             bat_config.save()?;
 
             GitCommit::UpdateBatToml
-                .create_commit()
+                .create_commit(true)
                 .change_context(BatConfigError)?;
         }
         Ok(bat_config)
