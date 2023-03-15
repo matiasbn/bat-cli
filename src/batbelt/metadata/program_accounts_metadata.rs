@@ -5,6 +5,7 @@ use lazy_regex::regex;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::collections::{HashMap, HashSet};
 
 use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::{
@@ -15,6 +16,7 @@ use crate::batbelt::path::BatFile;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProgramAccountMetadata {
+    #[serde(default)]
     pub program_account_name: String,
     pub init_account: Vec<InitProgramAccountMetadata>,
     pub mut_account: Vec<MutProgramAccountMetadata>,
@@ -73,6 +75,111 @@ impl ProgramAccountMetadata {
             .write_content(false, &json_pretty)
             .change_context(MetadataError)?;
         GitCommit::ProgramAccountMetadataCreated
+            .create_commit(true)
+            .change_context(MetadataError)?;
+        Ok(())
+    }
+
+    pub fn update_program_accounts_metadata_file() -> MetadataResult<()> {
+        let pa_bat_file = BatFile::ProgramAccountsMetadataFile;
+        let content = pa_bat_file
+            .read_content(false)
+            .change_context(MetadataError)?;
+        let mut content_value: Value = serde_json::from_str(&content)
+            .into_report()
+            .change_context(MetadataError)?;
+        let pa_field = "program_accounts_names";
+
+        let program_accounts_names = content_value[pa_field]
+            .as_array()
+            .ok_or(MetadataError)
+            .into_report()
+            .attach_printable(format!(
+                "Error reading {} on {}",
+                pa_field.bright_green(),
+                "programs_accounts_metadata.json".bright_green()
+            ))?;
+
+        // program account state change map
+        let mut pa_sc_map = Map::new();
+        let mut entry_points_map = HashSet::new();
+
+        for program_account_name_value in program_accounts_names.clone() {
+            let program_account_name = program_account_name_value
+                .as_str()
+                .ok_or(MetadataError)
+                .into_report()?
+                .to_string();
+            let mut pa_metadata: ProgramAccountMetadata =
+                serde_json::from_value(content_value[&program_account_name].clone())
+                    .into_report()
+                    .change_context(MetadataError)?;
+            pa_metadata.program_account_name = program_account_name;
+            // for every account, create a map to insert into the pa json
+            let mut state_change_map = HashMap::new();
+
+            for value_change in pa_metadata.init_account {
+                let ep_name = value_change.entry_point_name;
+                // save entry_points to check deprecated eps
+                entry_points_map.insert(ep_name.clone());
+                for init_value in value_change.init_values {
+                    let account_key = init_value.account_key;
+                    let state_change = StateChange {
+                        entry_point: ep_name.clone(),
+                        value: init_value.account_value.unwrap_or("".to_string()),
+                    };
+                    let map_value = state_change_map.get_mut(&account_key);
+                    match map_value {
+                        None => {
+                            state_change_map.insert(account_key.clone(), vec![state_change]);
+                        }
+                        Some(state_change_vec) => {
+                            state_change_vec.push(state_change);
+                        }
+                    }
+                }
+            }
+
+            // at this point, all values of the account exists in map, so is not necessary to test if exists
+            for value_change in pa_metadata.mut_account {
+                let ep_name = value_change.entry_point_name;
+                // save entry_points to check deprecated eps
+                entry_points_map.insert(ep_name.clone());
+                for mut_value in value_change.mut_values {
+                    let account_key = mut_value.account_key.clone();
+                    if mut_value.account_value.is_none() {
+                        continue;
+                    }
+                    let state_change = StateChange {
+                        entry_point: ep_name.clone(),
+                        value: mut_value.account_value.unwrap(),
+                    };
+
+                    // the state changes for the given account key -> pub account_key: account_value;
+                    let mut state_change_vec = state_change_map
+                        .get_mut(&account_key)
+                        .ok_or(MetadataError)
+                        .into_report()?;
+                    state_change_vec.push(state_change);
+                }
+            }
+
+            // here we have all the changes, insert state_change_map into pa_sc_map <AccountName,Map<AccountKey, Vec<StateChanges>>>
+            pa_sc_map.insert(pa_metadata.program_account_name, json!(state_change_map));
+        }
+
+        // insert into content_value, prettify and save to pa json file
+        let mut ep_vec = entry_points_map.into_iter().collect::<Vec<_>>();
+        ep_vec.sort();
+        content_value["state_changes"] = json!(pa_sc_map);
+        content_value["entry_points"] = json!(ep_vec);
+        let pretty_content = serde_json::to_string_pretty(&content_value)
+            .into_report()
+            .change_context(MetadataError)?;
+        pa_bat_file
+            .write_content(false, &pretty_content)
+            .change_context(MetadataError)?;
+        GitCommit::ProgramAccountMetadataUpdated
             .create_commit(true)
             .change_context(MetadataError)?;
         Ok(())
@@ -271,4 +378,10 @@ impl ProgramAccountField {
             .collect::<Vec<Self>>();
         Ok(field_vec)
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct StateChange {
+    pub entry_point: String,
+    pub value: String,
 }
