@@ -1,7 +1,9 @@
 use crate::batbelt::command_line::execute_command;
+use crate::batbelt::git::git_action::GitAction;
 use crate::batbelt::git::{GitError, GitResult};
 use crate::batbelt::metadata::BatMetadataCommit;
 use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::ShareableData;
 use crate::config::{BatAuditorConfig, BatConfig};
 use error_stack::ResultExt;
 
@@ -45,15 +47,25 @@ pub enum GitCommit {
 }
 
 impl GitCommit {
-    pub fn create_commit(&self, try_ammend: bool) -> GitResult<()> {
+    pub fn create_commit(&self, try_amend: bool) -> GitResult<()> {
         let commit_message = self.get_commit_message()?;
         let commit_files = self.get_commit_files()?;
         for commit_file in commit_files {
             execute_command("git", &["add", commit_file.as_str()], false)
                 .change_context(GitError)?;
         }
-        execute_command("git", &["commit", "-m", commit_message.as_str()], false)
-            .change_context(GitError)?;
+        let shared_last_message = ShareableData::new(String::new());
+        GitAction::GetLastCommitMessage {
+            last_commit_message: shared_last_message.cloned,
+        }
+        .execute_action()?;
+        if try_amend && commit_message == *shared_last_message.original.borrow_mut() {
+            execute_command("git", &["commit", "--amend", "--no-edit"], true)
+                .change_context(GitError)?;
+        } else {
+            execute_command("git", &["commit", "-m", commit_message.as_str()], false)
+                .change_context(GitError)?;
+        }
         Ok(())
     }
 
