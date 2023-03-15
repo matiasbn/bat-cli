@@ -22,6 +22,7 @@ use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::trait_parser::TraitParser;
 
 use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
+use lazy_regex::regex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -226,8 +227,8 @@ impl BatSonarInteractive {
         let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
-        let entrypoint_names =
-            EntrypointParser::get_entrypoint_names_from_program_lib(false).change_context(BatSonarError)?;
+        let entrypoint_names = EntrypointParser::get_entrypoint_names_from_program_lib(false)
+            .change_context(BatSonarError)?;
         println!(
             "Getting metadata for {}, analyzing {} entry points",
             "Entry points".green(),
@@ -365,11 +366,12 @@ impl BatSonarInteractive {
                         let ca_content =
                             ca_sc.to_source_code_parser(None).get_source_code_content();
                         let context_account_regex =
-                            CAAccountParser::get_context_account_regex().unwrap();
+                            CAAccountParser::get_context_account_lazy_regex();
                         let ca_info = context_account_regex
                             .find_iter(&ca_content)
                             .map(|result| {
-                                CAAccountParser::new_from_sonar_result(result.as_str()).unwrap()
+                                CAAccountParser::new_from_context_account_content(result.as_str())
+                                    .unwrap()
                             })
                             .collect::<Vec<_>>();
                         let context_accounts_metadata = ContextAccountsMetadata::new(

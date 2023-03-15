@@ -1,5 +1,7 @@
 use crate::batbelt::metadata::{BatMetadata, MetadataId};
+use clap::__macro_refs::once_cell::sync::Lazy;
 use error_stack::{IntoReport, Report, Result, ResultExt};
+use lazy_regex::regex;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tokio::io::split;
@@ -69,8 +71,10 @@ impl CAAccountParser {
         }
     }
 
-    pub fn new_from_sonar_result(context_account_content: &str) -> Result<Self, ParserError> {
-        if !Self::get_context_account_regex()?.is_match(context_account_content) {
+    pub fn new_from_context_account_content(
+        context_account_content: &str,
+    ) -> Result<Self, ParserError> {
+        if !Self::get_context_account_lazy_regex().is_match(context_account_content) {
             return Err(Report::new(ParserError).attach_printable(format!(
                 "Incorrect context account content\n{context_account_content}"
             )));
@@ -85,8 +89,10 @@ impl CAAccountParser {
         Ok(new_parser)
     }
 
-    pub fn get_context_account_regex() -> ParserResult<Regex> {
-        Regex::new(r#"([ ]+#\[account\([\s\w,()?.= @:><!&{};\*\[\]+|]+\)\][\s]*)?[ ]+pub [\w]+: [\w]+(<[\w ,']+>)"#).into_report().change_context(ParserError)
+    pub fn get_context_account_lazy_regex<'a>() -> &'a Lazy<Regex, fn() -> Regex> {
+        regex!(
+            r#"([ ]+#\[account\([\s\w,()?.= @:><!&{};\*\[\]+|]+\)\][\s]*)?[ ]+pub [\w]+: [\w]+(<[\w ,']+>)"#
+        )
     }
 
     pub fn get_account_type_info(
@@ -128,9 +134,7 @@ impl CAAccountParser {
             .unwrap()
             .to_string();
 
-        let wrapper_content_regex = Regex::new(r"<[\w',_ ]+>")
-            .into_report()
-            .change_context(ParserError)?;
+        let wrapper_content_regex = regex!(r"<[\w',_ ]+>");
         let wrapper_content = wrapper_content_regex
             .find(&last_line)
             .ok_or(ParserError)
@@ -192,30 +196,22 @@ impl CAAccountParser {
     }
 
     fn get_is_close(sonar_result_content: &str) -> ParserResult<bool> {
-        let close_regex = Regex::new(r"(close = [\w_:]+)")
-            .into_report()
-            .change_context(ParserError)?;
+        let close_regex = regex!(r"(close = [\w_:]+)");
         Ok(close_regex.is_match(sonar_result_content))
     }
 
     fn get_is_mut(sonar_result_content: &str) -> ParserResult<bool> {
-        let mut_regex_1 = Regex::new(r#"\(mut,"#)
-            .into_report()
-            .change_context(ParserError)?;
-        let mut_regex_2 = Regex::new(r#"\s+mut,"#)
-            .into_report()
-            .change_context(ParserError)?;
-        let mut_regex_3 = Regex::new(r#"\(mut\)"#)
-            .into_report()
-            .change_context(ParserError)?;
+        let mut_regex_1 = regex!(r#"\(mut,"#);
+        let mut_regex_2 = regex!(r#"\s+mut,"#);
+        let mut_regex_3 = regex!(r#"\(mut\)"#);
         Ok(mut_regex_1.is_match(sonar_result_content)
             || mut_regex_2.is_match(sonar_result_content)
             || mut_regex_3.is_match(sonar_result_content))
     }
 
     fn get_seeds(sonar_result_content: &str) -> Result<Vec<String>, ParserError> {
-        let seeds_array_regex = Regex::new(r"seeds = \[\s?[\w()._?,&:\s]+\s?\]").unwrap();
-        let seeds_separator_regex = Regex::new(r"\s*[\w()._?&:]+").unwrap();
+        let seeds_array_regex = regex!(r"seeds = \[\s?[\w()._?,&:\s]+\s?\]");
+        let seeds_separator_regex = regex!(r"\s*[\w()._?&:]+");
         if !seeds_array_regex.is_match(sonar_result_content) {
             return Ok(vec![]);
         };
@@ -234,18 +230,14 @@ impl CAAccountParser {
     }
 
     fn get_is_init(sonar_result_content: &str) -> ParserResult<bool> {
-        let init_regex = Regex::new(r"\(?\s?init(_if_necessary)?,")
-            .into_report()
-            .change_context(ParserError)?;
+        let init_regex = regex!(r#"\(?\s?init(_if_necessary)?,"#);
         Ok(init_regex.is_match(sonar_result_content))
     }
 
     fn get_validations(sonar_result_content: &str) -> ParserResult<Vec<String>> {
         // let validation_regex = Regex::new(r"constraint = [\sA-Za-z0-9()?._= @:><!&{}*]+[,\n]?")
         let validation_regex =
-            Regex::new(r"(constraint|has_one|address) = [\w()?.= @:><!&{}\*\s;|]+\n?")
-                .into_report()
-                .change_context(ParserError)?;
+            regex!(r#"(constraint|has_one|address) = [\w()?.= @:><!&{}\*\s;|]+\n?"#);
         if validation_regex.is_match(sonar_result_content) {
             let matches = validation_regex
                 .find_iter(sonar_result_content)
@@ -258,9 +250,7 @@ impl CAAccountParser {
     }
 
     fn get_rent_exemption_account(sonar_result_content: &str) -> ParserResult<String> {
-        let rent_exemption_payer_regex = Regex::new(r"payer = [A-Za-z0-9_.]+")
-            .into_report()
-            .change_context(ParserError)?;
+        let rent_exemption_payer_regex = regex!(r#"payer = [A-Za-z0-9_.]+"#);
         if rent_exemption_payer_regex.is_match(sonar_result_content) {
             let payer_match = rent_exemption_payer_regex
                 .find(sonar_result_content)
@@ -271,9 +261,7 @@ impl CAAccountParser {
             return Ok(payer_match.split(" = ").last().unwrap().to_string());
         }
 
-        let rent_exemption_close_regex = Regex::new(r"close = [A-Za-z0-9_.]+")
-            .into_report()
-            .change_context(ParserError)?;
+        let rent_exemption_close_regex = regex!(r#"close = [A-Za-z0-9_.]+"#);
 
         if rent_exemption_close_regex.is_match(sonar_result_content.clone()) {
             let close_match = rent_exemption_close_regex
