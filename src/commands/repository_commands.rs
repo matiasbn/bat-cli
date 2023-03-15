@@ -32,13 +32,13 @@ pub enum RepositoryCommand {
         select_all: bool,
     },
     /// Commits the open_questions, finding_candidate and threat_modeling notes
-    UpdateNotes,
+    CommitNotes,
     /// Creates a commit for an updated code-overhaul file
-    UpdateCodeOverhaulFile,
+    CommitCodeOverhaulFile,
     /// Creates a commit for the code_overhaul_summary.md file
-    UpdateCodeOverhaulSummary,
+    CommitCodeOverhaulSummary,
     /// Creates a commit for the code_overhaul_summary.md file
-    UpdateProgramAccountsMetadata,
+    CommitProgramAccountsMetadata,
 }
 
 impl BatEnumerator for RepositoryCommand {}
@@ -57,16 +57,16 @@ impl BatCommandEnumerator for RepositoryCommand {
             RepositoryCommand::DeleteLocalBranches { select_all } => {
                 self.delete_local_branches(*select_all)
             }
-            RepositoryCommand::UpdateNotes => GitCommit::Notes
+            RepositoryCommand::CommitNotes => GitCommit::Notes
                 .create_commit()
                 .change_context(CommandError),
-            RepositoryCommand::UpdateProgramAccountsMetadata => {
+            RepositoryCommand::CommitProgramAccountsMetadata => {
                 GitCommit::ProgramAccountMetadataUpdated
                     .create_commit()
                     .change_context(CommandError)
             }
-            RepositoryCommand::UpdateCodeOverhaulFile => self.execute_update_co_file(),
-            RepositoryCommand::UpdateCodeOverhaulSummary => self.update_code_overhaul_summary(),
+            RepositoryCommand::CommitCodeOverhaulFile => self.execute_update_co_file(),
+            RepositoryCommand::CommitCodeOverhaulSummary => self.update_code_overhaul_summary(),
         }
     }
 
@@ -76,7 +76,7 @@ impl BatCommandEnumerator for RepositoryCommand {
 
     fn check_correct_branch(&self) -> bool {
         match self {
-            RepositoryCommand::UpdateNotes => true,
+            RepositoryCommand::CommitNotes => true,
             _ => false,
         }
     }
