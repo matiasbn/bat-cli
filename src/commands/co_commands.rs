@@ -34,9 +34,13 @@ use crate::commands::miro_commands::{miro_command_functions, MiroCommand};
 )]
 pub enum CodeOverhaulCommand {
     /// Starts a code-overhaul file audit
-    #[default]
-    Start,
+    Start {
+        /// Skips miro deployment
+        #[arg(long)]
+        skip_miro: bool,
+    },
     /// Moves the code-overhaul file from to-review to finished
+    #[default]
     Finish,
     /// creates a code-overhaul summary from the code-overhaul finished notes
     Summary,
@@ -65,7 +69,7 @@ impl BatCommandEnumerator for CodeOverhaulCommand {
 impl CodeOverhaulCommand {
     pub async fn execute_command(&self) -> CommandResult<()> {
         match self {
-            CodeOverhaulCommand::Start => self.execute_start().await,
+            CodeOverhaulCommand::Start { skip_miro } => self.execute_start(*skip_miro).await,
             CodeOverhaulCommand::Finish => self.execute_finish(),
             CodeOverhaulCommand::Summary => self.execute_summary(),
             CodeOverhaulCommand::CreateProgramAccountsMetadata => {
@@ -228,7 +232,7 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
-    async fn execute_start(&self) -> error_stack::Result<(), CommandError> {
+    async fn execute_start(&self, skip_miro: bool) -> error_stack::Result<(), CommandError> {
         let review_files = BatFolder::CodeOverhaulToReview
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
@@ -288,17 +292,19 @@ impl CodeOverhaulCommand {
                 CodeEditor::open_file_in_editor(&handler.path, Some(handler.start_line_index))?;
             }
         }
-        let prompt_text = format!(
-            "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
-            entrypoint_name.clone().bright_green()
-        );
-        let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
-        if deploy_frame {
-            MiroCommand::CodeOverhaulScreenshots {
-                entry_point_name: Some(entrypoint_name.to_string()),
+        if !skip_miro {
+            let prompt_text = format!(
+                "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
+                entrypoint_name.clone().bright_green()
+            );
+            let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
+            if deploy_frame {
+                MiroCommand::CodeOverhaulScreenshots {
+                    entry_point_name: Some(entrypoint_name.to_string()),
+                }
+                .execute_command()
+                .await?
             }
-            .execute_command()
-            .await?
         }
         Ok(())
     }
