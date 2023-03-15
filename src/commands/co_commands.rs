@@ -42,6 +42,8 @@ pub enum CodeOverhaulCommand {
     Summary,
     /// creates program accounts metadata
     CreateProgramAccountsMetadata,
+    /// calculates state changes from the program accounts metadata
+    UpdateProgramAccountsMetadata,
 }
 
 impl BatEnumerator for CodeOverhaulCommand {}
@@ -69,7 +71,15 @@ impl CodeOverhaulCommand {
             CodeOverhaulCommand::CreateProgramAccountsMetadata => {
                 self.execute_program_accounts_metadata()
             }
+            CodeOverhaulCommand::UpdateProgramAccountsMetadata => self.execute_calculate_sc(),
         }
+    }
+
+    fn execute_calculate_sc(&self) -> CommandResult<()> {
+        ProgramAccountMetadata::update_program_accounts_metadata_file()
+            .change_context(CommandError)?;
+        println!("Programs account metadata created");
+        Ok(())
     }
 
     fn execute_program_accounts_metadata(&self) -> CommandResult<()> {

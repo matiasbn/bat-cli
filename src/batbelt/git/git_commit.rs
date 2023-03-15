@@ -60,7 +60,7 @@ impl GitCommit {
         }
         .execute_action()?;
         if try_amend && commit_message == *shared_last_message.original.borrow_mut() {
-            execute_command("git", &["commit", "--amend", "--no-edit"], true)
+            execute_command("git", &["commit", "--amend", "--no-edit"], false)
                 .change_context(GitError)?;
         } else {
             execute_command("git", &["commit", "-m", commit_message.as_str()], false)
