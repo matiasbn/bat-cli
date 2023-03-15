@@ -51,6 +51,9 @@ pub enum GitAction {
         start_line_index: usize,
         permalink: Rc<RefCell<String>>,
     },
+    // GetLastCommitMessage {
+    //     last_commit_message: Rc<RefCell<String>>,
+    // },
 }
 
 impl GitAction {
