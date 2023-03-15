@@ -10,7 +10,7 @@ use error_stack::{IntoReport, Result};
 
 use crate::batbelt;
 
-use crate::batbelt::git::{GitAction, GitCommit};
+use crate::batbelt::git::GitCommit;
 
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile::GitIgnore;
@@ -20,6 +20,7 @@ use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 
+use crate::batbelt::git::git_action::GitAction;
 use crate::commands::sonar_commands::SonarCommand;
 use std::path::Path;
 use std::process::Command;
