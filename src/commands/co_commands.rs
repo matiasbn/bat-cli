@@ -212,7 +212,6 @@ impl CodeOverhaulCommand {
         }
 
         co_commands_functions::check_code_overhaul_file_completed(started_co_bat_file)?;
-
         execute_command(
             "mv",
             &[&started_co_bat_file_path, &finished_co_folder_path],
