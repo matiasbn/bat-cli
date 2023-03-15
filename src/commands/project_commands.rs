@@ -239,8 +239,9 @@ mod project_commands_functions {
         // create new ep files
         for ep_name in new_ep {
             println!(
-                "Creating code overhaul file for new entry point: {}.md",
-                ep_name
+                "Creating code overhaul file for new entry point: {}{}",
+                ep_name.bright_blue(),
+                ".md".bright_blue()
             );
             let bat_file = BatFile::CodeOverhaulToReview { file_name: ep_name };
             bat_file.create_empty(false).change_context(CommandError)?;
@@ -271,7 +272,7 @@ mod project_commands_functions {
             for ep_file in filtered_dep {
                 println!(
                     "Moving code overhaul file to deprecated folder: {}",
-                    ep_file.get_path(false).unwrap()
+                    ep_file.get_path(false).unwrap().bright_blue()
                 );
                 let file_content = ep_file.read_content(false).change_context(CommandError)?;
                 let file_name = ep_file.get_file_name().change_context(CommandError)?;
