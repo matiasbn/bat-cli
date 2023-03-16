@@ -193,19 +193,19 @@ impl CodeOverhaulSection {
                     .position(|line| line.contains(&ca_info_validation))
                     .ok_or(TemplateError)
                     .into_report()?;
-                let shared_permalink = ShareableData::new(String::new());
-                GitAction::GetRepositoryPermalink {
-                    file_path: context_accounts_sc_metadata.path.clone(),
-                    start_line_index: validation_line + 1,
-                    permalink: shared_permalink.original,
-                }
-                .execute_action()
-                .change_context(TemplateError)?;
+                // let shared_permalink = ShareableData::new(String::new());
+                // GitAction::GetRepositoryPermalink {
+                //     file_path: context_accounts_sc_metadata.path.clone(),
+                //     start_line_index: validation_line + 1,
+                //     permalink: shared_permalink.original,
+                // }
+                // .execute_action()
+                // .change_context(TemplateError)?;
                 // let permalink = format!("{}", &*shared_permalink.cloned.borrow());
                 result.push(format!(
                     "  - [ ] [{}]({})",
                     ca_info_validation,
-                    *shared_permalink.cloned.borrow()
+                    validation_line + 1
                 ));
             }
         }
