@@ -10,12 +10,15 @@ use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use std::fs;
 
+use crate::batbelt::cache::code_overhaul_interactive_cache::CodeOverhaulInteractiveCache;
+use crate::batbelt::cache::BatCache;
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use regex::Regex;
 
+use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
 use crate::batbelt::metadata::miro_metadata::{SignerInfo, SignerType};
 use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser, MiroMetadata};
@@ -38,6 +41,9 @@ pub enum CodeOverhaulCommand {
         /// Skips miro deployment
         #[arg(long)]
         skip_miro: bool,
+        /// Starts a guided process to start a co file
+        #[arg(long)]
+        interactive: bool,
     },
     /// Moves the code-overhaul file from to-review to finished
     #[default]
@@ -69,7 +75,10 @@ impl BatCommandEnumerator for CodeOverhaulCommand {
 impl CodeOverhaulCommand {
     pub async fn execute_command(&self) -> CommandResult<()> {
         match self {
-            CodeOverhaulCommand::Start { skip_miro } => self.execute_start(*skip_miro).await,
+            CodeOverhaulCommand::Start {
+                skip_miro,
+                interactive,
+            } => self.execute_start(*skip_miro, *interactive).await,
             CodeOverhaulCommand::Finish => self.execute_finish(),
             CodeOverhaulCommand::Summary => self.execute_summary(),
             CodeOverhaulCommand::CreateProgramAccountsMetadata => {
@@ -232,7 +241,19 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
-    async fn execute_start(&self, skip_miro: bool) -> error_stack::Result<(), CommandError> {
+    async fn execute_start(
+        &self,
+        skip_miro: bool,
+        interactive: bool,
+    ) -> error_stack::Result<(), CommandError> {
+        if interactive {
+            let entry_point_name = self.execute_start_interactive()?;
+            if !skip_miro {
+                co_commands_functions::prompt_deploy_miro(entry_point_name).await?;
+            }
+            return Ok(());
+        }
+
         let review_files = BatFolder::CodeOverhaulToReview
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
@@ -293,25 +314,37 @@ impl CodeOverhaulCommand {
             }
         }
         if !skip_miro {
-            let prompt_text = format!(
-                "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
-                entrypoint_name.clone().bright_green()
-            );
-            let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
-            if deploy_frame {
-                MiroCommand::CodeOverhaulScreenshots {
-                    entry_point_name: Some(entrypoint_name.to_string()),
-                }
-                .execute_command()
-                .await?
-            }
+            co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;
         }
         Ok(())
+    }
+
+    fn execute_start_interactive(&self) -> CommandResult<String> {
+        let co_interactive_cache = CodeOverhaulInteractiveCache::get_suggested_next_entry_point()
+            .change_context(CommandError)?;
+        println!("init_program_ca_metadata: {:#?}", co_interactive_cache);
+        Ok("".to_string())
     }
 }
 
 mod co_commands_functions {
     use super::*;
+
+    pub async fn prompt_deploy_miro(entry_point_name: String) -> CommandResult<()> {
+        let prompt_text = format!(
+            "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
+            entry_point_name.clone().bright_green()
+        );
+        let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
+        if deploy_frame {
+            MiroCommand::CodeOverhaulScreenshots {
+                entry_point_name: Some(entry_point_name.to_string()),
+            }
+            .execute_command()
+            .await?
+        }
+        Ok(())
+    }
 
     pub fn check_code_overhaul_file_completed(
         bat_file: BatFile,

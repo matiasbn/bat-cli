@@ -241,7 +241,7 @@ impl BatFile {
     }
     pub fn commit_file(&self, commit_message: Option<String>) -> BatPathResult<()> {
         let commit_message = commit_message.unwrap_or(self.default_commit_message()?);
-        GitCommit::BatFile {
+        GitCommit::BatFileCommit {
             bat_file: self.clone(),
             commit_message,
         }

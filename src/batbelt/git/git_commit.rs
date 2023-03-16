@@ -44,7 +44,7 @@ pub enum GitCommit {
     CodeOverhaulUpdated {
         updated_eps: Vec<String>,
     },
-    BatFile {
+    BatFileCommit {
         bat_file: BatFile,
         commit_message: String,
     },
@@ -221,7 +221,7 @@ impl GitCommit {
             GitCommit::CodeOverhaulUpdated {
                 updated_eps: file_path_vec,
             } => file_path_vec.clone(),
-            GitCommit::BatFile { bat_file, .. } => {
+            GitCommit::BatFileCommit { bat_file, .. } => {
                 vec![bat_file.get_path(false).change_context(GitError)?]
             }
         };
@@ -279,7 +279,7 @@ impl GitCommit {
                 "metadata: program_account_metadata updated".to_string()
             }
             GitCommit::CodeOverhaulUpdated { .. } => "co: entry points updated".to_string(),
-            GitCommit::BatFile { commit_message, .. } => commit_message.clone(),
+            GitCommit::BatFileCommit { commit_message, .. } => commit_message.clone(),
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit,
             } => bat_metadata_commit.get_commit_message(),

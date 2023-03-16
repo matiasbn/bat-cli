@@ -50,7 +50,7 @@ impl ContextAccountsMetadata {
                     continue;
                 }
                 if account_info.is_close {
-                    init_program_account.push(account_info);
+                    close_program_account.push(account_info);
                     continue;
                 }
                 if account_info.is_mut {
@@ -63,7 +63,7 @@ impl ContextAccountsMetadata {
                     continue;
                 }
                 if account_info.is_close {
-                    init_account.push(account_info);
+                    close_account.push(account_info);
                     continue;
                 }
                 if account_info.is_mut {
