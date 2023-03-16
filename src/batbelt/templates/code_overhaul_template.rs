@@ -185,7 +185,7 @@ impl CodeOverhaulSection {
         }
 
         let mut result = vec![];
-        result.push(format!("- [ ] check validations:"));
+        result.push(format!("- [ ] check constraints:"));
         for ca_info_validations_vec in ca_info_with_validation.clone() {
             for ca_info_validation in ca_info_validations_vec.clone() {
                 let validation_line = ca_sc_file_content_lines
@@ -279,7 +279,7 @@ impl CodeOverhaulSection {
                     .clone()
                     .into_iter()
                     .map(|acc_parser| format!(
-                        "\t- `{}.{}`[{}]",
+                        "  - `{}.{}`[{}]",
                         mut_program_state_acc.clone().account_name,
                         acc_parser.account_name,
                         acc_parser.account_type
