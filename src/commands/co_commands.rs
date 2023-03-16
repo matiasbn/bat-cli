@@ -10,12 +10,15 @@ use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use std::fs;
 
+use crate::batbelt::cache::code_overhaul_interactive_cache::CodeOverhaulInteractiveCache;
+use crate::batbelt::cache::BatCache;
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use regex::Regex;
 
+use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
 use crate::batbelt::metadata::miro_metadata::{SignerInfo, SignerType};
 use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser, MiroMetadata};
@@ -26,6 +29,7 @@ use crate::batbelt::miro::image::{MiroImage, MiroImageType};
 use crate::batbelt::miro::sticky_note::MiroStickyNote;
 use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
+use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
 use crate::batbelt::parser::source_code_parser::SourceCodeScreenshotOptions;
 use crate::commands::miro_commands::{miro_command_functions, MiroCommand};
 
@@ -38,6 +42,9 @@ pub enum CodeOverhaulCommand {
         /// Skips miro deployment
         #[arg(long)]
         skip_miro: bool,
+        /// Starts a guided process to start a co file
+        #[arg(long)]
+        interactive: bool,
     },
     /// Moves the code-overhaul file from to-review to finished
     #[default]
@@ -69,7 +76,10 @@ impl BatCommandEnumerator for CodeOverhaulCommand {
 impl CodeOverhaulCommand {
     pub async fn execute_command(&self) -> CommandResult<()> {
         match self {
-            CodeOverhaulCommand::Start { skip_miro } => self.execute_start(*skip_miro).await,
+            CodeOverhaulCommand::Start {
+                skip_miro,
+                interactive,
+            } => self.execute_start(*skip_miro, *interactive).await,
             CodeOverhaulCommand::Finish => self.execute_finish(),
             CodeOverhaulCommand::Summary => self.execute_summary(),
             CodeOverhaulCommand::CreateProgramAccountsMetadata => {
@@ -232,7 +242,19 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
-    async fn execute_start(&self, skip_miro: bool) -> error_stack::Result<(), CommandError> {
+    async fn execute_start(
+        &self,
+        skip_miro: bool,
+        interactive: bool,
+    ) -> error_stack::Result<(), CommandError> {
+        // if interactive {
+        //     let entry_point_name = self.execute_start_interactive()?;
+        //     if !skip_miro {
+        //         co_commands_functions::prompt_deploy_miro(entry_point_name).await?;
+        //     }
+        //     return Ok(());
+        // }
+
         let review_files = BatFolder::CodeOverhaulToReview
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
@@ -293,25 +315,125 @@ impl CodeOverhaulCommand {
             }
         }
         if !skip_miro {
-            let prompt_text = format!(
-                "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
-                entrypoint_name.clone().bright_green()
-            );
-            let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
-            if deploy_frame {
-                MiroCommand::CodeOverhaulScreenshots {
-                    entry_point_name: Some(entrypoint_name.to_string()),
-                }
-                .execute_command()
-                .await?
-            }
+            co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;
         }
         Ok(())
+    }
+
+    fn execute_start_interactive(&self) -> CommandResult<String> {
+        let suggested_entry_point_cache =
+            CodeOverhaulInteractiveCache::get_suggested_next_entry_point()
+                .change_context(CommandError)?;
+        let entry_point_name = suggested_entry_point_cache.entry_point_name;
+        let ep_parser =
+            EntrypointParser::new_from_name(&entry_point_name).change_context(CommandError)?;
+        let handler_sc_metadata = ep_parser.handler.unwrap();
+        let handler_sc_parser = handler_sc_metadata.to_source_code_parser(None);
+
+        CodeEditor::open_file_in_editor(
+            &handler_sc_parser.path,
+            Some(handler_sc_parser.start_line_index),
+        )?;
+
+        let handler_content = handler_sc_parser.get_source_code_content();
+
+        let handler_content_lines = handler_content.lines().collect::<Vec<_>>();
+        if !suggested_entry_point_cache.init_program_accounts.is_empty() {
+            for init_program_account in suggested_entry_point_cache.init_program_accounts {
+                println!("Initializing: {}", init_program_account.bright_green());
+                let solana_account_parser =
+                    SolanaAccountParser::new_from_struct_name_and_solana_account_type(
+                        init_program_account,
+                        SolanaAccountType::ProgramStateAccount,
+                    )
+                    .change_context(CommandError)?;
+                for account in solana_account_parser.accounts {
+                    let prompt_text = format!(
+                        "Is the {}[{}] value assigned on this handler?:",
+                        account.account_name, account.account_type
+                    );
+                    let is_assigned = BatDialoguer::select_yes_or_no(prompt_text)?;
+                    if !is_assigned {
+                        continue;
+                    }
+                    let prompt_text = format!(
+                        "Select the lines with the value for {}[{}] with the space bar",
+                        account.account_name.bright_green(),
+                        account.account_type.bright_yellow()
+                    );
+                    let selection = BatDialoguer::multiselect(
+                        prompt_text,
+                        handler_content_lines.clone(),
+                        None,
+                        true,
+                    )?;
+                    let parsed_value = if selection.len() == 1 {
+                        co_commands_functions::get_value_single_line(
+                            handler_content_lines[selection[0]],
+                        )
+                    } else {
+                        co_commands_functions::get_value_single_line(
+                            handler_content_lines[selection[0]],
+                        )
+                    };
+                    // let parse_value = println!(
+                    //     "handler_content_lines[selection]: {}",
+                    //     handler_content_lines[selection]
+                    // );
+                }
+            }
+        }
+        // println!(
+        //     "init_program_ca_metadata: {:#?}",
+        //     suggested_entry_point_cache
+        // );
+        Ok("".to_string())
     }
 }
 
 mod co_commands_functions {
     use super::*;
+    use lazy_regex::regex;
+    use regex::Match;
+
+    pub fn get_value_single_line(line: &str) -> CommandResult<String> {
+        let inline_assignment_regex = regex!(r#"[\w_.()? ]+= "#);
+        match inline_assignment_regex.find(line.trim()) {
+            None => {}
+            Some(line_match) => {}
+        }
+        let struct_assignment_regex = regex!(r#"[\w_ ]+: ]"#);
+        Ok("".to_string())
+    }
+
+    pub fn get_value_multi_line(
+        lines_vec: Vec<&str>,
+        selection_vec: Vec<usize>,
+    ) -> CommandResult<String> {
+        // let inline_assignment_regex = regex!(r#"[\w_.()? ]+= "#);
+        // match inline_assignment_regex.find(line.trim()) {
+        //     None => {}
+        //     Some(line_match) => {}
+        // }
+        // let struct_assignment_regex = regex!(r#"[\w_ ]+: ]"#);
+        Ok("".to_string())
+    }
+
+    pub async fn prompt_deploy_miro(entry_point_name: String) -> CommandResult<()> {
+        let prompt_text = format!(
+            "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
+            entry_point_name.clone().bright_green()
+        );
+        let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
+        if deploy_frame {
+            MiroCommand::CodeOverhaulScreenshots {
+                entry_point_name: Some(entry_point_name.to_string()),
+            }
+            .execute_command()
+            .await?
+        }
+        Ok(())
+    }
 
     pub fn check_code_overhaul_file_completed(
         bat_file: BatFile,

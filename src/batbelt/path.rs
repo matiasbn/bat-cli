@@ -3,8 +3,9 @@ use crate::batbelt::command_line::{execute_command, CodeEditor};
 use crate::config::{BatAuditorConfig, BatConfig};
 
 use crate::batbelt::BatEnumerator;
-use error_stack::{FutureExt, IntoReport, Result, ResultExt};
+use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 
+use crate::batbelt::git::git_commit::GitCommit;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, fs, path::Path};
 use walkdir::{DirEntry, WalkDir};
@@ -30,6 +31,7 @@ pub enum BatFile {
     BatAuditorToml,
     Batlog,
     BatMetadataFile,
+    BatCacheFile,
     ThreatModeling,
     FindingCandidates,
     OpenQuestions,
@@ -150,6 +152,7 @@ impl BatFile {
                 )
             }
             BatFile::BatMetadataFile => "./BatMetadata.json".to_string(),
+            BatFile::BatCacheFile => "./BatCache.json".to_string(),
             BatFile::Generic { file_path } => file_path.clone(),
         };
 
@@ -235,6 +238,29 @@ impl BatFile {
             .to_str()
             .unwrap()
             .to_string())
+    }
+    pub fn commit_file(&self, commit_message: Option<String>) -> BatPathResult<()> {
+        let commit_message = commit_message.unwrap_or(self.default_commit_message()?);
+        GitCommit::BatFileCommit {
+            bat_file: self.clone(),
+            commit_message,
+        }
+        .create_commit(true)
+        .change_context(BatPathError)?;
+        Ok(())
+    }
+
+    pub fn default_commit_message(&self) -> BatPathResult<String> {
+        let message = match self {
+            BatFile::BatCacheFile => "cache: BatCache.json updated".to_string(),
+            _ => {
+                return Err(Report::new(BatPathError).attach_printable(format!(
+                    "{} does not implement default commit message",
+                    self.to_string()
+                )));
+            }
+        };
+        Ok(message)
     }
 }
 
