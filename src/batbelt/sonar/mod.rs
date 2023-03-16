@@ -8,7 +8,6 @@ use std::fs;
 
 pub mod functions;
 pub mod sonar_interactive;
-pub mod state_changes;
 pub mod structs;
 
 use error_stack::{Result, ResultExt};

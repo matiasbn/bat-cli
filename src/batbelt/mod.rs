@@ -6,6 +6,7 @@ use std::rc::Rc;
 use strum::IntoEnumIterator;
 
 pub mod bat_dialoguer;
+pub mod cache;
 pub mod command_line;
 pub mod git;
 pub mod metadata;
