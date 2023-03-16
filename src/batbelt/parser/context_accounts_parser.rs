@@ -91,7 +91,7 @@ impl CAAccountParser {
 
     pub fn get_context_account_lazy_regex<'a>() -> &'a Lazy<Regex, fn() -> Regex> {
         regex!(
-            r#"([ ]+#\[account\([\s\w,()?.= @:><!&{};\*\[\]+|]+\)\][\s]*)?[ ]+pub [\w]+: [\w]+(<[\w ,']+>)"#
+            r#"([ ]+#\[account\([\s\w,()?.= @:><!&{};\*\[\]+|]+\)\][\s]*)?[ ]+pub [\w]+: (\w+<)*([\w ,']+)(>)*"#
         )
     }
 
