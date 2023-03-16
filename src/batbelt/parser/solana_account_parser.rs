@@ -109,7 +109,7 @@ impl SolanaAccountParser {
                 self.account_struct_name
             ))),
             Some(struct_metadata) => {
-                let account_param_regex = Regex::new(r"pub [A-Za-z0-9_]+: [\w]+,")
+                let account_param_regex = Regex::new(r"pub [A-Za-z0-9_]+: [\w;\[\] ]+,")
                     .into_report()
                     .change_context(ParserError)?;
                 let struct_metadata_content = struct_metadata
