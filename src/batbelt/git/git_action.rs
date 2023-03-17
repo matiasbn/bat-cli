@@ -166,7 +166,7 @@ mod git_action_functions {
                     "run \"{} {}\" or \"{}\" to move to the correct branch",
                     "git checkout".green(),
                     expected_auditor_branch.green(),
-                    "bat-cli refresh".green()
+                    "bat-cli reload".green()
                 ),
             ));
         }

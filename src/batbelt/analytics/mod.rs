@@ -1,4 +1,5 @@
 use crate::batbelt::analytics::code_overhaul_interactive::CodeOverhaulInteractiveCache;
+use crate::batbelt::analytics::constraints::ConstraintAnalytics;
 use crate::batbelt::path::BatFile;
 use crate::config::BatConfig;
 use colored::Colorize;
@@ -9,6 +10,7 @@ use std::error::Error;
 use std::fmt;
 
 pub mod code_overhaul_interactive;
+pub mod constraints;
 pub mod state_changes;
 
 #[derive(Debug)]
@@ -27,6 +29,7 @@ pub type AnalyticsResult<T> = Result<T, AnalyticsError>;
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct BatAnalytics {
     pub co_interactive: Vec<CodeOverhaulInteractiveCache>,
+    pub constraints: Vec<ConstraintAnalytics>,
 }
 
 impl BatAnalytics {
@@ -34,14 +37,18 @@ impl BatAnalytics {
         Self::default()
     }
 
-    pub fn read_cache() -> AnalyticsResult<Self> {
+    pub fn create_analytics() -> AnalyticsResult<()> {
+        ConstraintAnalytics::generate_analytics_data()
+    }
+
+    pub fn read_analytics() -> AnalyticsResult<Self> {
         let cache_json_bat_file = BatFile::BatAnalyticsFile;
         if !cache_json_bat_file
             .file_exists()
             .change_context(AnalyticsError)?
         {
             let bat_cache = Self::new();
-            bat_cache.save_metadata()?;
+            bat_cache.save_analytics()?;
             return Ok(bat_cache);
         }
         let bat_cache_value: Value = serde_json::from_str(
@@ -57,7 +64,7 @@ impl BatAnalytics {
         Ok(bat_cache)
     }
 
-    pub fn save_metadata(&self) -> AnalyticsResult<()> {
+    pub fn save_analytics(&self) -> AnalyticsResult<()> {
         let metadata_json_bat_file = BatFile::BatAnalyticsFile;
         let metadata_json = json!(&self);
         let metadata_json_pretty = serde_json::to_string_pretty(&metadata_json)
@@ -69,9 +76,9 @@ impl BatAnalytics {
         Ok(())
     }
 
-    pub fn commit_cache(&self) -> AnalyticsResult<()> {
-        let cache_bat_file = BatFile::BatAnalyticsFile;
-        cache_bat_file
+    pub fn commit_file(&self) -> AnalyticsResult<()> {
+        let analytics_bat_file = BatFile::BatAnalyticsFile;
+        analytics_bat_file
             .commit_file(None)
             .change_context(AnalyticsError)?;
         Ok(())

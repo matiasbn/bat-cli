@@ -1,4 +1,4 @@
-use crate::batbelt::analytics::{BatAnalytics, AnalyticsError, AnalyticsResult};
+use crate::batbelt::analytics::{AnalyticsError, AnalyticsResult, BatAnalytics};
 use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
@@ -31,30 +31,28 @@ pub struct CodeOverhaulInteractiveCache {
 
 impl CodeOverhaulInteractiveCache {
     pub fn get_suggested_next_entry_point() -> AnalyticsResult<Self> {
-        let bat_cache = BatAnalytics::read_cache()?;
+        let bat_cache = BatAnalytics::read_analytics()?;
         if bat_cache.co_interactive.is_empty() {
-            Self::create_cache_data()?;
+            Self::create_analytics_data()?;
         }
-        Self::update_cache_data()?;
+        Self::update_analytics_data()?;
         Ok(Self::get_next_suggestion()?)
     }
 
     fn get_next_suggestion() -> AnalyticsResult<Self> {
-        let bat_cache = BatAnalytics::read_cache().change_context(AnalyticsError)?;
+        let bat_cache = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
         let next_suggestion = bat_cache
             .co_interactive
             .into_iter()
             .find(|co_cache| !co_cache.parsed);
         match next_suggestion {
-            None => {
-                Err(Report::new(AnalyticsError)
-                    .attach_printable(format!("No more suggested entry points")))
-            }
+            None => Err(Report::new(AnalyticsError)
+                .attach_printable(format!("No more suggested entry points"))),
             Some(suggestion) => Ok(suggestion),
         }
     }
 
-    fn create_cache_data() -> AnalyticsResult<Vec<Self>> {
+    fn create_analytics_data() -> AnalyticsResult<Vec<Self>> {
         let bat_metadata = BatMetadata::read_metadata().change_context(AnalyticsError)?;
         let context_accounts_metadata = bat_metadata.context_accounts.clone();
         let (mut init_program_ca_metadata, mut not_init_program_ca_metadata): (
@@ -77,7 +75,8 @@ impl CodeOverhaulInteractiveCache {
                 .cmp(&ca_meta_b.program_accounts.len())
         });
         init_program_ca_metadata.append(&mut not_init_program_ca_metadata);
-        let mut bat_cache = BatAnalytics::read_cache()?;
+
+        let mut bat_analytics = BatAnalytics::read_analytics()?;
         let entry_points_metadata = bat_metadata.entry_points;
         for (ca_meta_id, ca_meta) in init_program_ca_metadata.into_iter().enumerate() {
             let ep_meta = entry_points_metadata
@@ -96,37 +95,39 @@ impl CodeOverhaulInteractiveCache {
                 continue;
             }
             let ep_meta = ep_meta.unwrap();
-            bat_cache.co_interactive.push(CodeOverhaulInteractiveCache {
-                context_accounts_name: ca_meta.name,
-                entry_point_name: ep_meta.name,
-                priority: ca_meta_id,
-                started: false,
-                parsed: false,
-                program_accounts: ca_meta.program_accounts,
-                init_program_accounts: ca_meta
-                    .init_program_account
-                    .into_iter()
-                    .map(|ca_parser| ca_parser.account_struct_name)
-                    .collect::<Vec<_>>(),
-                mut_program_accounts: ca_meta
-                    .mut_program_account
-                    .into_iter()
-                    .map(|ca_parser| ca_parser.account_struct_name)
-                    .collect::<Vec<_>>(),
-                close_program_accounts: ca_meta
-                    .close_program_account
-                    .into_iter()
-                    .map(|ca_parser| ca_parser.account_struct_name)
-                    .collect::<Vec<_>>(),
-            })
+            bat_analytics
+                .co_interactive
+                .push(CodeOverhaulInteractiveCache {
+                    context_accounts_name: ca_meta.name,
+                    entry_point_name: ep_meta.name,
+                    priority: ca_meta_id,
+                    started: false,
+                    parsed: false,
+                    program_accounts: ca_meta.program_accounts,
+                    init_program_accounts: ca_meta
+                        .init_program_account
+                        .into_iter()
+                        .map(|ca_parser| ca_parser.account_struct_name)
+                        .collect::<Vec<_>>(),
+                    mut_program_accounts: ca_meta
+                        .mut_program_account
+                        .into_iter()
+                        .map(|ca_parser| ca_parser.account_struct_name)
+                        .collect::<Vec<_>>(),
+                    close_program_accounts: ca_meta
+                        .close_program_account
+                        .into_iter()
+                        .map(|ca_parser| ca_parser.account_struct_name)
+                        .collect::<Vec<_>>(),
+                })
         }
-        bat_cache.save_metadata()?;
-        bat_cache.commit_cache()?;
-        Ok(bat_cache.co_interactive)
+        bat_analytics.save_analytics()?;
+        bat_analytics.commit_file()?;
+        Ok(bat_analytics.co_interactive)
     }
 
-    fn update_cache_data() -> AnalyticsResult<()> {
-        let mut bat_cache = BatAnalytics::read_cache().change_context(AnalyticsError)?;
+    fn update_analytics_data() -> AnalyticsResult<()> {
+        let mut bat_cache = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
         let co_bat_folder = BatFolder::CodeOverhaulToReview;
         let co_all_file_names = co_bat_folder
             .get_all_files_names(false, None, None)
@@ -142,8 +143,8 @@ impl CodeOverhaulInteractiveCache {
                 co_cache
             })
             .collect::<Vec<_>>();
-        bat_cache.save_metadata()?;
-        bat_cache.commit_cache()?;
+        bat_cache.save_analytics()?;
+        bat_cache.commit_file()?;
         Ok(())
     }
 }

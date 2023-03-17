@@ -30,9 +30,11 @@ use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 
+use crate::commands::analytics_commands::AnalyticsCommand;
 use log4rs::Config;
 use package::PackageCommand;
 use regex::Regex;
+
 pub mod batbelt;
 pub mod commands;
 pub mod config;
@@ -61,6 +63,8 @@ enum BatCommands {
     /// code-overhaul files management
     #[command(subcommand)]
     CodeOverhaul(CodeOverhaulCommand),
+    #[command(subcommand)]
+    Analytics(AnalyticsCommand),
     /// Execute the BatSonar to create metadata files for all Sonar result types
     Sonar {
         /// Skips the source code (functions, structs, enums and traits) process
@@ -108,6 +112,7 @@ impl BatCommands {
             BatCommands::New => ProjectCommands::New.execute_command(),
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
+            BatCommands::Analytics(command) => command.execute_command(),
             BatCommands::Finding(FindingCommand::Create) => {
                 commands::finding_commands::start_finding()
             }
@@ -201,6 +206,10 @@ impl BatCommands {
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
+            BatCommands::Analytics(command) => (
+                command.check_metadata_is_initialized(),
+                command.check_correct_branch(),
+            ),
         };
         if check_metadata {
             BatMetadata::read_metadata()
@@ -233,6 +242,9 @@ impl BatCommands {
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Miro(_) => Some(MiroCommand::get_bat_package_json_commands(
+                    command.to_string().to_kebab_case(),
+                )),
+                BatCommands::Analytics(_) => Some(AnalyticsCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Repository(_) => {
