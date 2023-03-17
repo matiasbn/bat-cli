@@ -31,7 +31,7 @@ pub enum BatFile {
     BatAuditorToml,
     Batlog,
     BatMetadataFile,
-    BatCacheFile,
+    BatAnalyticsFile,
     ThreatModeling,
     FindingCandidates,
     OpenQuestions,
@@ -152,7 +152,12 @@ impl BatFile {
                 )
             }
             BatFile::BatMetadataFile => "./BatMetadata.json".to_string(),
-            BatFile::BatCacheFile => "./BatCache.json".to_string(),
+            BatFile::BatAnalyticsFile => {
+                format!(
+                    "{}/BatAnalytics.json",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
             BatFile::Generic { file_path } => file_path.clone(),
         };
 
@@ -252,7 +257,7 @@ impl BatFile {
 
     pub fn default_commit_message(&self) -> BatPathResult<String> {
         let message = match self {
-            BatFile::BatCacheFile => "cache: BatCache.json updated".to_string(),
+            BatFile::BatAnalyticsFile => "cache: BatAnalytics.json updated".to_string(),
             _ => {
                 return Err(Report::new(BatPathError).attach_printable(format!(
                     "{} does not implement default commit message",

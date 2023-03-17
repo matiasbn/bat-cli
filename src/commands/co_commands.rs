@@ -10,8 +10,8 @@ use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use std::fs;
 
-use crate::batbelt::cache::code_overhaul_interactive_cache::CodeOverhaulInteractiveCache;
-use crate::batbelt::cache::BatCache;
+use crate::batbelt::analytics::code_overhaul_interactive::CodeOverhaulInteractiveCache;
+use crate::batbelt::analytics::BatAnalytics;
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;

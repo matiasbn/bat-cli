@@ -1,4 +1,4 @@
-use crate::batbelt::cache::{BatCache, CacheError, CacheResult};
+use crate::batbelt::analytics::{BatAnalytics, AnalyticsError, AnalyticsResult};
 use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
@@ -30,8 +30,8 @@ pub struct CodeOverhaulInteractiveCache {
 }
 
 impl CodeOverhaulInteractiveCache {
-    pub fn get_suggested_next_entry_point() -> CacheResult<Self> {
-        let bat_cache = BatCache::read_cache()?;
+    pub fn get_suggested_next_entry_point() -> AnalyticsResult<Self> {
+        let bat_cache = BatAnalytics::read_cache()?;
         if bat_cache.co_interactive.is_empty() {
             Self::create_cache_data()?;
         }
@@ -39,23 +39,23 @@ impl CodeOverhaulInteractiveCache {
         Ok(Self::get_next_suggestion()?)
     }
 
-    fn get_next_suggestion() -> CacheResult<Self> {
-        let bat_cache = BatCache::read_cache().change_context(CacheError)?;
+    fn get_next_suggestion() -> AnalyticsResult<Self> {
+        let bat_cache = BatAnalytics::read_cache().change_context(AnalyticsError)?;
         let next_suggestion = bat_cache
             .co_interactive
             .into_iter()
             .find(|co_cache| !co_cache.parsed);
         match next_suggestion {
             None => {
-                Err(Report::new(CacheError)
+                Err(Report::new(AnalyticsError)
                     .attach_printable(format!("No more suggested entry points")))
             }
             Some(suggestion) => Ok(suggestion),
         }
     }
 
-    fn create_cache_data() -> CacheResult<Vec<Self>> {
-        let bat_metadata = BatMetadata::read_metadata().change_context(CacheError)?;
+    fn create_cache_data() -> AnalyticsResult<Vec<Self>> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(AnalyticsError)?;
         let context_accounts_metadata = bat_metadata.context_accounts.clone();
         let (mut init_program_ca_metadata, mut not_init_program_ca_metadata): (
             Vec<ContextAccountsMetadata>,
@@ -77,7 +77,7 @@ impl CodeOverhaulInteractiveCache {
                 .cmp(&ca_meta_b.program_accounts.len())
         });
         init_program_ca_metadata.append(&mut not_init_program_ca_metadata);
-        let mut bat_cache = BatCache::read_cache()?;
+        let mut bat_cache = BatAnalytics::read_cache()?;
         let entry_points_metadata = bat_metadata.entry_points;
         for (ca_meta_id, ca_meta) in init_program_ca_metadata.into_iter().enumerate() {
             let ep_meta = entry_points_metadata
@@ -86,7 +86,7 @@ impl CodeOverhaulInteractiveCache {
                 .find(|metadata| {
                     metadata.context_accounts_id == ca_meta.struct_source_code_metadata_id
                 })
-                .ok_or(CacheError)
+                .ok_or(AnalyticsError)
                 .into_report()
                 .attach_printable(format!(
                     "Entry point metadata not found for struct_metadata_id: {}, struct_name: {}",
@@ -125,12 +125,12 @@ impl CodeOverhaulInteractiveCache {
         Ok(bat_cache.co_interactive)
     }
 
-    fn update_cache_data() -> CacheResult<()> {
-        let mut bat_cache = BatCache::read_cache().change_context(CacheError)?;
+    fn update_cache_data() -> AnalyticsResult<()> {
+        let mut bat_cache = BatAnalytics::read_cache().change_context(AnalyticsError)?;
         let co_bat_folder = BatFolder::CodeOverhaulToReview;
         let co_all_file_names = co_bat_folder
             .get_all_files_names(false, None, None)
-            .change_context(CacheError)?
+            .change_context(AnalyticsError)?
             .into_iter()
             .map(|file_name| file_name.trim_end_matches(".md").to_string())
             .collect::<Vec<_>>();
