@@ -12,6 +12,9 @@ use std::hash::Hash;
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ConstraintsAnalytics {
     pub constraints_count: usize,
+    pub invariants_count: usize,
+    // #[serde(default)]
+    pub non_invariants_count: usize,
     pub invariants: Vec<ConstraintInfo>,
     pub non_invariants: Vec<ConstraintInfo>,
     pub to_review: Vec<ConstraintInfo>,
@@ -70,6 +73,8 @@ impl ConstraintsAnalytics {
         }
         let new_analytics = ConstraintsAnalytics {
             constraints_count: constraints_analytics_vec.len(),
+            invariants_count: 0,
+            non_invariants_count: 0,
             invariants: vec![],
             non_invariants: vec![],
             to_review: constraints_analytics_vec,
@@ -84,6 +89,8 @@ impl ConstraintsAnalytics {
         let mut analytics_total = vec![];
         let ConstraintsAnalytics {
             constraints_count,
+            mut invariants_count,
+            mut non_invariants_count,
             mut invariants,
             mut non_invariants,
             mut to_review,
@@ -128,7 +135,9 @@ impl ConstraintsAnalytics {
         non_invariants_total.append(&mut non_invariant_reviewed);
         non_invariants_total.append(&mut non_invariant_vec);
 
+        bat_analytics.constraints.invariants_count = invariants_total.len();
         bat_analytics.constraints.invariants = invariants_total;
+        bat_analytics.constraints.non_invariants_count = non_invariants_total.len();
         bat_analytics.constraints.non_invariants = non_invariants_total;
         bat_analytics.constraints.to_review = vec![];
         bat_analytics.save_analytics()?;
