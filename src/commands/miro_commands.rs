@@ -80,6 +80,12 @@ pub enum MiroCommand {
         #[arg(long)]
         use_external: bool,
     },
+    /// Creates sticky notes sequentially, that can be connected
+    StickyNotes {
+        /// connect the sticky notes
+        #[arg(long)]
+        connected: bool,
+    },
 }
 
 impl BatEnumerator for MiroCommand {}
@@ -135,7 +141,22 @@ impl MiroCommand {
 
                 self.function_dependencies(*select_all).await
             }
+            MiroCommand::StickyNotes { connected } => self.sticky_notes(*connected).await,
         }
+    }
+
+    async fn sticky_notes(&self, connected: bool) -> CommandResult<()> {
+        let selected_miro_frame = MiroFrame::prompt_select_frame(None)
+            .await
+            .change_context(CommandError)?;
+        miro_command_functions::prompt_deploy_source_code(
+            selected_miro_frame,
+            false,
+            true,
+            connected,
+        )
+        .await?;
+        Ok(())
     }
 
     async fn entrypoint_screenshots(
@@ -286,321 +307,13 @@ impl MiroCommand {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
-        let mut continue_selection = true;
-        let metadata_types_vec = BatMetadataType::get_type_vec();
-        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
-        while continue_selection {
-            // Choose metadata section selection
-            let prompt_text = format!("Please enter the {}", "metadata type".green());
-            let selection = batbelt::bat_dialoguer::select(
-                &prompt_text,
-                metadata_types_colorized_vec.clone(),
-                None,
-            )
-            .unwrap();
-            let metadata_type_selected = &metadata_types_vec[selection];
-            let (sourcecode_metadata_vec, screenshot_options): (
-                Vec<SourceCodeParser>,
-                SourceCodeScreenshotOptions,
-            ) = match metadata_type_selected {
-                BatMetadataType::Struct => {
-                    // Choose metadata subsection selection
-                    let prompt_text =
-                        format!("Please enter the {}", "struct type to deploy".green());
-                    let struct_types_colorized = StructMetadataType::get_colorized_type_vec(true);
-                    let selection = batbelt::bat_dialoguer::select(
-                        &prompt_text,
-                        struct_types_colorized.clone(),
-                        None,
-                    )
-                    .unwrap();
-                    let selected_struct_type = StructMetadataType::get_type_vec()[selection];
-                    let struct_metadata_vec =
-                        SourceCodeMetadata::get_filtered_structs(None, Some(selected_struct_type))
-                            .change_context(CommandError)?;
-                    let struct_metadata_names = struct_metadata_vec
-                        .iter()
-                        .map(|struct_metadata| {
-                            miro_command_functions::get_formatted_path(
-                                struct_metadata.name.clone(),
-                                struct_metadata.path.clone(),
-                                struct_metadata.start_line_index,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let prompt_text = format!("Please enter the {}", "struct to deploy".green());
-                    let selections = BatDialoguer::multiselect(
-                        prompt_text,
-                        struct_metadata_names.clone(),
-                        Some(&vec![select_all; struct_metadata_names.len()]),
-                        true,
-                    )
-                    .unwrap();
-                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Struct,
-                    );
-
-                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
-                        "Do you want to {}\n{:#?}",
-                        "use the default screenshot config?".yellow(),
-                        default_config
-                    ))
-                    .unwrap();
-
-                    let screenshot_options = if use_default {
-                        default_config
-                    } else {
-                        SourceCodeParser::prompt_screenshot_options()
-                    };
-                    let sc_vec = struct_metadata_vec
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(sc_index, sc_metadata)| {
-                            if selections.iter().any(|selection| &sc_index == selection) {
-                                Some(sc_metadata.to_source_code_parser(Some(
-                                    miro_command_functions::parse_screenshot_name(
-                                        &sc_metadata.name,
-                                        &selected_miro_frame.title,
-                                    ),
-                                )))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (sc_vec, screenshot_options)
-                }
-                BatMetadataType::Function => {
-                    // Choose metadata subsection selection
-                    let prompt_text =
-                        format!("Please enter the {}", "function type to deploy".green());
-                    let function_types_colorized =
-                        FunctionMetadataType::get_colorized_type_vec(true);
-                    let selection = batbelt::bat_dialoguer::select(
-                        &prompt_text,
-                        function_types_colorized.clone(),
-                        None,
-                    )
-                    .unwrap();
-                    let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
-                    let function_metadata_vec = SourceCodeMetadata::get_filtered_functions(
-                        None,
-                        Some(selected_function_type),
-                    )
-                    .change_context(CommandError)?;
-                    let function_metadata_names = function_metadata_vec
-                        .iter()
-                        .map(|function_metadata| {
-                            miro_command_functions::get_formatted_path(
-                                function_metadata.name.clone(),
-                                function_metadata.path.clone(),
-                                function_metadata.start_line_index,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let prompt_text = format!("Please enter the {}", "function to deploy".green());
-                    let selections = BatDialoguer::multiselect(
-                        prompt_text,
-                        function_metadata_names.clone(),
-                        Some(&vec![select_all; function_metadata_names.len()]),
-                        true,
-                    )
-                    .unwrap();
-
-                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Function,
-                    );
-
-                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
-                        "Do you want to {}\n{:#?}",
-                        "use the default screenshot config?".yellow(),
-                        default_config
-                    ))
-                    .unwrap();
-
-                    let screenshot_options = if use_default {
-                        default_config
-                    } else {
-                        SourceCodeParser::prompt_screenshot_options()
-                    };
-
-                    let sc_vec = function_metadata_vec
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(sc_index, sc_metadata)| {
-                            if selections.iter().any(|selection| &sc_index == selection) {
-                                Some(sc_metadata.to_source_code_parser(Some(
-                                    miro_command_functions::parse_screenshot_name(
-                                        &sc_metadata.name,
-                                        &selected_miro_frame.title,
-                                    ),
-                                )))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (sc_vec, screenshot_options)
-                }
-
-                BatMetadataType::Trait => {
-                    // Choose metadata subsection selection
-                    let prompt_text =
-                        format!("Please enter the {}", "trait type to deploy".green());
-                    let trait_types_colorized = TraitMetadataType::get_colorized_type_vec(true);
-                    let selection = batbelt::bat_dialoguer::select(
-                        &prompt_text,
-                        trait_types_colorized.clone(),
-                        None,
-                    )
-                    .unwrap();
-                    let selected_trait_type = TraitMetadataType::get_type_vec()[selection];
-                    let trait_metadata_vec =
-                        SourceCodeMetadata::get_filtered_traits(None, Some(selected_trait_type))
-                            .change_context(CommandError)?;
-                    let trait_metadata_names = trait_metadata_vec
-                        .iter()
-                        .map(|trait_metadata| {
-                            miro_command_functions::get_formatted_path(
-                                trait_metadata.name.clone(),
-                                trait_metadata.path.clone(),
-                                trait_metadata.start_line_index,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let prompt_text = format!("Please enter the {}", "trait to deploy".green());
-                    let selections = BatDialoguer::multiselect(
-                        prompt_text,
-                        trait_metadata_names.clone(),
-                        Some(&vec![select_all; trait_metadata_names.len()]),
-                        true,
-                    )
-                    .unwrap();
-
-                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Function,
-                    );
-
-                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
-                        "Do you want to {}\n{:#?}",
-                        "use the default screenshot config?".yellow(),
-                        default_config
-                    ))
-                    .unwrap();
-
-                    let screenshot_options = if use_default {
-                        default_config
-                    } else {
-                        SourceCodeParser::prompt_screenshot_options()
-                    };
-
-                    let sc_vec = trait_metadata_vec
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(sc_index, sc_metadata)| {
-                            if selections.iter().any(|selection| &sc_index == selection) {
-                                Some(sc_metadata.to_source_code_parser(Some(
-                                    miro_command_functions::parse_screenshot_name(
-                                        &sc_metadata.name,
-                                        &selected_miro_frame.title,
-                                    ),
-                                )))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (sc_vec, screenshot_options)
-                }
-                BatMetadataType::Enum => {
-                    // Choose metadata subsection selection
-                    let prompt_text = format!("Please enter the {}", "enum type to deploy".green());
-                    let enum_types_colorized = EnumMetadataType::get_colorized_type_vec(true);
-                    let selection = batbelt::bat_dialoguer::select(
-                        &prompt_text,
-                        enum_types_colorized.clone(),
-                        None,
-                    )
-                    .unwrap();
-                    let selected_enum_type = EnumMetadataType::get_type_vec()[selection];
-                    let enum_metadata_vec =
-                        SourceCodeMetadata::get_filtered_enums(None, Some(selected_enum_type))
-                            .change_context(CommandError)?;
-                    let enum_metadata_names = enum_metadata_vec
-                        .iter()
-                        .map(|enum_metadata| {
-                            miro_command_functions::get_formatted_path(
-                                enum_metadata.name.clone(),
-                                enum_metadata.path.clone(),
-                                enum_metadata.start_line_index,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let prompt_text = format!("Please enter the {}", "enum to deploy".green());
-                    let selections = BatDialoguer::multiselect(
-                        prompt_text,
-                        enum_metadata_names.clone(),
-                        Some(&vec![select_all; enum_metadata_names.len()]),
-                        true,
-                    )
-                    .unwrap();
-
-                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Function,
-                    );
-
-                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
-                        "Do you want to {}\n{:#?}",
-                        "use the default screenshot config?".yellow(),
-                        default_config
-                    ))
-                    .unwrap();
-
-                    let screenshot_options = if use_default {
-                        default_config
-                    } else {
-                        SourceCodeParser::prompt_screenshot_options()
-                    };
-
-                    let sc_vec = enum_metadata_vec
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(sc_index, sc_metadata)| {
-                            if selections.iter().any(|selection| &sc_index == selection) {
-                                Some(sc_metadata.to_source_code_parser(Some(
-                                    miro_command_functions::parse_screenshot_name(
-                                        &sc_metadata.name,
-                                        &selected_miro_frame.title,
-                                    ),
-                                )))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (sc_vec, screenshot_options)
-                }
-            };
-            // promp if continue
-            for sc_metadata in sourcecode_metadata_vec {
-                sc_metadata
-                    .deploy_screenshot_to_miro_frame(
-                        selected_miro_frame.clone(),
-                        0,
-                        selected_miro_frame.height as i64,
-                        screenshot_options.clone(),
-                    )
-                    .await
-                    .change_context(CommandError)?;
-            }
-            let prompt_text = format!(
-                "Do you want to {} in the {} frame?",
-                "continue creating screenshots".yellow(),
-                selected_miro_frame.title.yellow()
-            );
-            continue_selection = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
-            BatMetadataEnvVariables::BatMetadataFileSelected.clean_value();
-        }
+        miro_command_functions::prompt_deploy_source_code(
+            selected_miro_frame,
+            select_all,
+            false,
+            false,
+        )
+        .await?;
         Ok(())
     }
 
@@ -1289,7 +1002,386 @@ impl MiroCommand {
 
 pub mod miro_command_functions {
     use super::*;
+    use crate::batbelt::miro::MiroColor;
     use crate::batbelt::path::prettify_source_code_path;
+
+    pub async fn prompt_deploy_source_code(
+        selected_miro_frame: MiroFrame,
+        select_all: bool,
+        sticky_notes: bool,
+        connected: bool,
+    ) -> CommandResult<()> {
+        let metadata_types_vec = BatMetadataType::get_type_vec();
+        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
+        let mut continue_selection = true;
+
+        while continue_selection {
+            // Choose metadata section selection
+            let prompt_text = format!("Please enter the {}", "metadata type".green());
+            let selection = batbelt::bat_dialoguer::select(
+                &prompt_text,
+                metadata_types_colorized_vec.clone(),
+                None,
+            )
+            .unwrap();
+            let metadata_type_selected = &metadata_types_vec[selection];
+            let (mut sourcecode_metadata_vec, screenshot_options): (
+                Vec<SourceCodeParser>,
+                SourceCodeScreenshotOptions,
+            ) = match metadata_type_selected {
+                BatMetadataType::Struct => {
+                    // Choose metadata subsection selection
+                    let prompt_text =
+                        format!("Please enter the {}", "struct type to deploy".green());
+                    let struct_types_colorized = StructMetadataType::get_colorized_type_vec(true);
+                    let selection = batbelt::bat_dialoguer::select(
+                        &prompt_text,
+                        struct_types_colorized.clone(),
+                        None,
+                    )
+                    .unwrap();
+                    let selected_struct_type = StructMetadataType::get_type_vec()[selection];
+                    let struct_metadata_vec =
+                        SourceCodeMetadata::get_filtered_structs(None, Some(selected_struct_type))
+                            .change_context(CommandError)?;
+                    let struct_metadata_names = struct_metadata_vec
+                        .iter()
+                        .map(|struct_metadata| {
+                            miro_command_functions::get_formatted_path(
+                                struct_metadata.name.clone(),
+                                struct_metadata.path.clone(),
+                                struct_metadata.start_line_index,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let prompt_text = format!("Please enter the {}", "struct to deploy".green());
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
+                        struct_metadata_names.clone(),
+                        Some(&vec![select_all; struct_metadata_names.len()]),
+                        true,
+                    )
+                    .unwrap();
+                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                        BatMetadataType::Struct,
+                    );
+
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                        "Do you want to {}\n{:#?}",
+                        "use the default screenshot config?".yellow(),
+                        default_config
+                    ))
+                    .unwrap();
+
+                    let screenshot_options = if use_default {
+                        default_config
+                    } else {
+                        SourceCodeParser::prompt_screenshot_options()
+                    };
+                    let sc_vec = struct_metadata_vec
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(sc_index, sc_metadata)| {
+                            if selections.iter().any(|selection| &sc_index == selection) {
+                                Some(sc_metadata.to_source_code_parser(None))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    (sc_vec, screenshot_options)
+                }
+                BatMetadataType::Function => {
+                    // Choose metadata subsection selection
+                    let prompt_text =
+                        format!("Please enter the {}", "function type to deploy".green());
+                    let function_types_colorized =
+                        FunctionMetadataType::get_colorized_type_vec(true);
+                    let selection = batbelt::bat_dialoguer::select(
+                        &prompt_text,
+                        function_types_colorized.clone(),
+                        None,
+                    )
+                    .unwrap();
+                    let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
+                    let function_metadata_vec = SourceCodeMetadata::get_filtered_functions(
+                        None,
+                        Some(selected_function_type),
+                    )
+                    .change_context(CommandError)?;
+                    let function_metadata_names = function_metadata_vec
+                        .iter()
+                        .map(|function_metadata| {
+                            miro_command_functions::get_formatted_path(
+                                function_metadata.name.clone(),
+                                function_metadata.path.clone(),
+                                function_metadata.start_line_index,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let prompt_text = format!("Please enter the {}", "function to deploy".green());
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
+                        function_metadata_names.clone(),
+                        Some(&vec![select_all; function_metadata_names.len()]),
+                        true,
+                    )
+                    .unwrap();
+
+                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                        BatMetadataType::Function,
+                    );
+
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                        "Do you want to {}\n{:#?}",
+                        "use the default screenshot config?".yellow(),
+                        default_config
+                    ))
+                    .unwrap();
+
+                    let screenshot_options = if use_default {
+                        default_config
+                    } else {
+                        SourceCodeParser::prompt_screenshot_options()
+                    };
+
+                    let sc_vec = function_metadata_vec
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(sc_index, sc_metadata)| {
+                            if selections.iter().any(|selection| &sc_index == selection) {
+                                Some(sc_metadata.to_source_code_parser(None))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    (sc_vec, screenshot_options)
+                }
+
+                BatMetadataType::Trait => {
+                    // Choose metadata subsection selection
+                    let prompt_text =
+                        format!("Please enter the {}", "trait type to deploy".green());
+                    let trait_types_colorized = TraitMetadataType::get_colorized_type_vec(true);
+                    let selection = batbelt::bat_dialoguer::select(
+                        &prompt_text,
+                        trait_types_colorized.clone(),
+                        None,
+                    )
+                    .unwrap();
+                    let selected_trait_type = TraitMetadataType::get_type_vec()[selection];
+                    let trait_metadata_vec =
+                        SourceCodeMetadata::get_filtered_traits(None, Some(selected_trait_type))
+                            .change_context(CommandError)?;
+                    let trait_metadata_names = trait_metadata_vec
+                        .iter()
+                        .map(|trait_metadata| {
+                            miro_command_functions::get_formatted_path(
+                                trait_metadata.name.clone(),
+                                trait_metadata.path.clone(),
+                                trait_metadata.start_line_index,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let prompt_text = format!("Please enter the {}", "trait to deploy".green());
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
+                        trait_metadata_names.clone(),
+                        Some(&vec![select_all; trait_metadata_names.len()]),
+                        true,
+                    )
+                    .unwrap();
+
+                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                        BatMetadataType::Function,
+                    );
+
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                        "Do you want to {}\n{:#?}",
+                        "use the default screenshot config?".yellow(),
+                        default_config
+                    ))
+                    .unwrap();
+
+                    let screenshot_options = if use_default {
+                        default_config
+                    } else {
+                        SourceCodeParser::prompt_screenshot_options()
+                    };
+
+                    let sc_vec = trait_metadata_vec
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(sc_index, sc_metadata)| {
+                            if selections.iter().any(|selection| &sc_index == selection) {
+                                Some(sc_metadata.to_source_code_parser(None))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    (sc_vec, screenshot_options)
+                }
+                BatMetadataType::Enum => {
+                    // Choose metadata subsection selection
+                    let prompt_text = format!("Please enter the {}", "enum type to deploy".green());
+                    let enum_types_colorized = EnumMetadataType::get_colorized_type_vec(true);
+                    let selection = batbelt::bat_dialoguer::select(
+                        &prompt_text,
+                        enum_types_colorized.clone(),
+                        None,
+                    )
+                    .unwrap();
+                    let selected_enum_type = EnumMetadataType::get_type_vec()[selection];
+                    let enum_metadata_vec =
+                        SourceCodeMetadata::get_filtered_enums(None, Some(selected_enum_type))
+                            .change_context(CommandError)?;
+                    let enum_metadata_names = enum_metadata_vec
+                        .iter()
+                        .map(|enum_metadata| {
+                            miro_command_functions::get_formatted_path(
+                                enum_metadata.name.clone(),
+                                enum_metadata.path.clone(),
+                                enum_metadata.start_line_index,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let prompt_text = format!("Please enter the {}", "enum to deploy".green());
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
+                        enum_metadata_names.clone(),
+                        Some(&vec![select_all; enum_metadata_names.len()]),
+                        true,
+                    )
+                    .unwrap();
+
+                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                        BatMetadataType::Function,
+                    );
+
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                        "Do you want to {}\n{:#?}",
+                        "use the default screenshot config?".yellow(),
+                        default_config
+                    ))
+                    .unwrap();
+
+                    let screenshot_options = if use_default {
+                        default_config
+                    } else {
+                        SourceCodeParser::prompt_screenshot_options()
+                    };
+
+                    let sc_vec = enum_metadata_vec
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(sc_index, sc_metadata)| {
+                            if selections.iter().any(|selection| &sc_index == selection) {
+                                Some(sc_metadata.to_source_code_parser(None))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    (sc_vec, screenshot_options)
+                }
+            };
+
+            if sticky_notes {
+                let mut counting_index = 0;
+                let mut selected_sc_metadata_names: Vec<String> = vec![];
+                loop {
+                    let sc_metadata_names = sourcecode_metadata_vec
+                        .clone()
+                        .into_iter()
+                        .filter_map(|meta| {
+                            if !selected_sc_metadata_names.contains(&meta.name) {
+                                Some(meta.name)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    let prompt_text =
+                        format!("Select the {} sticky note to deploy", counting_index + 1);
+                    let sc_metadata_selected_index =
+                        BatDialoguer::select(prompt_text, sc_metadata_names.clone(), None)?;
+                    selected_sc_metadata_names
+                        .push(sc_metadata_names[sc_metadata_selected_index].clone());
+                    counting_index += 1;
+                    if counting_index == sourcecode_metadata_vec.len() {
+                        break;
+                    }
+                }
+
+                let mut deployed_sticky_notes: Vec<MiroStickyNote> = vec![];
+
+                let deploy_space = selected_miro_frame.width * 9 / 10;
+                let sticky_notes_space = deploy_space * 8 / 10;
+                let sticky_note_width = sticky_notes_space / counting_index as u64;
+                let frame_grid = selected_miro_frame.width / (counting_index as u64 + 1);
+                let y_position = selected_miro_frame.height / 2;
+
+                for (sc_metadata_name_index, sc_metadata_name) in
+                    selected_sc_metadata_names.clone().into_iter().enumerate()
+                {
+                    let mut sticky_note = MiroStickyNote::new(
+                        &sc_metadata_name,
+                        MiroColor::LightYellow,
+                        &selected_miro_frame.item_id,
+                        frame_grid as i64 * (sc_metadata_name_index as i64 + 1),
+                        y_position as i64,
+                        sticky_note_width,
+                        100,
+                    );
+                    sticky_note.deploy().await.change_context(CommandError)?;
+                    deployed_sticky_notes.push(sticky_note.clone());
+                }
+
+                if connected && deployed_sticky_notes.len() > 1 {
+                    for (deployed_sticky_note_index, deployed_sticky_note) in
+                        deployed_sticky_notes.clone().into_iter().enumerate()
+                    {
+                        if deployed_sticky_note_index < deployed_sticky_notes.clone().len() - 1 {
+                            batbelt::miro::connector::create_connector(
+                                &deployed_sticky_note.item_id,
+                                &deployed_sticky_notes[deployed_sticky_note_index + 1].item_id,
+                                None,
+                            )
+                            .await
+                            .change_context(CommandError)?;
+                        }
+                    }
+                }
+            } else {
+                for mut sc_metadata in sourcecode_metadata_vec {
+                    sc_metadata.name = miro_command_functions::parse_screenshot_name(
+                        &sc_metadata.name,
+                        &selected_miro_frame.title,
+                    );
+                    sc_metadata
+                        .deploy_screenshot_to_miro_frame(
+                            selected_miro_frame.clone(),
+                            0,
+                            selected_miro_frame.height as i64,
+                            screenshot_options.clone(),
+                        )
+                        .await
+                        .change_context(CommandError)?;
+                }
+            }
+            // prompt if continue
+            let prompt_text = format!(
+                "Do you want to {} in the {} frame?",
+                "continue creating screenshots".yellow(),
+                selected_miro_frame.title.yellow()
+            );
+            continue_selection = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
+            BatMetadataEnvVariables::BatMetadataFileSelected.clean_value();
+        }
+        Ok(())
+    }
 
     pub async fn deploy_miro_frame_for_co(
         entry_point_name: &str,
