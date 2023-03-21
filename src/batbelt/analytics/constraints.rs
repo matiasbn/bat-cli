@@ -1,6 +1,8 @@
 use crate::batbelt::analytics::{AnalyticsError, AnalyticsResult, BatAnalytics};
+use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::metadata::{BatMetadata, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use colored::Colorize;
 use error_stack::{Report, ResultExt};
 use lazy_regex::regex;
 use serde::{Deserialize, Serialize};
@@ -94,13 +96,41 @@ impl ConstraintsAnalytics {
             .into_iter()
             .partition(|analytics| analytics.reviewed);
 
-        let (invariant_vec, non_invariant_vec): (Vec<ConstraintInfo>, Vec<ConstraintInfo>) =
+        let (mut invariant_reviewed, mut non_invariant_reviewed): (
+            Vec<ConstraintInfo>,
+            Vec<ConstraintInfo>,
+        ) = not_reviewed
+            .clone()
+            .into_iter()
+            .map(|analytics| {
+                let mut cloned = analytics.clone();
+                let prompt_text = format!(
+                    "is this constraint invariant?:\n{}\n entry points:\n{:#?}",
+                    analytics.constraint.bright_green(),
+                    analytics.entry_points
+                );
+                let is_invariant = BatDialoguer::select_yes_or_no(prompt_text).unwrap();
+                cloned.invariant = is_invariant;
+                cloned.reviewed = true;
+                cloned
+            })
+            .partition(|analytics| analytics.invariant);
+
+        let (mut invariant_vec, mut non_invariant_vec): (Vec<ConstraintInfo>, Vec<ConstraintInfo>) =
             reviewed
                 .into_iter()
                 .partition(|analytic| analytic.invariant);
-        bat_analytics.constraints.invariants = invariant_vec;
-        bat_analytics.constraints.non_invariants = non_invariant_vec;
-        bat_analytics.constraints.to_review = not_reviewed;
+        let mut invariants_total = vec![];
+        invariants_total.append(&mut invariant_vec);
+        invariants_total.append(&mut invariant_reviewed);
+
+        let mut non_invariants_total = vec![];
+        non_invariants_total.append(&mut non_invariant_reviewed);
+        non_invariants_total.append(&mut non_invariant_vec);
+
+        bat_analytics.constraints.invariants = invariants_total;
+        bat_analytics.constraints.non_invariants = non_invariants_total;
+        bat_analytics.constraints.to_review = vec![];
         bat_analytics.save_analytics()?;
         Ok(())
     }
