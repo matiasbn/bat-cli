@@ -1,5 +1,5 @@
-use crate::batbelt::analytics::code_overhaul_interactive::CodeOverhaulInteractiveCache;
 use crate::batbelt::analytics::constraints::{ConstraintInfo, ConstraintsAnalytics};
+use crate::batbelt::analytics::entry_points_flow::EntryPointFlowAnalytics;
 use crate::batbelt::path::BatFile;
 use crate::config::BatConfig;
 use colored::Colorize;
@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 use std::error::Error;
 use std::fmt;
 
-pub mod code_overhaul_interactive;
 pub mod constraints;
+pub mod entry_points_flow;
 pub mod state_changes;
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub type AnalyticsResult<T> = Result<T, AnalyticsError>;
 pub struct BatAnalytics {
     #[serde(default)]
     pub initialized: bool,
-    pub co_interactive: Vec<CodeOverhaulInteractiveCache>,
+    pub entry_points_flow: Vec<EntryPointFlowAnalytics>,
     pub constraints: ConstraintsAnalytics,
 }
 
@@ -41,11 +41,15 @@ impl BatAnalytics {
 
     pub fn create_analytics() -> AnalyticsResult<()> {
         let bat_analytics = BatAnalytics::read_analytics()?;
-        if bat_analytics.initialized {
-            return Err(Report::new(AnalyticsError)
-                .attach_printable(format!("Analytics already initialized")));
+        if !bat_analytics.initialized {
+            ConstraintsAnalytics::init_analytics_data()?;
+        } else {
+            println!(
+                "Analytics already initialized, skipping {}",
+                "constraints analytics".bright_green()
+            );
         }
-        ConstraintsAnalytics::generate_analytics_data()?;
+        EntryPointFlowAnalytics::init_analytics_data()?;
         let mut bat_analytics = BatAnalytics::read_analytics()?;
         bat_analytics.initialized = true;
         bat_analytics.save_analytics()?;

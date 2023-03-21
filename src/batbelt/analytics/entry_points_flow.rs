@@ -17,42 +17,18 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct CodeOverhaulInteractiveCache {
+pub struct EntryPointFlowAnalytics {
     pub context_accounts_name: String,
     pub entry_point_name: String,
     pub priority: usize,
-    pub started: bool,
-    pub parsed: bool,
     pub program_accounts: Vec<String>,
     pub init_program_accounts: Vec<String>,
     pub mut_program_accounts: Vec<String>,
     pub close_program_accounts: Vec<String>,
 }
 
-impl CodeOverhaulInteractiveCache {
-    pub fn get_suggested_next_entry_point() -> AnalyticsResult<Self> {
-        let bat_cache = BatAnalytics::read_analytics()?;
-        if bat_cache.co_interactive.is_empty() {
-            Self::create_analytics_data()?;
-        }
-        Self::update_analytics_data()?;
-        Ok(Self::get_next_suggestion()?)
-    }
-
-    fn get_next_suggestion() -> AnalyticsResult<Self> {
-        let bat_cache = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
-        let next_suggestion = bat_cache
-            .co_interactive
-            .into_iter()
-            .find(|co_cache| !co_cache.parsed);
-        match next_suggestion {
-            None => Err(Report::new(AnalyticsError)
-                .attach_printable(format!("No more suggested entry points"))),
-            Some(suggestion) => Ok(suggestion),
-        }
-    }
-
-    fn create_analytics_data() -> AnalyticsResult<Vec<Self>> {
+impl EntryPointFlowAnalytics {
+    pub fn init_analytics_data() -> AnalyticsResult<()> {
         let bat_metadata = BatMetadata::read_metadata().change_context(AnalyticsError)?;
         let context_accounts_metadata = bat_metadata.context_accounts.clone();
         let (mut init_program_ca_metadata, mut not_init_program_ca_metadata): (
@@ -96,13 +72,11 @@ impl CodeOverhaulInteractiveCache {
             }
             let ep_meta = ep_meta.unwrap();
             bat_analytics
-                .co_interactive
-                .push(CodeOverhaulInteractiveCache {
+                .entry_points_flow
+                .push(EntryPointFlowAnalytics {
                     context_accounts_name: ca_meta.name,
                     entry_point_name: ep_meta.name,
                     priority: ca_meta_id,
-                    started: false,
-                    parsed: false,
                     program_accounts: ca_meta.program_accounts,
                     init_program_accounts: ca_meta
                         .init_program_account
@@ -122,29 +96,28 @@ impl CodeOverhaulInteractiveCache {
                 })
         }
         bat_analytics.save_analytics()?;
-        bat_analytics.commit_file()?;
-        Ok(bat_analytics.co_interactive)
-    }
-
-    fn update_analytics_data() -> AnalyticsResult<()> {
-        let mut bat_cache = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
-        let co_bat_folder = BatFolder::CodeOverhaulToReview;
-        let co_all_file_names = co_bat_folder
-            .get_all_files_names(false, None, None)
-            .change_context(AnalyticsError)?
-            .into_iter()
-            .map(|file_name| file_name.trim_end_matches(".md").to_string())
-            .collect::<Vec<_>>();
-        bat_cache
-            .co_interactive
-            .iter_mut()
-            .map(|co_cache| {
-                co_cache.started = !co_all_file_names.contains(&co_cache.entry_point_name.clone());
-                co_cache
-            })
-            .collect::<Vec<_>>();
-        bat_cache.save_analytics()?;
-        bat_cache.commit_file()?;
         Ok(())
     }
+
+    // pub fn update_analytics_data() -> AnalyticsResult<()> {
+    //     let mut bat_cache = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
+    //     let co_bat_folder = BatFolder::CodeOverhaulToReview;
+    //     let co_all_file_names = co_bat_folder
+    //         .get_all_files_names(false, None, None)
+    //         .change_context(AnalyticsError)?
+    //         .into_iter()
+    //         .map(|file_name| file_name.trim_end_matches(".md").to_string())
+    //         .collect::<Vec<_>>();
+    //     bat_cache
+    //         .entry_points_flow
+    //         .iter_mut()
+    //         .map(|co_cache| {
+    //             co_cache.started = !co_all_file_names.contains(&co_cache.entry_point_name.clone());
+    //             co_cache
+    //         })
+    //         .collect::<Vec<_>>();
+    //     bat_cache.save_analytics()?;
+    //     bat_cache.commit_file()?;
+    //     Ok(())
+    // }
 }

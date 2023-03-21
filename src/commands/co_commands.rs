@@ -10,7 +10,7 @@ use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 use std::fs;
 
-use crate::batbelt::analytics::code_overhaul_interactive::CodeOverhaulInteractiveCache;
+use crate::batbelt::analytics::entry_points_flow::EntryPointFlowAnalytics;
 use crate::batbelt::analytics::BatAnalytics;
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
@@ -333,75 +333,75 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
-    fn execute_start_interactive(&self) -> CommandResult<String> {
-        let suggested_entry_point_cache =
-            CodeOverhaulInteractiveCache::get_suggested_next_entry_point()
-                .change_context(CommandError)?;
-        let entry_point_name = suggested_entry_point_cache.entry_point_name;
-        let ep_parser =
-            EntrypointParser::new_from_name(&entry_point_name).change_context(CommandError)?;
-        let handler_sc_metadata = ep_parser.handler.unwrap();
-        let handler_sc_parser = handler_sc_metadata.to_source_code_parser(None);
-
-        CodeEditor::open_file_in_editor(
-            &handler_sc_parser.path,
-            Some(handler_sc_parser.start_line_index),
-        )?;
-
-        let handler_content = handler_sc_parser.get_source_code_content();
-
-        let handler_content_lines = handler_content.lines().collect::<Vec<_>>();
-        if !suggested_entry_point_cache.init_program_accounts.is_empty() {
-            for init_program_account in suggested_entry_point_cache.init_program_accounts {
-                println!("Initializing: {}", init_program_account.bright_green());
-                let solana_account_parser =
-                    SolanaAccountParser::new_from_struct_name_and_solana_account_type(
-                        init_program_account,
-                        SolanaAccountType::ProgramStateAccount,
-                    )
-                    .change_context(CommandError)?;
-                for account in solana_account_parser.accounts {
-                    let prompt_text = format!(
-                        "Is the {}[{}] value assigned on this handler?:",
-                        account.account_name, account.account_type
-                    );
-                    let is_assigned = BatDialoguer::select_yes_or_no(prompt_text)?;
-                    if !is_assigned {
-                        continue;
-                    }
-                    let prompt_text = format!(
-                        "Select the lines with the value for {}[{}] with the space bar",
-                        account.account_name.bright_green(),
-                        account.account_type.bright_yellow()
-                    );
-                    let selection = BatDialoguer::multiselect(
-                        prompt_text,
-                        handler_content_lines.clone(),
-                        None,
-                        true,
-                    )?;
-                    let parsed_value = if selection.len() == 1 {
-                        co_commands_functions::get_value_single_line(
-                            handler_content_lines[selection[0]],
-                        )
-                    } else {
-                        co_commands_functions::get_value_single_line(
-                            handler_content_lines[selection[0]],
-                        )
-                    };
-                    // let parse_value = println!(
-                    //     "handler_content_lines[selection]: {}",
-                    //     handler_content_lines[selection]
-                    // );
-                }
-            }
-        }
-        // println!(
-        //     "init_program_ca_metadata: {:#?}",
-        //     suggested_entry_point_cache
-        // );
-        Ok("".to_string())
-    }
+    // fn execute_start_interactive(&self) -> CommandResult<String> {
+    //     let suggested_entry_point_cache =
+    //         EntryPointFlow::get_suggested_next_entry_point()
+    //             .change_context(CommandError)?;
+    //     let entry_point_name = suggested_entry_point_cache.entry_point_name;
+    //     let ep_parser =
+    //         EntrypointParser::new_from_name(&entry_point_name).change_context(CommandError)?;
+    //     let handler_sc_metadata = ep_parser.handler.unwrap();
+    //     let handler_sc_parser = handler_sc_metadata.to_source_code_parser(None);
+    //
+    //     CodeEditor::open_file_in_editor(
+    //         &handler_sc_parser.path,
+    //         Some(handler_sc_parser.start_line_index),
+    //     )?;
+    //
+    //     let handler_content = handler_sc_parser.get_source_code_content();
+    //
+    //     let handler_content_lines = handler_content.lines().collect::<Vec<_>>();
+    //     if !suggested_entry_point_cache.init_program_accounts.is_empty() {
+    //         for init_program_account in suggested_entry_point_cache.init_program_accounts {
+    //             println!("Initializing: {}", init_program_account.bright_green());
+    //             let solana_account_parser =
+    //                 SolanaAccountParser::new_from_struct_name_and_solana_account_type(
+    //                     init_program_account,
+    //                     SolanaAccountType::ProgramStateAccount,
+    //                 )
+    //                 .change_context(CommandError)?;
+    //             for account in solana_account_parser.accounts {
+    //                 let prompt_text = format!(
+    //                     "Is the {}[{}] value assigned on this handler?:",
+    //                     account.account_name, account.account_type
+    //                 );
+    //                 let is_assigned = BatDialoguer::select_yes_or_no(prompt_text)?;
+    //                 if !is_assigned {
+    //                     continue;
+    //                 }
+    //                 let prompt_text = format!(
+    //                     "Select the lines with the value for {}[{}] with the space bar",
+    //                     account.account_name.bright_green(),
+    //                     account.account_type.bright_yellow()
+    //                 );
+    //                 let selection = BatDialoguer::multiselect(
+    //                     prompt_text,
+    //                     handler_content_lines.clone(),
+    //                     None,
+    //                     true,
+    //                 )?;
+    //                 let parsed_value = if selection.len() == 1 {
+    //                     co_commands_functions::get_value_single_line(
+    //                         handler_content_lines[selection[0]],
+    //                     )
+    //                 } else {
+    //                     co_commands_functions::get_value_single_line(
+    //                         handler_content_lines[selection[0]],
+    //                     )
+    //                 };
+    //                 // let parse_value = println!(
+    //                 //     "handler_content_lines[selection]: {}",
+    //                 //     handler_content_lines[selection]
+    //                 // );
+    //             }
+    //         }
+    //     }
+    //     // println!(
+    //     //     "init_program_ca_metadata: {:#?}",
+    //     //     suggested_entry_point_cache
+    //     // );
+    //     Ok("".to_string())
+    // }
 }
 
 mod co_commands_functions {

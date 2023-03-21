@@ -29,7 +29,7 @@ pub struct ConstraintInfo {
 }
 
 impl ConstraintsAnalytics {
-    pub fn generate_analytics_data() -> AnalyticsResult<()> {
+    pub fn init_analytics_data() -> AnalyticsResult<()> {
         let mut bat_analytics = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
         let bat_metadata = BatMetadata::read_metadata().change_context(AnalyticsError)?;
         let entry_points_metadata = bat_metadata.clone().entry_points;
@@ -88,13 +88,12 @@ impl ConstraintsAnalytics {
         let mut bat_analytics = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
         let mut analytics_total = vec![];
         let ConstraintsAnalytics {
-            constraints_count,
-            mut invariants_count,
-            mut non_invariants_count,
             mut invariants,
             mut non_invariants,
             mut to_review,
+            ..
         } = bat_analytics.constraints;
+
         analytics_total.append(&mut invariants);
         analytics_total.append(&mut non_invariants);
         analytics_total.append(&mut to_review);
