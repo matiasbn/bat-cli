@@ -125,6 +125,9 @@ impl BatCommands {
             BatCommands::Finding(FindingCommand::AcceptAll) => {
                 commands::finding_commands::accept_all()
             }
+            BatCommands::Finding(FindingCommand::CreateEvidence) => {
+                commands::finding_commands::create_evidence()
+            }
             BatCommands::Sonar {
                 skip_source_code,
                 only_context_accounts,
