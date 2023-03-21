@@ -1335,6 +1335,7 @@ pub mod miro_command_functions {
                         sticky_note_width,
                         100,
                     );
+                    println!("Deploying {}", sticky_note.content.bright_green());
                     sticky_note.deploy().await.change_context(CommandError)?;
                     deployed_sticky_notes.push(sticky_note.clone());
                 }
@@ -1344,6 +1345,13 @@ pub mod miro_command_functions {
                         deployed_sticky_notes.clone().into_iter().enumerate()
                     {
                         if deployed_sticky_note_index < deployed_sticky_notes.clone().len() - 1 {
+                            println!(
+                                "Connecting {} to {}",
+                                deployed_sticky_note.content.bright_green(),
+                                &deployed_sticky_notes[deployed_sticky_note_index + 1]
+                                    .content
+                                    .bright_green()
+                            );
                             batbelt::miro::connector::create_connector(
                                 &deployed_sticky_note.item_id,
                                 &deployed_sticky_notes[deployed_sticky_note_index + 1].item_id,
