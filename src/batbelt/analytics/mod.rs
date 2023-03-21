@@ -28,6 +28,8 @@ pub type AnalyticsResult<T> = Result<T, AnalyticsError>;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct BatAnalytics {
+    #[serde(default)]
+    pub initialized: bool,
     pub co_interactive: Vec<CodeOverhaulInteractiveCache>,
     pub constraints: ConstraintsAnalytics,
 }
@@ -38,11 +40,29 @@ impl BatAnalytics {
     }
 
     pub fn create_analytics() -> AnalyticsResult<()> {
-        ConstraintsAnalytics::generate_analytics_data()
+        let bat_analytics = BatAnalytics::read_analytics()?;
+        if bat_analytics.initialized {
+            return Err(Report::new(AnalyticsError)
+                .attach_printable(format!("Analytics already initialized")));
+        }
+        ConstraintsAnalytics::generate_analytics_data()?;
+        let mut bat_analytics = BatAnalytics::read_analytics()?;
+        bat_analytics.initialized = true;
+        bat_analytics.save_analytics()?;
+        bat_analytics.commit_file()?;
+        Ok(())
     }
 
     pub fn update_analytics() -> AnalyticsResult<()> {
-        ConstraintsAnalytics::update_analytics_data()
+        let bat_analytics = BatAnalytics::read_analytics()?;
+        if !bat_analytics.initialized {
+            return Err(
+                Report::new(AnalyticsError).attach_printable(format!("Analytics not initialized"))
+            );
+        }
+        ConstraintsAnalytics::update_analytics_data()?;
+        bat_analytics.commit_file()?;
+        Ok(())
     }
 
     pub fn read_analytics() -> AnalyticsResult<Self> {

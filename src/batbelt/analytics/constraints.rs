@@ -9,15 +9,9 @@ use std::hash::Hash;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ConstraintsAnalytics {
-    #[serde(default)]
     pub constraints_count: usize,
-    #[serde(default)]
-    pub initialized: bool,
-    #[serde(default)]
     pub invariants: Vec<ConstraintInfo>,
-    #[serde(default)]
     pub non_invariants: Vec<ConstraintInfo>,
-    #[serde(default)]
     pub to_review: Vec<ConstraintInfo>,
 }
 
@@ -32,10 +26,6 @@ pub struct ConstraintInfo {
 impl ConstraintsAnalytics {
     pub fn generate_analytics_data() -> AnalyticsResult<()> {
         let mut bat_analytics = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
-        if bat_analytics.constraints.initialized {
-            return Err(Report::new(AnalyticsError)
-                .attach_printable(format!("Constraints analytics already initialized")));
-        }
         let bat_metadata = BatMetadata::read_metadata().change_context(AnalyticsError)?;
         let entry_points_metadata = bat_metadata.clone().entry_points;
         let mut constraints_hashmap: HashMap<String, Vec<String>> = HashMap::new();
@@ -78,14 +68,12 @@ impl ConstraintsAnalytics {
         }
         let new_analytics = ConstraintsAnalytics {
             constraints_count: constraints_analytics_vec.len(),
-            initialized: true,
             invariants: vec![],
             non_invariants: vec![],
             to_review: constraints_analytics_vec,
         };
         bat_analytics.constraints = new_analytics;
         bat_analytics.save_analytics()?;
-        bat_analytics.commit_file()?;
         Ok(())
     }
 
@@ -94,7 +82,6 @@ impl ConstraintsAnalytics {
         let mut analytics_total = vec![];
         let ConstraintsAnalytics {
             constraints_count,
-            initialized,
             mut invariants,
             mut non_invariants,
             mut to_review,
@@ -115,7 +102,6 @@ impl ConstraintsAnalytics {
         bat_analytics.constraints.non_invariants = non_invariant_vec;
         bat_analytics.constraints.to_review = not_reviewed;
         bat_analytics.save_analytics()?;
-        bat_analytics.commit_file()?;
         Ok(())
     }
 }
