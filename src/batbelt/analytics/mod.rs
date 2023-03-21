@@ -30,6 +30,7 @@ pub type AnalyticsResult<T> = Result<T, AnalyticsError>;
 pub struct BatAnalytics {
     pub co_interactive: Vec<CodeOverhaulInteractiveCache>,
     pub constraints: Vec<ConstraintAnalytics>,
+    pub constraints_count: usize,
 }
 
 impl BatAnalytics {

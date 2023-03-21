@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct StateChangesCache {
+pub struct StateChangeAnalytics {
     pub last_priority_parsed: usize,
     pub init_accounts_by_priority: Vec<InitializedAccountsByPriority>,
     pub program_account_state_changes: Vec<ProgramAccountStateChanges>,

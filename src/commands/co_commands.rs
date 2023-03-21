@@ -139,9 +139,8 @@ impl CodeOverhaulCommand {
                 .get_file_name()
                 .change_context(CommandError)?;
             let finished_file_summary = format!(
-                "# {}\n\n{}\n\n{}\n\n{}\n\n## Code overhaul file path:\n\n[{}](code-overhaul/finished/{})",
+                "# {}\n\n{}\n\n{}\n\n## Code overhaul file path:\n\n[{}](code-overhaul/finished/{})",
                 co_file_name,
-                state_changes_section_content,
                 notes_section_content,
                 miro_frame_url_section_content,
                 co_file_name,
