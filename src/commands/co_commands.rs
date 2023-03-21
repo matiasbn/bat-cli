@@ -16,6 +16,7 @@ use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use lazy_regex::regex;
 use regex::Regex;
 
 use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
@@ -123,7 +124,7 @@ impl CodeOverhaulCommand {
                     .to_markdown_header()
                     .replace("#", "##"),
             );
-            let notes_section_content = co_parser.section_content.notes.replace(
+            let mut notes_section_content = co_parser.section_content.notes.replace(
                 &CodeOverhaulSection::Notes.to_markdown_header(),
                 &CodeOverhaulSection::Notes
                     .to_markdown_header()
@@ -138,6 +139,19 @@ impl CodeOverhaulCommand {
             let co_file_name = finished_co_file
                 .get_file_name()
                 .change_context(CommandError)?;
+
+            let checkbox_regex = regex!(r#"- \[x\]"#);
+            let notes_section_filtered = notes_section_content
+                .lines()
+                .filter(|line| !checkbox_regex.is_match(line))
+                .collect::<Vec<_>>();
+
+            if notes_section_filtered.len() == 2 && notes_section_filtered[1] == "" {
+                continue;
+            }
+
+            notes_section_content = notes_section_filtered.join("\n");
+
             let finished_file_summary = format!(
                 "# {}\n\n{}\n\n{}\n\n## Code overhaul file path:\n\n[{}](code-overhaul/finished/{})",
                 co_file_name,
