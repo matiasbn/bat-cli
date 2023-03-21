@@ -33,9 +33,11 @@ use tabled::{Modify, Panel, Style, Table, Tabled, Width};
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
 )]
 pub enum AnalyticsCommand {
-    /// Opens a file from source code metadata to code editor. If code editor is None, then prints the path
+    /// Creates analytics
     #[default]
     Create,
+    /// Updates analytics
+    Update,
 }
 
 impl BatEnumerator for AnalyticsCommand {}
@@ -44,6 +46,7 @@ impl BatCommandEnumerator for AnalyticsCommand {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
             AnalyticsCommand::Create => self.execute_create(),
+            AnalyticsCommand::Update => self.execute_update(),
         }
     }
 
@@ -59,6 +62,12 @@ impl BatCommandEnumerator for AnalyticsCommand {
 impl AnalyticsCommand {
     fn execute_create(&self) -> CommandResult<()> {
         BatAnalytics::create_analytics().change_context(CommandError)?;
+        // format!("Analytics created!");
+        Ok(())
+    }
+
+    fn execute_update(&self) -> CommandResult<()> {
+        BatAnalytics::update_analytics().change_context(CommandError)?;
         // format!("Analytics created!");
         Ok(())
     }

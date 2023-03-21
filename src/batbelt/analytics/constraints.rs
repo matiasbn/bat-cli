@@ -1,22 +1,41 @@
 use crate::batbelt::analytics::{AnalyticsError, AnalyticsResult, BatAnalytics};
 use crate::batbelt::metadata::{BatMetadata, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use error_stack::ResultExt;
+use error_stack::{Report, ResultExt};
 use lazy_regex::regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ConstraintAnalytics {
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ConstraintsAnalytics {
+    #[serde(default)]
+    pub constraints_count: usize,
+    #[serde(default)]
+    pub initialized: bool,
+    #[serde(default)]
+    pub invariants: Vec<ConstraintInfo>,
+    #[serde(default)]
+    pub non_invariants: Vec<ConstraintInfo>,
+    #[serde(default)]
+    pub to_review: Vec<ConstraintInfo>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ConstraintInfo {
     pub invariant: bool,
     pub reviewed: bool,
     pub constraint: String,
     pub entry_points: Vec<String>,
 }
 
-impl ConstraintAnalytics {
+impl ConstraintsAnalytics {
     pub fn generate_analytics_data() -> AnalyticsResult<()> {
+        let mut bat_analytics = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
+        if bat_analytics.constraints.initialized {
+            return Err(Report::new(AnalyticsError)
+                .attach_printable(format!("Constraints analytics already initialized")));
+        }
         let bat_metadata = BatMetadata::read_metadata().change_context(AnalyticsError)?;
         let entry_points_metadata = bat_metadata.clone().entry_points;
         let mut constraints_hashmap: HashMap<String, Vec<String>> = HashMap::new();
@@ -50,16 +69,51 @@ impl ConstraintAnalytics {
         }
         let mut constraints_analytics_vec = vec![];
         for constraint in constraints_hashmap.keys() {
-            constraints_analytics_vec.push(ConstraintAnalytics {
+            constraints_analytics_vec.push(ConstraintInfo {
                 invariant: true,
                 reviewed: false,
                 constraint: constraint.clone(),
                 entry_points: constraints_hashmap.get(constraint).unwrap().clone(),
             })
         }
+        let new_analytics = ConstraintsAnalytics {
+            constraints_count: constraints_analytics_vec.len(),
+            initialized: true,
+            invariants: vec![],
+            non_invariants: vec![],
+            to_review: constraints_analytics_vec,
+        };
+        bat_analytics.constraints = new_analytics;
+        bat_analytics.save_analytics()?;
+        bat_analytics.commit_file()?;
+        Ok(())
+    }
+
+    pub fn update_analytics_data() -> AnalyticsResult<()> {
         let mut bat_analytics = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
-        bat_analytics.constraints_count = constraints_analytics_vec.len();
-        bat_analytics.constraints = constraints_analytics_vec;
+        let mut analytics_total = vec![];
+        let ConstraintsAnalytics {
+            constraints_count,
+            initialized,
+            mut invariants,
+            mut non_invariants,
+            mut to_review,
+        } = bat_analytics.constraints;
+        analytics_total.append(&mut invariants);
+        analytics_total.append(&mut non_invariants);
+        analytics_total.append(&mut to_review);
+
+        let (reviewed, not_reviewed): (Vec<ConstraintInfo>, Vec<ConstraintInfo>) = analytics_total
+            .into_iter()
+            .partition(|analytics| analytics.reviewed);
+
+        let (invariant_vec, non_invariant_vec): (Vec<ConstraintInfo>, Vec<ConstraintInfo>) =
+            reviewed
+                .into_iter()
+                .partition(|analytic| analytic.invariant);
+        bat_analytics.constraints.invariants = invariant_vec;
+        bat_analytics.constraints.non_invariants = non_invariant_vec;
+        bat_analytics.constraints.to_review = not_reviewed;
         bat_analytics.save_analytics()?;
         bat_analytics.commit_file()?;
         Ok(())

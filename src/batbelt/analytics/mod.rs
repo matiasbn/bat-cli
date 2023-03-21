@@ -1,5 +1,5 @@
 use crate::batbelt::analytics::code_overhaul_interactive::CodeOverhaulInteractiveCache;
-use crate::batbelt::analytics::constraints::ConstraintAnalytics;
+use crate::batbelt::analytics::constraints::{ConstraintInfo, ConstraintsAnalytics};
 use crate::batbelt::path::BatFile;
 use crate::config::BatConfig;
 use colored::Colorize;
@@ -29,8 +29,7 @@ pub type AnalyticsResult<T> = Result<T, AnalyticsError>;
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct BatAnalytics {
     pub co_interactive: Vec<CodeOverhaulInteractiveCache>,
-    pub constraints: Vec<ConstraintAnalytics>,
-    pub constraints_count: usize,
+    pub constraints: ConstraintsAnalytics,
 }
 
 impl BatAnalytics {
@@ -39,7 +38,11 @@ impl BatAnalytics {
     }
 
     pub fn create_analytics() -> AnalyticsResult<()> {
-        ConstraintAnalytics::generate_analytics_data()
+        ConstraintsAnalytics::generate_analytics_data()
+    }
+
+    pub fn update_analytics() -> AnalyticsResult<()> {
+        ConstraintsAnalytics::update_analytics_data()
     }
 
     pub fn read_analytics() -> AnalyticsResult<Self> {
