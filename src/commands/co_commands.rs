@@ -324,7 +324,7 @@ impl CodeOverhaulCommand {
             let ep_parser = started_template.entrypoint_parser.unwrap();
             if ep_parser.handler.is_some() {
                 let handler = ep_parser.handler.unwrap();
-                CodeEditor::open_file_in_editor(&handler.path, Some(handler.start_line_index))?;
+                CodeEditor::open_file_in_editor(&handler.path, None)?;
             }
         }
         if !skip_miro {
