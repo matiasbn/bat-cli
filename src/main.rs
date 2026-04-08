@@ -305,6 +305,23 @@ impl Suggestion {
     }
 }
 
+/// If `Bat.toml` is not in the current directory but exists inside `bat-audit/`,
+/// automatically change the working directory so all relative paths resolve correctly.
+fn auto_detect_bat_audit_dir() {
+    use std::path::Path;
+    if Path::new("Bat.toml").exists() {
+        return; // Already in the right directory
+    }
+    if Path::new("bat-audit/Bat.toml").exists() {
+        if std::env::set_current_dir("bat-audit").is_ok() {
+            println!(
+                "{} auto-detected bat-audit/ directory, changing working directory",
+                "bat-cli".blue()
+            );
+        }
+    }
+}
+
 async fn run() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
 
@@ -315,7 +332,10 @@ async fn run() -> CommandResult<()> {
             env_logger::init();
             Ok(())
         }
-        _ => init_log(cli.clone()),
+        _ => {
+            auto_detect_bat_audit_dir();
+            init_log(cli.clone())
+        }
     }?;
 
     cli.command.execute().await
