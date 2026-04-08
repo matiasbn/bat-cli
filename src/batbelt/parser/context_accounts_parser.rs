@@ -46,6 +46,18 @@ pub struct CAAccountParser {
     pub seeds: Vec<String>,
     pub rent_exemption_account: String,
     pub validations: Vec<String>,
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub token_mint: Option<String>,
+    #[serde(default)]
+    pub space: Option<String>,
+    #[serde(default)]
+    pub rent_exempt: bool,
+    #[serde(default)]
+    pub realloc: Option<String>,
+    #[serde(default)]
+    pub bump: Option<String>,
 }
 
 impl CAAccountParser {
@@ -68,6 +80,12 @@ impl CAAccountParser {
             seeds: acc_attribute.seeds,
             rent_exemption_account: acc_attribute.rent_exemption_account,
             validations: acc_attribute.validations,
+            owner: None,
+            token_mint: None,
+            space: None,
+            rent_exempt: false,
+            realloc: None,
+            bump: None,
         }
     }
 

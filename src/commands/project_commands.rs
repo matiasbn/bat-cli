@@ -104,19 +104,9 @@ impl ProjectCommands {
 
         let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
 
-        let shared_initialized = ShareableData::new(false);
-
-        GitAction::CheckGitIsInitialized {
-            is_initialized: shared_initialized.original,
-        }
-        .execute_action()
-        .change_context(CommandError)?;
-
-        if !*shared_initialized.cloned.borrow() {
-            println!("Initializing project repository");
-            project_commands_functions::initialize_project_repository()?;
-            println!("Project repository successfully initialized");
-        }
+        // Create audit branch from current HEAD (repo already initialized)
+        println!("Creating audit branch");
+        project_commands_functions::initialize_audit_branch()?;
 
         PackageJsonTemplate::create_package_json(None).change_context(CommandError)?;
 
@@ -350,31 +340,22 @@ mod project_commands_functions {
         Ok(())
     }
 
-    pub fn initialize_project_repository() -> Result<(), CommandError> {
-        // git init
-        GitAction::Init
-            .execute_action()
-            .change_context(CommandError)?;
-
-        println!("Adding project repository as remote");
-        GitAction::RemoteAddProjectRepo
-            .execute_action()
-            .change_context(CommandError)?;
-
-        println!("Commit all to main");
-        GitAction::AddAll
-            .execute_action()
-            .change_context(CommandError)?;
-        GitCommit::Init
-            .create_commit(true)
-            .change_context(CommandError)?;
-
+    pub fn initialize_audit_branch() -> Result<(), CommandError> {
+        // We're inside the target repo, create a develop branch for audit work
         println!("Creating develop branch");
         GitAction::CreateBranch {
             branch_name: "develop".to_string(),
         }
         .execute_action()
         .change_context(CommandError)?;
+
+        println!("Committing audit files");
+        GitAction::AddAll
+            .execute_action()
+            .change_context(CommandError)?;
+        GitCommit::Init
+            .create_commit(true)
+            .change_context(CommandError)?;
 
         Ok(())
     }

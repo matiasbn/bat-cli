@@ -101,6 +101,21 @@ impl BatDialoguer {
 
         Ok(dialog)
     }
+
+    pub fn input_with_default(
+        prompt_text: String,
+        default: String,
+    ) -> Result<String, CommandError> {
+        let colorful_theme = &ColorfulTheme::default();
+        let dialog: String = Input::with_theme(colorful_theme)
+            .with_prompt(&prompt_text)
+            .default(default)
+            .interact_text()
+            .into_report()
+            .change_context(CommandError)?;
+
+        Ok(dialog)
+    }
 }
 
 pub fn multiselect<T>(
@@ -131,4 +146,8 @@ pub fn select_yes_or_no(prompt_text: &str) -> Result<bool, CommandError> {
 
 pub fn input(prompt_text: &str) -> Result<String, CommandError> {
     BatDialoguer::input(prompt_text.to_string())
+}
+
+pub fn input_with_default(prompt_text: &str, default: &str) -> Result<String, CommandError> {
+    BatDialoguer::input_with_default(prompt_text.to_string(), default.to_string())
 }
