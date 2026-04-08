@@ -348,8 +348,12 @@ impl MiroCommand {
 
             pending_to_check.push(selected_function_metadata.clone());
 
+            let mut processed_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
             while !pending_to_check.is_empty() {
                 let parent_function = pending_to_check.pop().unwrap();
+                if !processed_ids.insert(parent_function.metadata_id.clone()) {
+                    continue;
+                }
                 let miro_image = deployed_dependencies.clone().into_iter().find_map(|image| {
                     if image.1 == parent_function {
                         Some(image.0)
@@ -1540,10 +1544,10 @@ pub mod miro_command_functions {
                 .find(|dep| dep.1 == selected_dependency);
             if already_deployed.is_none() {
                 pending_to_deploy.push(selected_dependency.clone());
+                pending_to_check.push(selected_dependency.clone());
             } else {
                 pending_to_connect.push(already_deployed.unwrap().0);
             }
-            pending_to_check.push(selected_dependency.clone());
         }
 
         while !pending_to_deploy.is_empty() {

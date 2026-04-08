@@ -22,6 +22,23 @@ const FILTERED_NAMES: &[&str] = &[
     "Box", "Vec", "String", "Arc", "Rc", "Mutex", "RefCell",
 ];
 
+const FILTERED_METHOD_NAMES: &[&str] = &[
+    "unwrap", "expect", "clone", "to_string", "to_owned",
+    "iter", "into_iter", "map", "filter", "collect", "fold", "for_each", "find", "any", "all",
+    "push", "pop", "len", "is_empty", "contains", "get", "insert", "remove", "extend",
+    "ok_or", "ok_or_else", "map_err", "and_then", "or_else", "unwrap_or", "unwrap_or_else",
+    "as_ref", "as_mut", "borrow", "borrow_mut",
+    "into", "from", "try_into", "try_from",
+    "default", "to_vec", "as_slice", "as_str",
+    "change_context", "attach_printable",
+    "is_some", "is_none", "is_ok", "is_err",
+    "trim", "trim_start", "trim_end", "split", "join", "replace", "starts_with", "ends_with",
+    "lines", "chars", "bytes",
+    "next", "enumerate", "skip", "take", "zip", "chain", "flat_map", "flatten",
+    "filter_map", "position", "count",
+    "sort", "sort_by", "sort_by_key", "dedup",
+];
+
 pub fn detect_function_calls(function_source: &str) -> Result<Vec<DetectedCall>, String> {
     let item_fn = syn::parse_str::<syn::ItemFn>(function_source).or_else(|_| {
         let wrapped = format!("fn __wrapper() {{ {} }}", function_source);
@@ -80,10 +97,12 @@ impl<'ast> Visit<'ast> for CallVisitor {
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         let name = node.method.to_string();
-        self.calls.push(DetectedCall {
-            function_name: name,
-            call_type: CallType::MethodCall,
-        });
+        if !FILTERED_METHOD_NAMES.contains(&name.as_str()) {
+            self.calls.push(DetectedCall {
+                function_name: name,
+                call_type: CallType::MethodCall,
+            });
+        }
         // Visit receiver and arguments recursively
         syn::visit::visit_expr_method_call(self, node);
     }

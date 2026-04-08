@@ -10,7 +10,6 @@ use crate::batbelt::metadata::function_dependencies_metadata::{
 };
 
 use error_stack::{Report, Result, ResultExt};
-use regex::Regex;
 
 #[derive(Clone, Debug)]
 pub struct FunctionDependencyParser {
@@ -146,11 +145,8 @@ impl FunctionParser {
         let detected_calls = match syn_function_dependency_parser::detect_function_calls(&self.content) {
             Ok(calls) => calls,
             Err(e) => {
-                log::warn!("syn parse failed ({}), falling back to regex", e);
-                return self.detect_dependencies_regex_fallback(
-                    &function_metadata,
-                    &trait_metadata_vec,
-                );
+                log::warn!("syn parse failed for {}: {}", self.name, e);
+                return Ok(());
             }
         };
 
@@ -159,14 +155,12 @@ impl FunctionParser {
         let mut dependency_function_metadata_id_vec: Vec<MetadataId> = vec![];
 
         for call in &detected_calls {
-            // Skip self-references and method calls
             if call.function_name == self.name {
                 continue;
             }
 
             match &call.call_type {
                 CallType::StaticMethod { type_name } => {
-                    // Build the trait_signature as "Type::function"
                     let trait_signature = format!("{}::{}", type_name, call.function_name);
                     let impl_function_metadata_id =
                         trait_metadata_vec
@@ -184,46 +178,28 @@ impl FunctionParser {
                         if !dependency_function_metadata_id_vec.contains(&metadata_id) {
                             dependency_function_metadata_id_vec.push(metadata_id);
                         }
+                    } else if let Some(metadata_id) = self.resolve_function_by_name(&call.function_name, &function_metadata) {
+                        if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                            dependency_function_metadata_id_vec.push(metadata_id);
+                        }
                     } else {
-                        // Also try matching just by function name in function_metadata
-                        let found = function_metadata
-                            .iter()
-                            .filter(|f_meta| f_meta.name == call.function_name)
-                            .collect::<Vec<_>>();
-                        if !found.is_empty() {
-                            for f_meta in found {
-                                if !dependency_function_metadata_id_vec.contains(&f_meta.metadata_id) {
-                                    dependency_function_metadata_id_vec.push(f_meta.metadata_id.clone());
-                                }
-                            }
-                        } else {
-                            let dep_name = format!("{}::{}", type_name, call.function_name);
-                            if !self.external_dependencies.contains(&dep_name) {
-                                self.external_dependencies.push(dep_name);
-                            }
+                        let dep_name = format!("{}::{}", type_name, call.function_name);
+                        if !self.external_dependencies.contains(&dep_name) {
+                            self.external_dependencies.push(dep_name);
                         }
                     }
                 }
                 CallType::FreeFunction => {
-                    let found = function_metadata
-                        .iter()
-                        .filter(|f_meta| f_meta.name == call.function_name)
-                        .collect::<Vec<_>>();
-                    if !found.is_empty() {
-                        for f_meta in found {
-                            if !dependency_function_metadata_id_vec.contains(&f_meta.metadata_id) {
-                                dependency_function_metadata_id_vec.push(f_meta.metadata_id.clone());
-                            }
+                    if let Some(metadata_id) = self.resolve_function_by_name(&call.function_name, &function_metadata) {
+                        if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                            dependency_function_metadata_id_vec.push(metadata_id);
                         }
-                    } else {
-                        if !self.external_dependencies.contains(&call.function_name) {
-                            self.external_dependencies.push(call.function_name.clone());
-                        }
+                    } else if !self.external_dependencies.contains(&call.function_name) {
+                        self.external_dependencies.push(call.function_name.clone());
                     }
                 }
                 CallType::MethodCall => {
-                    // Method calls (expr.method()) are typically self/receiver calls,
-                    // skip them as the old implementation did
+                    // Method calls (expr.method()) are skipped
                 }
             }
         }
@@ -232,102 +208,37 @@ impl FunctionParser {
         Ok(())
     }
 
-    fn detect_dependencies_regex_fallback(
-        &mut self,
+    fn resolve_function_by_name(
+        &self,
+        function_name: &str,
         function_metadata: &[FunctionSourceCodeMetadata],
-        trait_metadata_vec: &[crate::batbelt::metadata::trait_metadata::TraitMetadata],
-    ) -> Result<(), ParserError> {
-        let mut body_clone = self.body.clone();
-
-        let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
-        let mut dependency_function_metadata_id_vec = vec![];
-
-        let impl_function_regex =
-            Regex::new(r"[A-Za-z0-9_]+::[A-Za-z0-9]+\(\(?[&._A-Za-z0-9]*\)?\)").unwrap();
-
-        let impl_function_matches = impl_function_regex
-            .find_iter(&body_clone)
-            .map(|impl_match| impl_match.as_str().to_string())
-            .collect::<Vec<_>>();
-        log::debug!("impl_function_matches: \n{:#?}", impl_function_matches);
-        for impl_match in impl_function_matches {
-            log::debug!("impl_match: {}", impl_match);
-            body_clone = body_clone.replace(&impl_match, "");
-            let impl_function_signature_match = Self::get_function_name_from_signature(&impl_match);
-            log::debug!("impl_match_signature: {}", &impl_function_signature_match);
-            let impl_function_metadata_id =
-                trait_metadata_vec
-                    .iter()
-                    .find_map(|trait_metadata| {
-                        match trait_metadata.impl_functions.iter().find(|impl_func| {
-                            impl_func.trait_signature == impl_function_signature_match
-                        }) {
-                            None => None,
-                            Some(impl_func) => Some(impl_func.function_source_code_metadata_id.clone()),
-                        }
-                    });
-            log::debug!(
-                "impl_function_metadata_match {:#?}",
-                impl_function_metadata_id
-            );
-            if let Some(metadata_id) = impl_function_metadata_id {
-                dependency_function_metadata_id_vec.push(metadata_id);
-            }
-        }
-
-        let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_:.&, ()]*)\)").unwrap();
-        let dependency_function_names_vec = dependency_regex
-            .find_iter(&body_clone)
-            .filter_map(|reg_match| {
-                let match_str = reg_match.as_str().to_string();
-                log::debug!("match_str_regex {}", match_str);
-                let function_name = Self::get_function_name_from_signature(&match_str);
-                log::debug!("match_str_regex_function_name {}", function_name);
-                if function_name == "Ok" || function_name == "Some" {
-                    return None;
-                };
-                let matching_line = body_clone
-                    .lines()
-                    .find(|line| line.contains(&match_str));
-                let matching_line = match matching_line {
-                    Some(line) => line.to_string(),
-                    None => return None,
-                };
-                if function_name != self.name
-                    && !double_parentheses_regex.is_match(&match_str)
-                    && !matching_line.contains("self.")
-                    && !matching_line.contains("Self::")
-                {
-                    Some(function_name)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        let filtered_function_metadata_vec = function_metadata
+    ) -> Option<MetadataId> {
+        let candidates: Vec<_> = function_metadata
             .iter()
-            .filter(|f_meta| {
-                !dependency_function_metadata_id_vec
-                    .iter()
-                    .any(|dep_metadata_id| *dep_metadata_id == f_meta.metadata_id)
-            })
-            .collect::<Vec<_>>();
-        for dependency_function_name in dependency_function_names_vec {
-            let dependency_function_metadata_vec = filtered_function_metadata_vec
-                .iter()
-                .filter(|f_metadata| f_metadata.name == dependency_function_name)
-                .collect::<Vec<_>>();
-            if !dependency_function_metadata_vec.is_empty() {
-                for dependency_metadata in dependency_function_metadata_vec {
-                    dependency_function_metadata_id_vec
-                        .push(dependency_metadata.metadata_id.clone())
+            .filter(|f| f.name == function_name)
+            .collect();
+
+        match candidates.len() {
+            0 => None,
+            1 => Some(candidates[0].metadata_id.clone()),
+            _ => {
+                // Priority 1: same file
+                if let Some(f) = candidates.iter()
+                    .find(|f| f.path == self.function_metadata.path)
+                {
+                    return Some(f.metadata_id.clone());
                 }
-            } else {
-                self.external_dependencies.push(dependency_function_name);
+                // Priority 2: same directory
+                let self_dir = std::path::Path::new(&self.function_metadata.path).parent();
+                if let Some(f) = candidates.iter()
+                    .find(|f| std::path::Path::new(&f.path).parent() == self_dir)
+                {
+                    return Some(f.metadata_id.clone());
+                }
+                // Priority 3: first match
+                Some(candidates[0].metadata_id.clone())
             }
         }
-        self.dependencies = dependency_function_metadata_id_vec;
-        Ok(())
     }
 
     fn get_function_signature(&mut self) {

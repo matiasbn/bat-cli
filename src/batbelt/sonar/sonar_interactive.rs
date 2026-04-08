@@ -323,7 +323,15 @@ impl BatSonarInteractive {
                         pb.set_prefix(format!("[{}/{}]", idx + 1, functions_sc_clone.len()));
                         pb.set_message(format!("Getting information for: {}", function_sc.name));
                         pb.inc(1);
-                        FunctionParser::new_from_metadata(function_sc.clone()).unwrap();
+                        match FunctionParser::new_from_metadata(function_sc.clone()) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to parse dependencies for {}: {:?}",
+                                    function_sc.name, e
+                                );
+                            }
+                        }
                         thread::sleep(Duration::from_millis(200));
                     }
                 })
