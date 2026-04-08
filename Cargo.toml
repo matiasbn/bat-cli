@@ -36,6 +36,9 @@ clap-verbosity-flag = "2.0.0"
 confy = "0.6.0"
 figment = { version = "0.10.8", features = ["toml"] }
 regex = "1.7.1"
+syn = { version = "2", features = ["full", "parsing", "visit"] }
+proc-macro2 = "1"
+quote = "1"
 log4rs = "1.2.0"
 assert_fs = "1.0.10"
 

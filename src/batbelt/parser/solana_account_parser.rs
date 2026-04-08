@@ -21,6 +21,7 @@ pub enum SolanaAccountType {
     Mint,
     Signer,
     UncheckedAccount,
+    SystemAccount,
     ProgramStateAccount,
     Other,
 }
@@ -36,6 +37,10 @@ impl SolanaAccountType {
 
         if last_line.contains(&Self::UncheckedAccount.to_string()) {
             return Ok(Self::UncheckedAccount);
+        }
+
+        if last_line.contains(&Self::SystemAccount.to_string()) {
+            return Ok(Self::SystemAccount);
         }
 
         if last_line.contains(&Self::TokenAccount.to_string()) {

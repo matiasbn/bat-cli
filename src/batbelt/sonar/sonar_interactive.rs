@@ -19,6 +19,7 @@ use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata
 use crate::batbelt::parser::context_accounts_parser::CAAccountParser;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
+use crate::batbelt::parser::syn_context_accounts_parser;
 use crate::batbelt::parser::trait_parser::TraitParser;
 
 use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
@@ -350,34 +351,105 @@ impl BatSonarInteractive {
             style(format!("{}", ca_sc_metadata.len())).bold().dim(),
             BatMetadataType::Struct.get_colored_name(true),
         );
+
+        // Collect known solana account names for type detection
+        let solana_account_names: Vec<String> = SourceCodeMetadata::get_filtered_structs(
+            None,
+            Some(StructMetadataType::SolanaAccount),
+        )
+        .change_context(BatSonarError)?
+        .iter()
+        .map(|s| s.name.clone())
+        .collect();
+
+        // Group structs by file path to avoid re-parsing the same file
+        let mut structs_by_file: std::collections::HashMap<String, Vec<_>> =
+            std::collections::HashMap::new();
+        for ca_sc in &ca_sc_metadata {
+            structs_by_file
+                .entry(ca_sc.path.clone())
+                .or_default()
+                .push(ca_sc.clone());
+        }
+
         let m = MultiProgress::new();
         let handles: Vec<_> = (0..1)
             .map(|_i| {
-                let ca_sc_clone = ca_sc_metadata.clone();
-                let pb = m.add(ProgressBar::new(ca_sc_clone.len() as u64));
+                let structs_by_file = structs_by_file.clone();
+                let solana_account_names = solana_account_names.clone();
+                let total = ca_sc_metadata.len();
+                let pb = m.add(ProgressBar::new(total as u64));
                 pb.set_style(spinner_style.clone());
                 thread::spawn(move || {
-                    for (idx, ca_sc) in ca_sc_clone.iter().enumerate().clone() {
-                        pb.set_prefix(format!("[{}/{}]", idx + 1, ca_sc_clone.len()));
-                        pb.set_message(format!("Getting information for: {}", ca_sc.name));
-                        pb.inc(1);
-                        let ca_content =
-                            ca_sc.to_source_code_parser(None).get_source_code_content();
-                        let bat_sonar =
-                            BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccountsAll);
-                        let ca_info = bat_sonar
-                            .results
-                            .into_iter()
-                            .map(|result| CAAccountParser::new_from_sonar_result(result).unwrap())
-                            .collect::<Vec<_>>();
-                        let context_accounts_metadata = ContextAccountsMetadata::new(
-                            ca_sc.name.clone(),
-                            BatMetadata::create_metadata_id(),
-                            ca_sc.metadata_id.clone(),
-                            ca_info,
-                        );
-                        context_accounts_metadata.update_metadata_file().unwrap();
-                        thread::sleep(Duration::from_millis(200));
+                    let mut count = 0usize;
+                    for (file_path, ca_structs) in &structs_by_file {
+                        // Parse the file once with syn
+                        let parsed_structs = match syn_context_accounts_parser::parse_context_accounts_from_file(file_path) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                log::warn!("Failed to parse file {} with syn: {:?}", file_path, e);
+                                // Fallback: try each struct with old parser
+                                for ca_sc in ca_structs {
+                                    count += 1;
+                                    pb.set_prefix(format!("[{}/{}]", count, total));
+                                    pb.set_message(format!("Getting information for: {} (fallback)", ca_sc.name));
+                                    pb.inc(1);
+                                    let ca_content = ca_sc.to_source_code_parser(None).get_source_code_content();
+                                    let bat_sonar = BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccountsAll);
+                                    let ca_info = bat_sonar
+                                        .results
+                                        .into_iter()
+                                        .map(|result| CAAccountParser::new_from_sonar_result(result).unwrap())
+                                        .collect::<Vec<_>>();
+                                    let context_accounts_metadata = ContextAccountsMetadata::new(
+                                        ca_sc.name.clone(),
+                                        BatMetadata::create_metadata_id(),
+                                        ca_sc.metadata_id.clone(),
+                                        ca_info,
+                                    );
+                                    context_accounts_metadata.update_metadata_file().unwrap();
+                                }
+                                continue;
+                            }
+                        };
+
+                        for ca_sc in ca_structs {
+                            count += 1;
+                            pb.set_prefix(format!("[{}/{}]", count, total));
+                            pb.set_message(format!("Getting information for: {}", ca_sc.name));
+                            pb.inc(1);
+
+                            // Find the matching parsed struct by name
+                            let ca_info = if let Some(parsed) = parsed_structs.iter().find(|p| p.name == ca_sc.name) {
+                                parsed
+                                    .accounts
+                                    .iter()
+                                    .map(|acc| {
+                                        let solana_type = acc.determine_solana_account_type(&solana_account_names);
+                                        let content = ca_sc.to_source_code_parser(None).get_source_code_content();
+                                        acc.to_ca_account_parser(solana_type, &content)
+                                    })
+                                    .collect::<Vec<_>>()
+                            } else {
+                                log::warn!("Struct {} not found in syn parse of {}, using fallback", ca_sc.name, file_path);
+                                let ca_content = ca_sc.to_source_code_parser(None).get_source_code_content();
+                                let bat_sonar = BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccountsAll);
+                                bat_sonar
+                                    .results
+                                    .into_iter()
+                                    .map(|result| CAAccountParser::new_from_sonar_result(result).unwrap())
+                                    .collect::<Vec<_>>()
+                            };
+
+                            let context_accounts_metadata = ContextAccountsMetadata::new(
+                                ca_sc.name.clone(),
+                                BatMetadata::create_metadata_id(),
+                                ca_sc.metadata_id.clone(),
+                                ca_info,
+                            );
+                            context_accounts_metadata.update_metadata_file().unwrap();
+                            thread::sleep(Duration::from_millis(200));
+                        }
                     }
                 })
             })
