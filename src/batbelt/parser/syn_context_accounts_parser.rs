@@ -39,6 +39,10 @@ pub struct ParsedAccountAttributes {
     pub address: Option<AddressConstraint>,
     pub constraints: Vec<String>,
     pub token_mint: Option<String>,
+    pub token_authority: Option<String>,
+    pub associated_token_mint: Option<String>,
+    pub associated_token_authority: Option<String>,
+    pub associated_token_token_program: Option<String>,
     pub realloc: Option<String>,
     pub rent_exempt: bool,
     pub zero: bool,
@@ -231,19 +235,19 @@ fn parse_account_attr_tokens(
                     if normalized == "token::mint" {
                         result.token_mint = Some(value.to_string());
                     } else if normalized == "token::authority" {
-                        // Store as a constraint for now
-                        result.constraints.push(format!("token::authority = {}", value));
+                        result.token_authority = Some(value.to_string());
+                    } else if normalized == "associated_token::mint" {
+                        result.associated_token_mint = Some(value.to_string());
+                    } else if normalized == "associated_token::authority" {
+                        result.associated_token_authority = Some(value.to_string());
+                    } else if normalized == "associated_token::token_program" {
+                        result.associated_token_token_program = Some(value.to_string());
                     } else if normalized == "realloc::payer" {
                         result.payer = Some(value.to_string());
                     } else if normalized == "realloc::zero" {
-                        // realloc::zero = true/false
                         result.zero = value.trim() == "true";
                     } else if normalized == "rent_exempt" {
                         result.rent_exempt = value.trim() == "enforce";
-                    } else if normalized == "associated_token::mint" {
-                        result.token_mint = Some(value.to_string());
-                    } else if normalized == "associated_token::authority" {
-                        result.constraints.push(format!("associated_token::authority = {}", value));
                     } else if normalized == "mint::decimals" || normalized == "mint::authority" {
                         result.constraints.push(format!("{} = {}", normalized, value));
                     } else {
@@ -552,9 +556,29 @@ impl ParsedAccount {
             validations.push(val);
         }
 
+        // token::authority as validation
+        if let Some(ref auth) = self.attributes.token_authority {
+            validations.push(format!("token::authority = {}", auth));
+        }
+
+        // associated_token constraints as validations
+        if let Some(ref mint) = self.attributes.associated_token_mint {
+            validations.push(format!("associated_token::mint = {}", mint));
+        }
+        if let Some(ref auth) = self.attributes.associated_token_authority {
+            validations.push(format!("associated_token::authority = {}", auth));
+        }
+        if let Some(ref tp) = self.attributes.associated_token_token_program {
+            validations.push(format!("associated_token::token_program = {}", tp));
+        }
+
         for constraint in &self.attributes.constraints {
             validations.push(format!("constraint = {}", constraint));
         }
+
+        // Use associated_token::mint as fallback for token_mint
+        let token_mint = self.attributes.token_mint.clone()
+            .or_else(|| self.attributes.associated_token_mint.clone());
 
         CAAccountParser {
             content: content.to_string(),
@@ -571,7 +595,7 @@ impl ParsedAccount {
             rent_exemption_account,
             validations,
             owner: self.attributes.owner.clone(),
-            token_mint: self.attributes.token_mint.clone(),
+            token_mint,
             space: self.attributes.space.clone(),
             rent_exempt: self.attributes.rent_exempt,
             realloc: self.attributes.realloc.clone(),
@@ -908,5 +932,143 @@ mod tests {
         assert_eq!(ca.account_name, "state");
         assert!(ca.owner.is_some());
         assert!(!ca.validations.is_empty());
+    }
+
+    #[test]
+    fn test_marinade_real_patterns() {
+        let source = r#"
+            use anchor_lang::prelude::*;
+
+            #[derive(Accounts)]
+            pub struct Claim<'info> {
+                #[account(
+                    mut,
+                    has_one = msol_mint,
+                    has_one = operational_sol_account,
+                )]
+                pub state: Box<Account<'info, State>>,
+
+                #[account(
+                    mut,
+                    address = state.validator_system.validator_list.account,
+                )]
+                pub validator_list: UncheckedAccount<'info>,
+
+                #[account(
+                    address = ticket_account.beneficiary @ MarinadeError::WrongBeneficiary,
+                )]
+                pub transfer_sol_to: SystemAccount<'info>,
+
+                #[account(
+                    mut,
+                    address = state.liq_pool.lp_mint,
+                    owner = token_program.key(),
+                )]
+                pub lp_mint: Account<'info, Mint>,
+
+                #[account(
+                    mut,
+                    token::mint = state.msol_mint,
+                    token::authority = msol_mint_authority,
+                )]
+                pub mint_to: Account<'info, TokenAccount>,
+
+                #[account(
+                    mut,
+                    seeds = [
+                        state.key().as_ref(),
+                        b"vault",
+                        validator_index.to_le_bytes().as_ref(),
+                    ],
+                    bump,
+                )]
+                pub stake_account: Account<'info, TokenAccount>,
+            }
+        "#;
+        let result = parse_context_accounts_from_source(source).unwrap();
+        assert_eq!(result[0].name, "Claim");
+        assert_eq!(result[0].accounts.len(), 6);
+
+        // state: Box<Account<'info, State>> with has_one
+        let state = &result[0].accounts[0];
+        assert!(state.is_boxed);
+        assert_eq!(state.account_wrapper_name, "Account");
+        assert_eq!(state.account_struct_name, "State");
+        assert!(state.attributes.is_mut);
+        assert_eq!(state.attributes.has_one.len(), 2);
+        assert_eq!(state.attributes.has_one[0].field, "msol_mint");
+        assert_eq!(state.attributes.has_one[1].field, "operational_sol_account");
+
+        // validator_list: address with method chain
+        let vl = &result[0].accounts[1];
+        assert_eq!(vl.account_wrapper_name, "UncheckedAccount");
+        let addr = vl.attributes.address.as_ref().unwrap();
+        assert_eq!(addr.expression, "state.validator_system.validator_list.account");
+        assert!(addr.error.is_none());
+
+        // transfer_sol_to: address with @ error
+        let ts = &result[0].accounts[2];
+        assert_eq!(ts.account_wrapper_name, "SystemAccount");
+        let addr = ts.attributes.address.as_ref().unwrap();
+        assert_eq!(addr.expression, "ticket_account.beneficiary");
+        assert_eq!(addr.error.as_deref(), Some("MarinadeError::WrongBeneficiary"));
+
+        // lp_mint: owner constraint
+        let lp = &result[0].accounts[3];
+        assert!(lp.attributes.owner.is_some());
+        assert_eq!(lp.attributes.owner.as_deref(), Some("token_program.key()"));
+
+        // mint_to: token::mint and token::authority
+        let mt = &result[0].accounts[4];
+        assert_eq!(mt.attributes.token_mint.as_deref(), Some("state.msol_mint"));
+        assert_eq!(mt.attributes.token_authority.as_deref(), Some("msol_mint_authority"));
+
+        // stake_account: complex seeds with method chains
+        let sa = &result[0].accounts[5];
+        assert!(sa.attributes.is_pda);
+        assert_eq!(sa.attributes.seeds.len(), 3);
+        assert!(sa.attributes.seeds[0].contains("state.key()"));
+        assert!(sa.attributes.seeds[1].contains("b\"vault\"") || sa.attributes.seeds[1].contains("b \"vault\""));
+        assert!(sa.attributes.seeds[2].contains("validator_index.to_le_bytes()"));
+        assert!(sa.attributes.bump.is_some());
+    }
+
+    #[test]
+    fn test_associated_token_account() {
+        let source = r#"
+            use anchor_lang::prelude::*;
+
+            #[derive(Accounts)]
+            pub struct CreateAta<'info> {
+                #[account(
+                    init_if_necessary,
+                    payer = authority,
+                    associated_token::mint = mint,
+                    associated_token::authority = authority,
+                    associated_token::token_program = token_program,
+                )]
+                pub ata: Account<'info, TokenAccount>,
+
+                pub mint: Account<'info, Mint>,
+                #[account(mut)]
+                pub authority: Signer<'info>,
+                pub token_program: Program<'info, Token>,
+            }
+        "#;
+        let result = parse_context_accounts_from_source(source).unwrap();
+        let ata = &result[0].accounts[0];
+
+        assert!(ata.attributes.is_init);
+        assert_eq!(ata.attributes.payer.as_deref(), Some("authority"));
+        assert_eq!(ata.attributes.associated_token_mint.as_deref(), Some("mint"));
+        assert_eq!(ata.attributes.associated_token_authority.as_deref(), Some("authority"));
+        assert_eq!(ata.attributes.associated_token_token_program.as_deref(), Some("token_program"));
+
+        // Conversion: associated_token::mint should fill token_mint as fallback
+        let ca = ata.to_ca_account_parser(SolanaAccountType::TokenAccount, "");
+        assert_eq!(ca.token_mint.as_deref(), Some("mint"));
+        assert!(ca.validations.iter().any(|v| v.contains("associated_token::mint")));
+        assert!(ca.validations.iter().any(|v| v.contains("associated_token::authority")));
+        assert!(ca.validations.iter().any(|v| v.contains("associated_token::token_program")));
     }
 }
