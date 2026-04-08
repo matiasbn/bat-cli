@@ -5,6 +5,7 @@ use figment::{
 use serde::{Deserialize, Serialize};
 
 use std::path::Path;
+use std::process::Command;
 use std::{error::Error, fmt, fs, str};
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
@@ -219,38 +220,25 @@ impl BatConfig {
     }
 
     fn create_bat_config_file() -> Result<BatConfig, BatConfigError> {
-        let local_anchor_project_folders = WalkDir::new(".")
-            .into_iter()
-            .map(|f| f.unwrap())
-            .filter(|f| {
-                f.file_type().is_dir()
-                    && ![".", "target"]
-                        .iter()
-                        .any(|y| f.file_name().to_str().unwrap().contains(y))
-            })
-            .filter(|f| {
-                let path = f.path();
-                let dir = fs::read_dir(path).unwrap();
-                let file_names = dir
-                    .map(|f| f.unwrap().file_name().to_str().unwrap().to_string())
-                    .collect::<Vec<_>>();
-
-                file_names.contains(&"Anchor.toml".to_string())
-            })
-            .map(|f| f.path().to_str().unwrap().to_string())
-            .collect::<Vec<_>>();
-        if local_anchor_project_folders.is_empty() {
-            let message =
-                "No Anchor projects were found on the current working directory".to_string();
-            return Err(Report::new(BatConfigError).attach_printable(message));
+        // Validate we're inside an Anchor project
+        if !Path::new("Anchor.toml").is_file() {
+            return Err(Report::new(BatConfigError).attach_printable(
+                "Anchor.toml not found in current directory. Run bat new inside the target repo.",
+            ));
         }
-        // Folder with the program to audit selection
-        let prompt_text = "Select the folder with the program to audit";
-        let selection =
-            bat_dialoguer::select(prompt_text, local_anchor_project_folders.clone(), None)
-                .change_context(BatConfigError)?;
-        let selected_folder_path = &local_anchor_project_folders[selection];
-        let cargo_programs_files_info = WalkDir::new(selected_folder_path)
+
+        // Validate bat-audit doesn't already exist
+        if Path::new("bat-audit").is_dir() {
+            return Err(Report::new(BatConfigError)
+                .attach_printable("bat-audit/ folder already exists"));
+        }
+
+        // Auto-detect git remote info
+        let (remote_https_url, owner_name, commit_hash) = Self::detect_remote_info(".")
+            .unwrap_or(("".to_string(), "".to_string(), "".to_string()));
+
+        // Find programs with Cargo.toml (excluding target/)
+        let cargo_programs_files_info = WalkDir::new(".")
             .into_iter()
             .map(|f| f.unwrap())
             .filter(|dir_entry| {
@@ -260,6 +248,7 @@ impl BatConfig {
                     .unwrap()
                     .contains("Cargo.toml")
                     && !dir_entry.path().to_str().unwrap().contains("target")
+                    && dir_entry.path().to_str().unwrap() != "./Cargo.toml"
             })
             .collect::<Vec<_>>();
 
@@ -275,6 +264,12 @@ impl BatConfig {
                     .to_string()
             })
             .collect::<Vec<_>>();
+
+        if cargo_programs_paths.is_empty() {
+            return Err(Report::new(BatConfigError)
+                .attach_printable("No programs with Cargo.toml found in this repository"));
+        }
+
         let selection = bat_dialoguer::select(prompt_text, cargo_programs_paths.clone(), None)
             .change_context(BatConfigError)?;
         let selected_program_path = &cargo_programs_paths[selection];
@@ -288,36 +283,23 @@ impl BatConfig {
         log::debug!("program_name: {:#?}", program_name);
         let program_lib_path = format!("{}/src/lib.rs", selected_program_path);
         log::debug!("program_lib_path: {:#?}", program_lib_path);
-        let normalized_to_audit_program_lib_path = program_lib_path.replace("./", "../");
 
         if !Path::new(&program_lib_path).is_file() {
             return Err(Report::new(BatConfigError)
                 .attach_printable("lib.rs file not found in selected folder"));
         }
 
-        // Project name selection
-        let mut project_name: String = program_name.replace('_', "-") + "-audit";
-        let prompt_text = format!(
-            "Do you want to use the name {} for this project?",
-            project_name.yellow()
+        // Normalize path relative to bat-audit/ folder
+        // From bat-audit/, we need ../programs/xxx/src/lib.rs
+        let normalized_program_lib_path = format!(
+            "../{}",
+            program_lib_path.trim_start_matches("./")
         );
 
-        let use_default = if !cfg!(debug_assertions) {
-            bat_dialoguer::select_yes_or_no(prompt_text.as_str()).change_context(BatConfigError)?
-        } else {
-            true
-        };
+        // Project name is always bat-audit
+        let project_name = "bat-audit".to_string();
 
-        if !use_default {
-            project_name = bat_dialoguer::input("Project name:").change_context(BatConfigError)?;
-        }
-        let project_path = format!("./{project_name}");
-
-        if Path::new(&project_path).is_dir() {
-            return Err(Report::new(BatConfigError)
-                .attach_printable(format!("Folder {} already exists", project_name)));
-        }
-
+        // Auditor names - always manual input
         let auditor_names_prompt: String = if !cfg!(debug_assertions) {
             bat_dialoguer::input("Auditor names (comma separated, example: alice,bob):")
                 .change_context(BatConfigError)?
@@ -326,17 +308,35 @@ impl BatConfig {
         };
         let auditor_names: Vec<String> = auditor_names_prompt
             .split(',')
-            .map(|l| l.to_string())
+            .map(|l| l.trim().to_string())
             .collect();
 
+        // Client name - default to repo owner
         let client_name: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input("Client name:").change_context(BatConfigError)?
+            if owner_name.is_empty() {
+                bat_dialoguer::input("Client name:").change_context(BatConfigError)?
+            } else {
+                bat_dialoguer::input_with_default("Client name:", &owner_name)
+                    .change_context(BatConfigError)?
+            }
         } else {
             "test_client".to_string()
         };
 
+        // Commit hash URL - auto-detect from git
+        let default_commit_url = if !remote_https_url.is_empty() && !commit_hash.is_empty() {
+            format!("{}/commit/{}", remote_https_url, commit_hash)
+        } else {
+            String::new()
+        };
+
         let mut commit_hash_url: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input("Commit hash url:").change_context(BatConfigError)?
+            if default_commit_url.is_empty() {
+                bat_dialoguer::input("Commit hash url:").change_context(BatConfigError)?
+            } else {
+                bat_dialoguer::input_with_default("Commit hash url:", &default_commit_url)
+                    .change_context(BatConfigError)?
+            }
         } else {
             "https://github.com/test_repo/test_program/commit/641bdb72210edcafe555102f2ecd2952a7b60722"
                 .to_string()
@@ -344,27 +344,53 @@ impl BatConfig {
 
         commit_hash_url = Self::normalize_commit_hash_url(&commit_hash_url)?;
 
+        // Starting date - default to today
+        let today = {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let days = now / 86400;
+            let years = (days * 4 + 2) / 1461;
+            let day_of_year = days - (365 * years + years / 4 - years / 100 + years / 400);
+            let month_days: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            let year = 1970 + years;
+            let is_leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+            let mut remaining = day_of_year;
+            let mut month = 0u64;
+            for (i, &d) in month_days.iter().enumerate() {
+                let d = if i == 1 && is_leap { d + 1 } else { d };
+                if remaining < d {
+                    month = i as u64 + 1;
+                    break;
+                }
+                remaining -= d;
+            }
+            let day = remaining + 1;
+            format!("{:02}/{:02}/{}", day, month, year)
+        };
+
         let starting_date: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input("Starting date, example: (01/01/2023):")
+            bat_dialoguer::input_with_default("Starting date:", &today)
                 .change_context(BatConfigError)?
         } else {
-            "test_date".to_string()
+            today
         };
 
+        // Miro board URL - default to "none"
         let mut miro_board_url: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input("Miro board url:").change_context(BatConfigError)?
-        } else {
-            "https://miro.com/app/board/uXjVPzsgmiY=/".to_string()
-        };
-
-        miro_board_url = Self::normalize_miro_board_url(&miro_board_url)?;
-
-        let project_repository_url: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input("Project repo url, where this audit folder would be pushed:")
+            bat_dialoguer::input_with_default("Miro board url:", "none")
                 .change_context(BatConfigError)?
         } else {
-            "https://github.com/matiasbn/test-repo".to_string()
+            "none".to_string()
         };
+
+        if miro_board_url != "none" {
+            miro_board_url = Self::normalize_miro_board_url(&miro_board_url)?;
+        }
+
+        // Project repository URL - auto-detect from git remote
+        let project_repository_url = remote_https_url.clone();
 
         let bat_config = BatConfig {
             initialized: true,
@@ -376,10 +402,47 @@ impl BatConfig {
             starting_date,
             commit_hash_url,
             project_repository_url,
-            program_lib_path: normalized_to_audit_program_lib_path,
+            program_lib_path: normalized_program_lib_path,
         };
         bat_config.save().change_context(BatConfigError)?;
         Ok(bat_config)
+    }
+
+    /// Detects remote URL, owner name, and latest commit hash from a git repo
+    fn detect_remote_info(repo_path: &str) -> Option<(String, String, String)> {
+        let remote_output = Command::new("git")
+            .args(["-C", repo_path, "remote", "get-url", "origin"])
+            .output()
+            .ok()?;
+        let remote_raw = String::from_utf8(remote_output.stdout).ok()?.trim().to_string();
+
+        // Convert SSH URL to HTTPS if needed
+        let remote_https = if remote_raw.starts_with("git@") {
+            // git@github.com:owner/repo.git -> https://github.com/owner/repo
+            remote_raw
+                .replace("git@", "https://")
+                .replace(":", "/")
+                .replace(".git", "")
+                .replacen("//", "//", 1)
+        } else {
+            remote_raw.trim_end_matches(".git").to_string()
+        };
+
+        // Extract owner from URL: https://github.com/owner/repo -> owner
+        let parts: Vec<&str> = remote_https.split('/').collect();
+        let owner = if parts.len() >= 4 {
+            parts[parts.len() - 2].to_string()
+        } else {
+            String::new()
+        };
+
+        let hash_output = Command::new("git")
+            .args(["-C", repo_path, "log", "-1", "--format=%H"])
+            .output()
+            .ok()?;
+        let commit_hash = String::from_utf8(hash_output.stdout).ok()?.trim().to_string();
+
+        Some((remote_https, owner, commit_hash))
     }
 
     fn normalize_miro_board_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
