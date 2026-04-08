@@ -2,6 +2,7 @@ use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCode
 
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
 
+use crate::batbelt::parser::syn_function_dependency_parser::{self, CallType};
 use crate::batbelt::parser::ParserError;
 
 use crate::batbelt::metadata::function_dependencies_metadata::{
@@ -136,12 +137,106 @@ impl FunctionParser {
     fn get_function_dependencies(&mut self) -> Result<(), ParserError> {
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         let function_metadata = bat_metadata.source_code.functions_source_code.clone();
-        // only not external
         let trait_metadata_vec = bat_metadata
             .traits
             .into_iter()
             .filter(|t_metadata| !t_metadata.external_trait)
             .collect::<Vec<_>>();
+
+        let detected_calls = match syn_function_dependency_parser::detect_function_calls(&self.content) {
+            Ok(calls) => calls,
+            Err(e) => {
+                log::warn!("syn parse failed ({}), falling back to regex", e);
+                return self.detect_dependencies_regex_fallback(
+                    &function_metadata,
+                    &trait_metadata_vec,
+                );
+            }
+        };
+
+        log::debug!("syn detected_calls: {:#?}", detected_calls);
+
+        let mut dependency_function_metadata_id_vec: Vec<MetadataId> = vec![];
+
+        for call in &detected_calls {
+            // Skip self-references and method calls
+            if call.function_name == self.name {
+                continue;
+            }
+
+            match &call.call_type {
+                CallType::StaticMethod { type_name } => {
+                    // Build the trait_signature as "Type::function"
+                    let trait_signature = format!("{}::{}", type_name, call.function_name);
+                    let impl_function_metadata_id =
+                        trait_metadata_vec
+                            .iter()
+                            .find_map(|trait_metadata| {
+                                trait_metadata.impl_functions.iter().find_map(|impl_func| {
+                                    if impl_func.trait_signature == trait_signature {
+                                        Some(impl_func.function_source_code_metadata_id.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                            });
+                    if let Some(metadata_id) = impl_function_metadata_id {
+                        if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                            dependency_function_metadata_id_vec.push(metadata_id);
+                        }
+                    } else {
+                        // Also try matching just by function name in function_metadata
+                        let found = function_metadata
+                            .iter()
+                            .filter(|f_meta| f_meta.name == call.function_name)
+                            .collect::<Vec<_>>();
+                        if !found.is_empty() {
+                            for f_meta in found {
+                                if !dependency_function_metadata_id_vec.contains(&f_meta.metadata_id) {
+                                    dependency_function_metadata_id_vec.push(f_meta.metadata_id.clone());
+                                }
+                            }
+                        } else {
+                            let dep_name = format!("{}::{}", type_name, call.function_name);
+                            if !self.external_dependencies.contains(&dep_name) {
+                                self.external_dependencies.push(dep_name);
+                            }
+                        }
+                    }
+                }
+                CallType::FreeFunction => {
+                    let found = function_metadata
+                        .iter()
+                        .filter(|f_meta| f_meta.name == call.function_name)
+                        .collect::<Vec<_>>();
+                    if !found.is_empty() {
+                        for f_meta in found {
+                            if !dependency_function_metadata_id_vec.contains(&f_meta.metadata_id) {
+                                dependency_function_metadata_id_vec.push(f_meta.metadata_id.clone());
+                            }
+                        }
+                    } else {
+                        if !self.external_dependencies.contains(&call.function_name) {
+                            self.external_dependencies.push(call.function_name.clone());
+                        }
+                    }
+                }
+                CallType::MethodCall => {
+                    // Method calls (expr.method()) are typically self/receiver calls,
+                    // skip them as the old implementation did
+                }
+            }
+        }
+
+        self.dependencies = dependency_function_metadata_id_vec;
+        Ok(())
+    }
+
+    fn detect_dependencies_regex_fallback(
+        &mut self,
+        function_metadata: &[FunctionSourceCodeMetadata],
+        trait_metadata_vec: &[crate::batbelt::metadata::trait_metadata::TraitMetadata],
+    ) -> Result<(), ParserError> {
         let mut body_clone = self.body.clone();
 
         let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
@@ -157,32 +252,30 @@ impl FunctionParser {
         log::debug!("impl_function_matches: \n{:#?}", impl_function_matches);
         for impl_match in impl_function_matches {
             log::debug!("impl_match: {}", impl_match);
-            // delete from body to avoid double checking
             body_clone = body_clone.replace(&impl_match, "");
             let impl_function_signature_match = Self::get_function_name_from_signature(&impl_match);
             log::debug!("impl_match_signature: {}", &impl_function_signature_match);
             let impl_function_metadata_id =
                 trait_metadata_vec
-                    .clone()
-                    .into_iter()
+                    .iter()
                     .find_map(|trait_metadata| {
-                        match trait_metadata.impl_functions.into_iter().find(|impl_func| {
+                        match trait_metadata.impl_functions.iter().find(|impl_func| {
                             impl_func.trait_signature == impl_function_signature_match
                         }) {
                             None => None,
-                            Some(impl_func) => Some(impl_func.function_source_code_metadata_id),
+                            Some(impl_func) => Some(impl_func.function_source_code_metadata_id.clone()),
                         }
                     });
             log::debug!(
                 "impl_function_metadata_match {:#?}",
                 impl_function_metadata_id
             );
-            if impl_function_metadata_id.is_some() {
-                dependency_function_metadata_id_vec.push(impl_function_metadata_id.unwrap());
+            if let Some(metadata_id) = impl_function_metadata_id {
+                dependency_function_metadata_id_vec.push(metadata_id);
             }
         }
 
-        let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_:.&, ()]*)\)").unwrap(); //[A-Za-z0-9_]+\(([A-Za-z0-9_,():\s])*\)$
+        let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_:.&, ()]*)\)").unwrap();
         let dependency_function_names_vec = dependency_regex
             .find_iter(&body_clone)
             .filter_map(|reg_match| {
@@ -195,9 +288,11 @@ impl FunctionParser {
                 };
                 let matching_line = body_clone
                     .lines()
-                    .find(|line| line.contains(&match_str))
-                    .unwrap()
-                    .to_string();
+                    .find(|line| line.contains(&match_str));
+                let matching_line = match matching_line {
+                    Some(line) => line.to_string(),
+                    None => return None,
+                };
                 if function_name != self.name
                     && !double_parentheses_regex.is_match(&match_str)
                     && !matching_line.contains("self.")
@@ -209,25 +304,21 @@ impl FunctionParser {
                 }
             })
             .collect::<Vec<_>>();
-        // filter the already found dependencies
         let filtered_function_metadata_vec = function_metadata
-            .into_iter()
+            .iter()
             .filter(|f_meta| {
                 !dependency_function_metadata_id_vec
-                    .clone()
-                    .into_iter()
-                    .any(|dep_metadata_id| dep_metadata_id == f_meta.metadata_id.clone())
+                    .iter()
+                    .any(|dep_metadata_id| *dep_metadata_id == f_meta.metadata_id)
             })
             .collect::<Vec<_>>();
-        let _bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         for dependency_function_name in dependency_function_names_vec {
             let dependency_function_metadata_vec = filtered_function_metadata_vec
-                .clone()
-                .into_iter()
-                .filter(|f_metadata| f_metadata.clone().name == dependency_function_name.clone())
+                .iter()
+                .filter(|f_metadata| f_metadata.name == dependency_function_name)
                 .collect::<Vec<_>>();
-            if !dependency_function_metadata_vec.clone().is_empty() {
-                for dependency_metadata in dependency_function_metadata_vec.clone() {
+            if !dependency_function_metadata_vec.is_empty() {
+                for dependency_metadata in dependency_function_metadata_vec {
                     dependency_function_metadata_id_vec
                         .push(dependency_metadata.metadata_id.clone())
                 }
