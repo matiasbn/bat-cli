@@ -70,19 +70,18 @@ pub struct MiroCodeOverhaulMetadata {
 
 impl MiroCodeOverhaulMetadata {
     pub fn update_code_overhaul_metadata(&self) -> MetadataResult<()> {
-        let mut bat_metadata = BatMetadata::read_metadata()?;
-        let position = bat_metadata
-            .clone()
-            .miro
-            .code_overhaul
-            .into_iter()
-            .position(|ep| ep.entry_point_name == self.entry_point_name);
-        match position {
-            None => bat_metadata.miro.code_overhaul.push(self.clone()),
-            Some(pos) => bat_metadata.miro.code_overhaul[pos] = self.clone(),
-        };
-        bat_metadata.entry_points.sort_by_key(|ep| ep.name.clone());
-        bat_metadata.save_metadata()?;
-        Ok(())
+        let self_clone = self.clone();
+        BatMetadata::update_metadata(|bat_metadata| {
+            let position = bat_metadata
+                .miro
+                .code_overhaul
+                .iter()
+                .position(|ep| ep.entry_point_name == self_clone.entry_point_name);
+            match position {
+                None => bat_metadata.miro.code_overhaul.push(self_clone.clone()),
+                Some(pos) => bat_metadata.miro.code_overhaul[pos] = self_clone.clone(),
+            };
+            bat_metadata.entry_points.sort_by_key(|ep| ep.name.clone());
+        })
     }
 }

@@ -108,22 +108,21 @@ impl ContextAccountsMetadata {
     }
 
     pub fn update_metadata_file(&self) -> MetadataResult<()> {
-        let mut bat_metadata = BatMetadata::read_metadata()?;
-        let position = bat_metadata
-            .clone()
-            .context_accounts
-            .into_iter()
-            .position(|ca_metadata| {
-                ca_metadata.struct_source_code_metadata_id == self.struct_source_code_metadata_id
-            });
-        match position {
-            None => bat_metadata.context_accounts.push(self.clone()),
-            Some(pos) => bat_metadata.context_accounts[pos] = self.clone(),
-        };
-        bat_metadata
-            .context_accounts
-            .sort_by_key(|ca_meta| ca_meta.name.clone());
-        bat_metadata.save_metadata()?;
-        Ok(())
+        let self_clone = self.clone();
+        BatMetadata::update_metadata(|bat_metadata| {
+            let position = bat_metadata
+                .context_accounts
+                .iter()
+                .position(|ca_metadata| {
+                    ca_metadata.struct_source_code_metadata_id == self_clone.struct_source_code_metadata_id
+                });
+            match position {
+                None => bat_metadata.context_accounts.push(self_clone.clone()),
+                Some(pos) => bat_metadata.context_accounts[pos] = self_clone.clone(),
+            };
+            bat_metadata
+                .context_accounts
+                .sort_by_key(|ca_meta| ca_meta.name.clone());
+        })
     }
 }

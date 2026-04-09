@@ -12,7 +12,13 @@ pub mod traits_source_code_metadata;
 use colored::Colorize;
 use std::error::Error;
 use std::fmt::{Debug, Display};
+use std::sync::Mutex;
 use std::{env, fmt};
+
+/// Global mutex to protect read-modify-write cycles on BatMetadata.json.
+/// All `update_metadata_file` methods must acquire this lock before
+/// reading and writing the metadata file.
+static METADATA_FILE_LOCK: Mutex<()> = Mutex::new(());
 
 use crate::batbelt::path::BatFile;
 
@@ -112,6 +118,13 @@ impl BatMetadata {
     }
 
     pub fn read_metadata() -> MetadataResult<Self> {
+        let _guard = METADATA_FILE_LOCK.lock().unwrap();
+        Self::read_metadata_unlocked()
+    }
+
+    /// Internal read without acquiring the lock. Use only when the lock
+    /// is already held (e.g. inside `update_metadata`).
+    fn read_metadata_unlocked() -> MetadataResult<Self> {
         if BatMetadataEnvVariables::assert_use_external_metadata() {
             return Self::read_external_metadata();
         }
@@ -130,7 +143,7 @@ impl BatMetadata {
             bat_metadata.project_name = BatConfig::get_config()
                 .change_context(MetadataError)?
                 .project_name;
-            bat_metadata.save_metadata()?;
+            bat_metadata.save_metadata_unlocked()?;
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit: BatMetadataCommit::UpdateMetadataVersion,
             }
@@ -190,6 +203,13 @@ impl BatMetadata {
     }
 
     pub fn save_metadata(&self) -> MetadataResult<()> {
+        let _guard = METADATA_FILE_LOCK.lock().unwrap();
+        self.save_metadata_unlocked()
+    }
+
+    /// Internal save without acquiring the lock. Use only when the lock
+    /// is already held (e.g. inside `update_metadata`).
+    fn save_metadata_unlocked(&self) -> MetadataResult<()> {
         let bat_config = BatConfig::get_config().change_context(MetadataError)?;
         if self.project_name != bat_config.project_name {
             return Err(Report::new(MetadataError).attach_printable(format!(
@@ -207,6 +227,20 @@ impl BatMetadata {
         metadata_json_bat_file
             .write_content(false, &metadata_json_pretty)
             .change_context(MetadataError)?;
+        Ok(())
+    }
+
+    /// Atomically read, modify, and save metadata. The closure receives
+    /// a mutable reference to the in-memory metadata. The lock is held
+    /// for the entire read-modify-write cycle.
+    pub fn update_metadata<F>(f: F) -> MetadataResult<()>
+    where
+        F: FnOnce(&mut BatMetadata),
+    {
+        let _guard = METADATA_FILE_LOCK.lock().unwrap();
+        let mut bat_metadata = Self::read_metadata_unlocked()?;
+        f(&mut bat_metadata);
+        bat_metadata.save_metadata_unlocked()?;
         Ok(())
     }
 

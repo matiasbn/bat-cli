@@ -12,7 +12,14 @@ use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
 use crate::batbelt::templates::TemplateGenerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 
+use dialoguer::console::Emoji;
+use indicatif::HumanDuration;
+use std::thread;
+use std::time::Instant;
+
 use super::CommandError;
+
+static SPARKLE: Emoji<'_, '_> = Emoji("✨ ", ":-)");
 
 #[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter)]
 pub enum SonarCommand {
@@ -123,10 +130,7 @@ impl SonarCommand {
             .print_interactive()
             .change_context(CommandError)?;
             self.execute_source_code()?;
-            self.execute_context_accounts()?;
-            self.execute_entry_points()?;
-            self.execute_traits()?;
-            self.execute_function_dependencies()?;
+            Self::execute_post_scan_parallel()?;
         } else if only_context_accounts {
             bat_metadata.context_accounts = vec![];
             self.execute_context_accounts()?;
@@ -144,10 +148,7 @@ impl SonarCommand {
             bat_metadata.entry_points = vec![];
             bat_metadata.traits = vec![];
             bat_metadata.function_dependencies = vec![];
-            self.execute_context_accounts()?;
-            self.execute_entry_points()?;
-            self.execute_traits()?;
-            self.execute_function_dependencies()?;
+            Self::execute_post_scan_parallel()?;
         }
 
         let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
@@ -165,6 +166,31 @@ impl SonarCommand {
         .create_commit(true)
         .change_context(CommandError)?;
 
+        Ok(())
+    }
+
+    fn execute_post_scan_parallel() -> Result<(), CommandError> {
+        let started = Instant::now();
+        let handles = vec![
+            thread::spawn(|| {
+                BatSonarInteractive::GetContextAccountsMetadata.print_interactive()
+            }),
+            thread::spawn(|| {
+                BatSonarInteractive::GetEntryPointsMetadata.print_interactive()
+            }),
+            thread::spawn(|| {
+                BatSonarInteractive::GetTraitsMetadata.print_interactive()
+            }),
+            thread::spawn(|| {
+                BatSonarInteractive::GetFunctionDependenciesMetadata.print_interactive()
+            }),
+        ];
+        for h in handles {
+            h.join()
+                .expect("Thread panicked")
+                .change_context(CommandError)?;
+        }
+        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
         Ok(())
     }
 

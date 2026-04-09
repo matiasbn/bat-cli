@@ -28,18 +28,17 @@ impl EntrypointMetadata {
     }
 
     pub fn update_metadata_file(&self) -> MetadataResult<()> {
-        let mut bat_metadata = BatMetadata::read_metadata()?;
-        let position = bat_metadata
-            .clone()
-            .entry_points
-            .into_iter()
-            .position(|ep| ep.name == self.name);
-        match position {
-            None => bat_metadata.entry_points.push(self.clone()),
-            Some(pos) => bat_metadata.entry_points[pos] = self.clone(),
-        };
-        bat_metadata.entry_points.sort_by_key(|ep| ep.name.clone());
-        bat_metadata.save_metadata()?;
-        Ok(())
+        let self_clone = self.clone();
+        BatMetadata::update_metadata(|bat_metadata| {
+            let position = bat_metadata
+                .entry_points
+                .iter()
+                .position(|ep| ep.name == self_clone.name);
+            match position {
+                None => bat_metadata.entry_points.push(self_clone.clone()),
+                Some(pos) => bat_metadata.entry_points[pos] = self_clone.clone(),
+            };
+            bat_metadata.entry_points.sort_by_key(|ep| ep.name.clone());
+        })
     }
 }

@@ -224,13 +224,11 @@ impl BatSonarInteractive {
         for h in handles {
             let _ = h.join();
         }
-        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
 
         Ok(())
     }
 
     fn get_traits_metadata(&self) -> Result<(), BatSonarError> {
-        let started = Instant::now();
         let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
@@ -261,12 +259,10 @@ impl BatSonarInteractive {
         for h in handles {
             let _ = h.join();
         }
-        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
 
         Ok(())
     }
     fn get_functions_dependencies_metadata(&self) -> Result<(), BatSonarError> {
-        let started = Instant::now();
         let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
@@ -307,13 +303,11 @@ impl BatSonarInteractive {
         for h in handles {
             let _ = h.join();
         }
-        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
 
         Ok(())
     }
 
     fn get_context_accounts_metadata(&self) -> Result<(), BatSonarError> {
-        let started = Instant::now();
         let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
@@ -435,7 +429,6 @@ impl BatSonarInteractive {
         for h in handles {
             let _ = h.join();
         }
-        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
 
         Ok(())
     }
