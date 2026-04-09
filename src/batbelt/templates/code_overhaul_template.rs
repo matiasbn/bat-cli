@@ -433,85 +433,84 @@ impl CodeOverhaulSection {
             "get_validations_section_content entrypoint_parser \n{:#?}",
             entrypoint_parser
         );
-        if entrypoint_parser.handler.is_none() {
-            return Ok(format!(
-                "{}",
-                CoderOverhaulTemplatePlaceholders::NoValidationsDetected.to_placeholder()
-            ));
-        }
-        let handler_function = entrypoint_parser.handler.unwrap();
-        let instruction_file_path = handler_function.path.clone();
-        let handler_if_validations = BatSonar::new_from_path(
-            &instruction_file_path,
-            Some(&handler_function.name),
-            SonarResultType::IfValidation,
-        );
+        let (mut filtered_if_validations, mut filtered_handler_validations) =
+            if let Some(handler_function) = entrypoint_parser.handler.clone() {
+                let instruction_file_path = handler_function.path.clone();
+                let handler_if_validations = BatSonar::new_from_path(
+                    &instruction_file_path,
+                    Some(&handler_function.name),
+                    SonarResultType::IfValidation,
+                );
 
-        // get the if validations inside any if statement to filter from the handler validations
-        let if_validations = handler_if_validations
-            .results
-            .iter()
-            .map(|if_validation| {
-                let if_in_validations =
-                    BatSonar::new_scanned(&if_validation.content, SonarResultType::Validation);
-                if !if_in_validations.results.is_empty() {
-                    if_in_validations.results
-                } else {
-                    vec![]
-                }
-            })
-            .fold(vec![], |mut result, current| {
-                for res in current {
-                    result.push(res);
-                }
-                result
-            });
-        log::debug!("if_validations:\n{:#?}", if_validations);
-        // any if that contains an if validation is considered a validation
-        let mut filtered_if_validations = handler_if_validations
-            .results
-            .iter()
-            .filter(|if_est| {
-                if_validations
-                    .clone()
+                // get the if validations inside any if statement to filter from the handler validations
+                let if_validations = handler_if_validations
+                    .results
                     .iter()
-                    .any(|if_val| if_est.content.contains(&if_val.content))
-            })
-            .map(|result| result.content.clone())
-            .collect::<Vec<_>>();
-        log::debug!(
-            "filtered_if_validations:\n{:#?}",
-            filtered_if_validations.clone()
-        );
+                    .map(|if_validation| {
+                        let if_in_validations = BatSonar::new_scanned(
+                            &if_validation.content,
+                            SonarResultType::Validation,
+                        );
+                        if !if_in_validations.results.is_empty() {
+                            if_in_validations.results
+                        } else {
+                            vec![]
+                        }
+                    })
+                    .fold(vec![], |mut result, current| {
+                        for res in current {
+                            result.push(res);
+                        }
+                        result
+                    });
+                log::debug!("if_validations:\n{:#?}", if_validations);
+                // any if that contains an if validation is considered a validation
+                let filtered_if = handler_if_validations
+                    .results
+                    .iter()
+                    .filter(|if_est| {
+                        if_validations
+                            .clone()
+                            .iter()
+                            .any(|if_val| if_est.content.contains(&if_val.content))
+                    })
+                    .map(|result| result.content.clone())
+                    .collect::<Vec<_>>();
+                log::debug!("filtered_if_validations:\n{:#?}", filtered_if);
 
-        let handler_validations =
-            BatSonar::new_from_path(&instruction_file_path, None, SonarResultType::Validation);
-        log::debug!("handler_validations:\n{:#?}", handler_validations);
+                let handler_validations = BatSonar::new_from_path(
+                    &instruction_file_path,
+                    None,
+                    SonarResultType::Validation,
+                );
+                log::debug!("handler_validations:\n{:#?}", handler_validations);
 
-        // if there are validations in if_validations, then filter them from handler validations to avoid repetition
-        let mut filtered_handler_validations = if if_validations.is_empty() {
-            handler_validations
-                .results
-                .iter()
-                .map(|result| result.content.clone())
-                .collect::<Vec<_>>()
-        } else {
-            handler_validations
-                .results
-                .iter()
-                .filter(|validation| {
-                    !handler_if_validations
+                // if there are validations in if_validations, then filter them from handler validations to avoid repetition
+                let filtered_handler = if if_validations.is_empty() {
+                    handler_validations
                         .results
                         .iter()
-                        .any(|if_val| if_val.content.contains(&validation.content.to_string()))
-                })
-                .map(|val| val.content.clone())
-                .collect::<Vec<_>>()
-        };
-        log::debug!(
-            "filtered_handler_validations:\n{:#?}",
-            filtered_handler_validations.clone()
-        );
+                        .map(|result| result.content.clone())
+                        .collect::<Vec<_>>()
+                } else {
+                    handler_validations
+                        .results
+                        .iter()
+                        .filter(|validation| {
+                            !handler_if_validations.results.iter().any(|if_val| {
+                                if_val.content.contains(&validation.content.to_string())
+                            })
+                        })
+                        .map(|val| val.content.clone())
+                        .collect::<Vec<_>>()
+                };
+                log::debug!("filtered_handler_validations:\n{:#?}", filtered_handler);
+
+                (filtered_if, filtered_handler)
+            } else {
+                (vec![], vec![])
+            };
+
         let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
         let context_accounts_metadata = bat_metadata
             .get_context_accounts_metadata_by_struct_source_code_metadata_id(
@@ -529,9 +528,31 @@ impl CodeOverhaulSection {
             .into_iter()
             .filter_map(|ca_metadata| {
                 if !ca_metadata.validations.is_empty() {
-                    let last_line = ca_metadata.content.lines().last().unwrap();
-                    let last_line_tws = BatSonar::get_trailing_whitespaces(last_line);
-                    let trailing_str = " ".repeat(last_line_tws);
+                    let trailing_str = "  ".to_string();
+                    // Build the account type line from metadata fields
+                    let account_line = if ca_metadata.lifetime_name.is_empty() {
+                        format!(
+                            "{}pub {}: {},",
+                            trailing_str, ca_metadata.account_name, ca_metadata.account_struct_name
+                        )
+                    } else if ca_metadata.account_wrapper_name == ca_metadata.account_struct_name {
+                        format!(
+                            "{}pub {}: {}<{}>,",
+                            trailing_str,
+                            ca_metadata.account_name,
+                            ca_metadata.account_struct_name,
+                            ca_metadata.lifetime_name
+                        )
+                    } else {
+                        format!(
+                            "{}pub {}: {}<{}, {}>,",
+                            trailing_str,
+                            ca_metadata.account_name,
+                            ca_metadata.account_wrapper_name,
+                            ca_metadata.lifetime_name,
+                            ca_metadata.account_struct_name
+                        )
+                    };
                     let result = format!(
                         "{}#[account(\n{}\n{})]\n{}",
                         trailing_str,
@@ -548,7 +569,7 @@ impl CodeOverhaulSection {
                             .collect::<Vec<_>>()
                             .join("\n"),
                         trailing_str,
-                        last_line
+                        account_line
                     );
                     Some(result)
                 } else {
