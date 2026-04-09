@@ -33,7 +33,8 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
-use crate::batbelt::path::BatFolder;
+use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use crate::{batbelt, Suggestion};
@@ -560,12 +561,32 @@ impl MiroCommand {
                 }
             };
 
-        if co_miro_frame.frame_url.is_some() {
+        if let Some(ref frame_url) = co_miro_frame.frame_url {
             println!(
                 "Miro frame url for {}: {}",
                 miro_co_metadata.entry_point_name.clone().green(),
-                co_miro_frame.clone().frame_url.unwrap().green()
+                frame_url.green()
             );
+            // Update the code-overhaul file with the Miro frame URL
+            let miro_placeholder =
+                CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder();
+            let co_file_name = format!("{}.md", entrypoint_name);
+            // Try started folder first, then finished
+            let co_bat_file =
+                if BatFolder::CodeOverhaulStarted.get_all_files_names(true, None, None)
+                    .unwrap_or_default()
+                    .contains(&co_file_name)
+                {
+                    BatFile::CodeOverhaulStarted { file_name: co_file_name }
+                } else {
+                    BatFile::CodeOverhaulFinished { file_name: co_file_name }
+                };
+            if let Ok(content) = co_bat_file.read_content(true) {
+                if content.contains(&miro_placeholder) {
+                    let new_content = content.replace(&miro_placeholder, frame_url);
+                    let _ = co_bat_file.write_content(true, &new_content);
+                }
+            }
         }
 
         if !miro_co_metadata.images_deployed {
