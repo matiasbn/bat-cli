@@ -106,6 +106,34 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
 }
 
 impl FunctionSourceCodeMetadata {
+    pub fn create_metadata_from_content(
+        entry_path: &str,
+        file_content: &str,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
+        let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Function);
+        for result in bat_sonar.results {
+            let function_type = if Self::assert_function_is_entrypoint(entry_path, result.clone())?
+            {
+                FunctionMetadataType::EntryPoint
+            } else if Self::assert_function_is_handler(entry_path.to_string(), result.clone())? {
+                FunctionMetadataType::Handler
+            } else {
+                FunctionMetadataType::Other
+            };
+            let function_metadata = FunctionSourceCodeMetadata::new(
+                entry_path.to_string(),
+                result.name.to_string(),
+                function_type,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+                Self::create_metadata_id(),
+            );
+            metadata_result.push(function_metadata);
+        }
+        Ok(metadata_result)
+    }
+
     pub fn to_function_parser(&self) -> Result<FunctionParser, MetadataError> {
         FunctionParser::new_from_metadata(self.clone()).change_context(MetadataError)
     }

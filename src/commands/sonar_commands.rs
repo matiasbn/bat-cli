@@ -1,4 +1,4 @@
-use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit};
 
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
@@ -8,7 +8,6 @@ use crate::batbelt::path::BatFile;
 use error_stack::{Result, ResultExt};
 
 use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
-use crate::batbelt::sonar::SonarResultType;
 use crate::batbelt::templates::TemplateGenerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 
@@ -117,30 +116,6 @@ impl SonarCommand {
             let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
             bat_metadata.miro = miro_metadata;
             bat_metadata.save_metadata().change_context(CommandError)?;
-            BatSonarInteractive::SonarStart {
-                sonar_result_type: SonarResultType::Struct,
-            }
-            .print_interactive()
-            .change_context(CommandError)?;
-
-            BatSonarInteractive::SonarStart {
-                sonar_result_type: SonarResultType::Function,
-            }
-            .print_interactive()
-            .change_context(CommandError)?;
-
-            BatSonarInteractive::SonarStart {
-                sonar_result_type: SonarResultType::Trait,
-            }
-            .print_interactive()
-            .change_context(CommandError)?;
-
-            BatSonarInteractive::SonarStart {
-                sonar_result_type: SonarResultType::Enum,
-            }
-            .print_interactive()
-            .change_context(CommandError)?;
-
             self.execute_source_code()?;
             self.execute_context_accounts()?;
             self.execute_entry_points()?;

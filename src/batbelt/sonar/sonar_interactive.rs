@@ -7,7 +7,7 @@ use crate::batbelt::metadata::{
     BatMetadata, BatMetadataParser, BatMetadataType, SourceCodeMetadata,
 };
 use crate::batbelt::path::BatFolder;
-use crate::batbelt::sonar::{BatSonar, BatSonarError, SonarResultType};
+use crate::batbelt::sonar::{BatSonarError, SonarResultType};
 use crate::batbelt::BatEnumerator;
 
 use colored::Colorize;
@@ -23,7 +23,6 @@ use crate::batbelt::parser::syn_context_accounts_parser;
 use crate::batbelt::parser::trait_parser::TraitParser;
 
 use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
-use lazy_regex::regex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -102,7 +101,7 @@ impl BatSonarInteractive {
             result_type_colorized,
             "BatSonar".red(),
         ));
-        thread::sleep(Duration::from_millis(1800));
+        thread::sleep(Duration::from_millis(1000));
         pb.finish_with_message(format!("{} search finished ", result_type_colorized,));
         Ok(())
     }
@@ -119,105 +118,48 @@ impl BatSonarInteractive {
             "Analyzing {} files",
             style(format!("{}", program_dir_entries.len())).bold().dim(),
         );
-        let m = MultiProgress::new();
-        let metadata_types_vec = BatMetadataType::get_type_vec();
-        let metadata_types_colored = BatMetadataType::get_colorized_type_vec(true);
-        let handles: Vec<_> = (0..metadata_types_vec.len())
-            .map(|i| {
-                let mut structs_result = vec![];
-                let mut functions_result = vec![];
-                let mut traits_result = vec![];
-                let mut enums_result = vec![];
-                let program_dir_clone = program_dir_entries.clone();
-                let metadata_type = metadata_types_vec[i];
-                let metadata_type_color = metadata_types_colored[i].clone();
-                let pb = m.add(ProgressBar::new(program_dir_clone.len() as u64));
-                let mut total = 0;
-                pb.set_style(spinner_style.clone());
-                thread::spawn(move || {
-                    for (idx, entry) in program_dir_clone.iter().enumerate().clone() {
-                        pb.set_prefix(format!("[{}/{}]", idx + 1, program_dir_clone.len()));
-                        pb.set_message(format!(
-                            "Getting {} from: {}",
-                            metadata_type_color.clone(),
-                            entry.clone().path().to_str().unwrap().clone()
-                        ));
-                        match metadata_type {
-                            BatMetadataType::Struct => {
-                                let mut struct_res =
-                                    StructSourceCodeMetadata::create_metadata_from_dir_entry(
-                                        entry.clone(),
-                                    )
-                                    .unwrap();
-                                total += struct_res.len();
-                                structs_result.append(&mut struct_res);
-                            }
-                            BatMetadataType::Function => {
-                                let mut func_res =
-                                    FunctionSourceCodeMetadata::create_metadata_from_dir_entry(
-                                        entry.clone(),
-                                    )
-                                    .unwrap();
-                                total += func_res.len();
-                                functions_result.append(&mut func_res);
-                            }
-                            BatMetadataType::Trait => {
-                                let mut trait_res =
-                                    TraitSourceCodeMetadata::create_metadata_from_dir_entry(
-                                        entry.clone(),
-                                    )
-                                    .unwrap();
 
-                                total += trait_res.len();
-                                traits_result.append(&mut trait_res);
-                            }
-                            BatMetadataType::Enum => {
-                                let mut enum_res =
-                                    EnumSourceCodeMetadata::create_metadata_from_dir_entry(
-                                        entry.clone(),
-                                    )
-                                    .unwrap();
+        let pb = ProgressBar::new(program_dir_entries.len() as u64);
+        pb.set_style(spinner_style);
 
-                                total += enum_res.len();
-                                enums_result.append(&mut enum_res);
-                            }
-                        };
-                        pb.inc(1);
-                        thread::sleep(Duration::from_millis(200));
-                    }
-                    pb.finish_with_message(format!("{} {} found", total, metadata_type_color));
-                    let bat_metadata = BatMetadata::read_metadata().unwrap();
-                    if !functions_result.is_empty() {
-                        bat_metadata
-                            .source_code
-                            .update_functions(functions_result.clone())
-                            .unwrap();
-                    }
-                    if !structs_result.is_empty() {
-                        bat_metadata
-                            .source_code
-                            .update_structs(structs_result.clone())
-                            .unwrap();
-                    }
-                    if !traits_result.is_empty() {
-                        bat_metadata
-                            .source_code
-                            .update_traits(traits_result.clone())
-                            .unwrap();
-                    }
-                    if !enums_result.is_empty() {
-                        bat_metadata
-                            .source_code
-                            .update_enums(enums_result.clone())
-                            .unwrap();
-                    }
-                })
-            })
-            .collect();
-        for h in handles {
-            let _ = h.join();
+        let mut all_structs = vec![];
+        let mut all_functions = vec![];
+        let mut all_traits = vec![];
+        let mut all_enums = vec![];
+
+        for (idx, entry) in program_dir_entries.iter().enumerate() {
+            let entry_path = entry.path().to_str().unwrap().to_string();
+            pb.set_prefix(format!("[{}/{}]", idx + 1, program_dir_entries.len()));
+            pb.set_message(format!("Scanning: {}", &entry_path));
+
+            let file_content = std::fs::read_to_string(entry.path()).unwrap();
+
+            all_structs.append(
+                &mut StructSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+            );
+            all_functions.append(
+                &mut FunctionSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+            );
+            all_traits.append(
+                &mut TraitSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+            );
+            all_enums.append(
+                &mut EnumSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+            );
+
+            pb.inc(1);
         }
-        // m.clear().unwrap();
+
+        pb.finish_with_message(format!(
+            "Found {} structs, {} functions, {} traits, {} enums",
+            all_structs.len(), all_functions.len(), all_traits.len(), all_enums.len()
+        ));
+
+        let bat_metadata = BatMetadata::read_metadata().unwrap();
+        bat_metadata.source_code.update_structs(all_structs).unwrap();
+        bat_metadata.source_code.update_functions(all_functions).unwrap();
+        bat_metadata.source_code.update_traits(all_traits).unwrap();
+        bat_metadata.source_code.update_enums(all_enums).unwrap();
 
         println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
 
@@ -332,7 +274,6 @@ impl BatSonarInteractive {
                                 );
                             }
                         }
-                        thread::sleep(Duration::from_millis(200));
                     }
                 })
             })
