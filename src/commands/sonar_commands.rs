@@ -1,4 +1,5 @@
 use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit};
+use crate::batbelt::sonar::SonarResultType;
 
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
@@ -116,6 +117,11 @@ impl SonarCommand {
             let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
             bat_metadata.miro = miro_metadata;
             bat_metadata.save_metadata().change_context(CommandError)?;
+            BatSonarInteractive::SonarStart {
+                sonar_result_type: SonarResultType::Struct,
+            }
+            .print_interactive()
+            .change_context(CommandError)?;
             self.execute_source_code()?;
             self.execute_context_accounts()?;
             self.execute_entry_points()?;

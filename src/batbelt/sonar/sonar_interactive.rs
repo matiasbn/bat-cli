@@ -60,15 +60,8 @@ impl BatSonarInteractive {
         Ok(())
     }
 
-    fn sonar_start(&self, sonar_result_type: SonarResultType) -> Result<(), BatSonarError> {
+    fn sonar_start(&self, _sonar_result_type: SonarResultType) -> Result<(), BatSonarError> {
         let pb = ProgressBar::new_spinner();
-        let result_type_colorized = match sonar_result_type {
-            SonarResultType::Function => BatMetadataType::Function.get_colored_name(true),
-            SonarResultType::Struct => BatMetadataType::Struct.get_colored_name(true),
-            SonarResultType::Trait => BatMetadataType::Trait.get_colored_name(true),
-            SonarResultType::Enum => BatMetadataType::Enum.get_colored_name(true),
-            _ => sonar_result_type.to_string().bright_cyan(),
-        };
         pb.enable_steady_tick(Duration::from_millis(100));
         pb.set_style(
             ProgressStyle::with_template("{spinner:.blue} {msg}")
@@ -97,16 +90,17 @@ impl BatSonarInteractive {
                 ]),
         );
         pb.set_message(format!(
-            "Looking for {} with {}...",
-            result_type_colorized,
+            "Initializing {}...",
             "BatSonar".red(),
         ));
-        thread::sleep(Duration::from_millis(1000));
-        pb.finish_with_message(format!("{} search finished ", result_type_colorized,));
+        thread::sleep(Duration::from_millis(1500));
+        pb.finish_with_message(format!("{} initialized", "BatSonar".red()));
         Ok(())
     }
 
     fn get_source_code_metadata(&self) -> Result<(), BatSonarError> {
+        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+
         let started = Instant::now();
         let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
             .unwrap()
@@ -114,40 +108,74 @@ impl BatSonarInteractive {
         let program_dir_entries = BatFolder::ProgramPath
             .get_all_files_dir_entries(false, None, None)
             .change_context(BatSonarError)?;
+        let total_files = program_dir_entries.len();
         println!(
             "Analyzing {} files",
-            style(format!("{}", program_dir_entries.len())).bold().dim(),
+            style(format!("{}", total_files)).bold().dim(),
         );
 
-        let pb = ProgressBar::new(program_dir_entries.len() as u64);
+        let pb = ProgressBar::new(total_files as u64);
         pb.set_style(spinner_style);
+
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .min(total_files.max(1));
+        let chunk_size = (total_files + num_threads - 1) / num_threads;
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let handles: Vec<_> = program_dir_entries
+            .chunks(chunk_size)
+            .map(|chunk| {
+                let entries: Vec<_> = chunk.to_vec();
+                let pb = pb.clone();
+                let counter = Arc::clone(&counter);
+                thread::spawn(move || {
+                    let mut structs = vec![];
+                    let mut functions = vec![];
+                    let mut traits = vec![];
+                    let mut enums = vec![];
+
+                    for entry in &entries {
+                        let entry_path = entry.path().to_str().unwrap().to_string();
+                        let current = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                        pb.set_prefix(format!("[{}/{}]", current, total_files));
+                        pb.set_message(format!("Scanning: {}", &entry_path));
+
+                        let file_content = std::fs::read_to_string(entry.path()).unwrap();
+
+                        structs.append(
+                            &mut StructSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                        );
+                        functions.append(
+                            &mut FunctionSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                        );
+                        traits.append(
+                            &mut TraitSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                        );
+                        enums.append(
+                            &mut EnumSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                        );
+
+                        pb.inc(1);
+                    }
+
+                    (structs, functions, traits, enums)
+                })
+            })
+            .collect();
 
         let mut all_structs = vec![];
         let mut all_functions = vec![];
         let mut all_traits = vec![];
         let mut all_enums = vec![];
 
-        for (idx, entry) in program_dir_entries.iter().enumerate() {
-            let entry_path = entry.path().to_str().unwrap().to_string();
-            pb.set_prefix(format!("[{}/{}]", idx + 1, program_dir_entries.len()));
-            pb.set_message(format!("Scanning: {}", &entry_path));
-
-            let file_content = std::fs::read_to_string(entry.path()).unwrap();
-
-            all_structs.append(
-                &mut StructSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
-            );
-            all_functions.append(
-                &mut FunctionSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
-            );
-            all_traits.append(
-                &mut TraitSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
-            );
-            all_enums.append(
-                &mut EnumSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
-            );
-
-            pb.inc(1);
+        for h in handles {
+            let (s, f, t, e) = h.join().unwrap();
+            all_structs.extend(s);
+            all_functions.extend(f);
+            all_traits.extend(t);
+            all_enums.extend(e);
         }
 
         pb.finish_with_message(format!(
@@ -189,7 +217,6 @@ impl BatSonarInteractive {
                         pb.set_message(format!("Getting information for: {}", entry));
                         pb.inc(1);
                         EntrypointParser::new_from_name(entry).unwrap();
-                        thread::sleep(Duration::from_millis(200));
                     }
                 })
             })
@@ -227,7 +254,6 @@ impl BatSonarInteractive {
                         pb.set_message(format!("Getting information for: {}", trait_sc.name));
                         pb.inc(1);
                         TraitParser::new_from_metadata(trait_sc.clone()).unwrap();
-                        thread::sleep(Duration::from_millis(200));
                     }
                 })
             })
@@ -401,7 +427,6 @@ impl BatSonarInteractive {
                                 ca_info,
                             );
                             context_accounts_metadata.update_metadata_file().unwrap();
-                            thread::sleep(Duration::from_millis(200));
                         }
                     }
                 })
