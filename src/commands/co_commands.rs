@@ -321,10 +321,12 @@ impl CodeOverhaulCommand {
 
         // open entrypoint file at the entrypoint function line
         if let Some(ep_parser) = started_template.entrypoint_parser {
-            CodeEditor::open_file_in_editor(
-                &ep_parser.entry_point_function.path,
-                Some(ep_parser.entry_point_function.start_line_index),
-            )?;
+            let ep_bat_file = BatFile::Generic {
+                file_path: ep_parser.entry_point_function.path.clone(),
+            };
+            ep_bat_file
+                .open_in_editor(true, Some(ep_parser.entry_point_function.start_line_index))
+                .change_context(CommandError)?;
         }
         if !skip_miro {
             let deployed = co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;

@@ -54,13 +54,14 @@ impl CodeEditor {
                 .change_context(CommandError)?;
             }
             CodeEditor::VSCode => {
-                let formatted_path = if starting_line == 0 {
-                    path.to_string()
+                if starting_line == 0 {
+                    execute_command("code", &["-a", path], false)
+                        .change_context(CommandError)?;
                 } else {
-                    format!("{};{}", path, starting_line)
+                    let goto_path = format!("{}:{}", path, starting_line);
+                    execute_command("code", &["-a", "--goto", &goto_path], false)
+                        .change_context(CommandError)?;
                 };
-                execute_command("code", &["-a", &formatted_path], false)
-                    .change_context(CommandError)?;
             }
             _ => {
                 println!("Path to file: {:#?}:{}", path, starting_line);
