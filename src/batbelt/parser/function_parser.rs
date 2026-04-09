@@ -198,8 +198,77 @@ impl FunctionParser {
                         self.external_dependencies.push(call.function_name.clone());
                     }
                 }
-                CallType::MethodCall => {
-                    // Method calls (expr.method()) are skipped
+                CallType::MethodCall { receiver } => {
+                    // Resolve method calls on ctx.accounts (e.g. ctx.accounts.process())
+                    if let Some(ref recv) = receiver {
+                        if recv.contains("accounts") {
+                            // Extract context type name from function parameters
+                            let context_type_name = self.parameters.iter().find_map(|p| {
+                                if p.parameter_type.contains("Context<") {
+                                    // Extract T from Context<T> or Context<'_, T>
+                                    let after_context = p.parameter_type.split("Context<").nth(1)?;
+                                    let inner = after_context.trim_end_matches('>');
+                                    // Handle lifetime params like Context<'_, Initialize>
+                                    let type_name = inner.split(',').last()?.trim();
+                                    Some(type_name.to_string())
+                                } else {
+                                    None
+                                }
+                            });
+
+                            if let Some(ctx_type) = context_type_name {
+                                // Find the impl block for this context type (impl T where impl_from is empty = direct impl)
+                                let trait_signature = format!("{}::{}", ctx_type, call.function_name);
+                                let impl_function_metadata_id = trait_metadata_vec.iter().find_map(|trait_metadata| {
+                                    // Direct impl: impl_to matches context type and impl_from is empty
+                                    if trait_metadata.impl_to == ctx_type && trait_metadata.impl_from.is_empty() {
+                                        trait_metadata.impl_functions.iter().find_map(|impl_func| {
+                                            if impl_func.trait_signature == trait_signature {
+                                                Some(impl_func.function_source_code_metadata_id.clone())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                });
+
+                                if let Some(metadata_id) = impl_function_metadata_id {
+                                    if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                                        dependency_function_metadata_id_vec.push(metadata_id);
+                                    }
+                                } else {
+                                    // Fallback: try any impl block matching the trait_signature
+                                    let fallback_id = trait_metadata_vec.iter().find_map(|trait_metadata| {
+                                        trait_metadata.impl_functions.iter().find_map(|impl_func| {
+                                            if impl_func.trait_signature == trait_signature {
+                                                Some(impl_func.function_source_code_metadata_id.clone())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                    });
+                                    if let Some(metadata_id) = fallback_id {
+                                        if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                                            dependency_function_metadata_id_vec.push(metadata_id);
+                                        }
+                                    } else if let Some(metadata_id) = self.resolve_function_by_name(&call.function_name, &function_metadata) {
+                                        if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                                            dependency_function_metadata_id_vec.push(metadata_id);
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    // For other method calls, try to resolve by name
+                    if let Some(metadata_id) = self.resolve_function_by_name(&call.function_name, &function_metadata) {
+                        if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                            dependency_function_metadata_id_vec.push(metadata_id);
+                        }
+                    }
                 }
             }
         }
@@ -254,72 +323,98 @@ impl FunctionParser {
     }
 
     fn get_function_parameters(&mut self) -> Result<(), ParserError> {
-        if self.content.is_empty() || self.signature.is_empty() {
+        use quote::ToTokens;
+
+        if self.content.is_empty() {
             return Err(Report::new(ParserError).attach_printable(
-                "Error parsing function, both content and signature needs to be initialized",
+                "Error parsing function, content needs to be initialized",
             ))?;
         }
-        let content_lines = self.content.lines();
-        let function_signature = self.signature.clone();
 
-        //Function parameters
-        // single line function
-        let parameters = if content_lines.clone().next().unwrap().contains('{') {
-            let function_signature_tokenized = function_signature
-                .trim_start_matches("pub (crate) fn ")
-                .trim_start_matches("pub fn ")
-                .split('(')
-                .last()
-                .unwrap()
-                .trim_end_matches(')')
-                .split(' ')
-                .collect::<Vec<_>>();
-            if function_signature_tokenized.is_empty() || function_signature_tokenized[0].is_empty()
-            {
-                return Ok(());
-            }
-            let mut parameters: Vec<String> = vec![];
-            function_signature_tokenized.iter().enumerate().fold(
-                "".to_string(),
-                |total, current| {
-                    if current.1.contains(':') {
-                        if !total.is_empty() {
-                            parameters.push(total);
+        let item_fn = syn::parse_str::<syn::ItemFn>(&self.content).or_else(|_| {
+            let wrapped = format!("fn __wrapper() {{ {} }}", &self.content);
+            syn::parse_str::<syn::ItemFn>(&wrapped)
+        });
+
+        let result = match item_fn {
+            Ok(item_fn) => {
+                item_fn
+                    .sig
+                    .inputs
+                    .iter()
+                    .filter_map(|arg| match arg {
+                        syn::FnArg::Receiver(_) => None,
+                        syn::FnArg::Typed(pat_type) => {
+                            let name = pat_type.pat.to_token_stream().to_string();
+                            let ty = pat_type.ty.to_token_stream().to_string();
+                            Some(FunctionParameterParser {
+                                parameter_name: name,
+                                parameter_type: ty,
+                            })
                         }
-                        current.1.to_string()
-                    } else if current.0 == function_signature_tokenized.len() - 1 {
-                        parameters.push(format!("{} {}", total, current.1));
-                        total
-                    } else {
-                        format!("{} {}", total, current.1)
+                    })
+                    .collect::<Vec<_>>()
+            }
+            Err(_) => {
+                // Fallback to legacy string parsing
+                let function_signature = self.signature.clone();
+                let content_lines = self.content.lines();
+                let parameters = if content_lines.clone().next().unwrap().contains('{') {
+                    let function_signature_tokenized = function_signature
+                        .trim_start_matches("pub (crate) fn ")
+                        .trim_start_matches("pub fn ")
+                        .split('(')
+                        .last()
+                        .unwrap()
+                        .trim_end_matches(')')
+                        .split(' ')
+                        .collect::<Vec<_>>();
+                    if function_signature_tokenized.is_empty()
+                        || function_signature_tokenized[0].is_empty()
+                    {
+                        return Ok(());
                     }
-                },
-            );
-            parameters
-        } else {
-            //multiline
-            // parameters contains :
-            let filtered: Vec<String> = function_signature
-                .lines()
-                .filter(|line| {
-                    line.contains(':')
-                        && !line.contains("pub fn")
-                        && !line.contains("pub (crate) fn")
-                })
-                .map(|line| line.trim().trim_end_matches(',').to_string())
-                .collect();
-            filtered
+                    let mut parameters: Vec<String> = vec![];
+                    function_signature_tokenized.iter().enumerate().fold(
+                        "".to_string(),
+                        |total, current| {
+                            if current.1.contains(':') {
+                                if !total.is_empty() {
+                                    parameters.push(total);
+                                }
+                                current.1.to_string()
+                            } else if current.0 == function_signature_tokenized.len() - 1 {
+                                parameters.push(format!("{} {}", total, current.1));
+                                total
+                            } else {
+                                format!("{} {}", total, current.1)
+                            }
+                        },
+                    );
+                    parameters
+                } else {
+                    function_signature
+                        .lines()
+                        .filter(|line| {
+                            line.contains(':')
+                                && !line.contains("pub fn")
+                                && !line.contains("pub (crate) fn")
+                        })
+                        .map(|line| line.trim().trim_end_matches(',').to_string())
+                        .collect()
+                };
+                parameters
+                    .into_iter()
+                    .map(|parameter| {
+                        let tokenized = parameter.split(": ");
+                        FunctionParameterParser {
+                            parameter_name: tokenized.clone().next().unwrap().to_string(),
+                            parameter_type: tokenized.clone().last().unwrap().to_string(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            }
         };
-        let result = parameters
-            .into_iter()
-            .map(|parameter| {
-                let tokenized = parameter.split(": ");
-                FunctionParameterParser {
-                    parameter_name: tokenized.clone().next().unwrap().to_string(),
-                    parameter_type: tokenized.clone().last().unwrap().to_string(),
-                }
-            })
-            .collect::<Vec<_>>();
         self.parameters = result;
         Ok(())
     }

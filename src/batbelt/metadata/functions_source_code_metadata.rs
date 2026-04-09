@@ -277,11 +277,36 @@ pub enum FunctionMetadataType {
 impl BatEnumerator for FunctionMetadataType {}
 
 pub fn get_function_parameters(function_content: String) -> Vec<String> {
+    use quote::ToTokens;
+
+    let item_fn = syn::parse_str::<syn::ItemFn>(&function_content).or_else(|_| {
+        let wrapped = format!("fn __wrapper() {{ {} }}", function_content);
+        syn::parse_str::<syn::ItemFn>(&wrapped)
+    });
+
+    let Ok(item_fn) = item_fn else {
+        // Fallback to legacy string parsing if syn fails
+        return get_function_parameters_legacy(function_content);
+    };
+
+    item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Receiver(_) => None,
+            syn::FnArg::Typed(pat_type) => {
+                let name = pat_type.pat.to_token_stream().to_string();
+                let ty = pat_type.ty.to_token_stream().to_string();
+                Some(format!("{}: {}", name, ty))
+            }
+        })
+        .collect()
+}
+
+fn get_function_parameters_legacy(function_content: String) -> Vec<String> {
     let content_lines = function_content.lines();
     let function_signature = get_function_signature(&function_content);
-    //Function parameters
-    // single line function
-    // info!("function content: \n {}", function_content);
     if content_lines.clone().next().unwrap().contains('{') {
         let function_signature_tokenized = function_signature
             .trim_start_matches("pub (crate) fn ")
@@ -314,8 +339,6 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
             });
         parameters
     } else {
-        //multiline
-        // parameters contains :
         let filtered: Vec<String> = function_signature
             .lines()
             .filter(|line| line.contains(':'))

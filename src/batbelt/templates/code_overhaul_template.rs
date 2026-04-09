@@ -433,83 +433,87 @@ impl CodeOverhaulSection {
             "get_validations_section_content entrypoint_parser \n{:#?}",
             entrypoint_parser
         );
-        let (mut filtered_if_validations, mut filtered_handler_validations) =
-            if let Some(handler_function) = entrypoint_parser.handler.clone() {
-                let instruction_file_path = handler_function.path.clone();
-                let handler_if_validations = BatSonar::new_from_path(
-                    &instruction_file_path,
-                    Some(&handler_function.name),
-                    SonarResultType::IfValidation,
-                );
 
-                // get the if validations inside any if statement to filter from the handler validations
-                let if_validations = handler_if_validations
+        // Collect validations from all dependencies (recursively resolved)
+        let mut dependency_validations: Vec<String> = vec![];
+        for dep_function in &entrypoint_parser.dependencies {
+            // Use exact line ranges from metadata for robust function content extraction
+            let dep_if_validations = BatSonar::new_from_path_with_lines(
+                &dep_function.path,
+                dep_function.start_line_index,
+                dep_function.end_line_index,
+                SonarResultType::IfValidation,
+            );
+
+            // get the if validations inside any if statement to filter from the dependency validations
+            let if_validations = dep_if_validations
+                .results
+                .iter()
+                .map(|if_validation| {
+                    let if_in_validations = BatSonar::new_scanned(
+                        &if_validation.content,
+                        SonarResultType::Validation,
+                    );
+                    if !if_in_validations.results.is_empty() {
+                        if_in_validations.results
+                    } else {
+                        vec![]
+                    }
+                })
+                .fold(vec![], |mut result, current| {
+                    for res in current {
+                        result.push(res);
+                    }
+                    result
+                });
+
+            // any if that contains an if validation is considered a validation
+            let mut filtered_if = dep_if_validations
+                .results
+                .iter()
+                .filter(|if_est| {
+                    if_validations
+                        .clone()
+                        .iter()
+                        .any(|if_val| if_est.content.contains(&if_val.content))
+                })
+                .map(|result| result.content.clone())
+                .collect::<Vec<_>>();
+
+            let dep_validations_sonar = BatSonar::new_from_path_with_lines(
+                &dep_function.path,
+                dep_function.start_line_index,
+                dep_function.end_line_index,
+                SonarResultType::Validation,
+            );
+
+            // if there are validations in if_validations, then filter them from dependency validations to avoid repetition
+            let mut filtered_dep = if if_validations.is_empty() {
+                dep_validations_sonar
                     .results
                     .iter()
-                    .map(|if_validation| {
-                        let if_in_validations = BatSonar::new_scanned(
-                            &if_validation.content,
-                            SonarResultType::Validation,
-                        );
-                        if !if_in_validations.results.is_empty() {
-                            if_in_validations.results
-                        } else {
-                            vec![]
-                        }
-                    })
-                    .fold(vec![], |mut result, current| {
-                        for res in current {
-                            result.push(res);
-                        }
-                        result
-                    });
-                log::debug!("if_validations:\n{:#?}", if_validations);
-                // any if that contains an if validation is considered a validation
-                let filtered_if = handler_if_validations
-                    .results
-                    .iter()
-                    .filter(|if_est| {
-                        if_validations
-                            .clone()
-                            .iter()
-                            .any(|if_val| if_est.content.contains(&if_val.content))
-                    })
                     .map(|result| result.content.clone())
-                    .collect::<Vec<_>>();
-                log::debug!("filtered_if_validations:\n{:#?}", filtered_if);
-
-                let handler_validations = BatSonar::new_from_path(
-                    &instruction_file_path,
-                    None,
-                    SonarResultType::Validation,
-                );
-                log::debug!("handler_validations:\n{:#?}", handler_validations);
-
-                // if there are validations in if_validations, then filter them from handler validations to avoid repetition
-                let filtered_handler = if if_validations.is_empty() {
-                    handler_validations
-                        .results
-                        .iter()
-                        .map(|result| result.content.clone())
-                        .collect::<Vec<_>>()
-                } else {
-                    handler_validations
-                        .results
-                        .iter()
-                        .filter(|validation| {
-                            !handler_if_validations.results.iter().any(|if_val| {
-                                if_val.content.contains(&validation.content.to_string())
-                            })
-                        })
-                        .map(|val| val.content.clone())
-                        .collect::<Vec<_>>()
-                };
-                log::debug!("filtered_handler_validations:\n{:#?}", filtered_handler);
-
-                (filtered_if, filtered_handler)
+                    .collect::<Vec<_>>()
             } else {
-                (vec![], vec![])
+                dep_validations_sonar
+                    .results
+                    .iter()
+                    .filter(|validation| {
+                        !dep_if_validations.results.iter().any(|if_val| {
+                            if_val.content.contains(&validation.content.to_string())
+                        })
+                    })
+                    .map(|val| val.content.clone())
+                    .collect::<Vec<_>>()
             };
+
+            if !filtered_if.is_empty() || !filtered_dep.is_empty() {
+                // Header with function name
+                dependency_validations.push(format!("// {}:", dep_function.name));
+                dependency_validations.append(&mut filtered_if);
+                dependency_validations.append(&mut filtered_dep);
+            }
+        }
 
         let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
         let context_accounts_metadata = bat_metadata
@@ -581,8 +585,7 @@ impl CodeOverhaulSection {
 
         let mut validations_vec: Vec<String> = vec![];
         validations_vec.append(&mut ca_accounts_results);
-        validations_vec.append(&mut filtered_if_validations);
-        validations_vec.append(&mut filtered_handler_validations);
+        validations_vec.append(&mut dependency_validations);
 
         let validations_content = if validations_vec.is_empty() {
             format!(
@@ -710,52 +713,59 @@ impl CodeOverhaulSection {
         &self,
         entrypoint_parser: EntrypointParser,
     ) -> TemplateResult<String> {
-        if entrypoint_parser.handler.is_none() {
+        if entrypoint_parser.dependencies.is_empty() {
             return Ok(format!(
                 "{}",
                 CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
                     .to_placeholder()
             ));
         }
-        let handler_function = entrypoint_parser.handler.unwrap();
-        let handler_function_parser =
-            FunctionParser::new_from_metadata(handler_function).change_context(TemplateError)?;
-        let filtered_parameters = handler_function_parser
-            .parameters
-            .into_iter()
-            .filter(|parameter| !parameter.parameter_type.contains("Context<"))
-            .collect::<Vec<_>>();
-        let function_parameters_content = if filtered_parameters.is_empty() {
+
+        let mut all_parameters = vec![];
+        for dep_function in &entrypoint_parser.dependencies {
+            let dep_function_parser =
+                FunctionParser::new_from_metadata(dep_function.clone()).change_context(TemplateError)?;
+            let filtered_parameters = dep_function_parser
+                .parameters
+                .into_iter()
+                .filter(|parameter| !parameter.parameter_type.contains("Context<"))
+                .collect::<Vec<_>>();
+
+            if !filtered_parameters.is_empty() {
+                all_parameters.push(format!("// {}:", dep_function.name));
+                for parameter in filtered_parameters {
+                    all_parameters.push(format!(
+                        "- {}: {}",
+                        parameter.parameter_name,
+                        parameter.parameter_type.trim_end_matches(',')
+                    ));
+                    if let Ok(struct_metadata) = SourceCodeMetadata::find_struct(
+                        parameter.parameter_type.trim_start_matches("&").to_string(),
+                        StructMetadataType::Other,
+                    ) {
+                        all_parameters.push(format!(
+                            "```rust\n{}\n```",
+                            struct_metadata
+                                .to_source_code_parser(None)
+                                .get_source_code_content()
+                                .lines()
+                                .map(|line| format!("  {line}"))
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        ));
+                    }
+                }
+            }
+        }
+
+        let function_parameters_content = if all_parameters.is_empty() {
             format!(
                 "{}",
                 CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
                     .to_placeholder()
             )
         } else {
-            let mut parameters = vec![];
-            for parameter in filtered_parameters {
-                parameters.push(format!(
-                    "- {}: {}",
-                    parameter.parameter_name,
-                    parameter.parameter_type.trim_end_matches(',')
-                ));
-                if let Ok(struct_metadata) = SourceCodeMetadata::find_struct(
-                    parameter.parameter_type.trim_start_matches("&").to_string(),
-                    StructMetadataType::Other,
-                ) {
-                    parameters.push(format!(
-                        "```rust\n{}\n```",
-                        struct_metadata
-                            .to_source_code_parser(None)
-                            .get_source_code_content()
-                            .lines()
-                            .map(|line| format!("  {line}"))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ));
-                }
-            }
-            parameters.join("\n")
+            all_parameters.join("\n")
         };
         Ok(function_parameters_content)
     }

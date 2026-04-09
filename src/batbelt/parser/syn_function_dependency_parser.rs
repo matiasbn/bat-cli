@@ -10,7 +10,7 @@ pub struct DetectedCall {
 pub enum CallType {
     FreeFunction,
     StaticMethod { type_name: String },
-    MethodCall,
+    MethodCall { receiver: Option<String> },
 }
 
 const FILTERED_NAMES: &[&str] = &[
@@ -67,6 +67,38 @@ pub fn detect_function_calls(function_source: &str) -> Result<Vec<DetectedCall>,
     Ok(visitor.calls)
 }
 
+/// Extracts the receiver chain as a dot-separated string (e.g. `ctx.accounts`).
+fn receiver_to_string(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        syn::Expr::Field(field_expr) => {
+            let member = match &field_expr.member {
+                syn::Member::Named(ident) => ident.to_string(),
+                syn::Member::Unnamed(idx) => idx.index.to_string(),
+            };
+            match receiver_to_string(&field_expr.base) {
+                Some(base) => Some(format!("{}.{}", base, member)),
+                None => Some(member),
+            }
+        }
+        syn::Expr::Path(path_expr) => {
+            Some(path_expr.path.segments.iter()
+                .map(|seg| seg.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::"))
+        }
+        // For method calls like `self.something()`, extract `self`
+        syn::Expr::MethodCall(method_call) => {
+            let base = receiver_to_string(&method_call.receiver);
+            let method = method_call.method.to_string();
+            match base {
+                Some(b) => Some(format!("{}.{}()", b, method)),
+                None => Some(format!("{}()", method)),
+            }
+        }
+        _ => None,
+    }
+}
+
 struct CallVisitor {
     calls: Vec<DetectedCall>,
 }
@@ -98,9 +130,10 @@ impl<'ast> Visit<'ast> for CallVisitor {
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         let name = node.method.to_string();
         if !FILTERED_METHOD_NAMES.contains(&name.as_str()) {
+            let receiver = receiver_to_string(&node.receiver);
             self.calls.push(DetectedCall {
                 function_name: name,
-                call_type: CallType::MethodCall,
+                call_type: CallType::MethodCall { receiver },
             });
         }
         // Visit receiver and arguments recursively
@@ -135,7 +168,15 @@ mod tests {
         let source = r#"fn test() { obj.method(arg); }"#;
         let calls = detect_function_calls(source).unwrap();
         assert!(calls.iter().any(|c| c.function_name == "method"
-            && c.call_type == CallType::MethodCall));
+            && matches!(&c.call_type, CallType::MethodCall { receiver: Some(r) } if r == "obj")));
+    }
+
+    #[test]
+    fn test_detect_method_call_with_field_receiver() {
+        let source = r#"fn test() { ctx.accounts.process(); }"#;
+        let calls = detect_function_calls(source).unwrap();
+        assert!(calls.iter().any(|c| c.function_name == "process"
+            && matches!(&c.call_type, CallType::MethodCall { receiver: Some(r) } if r == "ctx.accounts")));
     }
 
     #[test]

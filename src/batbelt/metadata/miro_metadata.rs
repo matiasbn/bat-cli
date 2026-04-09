@@ -64,7 +64,10 @@ pub struct MiroCodeOverhaulMetadata {
     pub entry_point_image_id: String,
     pub context_accounts_image_id: String,
     pub validations_image_id: String,
+    #[serde(default)]
     pub handler_image_id: String,
+    #[serde(default)]
+    pub dependency_image_ids: Vec<String>,
     pub signers: Vec<SignerInfo>,
 }
 

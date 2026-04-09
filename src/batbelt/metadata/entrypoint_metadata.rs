@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct EntrypointMetadata {
     pub name: String,
     pub metadata_id: MetadataId,
+    #[serde(default)]
     pub handler_id: Option<MetadataId>,
     pub context_accounts_id: MetadataId,
     pub entrypoint_function_id: MetadataId,
@@ -13,7 +14,6 @@ pub struct EntrypointMetadata {
 impl EntrypointMetadata {
     pub fn new(
         name: String,
-        handler_id: Option<MetadataId>,
         context_accounts_id: MetadataId,
         entrypoint_function_id: MetadataId,
         metadata_id: MetadataId,
@@ -21,7 +21,7 @@ impl EntrypointMetadata {
         Self {
             name,
             metadata_id,
-            handler_id,
+            handler_id: None,
             context_accounts_id,
             entrypoint_function_id,
         }

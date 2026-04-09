@@ -319,13 +319,12 @@ impl CodeOverhaulCommand {
             .open_in_editor(true, None)
             .change_context(CommandError)?;
 
-        // open instruction file in VSCode
-        if started_template.entrypoint_parser.is_some() {
-            let ep_parser = started_template.entrypoint_parser.unwrap();
-            if ep_parser.handler.is_some() {
-                let handler = ep_parser.handler.unwrap();
-                CodeEditor::open_file_in_editor(&handler.path, None)?;
-            }
+        // open entrypoint file at the entrypoint function line
+        if let Some(ep_parser) = started_template.entrypoint_parser {
+            CodeEditor::open_file_in_editor(
+                &ep_parser.entry_point_function.path,
+                Some(ep_parser.entry_point_function.start_line_index),
+            )?;
         }
         if !skip_miro {
             let deployed = co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;

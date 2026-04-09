@@ -192,28 +192,40 @@ impl ToolCommand {
         println!(
             "Printing {}, with {}:\n",
             "entry points".bright_green(),
-            "handler path".bright_yellow()
+            "dependency paths".bright_yellow()
         );
 
         #[derive(Tabled)]
         struct Path {
             #[tabled(rename = "Entry point name")]
             entry_point_name: String,
-            #[tabled(rename = "Handler path")]
-            handler_path: String,
+            #[tabled(rename = "Dependencies")]
+            dependencies_path: String,
         }
 
         let mut path_vec: Vec<Path> = vec![];
 
         for ep_parser in ep_parser_vec {
-            let handler = ep_parser.handler.unwrap();
+            let deps_str = ep_parser
+                .dependencies
+                .iter()
+                .map(|dep| {
+                    format!(
+                        "{}:{}",
+                        prettify_source_code_path(&dep.path)
+                            .unwrap_or_else(|_| dep.path.clone()),
+                        dep.start_line_index
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             path_vec.push(Path {
                 entry_point_name: ep_parser.name,
-                handler_path: format!(
-                    "{}:{}",
-                    prettify_source_code_path(&handler.path).change_context(CommandError)?,
-                    handler.start_line_index
-                ),
+                dependencies_path: if deps_str.is_empty() {
+                    "No dependencies".to_string()
+                } else {
+                    deps_str
+                },
             });
         }
 
@@ -432,13 +444,11 @@ impl ToolCommand {
                 bat_file
                     .open_in_editor(false, None)
                     .change_context(CommandError)?;
-                if ep_parser.handler.is_some() {
-                    let handler_metadata = ep_parser.handler.unwrap();
-                    let instruction_file_path = handler_metadata.path;
-                    let start_line_index = handler_metadata.start_line_index;
-                    CodeEditor::open_file_in_editor(&instruction_file_path, Some(start_line_index))
-                        .change_context(CommandError)?;
-                }
+                CodeEditor::open_file_in_editor(
+                    &ep_parser.entry_point_function.path,
+                    Some(ep_parser.entry_point_function.start_line_index),
+                )
+                .change_context(CommandError)?;
                 return Ok(());
             } else {
                 println!("Empty {} folder", options[selection].clone());

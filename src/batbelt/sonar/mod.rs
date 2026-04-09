@@ -81,6 +81,28 @@ impl BatSonar {
         new_sonar
     }
 
+    /// Creates a BatSonar from a file path using exact line ranges from metadata.
+    /// This is more robust than `new_from_path` with string matching — it uses
+    /// `start_line_index` and `end_line_index` (1-based) to extract the exact function content.
+    pub fn new_from_path_with_lines(
+        path: &str,
+        start_line: usize,
+        end_line: usize,
+        result_type: SonarResultType,
+    ) -> Self {
+        let content = fs::read_to_string(path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Convert from 1-based to 0-based indices
+        let start_idx = if start_line > 0 { start_line - 1 } else { 0 };
+        let end_idx = end_line.min(lines.len());
+
+        let function_content = lines[start_idx..end_idx].join("\n");
+        let mut new_sonar = BatSonar::new(&function_content, result_type);
+        new_sonar.scan_content_to_get_results();
+        new_sonar
+    }
+
     pub fn scan_content_to_get_results(&mut self) {
         let content_lines = self.content.lines();
         for (line_index, line) in content_lines.enumerate() {

@@ -202,7 +202,7 @@ impl MiroCommand {
             show_line_number: false,
         };
 
-        let handler_sc_options = SourceCodeScreenshotOptions {
+        let dependency_sc_options = SourceCodeScreenshotOptions {
             include_path: true,
             offset_to_start_line: true,
             filter_comments: true,
@@ -218,10 +218,10 @@ impl MiroCommand {
         let grid_amount = 24;
         let height_grid = selected_miro_frame.height as i64 / grid_amount;
         // this number indicates the distance between screenshot relate to the grid amount
-        let (ep_multiplier, ca_multiplier, handler_multiplier) = (1, 2, 4);
+        let (ep_multiplier, ca_multiplier, dep_multiplier) = (1, 2, 4);
         for (index, selected_ep_index) in selected_entrypoints_index.iter().enumerate() {
             // this number indicates the distance between screenshot relate to the grid amount
-            let (x_position, ep_y_position, ca_y_position, handler_y_position) =
+            let (x_position, ep_y_position, ca_y_position, dep_y_position) =
                 if index < selected_entrypoints_amount / 2 {
                     let x_position = (selected_miro_frame.width as i64
                         / selected_entrypoints_amount as i64)
@@ -230,7 +230,7 @@ impl MiroCommand {
                         x_position,
                         ep_multiplier * height_grid,
                         ca_multiplier * height_grid,
-                        handler_multiplier * height_grid,
+                        dep_multiplier * height_grid,
                     )
                 } else {
                     let x_position = (selected_miro_frame.width as i64
@@ -240,7 +240,7 @@ impl MiroCommand {
                         x_position,
                         (grid_amount - ep_multiplier) * height_grid,
                         (grid_amount - ca_multiplier) * height_grid,
-                        (grid_amount - handler_multiplier) * height_grid,
+                        (grid_amount - dep_multiplier) * height_grid,
                     )
                 };
             let selected_entrypoint = &entrypoints_names[*selected_ep_index];
@@ -280,25 +280,28 @@ impl MiroCommand {
             create_connector(&ep_image.item_id, &ca_image.item_id, None)
                 .await
                 .change_context(CommandError)?;
-            if let Some(entrypoint_handler) = entrypoint.handler {
-                let handler_source_code = entrypoint_handler.to_source_code_parser(Some(
+            let mut prev_image_id = ca_image.item_id.clone();
+            for (dep_idx, dep_function) in entrypoint.dependencies.iter().enumerate() {
+                let dep_source_code = dep_function.to_source_code_parser(Some(
                     miro_command_functions::parse_screenshot_name(
-                        &entrypoint_handler.name,
+                        &dep_function.name,
                         &selected_miro_frame.title,
                     ),
                 ));
-                let handler_image = handler_source_code
+                let y_offset = dep_y_position + (dep_idx as i64 * 400);
+                let dep_image = dep_source_code
                     .deploy_screenshot_to_miro_frame(
                         selected_miro_frame.clone(),
                         x_position,
-                        handler_y_position,
-                        handler_sc_options.clone(),
+                        y_offset,
+                        dependency_sc_options.clone(),
                     )
                     .await
                     .change_context(CommandError)?;
-                create_connector(&ca_image.item_id, &handler_image.item_id, None)
+                create_connector(&prev_image_id, &dep_image.item_id, None)
                     .await
                     .change_context(CommandError)?;
+                prev_image_id = dep_image.item_id;
             }
         }
         Ok(())
@@ -428,6 +431,7 @@ impl MiroCommand {
                                 context_accounts_image_id: "".to_string(),
                                 validations_image_id: "".to_string(),
                                 handler_image_id: "".to_string(),
+                                dependency_image_ids: vec![],
                                 signers: vec![],
                             };
                             new_co_metadata
@@ -446,6 +450,7 @@ impl MiroCommand {
                         context_accounts_image_id: "".to_string(),
                         validations_image_id: "".to_string(),
                         handler_image_id: "".to_string(),
+                        dependency_image_ids: vec![],
                         signers: vec![],
                     };
 
@@ -677,37 +682,38 @@ impl MiroCommand {
 
             let (entrypoint_x_position, entrypoint_y_position) =
                 MiroCodeOverhaulConfig::EntryPoint.get_positions();
-            let (handler_x_position, handler_y_position) =
-                MiroCodeOverhaulConfig::Handler.get_positions();
+            let (dep_x_position, dep_y_position) =
+                MiroCodeOverhaulConfig::Dependencies.get_positions();
 
-            match entrypoint_parser.handler.clone() {
-                None => {}
-                Some(handler_meta) => {
-                    let handler_sc = handler_meta.to_source_code_parser(Some(
-                        miro_command_functions::parse_screenshot_name(
-                            &handler_meta.name,
-                            &co_miro_frame.title,
-                        ),
-                    ));
-                    let handler_image = handler_sc
-                        .deploy_screenshot_to_miro_frame(
-                            co_miro_frame.clone(),
-                            handler_x_position,
-                            handler_y_position,
-                            SourceCodeScreenshotOptions {
-                                include_path: true,
-                                offset_to_start_line: true,
-                                filter_comments: false,
-                                font_size: None,
-                                filters: None,
-                                show_line_number: true,
-                            },
-                        )
-                        .await
-                        .change_context(CommandError)?;
-                    miro_co_metadata.handler_image_id = handler_image.item_id;
-                }
+            // Deploy screenshots for each dependency
+            let mut dependency_image_ids: Vec<String> = vec![];
+            for (idx, dep_function) in entrypoint_parser.dependencies.iter().enumerate() {
+                let dep_sc = dep_function.to_source_code_parser(Some(
+                    miro_command_functions::parse_screenshot_name(
+                        &dep_function.name,
+                        &co_miro_frame.title,
+                    ),
+                ));
+                let y_offset = dep_y_position + (idx as i64 * 400);
+                let dep_image = dep_sc
+                    .deploy_screenshot_to_miro_frame(
+                        co_miro_frame.clone(),
+                        dep_x_position,
+                        y_offset,
+                        SourceCodeScreenshotOptions {
+                            include_path: true,
+                            offset_to_start_line: true,
+                            filter_comments: false,
+                            font_size: None,
+                            filters: None,
+                            show_line_number: true,
+                        },
+                    )
+                    .await
+                    .change_context(CommandError)?;
+                dependency_image_ids.push(dep_image.item_id);
             }
+            miro_co_metadata.dependency_image_ids = dependency_image_ids.clone();
 
             let entrypoint_function_image = entrypoint_parser
                 .entry_point_function
@@ -798,15 +804,25 @@ impl MiroCommand {
             .await
             .change_context(CommandError)?;
 
-            if !miro_co_metadata.handler_image_id.is_empty() {
-                println!("Connecting validations screenshot to handler screenshot in Miro");
+            // Connect validations → dep[0] → dep[1] → ...
+            if !miro_co_metadata.dependency_image_ids.is_empty() {
+                println!("Connecting validations screenshot to dependency screenshots in Miro");
                 batbelt::miro::connector::create_connector(
                     &miro_co_metadata.validations_image_id,
-                    &miro_co_metadata.handler_image_id,
+                    &miro_co_metadata.dependency_image_ids[0],
                     None,
                 )
                 .await
                 .change_context(CommandError)?;
+                for i in 0..miro_co_metadata.dependency_image_ids.len() - 1 {
+                    batbelt::miro::connector::create_connector(
+                        &miro_co_metadata.dependency_image_ids[i],
+                        &miro_co_metadata.dependency_image_ids[i + 1],
+                        None,
+                    )
+                    .await
+                    .change_context(CommandError)?;
+                }
             }
 
             // Deploy mut_accounts
@@ -860,15 +876,15 @@ impl MiroCommand {
                     .change_context(CommandError)?;
             }
 
-            // Deploy handler parameters
-            if let Some(handler_meta) = entrypoint_parser.handler.clone() {
-                let handler_function_parser =
-                    FunctionParser::new_from_metadata(handler_meta).change_context(CommandError)?;
-                for handler_function_parameter in handler_function_parser.parameters {
+            // Deploy dependency function parameters
+            for dep_function in &entrypoint_parser.dependencies {
+                let dep_function_parser =
+                    FunctionParser::new_from_metadata(dep_function.clone()).change_context(CommandError)?;
+                for dep_function_parameter in dep_function_parser.parameters {
                     // parameters are most likely Structs
                     if let Ok(parameter_metadata_vec) = SourceCodeMetadata::get_filtered_structs(
                         Some(
-                            handler_function_parameter
+                            dep_function_parameter
                                 .parameter_type
                                 .trim_start_matches("&")
                                 .to_string(),
@@ -909,7 +925,7 @@ impl MiroCommand {
                 "Entrypoint function".to_string(),
                 "Context accounts".to_string(),
                 "Validations".to_string(),
-                "Handler function".to_string(),
+                "Dependency functions".to_string(),
             ];
             let prompt_text = "Which screenshots you want to update?".to_string();
             let selections = BatDialoguer::multiselect(prompt_text, options.clone(), None, true)?;
@@ -968,52 +984,55 @@ impl MiroCommand {
                         .update_validations_screenshot()
                         .await
                         .change_context(CommandError)?,
-                    // Handler function
+                    // Dependency functions
                     3 => {
-                        if ep_parser.handler.is_none() {
-                            println!("No handler function");
+                        if ep_parser.dependencies.is_empty() {
+                            println!("No dependency functions");
                             continue;
                         }
-                        let handler_sc_parser = ep_parser
-                            .handler
-                            .clone()
-                            .unwrap()
-                            .to_source_code_parser(Some(
+                        for (dep_idx, dep_function) in ep_parser.dependencies.iter().enumerate() {
+                            if dep_idx >= miro_co_metadata.dependency_image_ids.len() {
+                                println!("No Miro image ID for dependency {}, skipping update", dep_function.name);
+                                continue;
+                            }
+                            let dep_sc_parser = dep_function.to_source_code_parser(Some(
                                 miro_command_functions::parse_screenshot_name(
-                                    &ep_parser.handler.clone().unwrap().name,
+                                    &dep_function.name,
                                     &co_miro_frame.title,
                                 ),
                             ));
-                        let handler_screenshot_path = handler_sc_parser
-                            .create_screenshot(SourceCodeScreenshotOptions {
-                                include_path: true,
-                                offset_to_start_line: true,
-                                filter_comments: true,
-                                font_size: None,
-                                filters: None,
-                                show_line_number: true,
-                            })
-                            .change_context(CommandError)?;
-                        let mut handler_image = MiroImage::new_from_item_id(
-                            &miro_co_metadata.handler_image_id,
-                            MiroImageType::FromPath,
-                        )
-                        .await
-                        .change_context(CommandError)?;
-
-                        println!(
-                            "\nUpdating handler screenshot in {} frame",
-                            co_miro_frame.title.green()
-                        );
-
-                        handler_image
-                            .update_from_path(&handler_screenshot_path)
+                            let dep_screenshot_path = dep_sc_parser
+                                .create_screenshot(SourceCodeScreenshotOptions {
+                                    include_path: true,
+                                    offset_to_start_line: true,
+                                    filter_comments: true,
+                                    font_size: None,
+                                    filters: None,
+                                    show_line_number: true,
+                                })
+                                .change_context(CommandError)?;
+                            let mut dep_image = MiroImage::new_from_item_id(
+                                &miro_co_metadata.dependency_image_ids[dep_idx],
+                                MiroImageType::FromPath,
+                            )
                             .await
                             .change_context(CommandError)?;
 
-                        fs::remove_file(&handler_screenshot_path)
-                            .into_report()
-                            .change_context(CommandError)?;
+                            println!(
+                                "\nUpdating dependency {} screenshot in {} frame",
+                                dep_function.name.green(),
+                                co_miro_frame.title.green()
+                            );
+
+                            dep_image
+                                .update_from_path(&dep_screenshot_path)
+                                .await
+                                .change_context(CommandError)?;
+
+                            fs::remove_file(&dep_screenshot_path)
+                                .into_report()
+                                .change_context(CommandError)?;
+                        }
                     }
                     _ => {
                         unimplemented!()
