@@ -328,7 +328,14 @@ impl CodeOverhaulCommand {
             }
         }
         if !skip_miro {
-            co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;
+            let deployed = co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;
+            if deployed {
+                GitCommit::UpdateCO {
+                    entrypoint_name: to_start_file_name.clone(),
+                }
+                .create_commit(true)
+                .change_context(CommandError)?;
+            }
         }
         Ok(())
     }
@@ -432,7 +439,7 @@ mod co_commands_functions {
         Ok("".to_string())
     }
 
-    pub async fn prompt_deploy_miro(entry_point_name: String) -> CommandResult<()> {
+    pub async fn prompt_deploy_miro(entry_point_name: String) -> CommandResult<bool> {
         let prompt_text = format!(
             "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
             entry_point_name.clone().bright_green()
@@ -445,7 +452,7 @@ mod co_commands_functions {
             .execute_command()
             .await?
         }
-        Ok(())
+        Ok(deploy_frame)
     }
 
     pub fn check_code_overhaul_file_completed(

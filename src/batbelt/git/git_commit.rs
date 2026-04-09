@@ -115,11 +115,19 @@ impl GitCommit {
                 ]
             }
             GitCommit::UpdateCO { entrypoint_name } => {
-                vec![BatFile::CodeOverhaulFinished {
+                // Try started first, then finished
+                let started = BatFile::CodeOverhaulStarted {
                     file_name: entrypoint_name.clone(),
-                }
-                .get_path(true)
-                .change_context(GitError)?]
+                };
+                let finished = BatFile::CodeOverhaulFinished {
+                    file_name: entrypoint_name.clone(),
+                };
+                let path = if started.get_path(true).is_ok() {
+                    started.get_path(true).change_context(GitError)?
+                } else {
+                    finished.get_path(true).change_context(GitError)?
+                };
+                vec![path]
             }
             GitCommit::UpdateCOSummary => {
                 vec![BatFile::CodeOverhaulSummaryFile
