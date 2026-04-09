@@ -572,6 +572,21 @@ impl ParsedAccount {
             validations.push(format!("associated_token::token_program = {}", tp));
         }
 
+        // zero constraint as validation
+        if self.attributes.zero {
+            validations.push("zero".to_string());
+        }
+
+        // owner constraint as validation
+        if let Some(ref owner) = self.attributes.owner {
+            validations.push(format!("owner = {}", owner));
+        }
+
+        // token::mint as validation
+        if let Some(ref mint) = self.attributes.token_mint {
+            validations.push(format!("token::mint = {}", mint));
+        }
+
         for constraint in &self.attributes.constraints {
             validations.push(format!("constraint = {}", constraint));
         }

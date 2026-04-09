@@ -519,7 +519,17 @@ impl SonarResultType {
     }
 
     fn get_context_accounts_only_validations_filters(&self) -> Vec<&'static str> {
-        vec!["has_one", "constraint"]
+        vec![
+            "has_one",
+            "constraint",
+            "zero",
+            "owner",
+            "token::mint",
+            "token::authority",
+            "associated_token::mint",
+            "associated_token::authority",
+            "address",
+        ]
     }
 
     fn test_last_char_is_semicolon(&self) -> bool {
