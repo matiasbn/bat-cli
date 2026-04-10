@@ -804,24 +804,74 @@ impl MiroCommand {
             .await
             .change_context(CommandError)?;
 
-            // Connect validations → dep[0] → dep[1] → ...
+            // Connect screenshots following the dependency graph:
+            //   validations → [direct deps of entrypoint]
+            //   dep → [direct deps of dep that also have screenshots]
+            //
+            // This mirrors the actual call graph instead of chaining dependencies
+            // linearly, so each arrow points from a caller to its callee.
             if !miro_co_metadata.dependency_image_ids.is_empty() {
-                println!("Connecting validations screenshot to dependency screenshots in Miro");
-                batbelt::miro::connector::create_connector(
-                    &miro_co_metadata.validations_image_id,
-                    &miro_co_metadata.dependency_image_ids[0],
-                    None,
-                )
-                .await
-                .change_context(CommandError)?;
-                for i in 0..miro_co_metadata.dependency_image_ids.len() - 1 {
-                    batbelt::miro::connector::create_connector(
-                        &miro_co_metadata.dependency_image_ids[i],
-                        &miro_co_metadata.dependency_image_ids[i + 1],
-                        None,
-                    )
-                    .await
-                    .change_context(CommandError)?;
+                println!("Connecting screenshots along the dependency graph in Miro");
+
+                // Build function_metadata_id -> image_id map.
+                let mut id_to_image: std::collections::HashMap<String, String> =
+                    std::collections::HashMap::new();
+                for (i, dep) in entrypoint_parser.dependencies.iter().enumerate() {
+                    if let Some(image_id) = miro_co_metadata.dependency_image_ids.get(i) {
+                        id_to_image.insert(dep.metadata_id.clone(), image_id.clone());
+                    }
+                }
+
+                let bat_metadata_for_deps =
+                    BatMetadata::read_metadata().change_context(CommandError)?;
+
+                // Helper closure: returns (caller_image_id, callee_image_id) pairs for
+                // a given caller function, using the direct dependencies from metadata.
+                let direct_deps_of = |function_id: &str| -> Vec<String> {
+                    match bat_metadata_for_deps
+                        .get_functions_dependencies_metadata_by_function_metadata_id(
+                            function_id.to_string(),
+                        ) {
+                        Ok(fd_meta) => fd_meta
+                            .dependencies
+                            .iter()
+                            .map(|d| d.function_metadata_id.clone())
+                            .collect(),
+                        Err(_) => vec![],
+                    }
+                };
+
+                // Entry point function → its direct dependencies
+                let ep_direct_deps =
+                    direct_deps_of(&entrypoint_parser.entry_point_function.metadata_id);
+                for dep_id in &ep_direct_deps {
+                    if let Some(image_id) = id_to_image.get(dep_id) {
+                        batbelt::miro::connector::create_connector(
+                            &miro_co_metadata.entry_point_image_id,
+                            image_id,
+                            None,
+                        )
+                        .await
+                        .change_context(CommandError)?;
+                    }
+                }
+
+                // Each dependency → its own direct dependencies
+                for dep in &entrypoint_parser.dependencies {
+                    let Some(caller_image_id) = id_to_image.get(&dep.metadata_id) else {
+                        continue;
+                    };
+                    for sub_dep_id in direct_deps_of(&dep.metadata_id) {
+                        if let Some(callee_image_id) = id_to_image.get(&sub_dep_id) {
+                            batbelt::miro::connector::create_connector(
+                                caller_image_id,
+                                callee_image_id,
+                                None,
+                            )
+                            .await
+                            .change_context(CommandError)?;
+                        }
+                    }
                 }
             }
 
