@@ -682,38 +682,6 @@ impl MiroCommand {
 
             let (entrypoint_x_position, entrypoint_y_position) =
                 MiroCodeOverhaulConfig::EntryPoint.get_positions();
-            let (dep_x_position, dep_y_position) =
-                MiroCodeOverhaulConfig::Dependencies.get_positions();
-
-            // Deploy screenshots for each dependency
-            let mut dependency_image_ids: Vec<String> = vec![];
-            for (idx, dep_function) in entrypoint_parser.dependencies.iter().enumerate() {
-                let dep_sc = dep_function.to_source_code_parser(Some(
-                    miro_command_functions::parse_screenshot_name(
-                        &dep_function.name,
-                        &co_miro_frame.title,
-                    ),
-                ));
-                let y_offset = dep_y_position + (idx as i64 * 400);
-                let dep_image = dep_sc
-                    .deploy_screenshot_to_miro_frame(
-                        co_miro_frame.clone(),
-                        dep_x_position,
-                        y_offset,
-                        SourceCodeScreenshotOptions {
-                            include_path: true,
-                            offset_to_start_line: true,
-                            filter_comments: false,
-                            font_size: None,
-                            filters: None,
-                            show_line_number: true,
-                        },
-                    )
-                    .await
-                    .change_context(CommandError)?;
-                dependency_image_ids.push(dep_image.item_id);
-            }
-            miro_co_metadata.dependency_image_ids = dependency_image_ids.clone();
 
             let entrypoint_function_image = entrypoint_parser
                 .entry_point_function
@@ -804,76 +772,179 @@ impl MiroCommand {
             .await
             .change_context(CommandError)?;
 
-            // Connect screenshots following the dependency graph:
-            //   validations → [direct deps of entrypoint]
-            //   dep → [direct deps of dep that also have screenshots]
+            // Interactive BFS deployment of dependency screenshots.
             //
-            // This mirrors the actual call graph instead of chaining dependencies
-            // linearly, so each arrow points from a caller to its callee.
-            if !miro_co_metadata.dependency_image_ids.is_empty() {
-                println!("Connecting screenshots along the dependency graph in Miro");
+            // Instead of dumping every dependency into the frame at once and
+            // trying to auto-layout them (which gets chaotic fast with many
+            // functions), we walk the dependency graph breadth-first starting
+            // at the entry point and, for each function that has at least one
+            // undeployed direct dependency, we:
+            //
+            //   1. Ask the user to press Enter to deploy that function's deps
+            //   2. Deploy every direct dep as a fresh screenshot at a
+            //      cascaded position in the top-left corner of the frame
+            //      (easy to grab one by one).
+            //   3. Create arrows caller -> callee inline, so arrows appear as
+            //      the screenshots are deployed.
+            //
+            // Between prompts the user can rearrange the freshly-deployed
+            // screenshots in Miro however they want — the next prompt only
+            // fires when they press Enter, so there's no rush.
+            //
+            // We track `deployed_function_ids` to keep the DAG sane (a
+            // function might appear as a dep of multiple ancestors, but we
+            // only want one screenshot per function).
+            let bat_metadata_for_deps =
+                BatMetadata::read_metadata().change_context(CommandError)?;
 
-                // Build function_metadata_id -> image_id map.
-                let mut id_to_image: std::collections::HashMap<String, String> =
-                    std::collections::HashMap::new();
-                for (i, dep) in entrypoint_parser.dependencies.iter().enumerate() {
-                    if let Some(image_id) = miro_co_metadata.dependency_image_ids.get(i) {
-                        id_to_image.insert(dep.metadata_id.clone(), image_id.clone());
+            let direct_deps_of = |function_id: &str| -> Vec<(String, String)> {
+                // Returns (dep_function_metadata_id, dep_function_name)
+                match bat_metadata_for_deps
+                    .get_functions_dependencies_metadata_by_function_metadata_id(
+                        function_id.to_string(),
+                    ) {
+                    Ok(fd_meta) => fd_meta
+                        .dependencies
+                        .iter()
+                        .map(|d| (d.function_metadata_id.clone(), d.function_name.clone()))
+                        .collect(),
+                    Err(_) => vec![],
+                }
+            };
+
+            // Maps function_metadata_id -> miro image id for every deployed
+            // screenshot, including the entry point. Used to draw arrows.
+            let mut id_to_image: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
+            id_to_image.insert(
+                entrypoint_parser.entry_point_function.metadata_id.clone(),
+                miro_co_metadata.entry_point_image_id.clone(),
+            );
+
+            let mut deployed_function_ids: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            deployed_function_ids
+                .insert(entrypoint_parser.entry_point_function.metadata_id.clone());
+
+            let mut bfs_queue: std::collections::VecDeque<(String, String)> =
+                std::collections::VecDeque::new();
+            bfs_queue.push_back((
+                entrypoint_parser.entry_point_function.metadata_id.clone(),
+                entrypoint_parser.entry_point_function.name.clone(),
+            ));
+
+            // Cascaded starting position for freshly-deployed screenshots,
+            // close to the top-left of the frame so the user can see and
+            // grab them immediately. Each new screenshot lands slightly
+            // below-right of the previous one.
+            const CASCADE_START_X: i64 = 200;
+            const CASCADE_START_Y: i64 = 200;
+            const CASCADE_STEP: i64 = 60;
+
+            let mut dependency_image_ids: Vec<String> = vec![];
+
+            while let Some((caller_id, caller_name)) = bfs_queue.pop_front() {
+                let direct_deps = direct_deps_of(&caller_id);
+                // Filter out deps that are already deployed (DAG dedup).
+                let new_deps: Vec<(String, String)> = direct_deps
+                    .into_iter()
+                    .filter(|(id, _)| !deployed_function_ids.contains(id))
+                    .collect();
+
+                if new_deps.is_empty() {
+                    continue;
+                }
+
+                // Look up the actual function metadata for each new dep so
+                // we can produce a screenshot from its source code.
+                let mut new_dep_functions: Vec<FunctionSourceCodeMetadata> = vec![];
+                for (dep_id, _) in &new_deps {
+                    match bat_metadata_for_deps
+                        .source_code
+                        .get_function_by_id(dep_id.clone())
+                    {
+                        Ok(func_meta) => new_dep_functions.push(func_meta),
+                        Err(_) => {
+                            log::warn!(
+                                "Could not find function metadata for dependency id {}",
+                                dep_id
+                            );
+                        }
                     }
                 }
 
-                let bat_metadata_for_deps =
-                    BatMetadata::read_metadata().change_context(CommandError)?;
+                if new_dep_functions.is_empty() {
+                    continue;
+                }
 
-                // Helper closure: returns (caller_image_id, callee_image_id) pairs for
-                // a given caller function, using the direct dependencies from metadata.
-                let direct_deps_of = |function_id: &str| -> Vec<String> {
-                    match bat_metadata_for_deps
-                        .get_functions_dependencies_metadata_by_function_metadata_id(
-                            function_id.to_string(),
-                        ) {
-                        Ok(fd_meta) => fd_meta
-                            .dependencies
-                            .iter()
-                            .map(|d| d.function_metadata_id.clone())
-                            .collect(),
-                        Err(_) => vec![],
-                    }
-                };
+                let prompt = format!(
+                    "Press Enter to deploy {} dependencies of `{}`",
+                    new_dep_functions.len(),
+                    caller_name
+                );
+                BatDialoguer::input_with_default(prompt, "".to_string())
+                    .change_context(CommandError)?;
 
-                // Entry point function → its direct dependencies
-                let ep_direct_deps =
-                    direct_deps_of(&entrypoint_parser.entry_point_function.metadata_id);
-                for dep_id in &ep_direct_deps {
-                    if let Some(image_id) = id_to_image.get(dep_id) {
+                for (idx, dep_function) in new_dep_functions.iter().enumerate() {
+                    let dep_sc = dep_function.to_source_code_parser(Some(
+                        miro_command_functions::parse_screenshot_name(
+                            &dep_function.name,
+                            &co_miro_frame.title,
+                        ),
+                    ));
+                    let cascade_x = CASCADE_START_X + (idx as i64) * CASCADE_STEP;
+                    let cascade_y = CASCADE_START_Y + (idx as i64) * CASCADE_STEP;
+                    let dep_image = dep_sc
+                        .deploy_screenshot_to_miro_frame(
+                            co_miro_frame.clone(),
+                            cascade_x,
+                            cascade_y,
+                            SourceCodeScreenshotOptions {
+                                include_path: true,
+                                offset_to_start_line: true,
+                                filter_comments: false,
+                                // Use a smaller font for dependency
+                                // screenshots to prevent them from
+                                // overflowing the frame. The entry point
+                                // and context accounts keep the default
+                                // (larger) font size.
+                                font_size: Some(
+                                    crate::batbelt::parser::code_overhaul_parser::SMALL_SCREENSHOT_FONT_SIZE,
+                                ),
+                                filters: None,
+                                show_line_number: true,
+                            },
+                        )
+                        .await
+                        .change_context(CommandError)?;
+
+                    // Draw the caller -> callee arrow right away.
+                    if let Some(caller_image_id) = id_to_image.get(&caller_id) {
                         batbelt::miro::connector::create_connector(
-                            &miro_co_metadata.entry_point_image_id,
-                            image_id,
+                            caller_image_id,
+                            &dep_image.item_id,
                             None,
                         )
                         .await
                         .change_context(CommandError)?;
                     }
-                }
 
-                // Each dependency → its own direct dependencies
-                for dep in &entrypoint_parser.dependencies {
-                    let Some(caller_image_id) = id_to_image.get(&dep.metadata_id) else {
-                        continue;
-                    };
-                    for sub_dep_id in direct_deps_of(&dep.metadata_id) {
-                        if let Some(callee_image_id) = id_to_image.get(&sub_dep_id) {
-                            batbelt::miro::connector::create_connector(
-                                caller_image_id,
-                                callee_image_id,
-                                None,
-                            )
-                            .await
-                            .change_context(CommandError)?;
-                        }
-                    }
+                    id_to_image
+                        .insert(dep_function.metadata_id.clone(), dep_image.item_id.clone());
+                    deployed_function_ids.insert(dep_function.metadata_id.clone());
+                    dependency_image_ids.push(dep_image.item_id.clone());
+
+                    bfs_queue.push_back((
+                        dep_function.metadata_id.clone(),
+                        dep_function.name.clone(),
+                    ));
                 }
             }
+
+            miro_co_metadata.dependency_image_ids = dependency_image_ids.clone();
+            miro_co_metadata
+                .update_code_overhaul_metadata()
+                .change_context(CommandError)?;
 
             // Deploy mut_accounts
             let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;

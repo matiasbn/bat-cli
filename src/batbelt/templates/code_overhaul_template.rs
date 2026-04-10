@@ -508,8 +508,18 @@ impl CodeOverhaulSection {
             };
 
             if !filtered_if.is_empty() || !filtered_dep.is_empty() {
-                // Header with function name
-                dependency_validations.push(format!("// {}:", dep_function.name));
+                // Header with function name, relative source path and the
+                // function's start line so the auditor can jump straight to
+                // the source. Leading `../` from the bat-audit -> program
+                // path is stripped for readability.
+                let relative_path = dep_function
+                    .path
+                    .trim_start_matches("../")
+                    .to_string();
+                dependency_validations.push(format!(
+                    "// {} — {}:{}:",
+                    dep_function.name, relative_path, dep_function.start_line_index
+                ));
                 dependency_validations.append(&mut filtered_if);
                 dependency_validations.append(&mut filtered_dep);
             }
