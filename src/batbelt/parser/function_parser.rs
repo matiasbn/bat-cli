@@ -3,6 +3,19 @@ use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCode
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
 
 use crate::batbelt::parser::syn_function_dependency_parser::{self, CallType};
+
+/// Normalizes spaces around angle brackets in generic types.
+/// syn's `to_token_stream()` produces `Context < Initialize >` but
+/// source code has `Context<Initialize>`. This normalizes to the compact form.
+pub fn normalize_generic_type(ty: &str) -> String {
+    ty.replace(" < ", "<")
+        .replace("< ", "<")
+        .replace(" <", "<")
+        .replace(" > ", ">")
+        .replace("> ", ">")
+        .replace(" >", ">")
+        .replace(" , ", ", ")
+}
 use crate::batbelt::parser::ParserError;
 
 use crate::batbelt::metadata::function_dependencies_metadata::{
@@ -203,10 +216,13 @@ impl FunctionParser {
                     if let Some(ref recv) = receiver {
                         if recv.contains("accounts") {
                             // Extract context type name from function parameters
+                            // Note: syn's to_token_stream() adds spaces around < and >,
+                            // so we normalize by removing spaces around angle brackets
                             let context_type_name = self.parameters.iter().find_map(|p| {
-                                if p.parameter_type.contains("Context<") {
+                                let normalized_type = normalize_generic_type(&p.parameter_type);
+                                if normalized_type.contains("Context<") {
                                     // Extract T from Context<T> or Context<'_, T>
-                                    let after_context = p.parameter_type.split("Context<").nth(1)?;
+                                    let after_context = normalized_type.split("Context<").nth(1)?;
                                     let inner = after_context.trim_end_matches('>');
                                     // Handle lifetime params like Context<'_, Initialize>
                                     let type_name = inner.split(',').last()?.trim();
@@ -263,7 +279,22 @@ impl FunctionParser {
                             }
                         }
                     }
-                    // For other method calls, try to resolve by name
+                    // Resolve self.method() calls: find which impl block contains
+                    // the current function, then look up the method in the same impl block
+                    if let Some(ref recv) = receiver {
+                        if recv == "self" || recv.starts_with("self.") {
+                            if let Some(metadata_id) = self.resolve_self_method_call(
+                                &call.function_name,
+                                &trait_metadata_vec,
+                            ) {
+                                if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                                    dependency_function_metadata_id_vec.push(metadata_id);
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    // Fallback: try to resolve by name for other method calls
                     if let Some(metadata_id) = self.resolve_function_by_name(&call.function_name, &function_metadata) {
                         if !dependency_function_metadata_id_vec.contains(&metadata_id) {
                             dependency_function_metadata_id_vec.push(metadata_id);
@@ -297,15 +328,221 @@ impl FunctionParser {
                 {
                     return Some(f.metadata_id.clone());
                 }
-                // Priority 2: same directory
+                // Priority 2: use import analysis — parse the caller's file to find
+                // which module the function was imported from
+                if let Some(f) = self.resolve_by_imports(function_name, &candidates) {
+                    return Some(f);
+                }
+                // Priority 3: same directory
                 let self_dir = std::path::Path::new(&self.function_metadata.path).parent();
                 if let Some(f) = candidates.iter()
                     .find(|f| std::path::Path::new(&f.path).parent() == self_dir)
                 {
                     return Some(f.metadata_id.clone());
                 }
-                // Priority 3: first match
+                // Priority 4: first match
+                log::warn!(
+                    "Ambiguous resolution for '{}': {} candidates, using first match. Caller: {}",
+                    function_name,
+                    candidates.len(),
+                    self.function_metadata.path,
+                );
                 Some(candidates[0].metadata_id.clone())
+            }
+        }
+    }
+
+    /// Resolves `self.method()` calls by finding which impl block contains the current
+    /// function (via trait metadata), then looking up the method in the same impl block.
+    fn resolve_self_method_call(
+        &self,
+        method_name: &str,
+        trait_metadata_vec: &[crate::batbelt::metadata::trait_metadata::TraitMetadata],
+    ) -> Option<MetadataId> {
+        // Find which impl block contains the current function
+        let self_impl_type = trait_metadata_vec.iter().find_map(|trait_metadata| {
+            let contains_self = trait_metadata.impl_functions.iter().any(|impl_func| {
+                impl_func.function_source_code_metadata_id == self.function_metadata.metadata_id
+            });
+            if contains_self {
+                Some(trait_metadata.impl_to.clone())
+            } else {
+                None
+            }
+        })?;
+
+        log::debug!(
+            "resolve_self_method_call: function '{}' belongs to impl '{}'",
+            self.name,
+            self_impl_type
+        );
+
+        // Now look for method_name in the same type's impl blocks
+        let trait_signature = format!("{}::{}", self_impl_type, method_name);
+        trait_metadata_vec.iter().find_map(|trait_metadata| {
+            if trait_metadata.impl_to == self_impl_type {
+                trait_metadata.impl_functions.iter().find_map(|impl_func| {
+                    if impl_func.trait_signature == trait_signature {
+                        Some(impl_func.function_source_code_metadata_id.clone())
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Parses the caller's file with `syn::parse_file()` to extract `use` imports,
+    /// then matches imported module paths against candidate function file paths.
+    fn resolve_by_imports(
+        &self,
+        function_name: &str,
+        candidates: &[&FunctionSourceCodeMetadata],
+    ) -> Option<MetadataId> {
+        let file_content = std::fs::read_to_string(&self.function_metadata.path).ok()?;
+        let syntax = syn::parse_file(&file_content).ok()?;
+
+        // Collect all imported paths that end with the function name
+        let import_paths = Self::extract_use_paths_for_name(&syntax.items, function_name);
+
+        if import_paths.is_empty() {
+            return None;
+        }
+
+        log::debug!(
+            "Import paths for '{}' in {}: {:?}",
+            function_name,
+            self.function_metadata.path,
+            import_paths
+        );
+
+        // For each import path, try to match it against candidate file paths.
+        // E.g., import "crate::state::initialize::process" should match a candidate
+        // whose path contains "state/initialize" or similar.
+        for import_path in &import_paths {
+            // Convert module path segments to a path-like string for matching
+            // e.g., ["crate", "state", "initialize", "process"] -> "state/initialize"
+            let path_segments: Vec<&str> = import_path
+                .split("::")
+                .filter(|s| *s != "crate" && *s != "super" && *s != "self" && *s != function_name)
+                .collect();
+
+            if path_segments.is_empty() {
+                continue;
+            }
+
+            // Build a path fragment to match against file paths
+            let path_fragment = path_segments.join("/");
+
+            if let Some(candidate) = candidates.iter().find(|c| {
+                c.path.contains(&path_fragment)
+            }) {
+                log::debug!(
+                    "Resolved '{}' via import '{}' -> {} (path fragment: {})",
+                    function_name,
+                    import_path,
+                    candidate.path,
+                    path_fragment
+                );
+                return Some(candidate.metadata_id.clone());
+            }
+
+            // Also try matching with just the last module segment (the file name)
+            // e.g., "initialize" should match "*/initialize.rs" or "*/initialize/mod.rs"
+            if let Some(&last_segment) = path_segments.last() {
+                let file_match_rs = format!("{}.rs", last_segment);
+                let file_match_mod = format!("{}/mod.rs", last_segment);
+                let dir_match = format!("/{}/", last_segment);
+                if let Some(candidate) = candidates.iter().find(|c| {
+                    c.path.ends_with(&file_match_rs)
+                        || c.path.ends_with(&file_match_mod)
+                        || c.path.contains(&dir_match)
+                }) {
+                    log::debug!(
+                        "Resolved '{}' via import '{}' (last segment '{}') -> {}",
+                        function_name,
+                        import_path,
+                        last_segment,
+                        candidate.path
+                    );
+                    return Some(candidate.metadata_id.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Recursively extracts all `use` paths from a file's items that import `target_name`.
+    /// Returns paths like "crate::state::initialize::process".
+    fn extract_use_paths_for_name(items: &[syn::Item], target_name: &str) -> Vec<String> {
+        let mut paths = vec![];
+        for item in items {
+            match item {
+                syn::Item::Use(item_use) => {
+                    Self::collect_use_paths(&item_use.tree, "", target_name, &mut paths);
+                }
+                syn::Item::Mod(item_mod) => {
+                    // Also check inline modules (mod foo { use ... })
+                    if let Some((_, ref items)) = item_mod.content {
+                        let mut sub_paths = Self::extract_use_paths_for_name(items, target_name);
+                        paths.append(&mut sub_paths);
+                    }
+                }
+                _ => {}
+            }
+        }
+        paths
+    }
+
+    fn collect_use_paths(
+        tree: &syn::UseTree,
+        prefix: &str,
+        target_name: &str,
+        paths: &mut Vec<String>,
+    ) {
+        match tree {
+            syn::UseTree::Path(use_path) => {
+                let new_prefix = if prefix.is_empty() {
+                    use_path.ident.to_string()
+                } else {
+                    format!("{}::{}", prefix, use_path.ident)
+                };
+                Self::collect_use_paths(&use_path.tree, &new_prefix, target_name, paths);
+            }
+            syn::UseTree::Name(use_name) => {
+                if use_name.ident == target_name {
+                    let full_path = if prefix.is_empty() {
+                        target_name.to_string()
+                    } else {
+                        format!("{}::{}", prefix, target_name)
+                    };
+                    paths.push(full_path);
+                }
+            }
+            syn::UseTree::Rename(use_rename) => {
+                if use_rename.rename == target_name || use_rename.ident == target_name {
+                    let full_path = if prefix.is_empty() {
+                        use_rename.ident.to_string()
+                    } else {
+                        format!("{}::{}", prefix, use_rename.ident)
+                    };
+                    paths.push(full_path);
+                }
+            }
+            syn::UseTree::Glob(_) => {
+                // For `use module::*`, we can't be sure which function it imports,
+                // but we record the module path for matching
+                if !prefix.is_empty() {
+                    paths.push(format!("{}::{}", prefix, target_name));
+                }
+            }
+            syn::UseTree::Group(use_group) => {
+                for item in &use_group.items {
+                    Self::collect_use_paths(item, prefix, target_name, paths);
+                }
             }
         }
     }
@@ -533,3 +770,66 @@ impl FunctionParser {
 //     let result = test_regex.is_match(test_text);
 //     println!("{}", result);
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_use_paths_simple() {
+        let source = r#"
+            use crate::state::initialize::process;
+            use crate::utils::check_context;
+            fn main() {}
+        "#;
+        let syntax = syn::parse_file(source).unwrap();
+
+        let paths = FunctionParser::extract_use_paths_for_name(&syntax.items, "process");
+        assert_eq!(paths, vec!["crate::state::initialize::process"]);
+
+        let paths = FunctionParser::extract_use_paths_for_name(&syntax.items, "check_context");
+        assert_eq!(paths, vec!["crate::utils::check_context"]);
+
+        let paths = FunctionParser::extract_use_paths_for_name(&syntax.items, "nonexistent");
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn test_extract_use_paths_grouped() {
+        let source = r#"
+            use crate::state::initialize::{process, validate};
+            fn main() {}
+        "#;
+        let syntax = syn::parse_file(source).unwrap();
+
+        let paths = FunctionParser::extract_use_paths_for_name(&syntax.items, "process");
+        assert_eq!(paths, vec!["crate::state::initialize::process"]);
+
+        let paths = FunctionParser::extract_use_paths_for_name(&syntax.items, "validate");
+        assert_eq!(paths, vec!["crate::state::initialize::validate"]);
+    }
+
+    #[test]
+    fn test_extract_use_paths_glob() {
+        let source = r#"
+            use crate::state::initialize::*;
+            fn main() {}
+        "#;
+        let syntax = syn::parse_file(source).unwrap();
+
+        let paths = FunctionParser::extract_use_paths_for_name(&syntax.items, "process");
+        assert_eq!(paths, vec!["crate::state::initialize::process"]);
+    }
+
+    #[test]
+    fn test_extract_use_paths_rename() {
+        let source = r#"
+            use crate::state::initialize::process as init_process;
+            fn main() {}
+        "#;
+        let syntax = syn::parse_file(source).unwrap();
+
+        let paths = FunctionParser::extract_use_paths_for_name(&syntax.items, "init_process");
+        assert_eq!(paths, vec!["crate::state::initialize::process"]);
+    }
+}

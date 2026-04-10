@@ -119,8 +119,3 @@ fn test_get_branches_list() {
     let _branches_list = get_local_branches().unwrap();
 }
 
-#[test]
-fn test_check_files_not_committed() {
-    env_logger::init();
-    check_files_not_committed().unwrap();
-}

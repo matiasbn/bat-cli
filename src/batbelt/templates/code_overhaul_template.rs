@@ -728,7 +728,10 @@ impl CodeOverhaulSection {
             let filtered_parameters = dep_function_parser
                 .parameters
                 .into_iter()
-                .filter(|parameter| !parameter.parameter_type.contains("Context<"))
+                .filter(|parameter| {
+                    let normalized = crate::batbelt::parser::function_parser::normalize_generic_type(&parameter.parameter_type);
+                    !normalized.contains("Context<")
+                })
                 .collect::<Vec<_>>();
 
             if !filtered_parameters.is_empty() {

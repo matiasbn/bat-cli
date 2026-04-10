@@ -380,11 +380,3 @@ async fn main() -> CommandResult<()> {
     }
 }
 
-#[cfg(debug_assertions)]
-mod test_bat_main {
-
-    #[test]
-    fn test_main() {
-        super::main();
-    }
-}

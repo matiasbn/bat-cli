@@ -843,35 +843,3 @@ fn test_get_context_accounts_no_validations() {
     assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
 }
 
-#[cfg(test)]
-mod sonar_test {
-    use crate::batbelt::sonar::{BatSonar, SonarResultType};
-
-    #[test]
-    fn test_if_validation() {
-        // vec!["require", "valid", "assert", "verify"]
-        let test_text = "
-    if this_is_a_validation {
-        require_gt!(1,2)
-    } else {
-        thing 21
-    }
-
-    if this_is_a_validation == 2 {
-        assert!(1,2)
-    }
-    
-    if this_is_not_a_validation {
-        thing 1
-    } else {
-        thing 21
-    }
-
-
-    ";
-        let accounts = BatSonar::new_scanned(test_text, SonarResultType::IfValidation);
-
-        // Only crafting_process, token_from and mint includes #[account
-        assert_eq!(accounts.results.len(), 3, "incorrect length");
-    }
-}

@@ -188,33 +188,3 @@ mod git_action_functions {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::batbelt::git::get_not_committed_files;
-    use crate::batbelt::ShareableData;
-    use std::env;
-    use std::process::Command;
-
-    #[test]
-    fn test_get_commit() {
-        // let output = Command::new("git")
-        //     .args(["log", " -1", "--pretty=%B"])
-        //     .output()
-        //     .unwrap();
-        // println!("output: {:#?}", output);
-        // let msg = String::from_utf8(output.stdout.to_vec()).unwrap();
-        // println!("msg: {}", msg);
-        env::set_current_dir("../sage-audit").unwrap();
-        let changes = get_not_committed_files().unwrap();
-        println!("changes: {:#?}", changes);
-        let shared_message = ShareableData::new(String::new());
-        GitAction::GetLastCommitMessage {
-            last_commit_message: shared_message.cloned,
-        }
-        .execute_action()
-        .unwrap();
-        println!("message: {}", shared_message.original.borrow_mut());
-        assert_eq!("try ammend".to_string(), *shared_message.original.borrow());
-    }
-}

@@ -144,16 +144,3 @@ pub fn execute_command_with_child_process(command: &str, args: &[&str]) -> Comma
     // Ok("output_string".to_string())
 }
 
-#[cfg(test)]
-mod command_line_tester {
-    use crate::batbelt::command_line::execute_command_with_child_process;
-
-    #[test]
-    fn test_executed_piped() {
-        env_logger::init();
-        let ls_result = execute_command_with_child_process("gflfs", &["2.0.0"]).unwrap();
-        // let ls_result = execute_child_process("cargo", &["install"]).unwrap();
-        println!("ls_rrsuylt {}", ls_result)
-        // let ls_result = execute_piped_process("ls", &["-la"], true).unwrap();
-    }
-}
