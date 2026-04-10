@@ -903,13 +903,13 @@ impl MiroCommand {
                                 include_path: true,
                                 offset_to_start_line: true,
                                 filter_comments: false,
-                                // Use a smaller font for dependency
+                                // Use a reduced font size for dependency
                                 // screenshots to prevent them from
                                 // overflowing the frame. The entry point
                                 // and context accounts keep the default
                                 // (larger) font size.
                                 font_size: Some(
-                                    crate::batbelt::parser::code_overhaul_parser::SMALL_SCREENSHOT_FONT_SIZE,
+                                    crate::batbelt::parser::code_overhaul_parser::DEPENDENCY_SCREENSHOT_FONT_SIZE,
                                 ),
                                 filters: None,
                                 show_line_number: true,
@@ -945,6 +945,16 @@ impl MiroCommand {
             miro_co_metadata
                 .update_code_overhaul_metadata()
                 .change_context(CommandError)?;
+
+            // Commit the updated metadata so the dependency image ids
+            // deployed in the BFS loop above aren't lost. The earlier
+            // commit (before the BFS) only captured the entry point,
+            // validations and context accounts image ids.
+            GitCommit::UpdateMetadataJson {
+                bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
+            }
+            .create_commit(true)
+            .change_context(CommandError)?;
 
             // Deploy mut_accounts
             let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;

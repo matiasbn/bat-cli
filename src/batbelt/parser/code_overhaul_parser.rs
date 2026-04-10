@@ -18,11 +18,15 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{cmp, fs};
 
-/// Font size used for screenshots that tend to be tall / wide enough that
-/// they overflow a Miro frame at the default size — currently validations
-/// and dependency screenshots. Context accounts and the entry point
-/// function keep the default (None -> 20 in `silicon.rs`).
+/// Font size used for validations screenshots (tall due to one code block
+/// per dependency).
 pub const SMALL_SCREENSHOT_FONT_SIZE: usize = 12;
+
+/// Font size used for dependency function screenshots. Slightly larger
+/// than `SMALL_SCREENSHOT_FONT_SIZE` because dependency code needs to be
+/// readable when auditing, but still below the default 20 used by entry
+/// point / context accounts screenshots to keep them fitting in the frame.
+pub const DEPENDENCY_SCREENSHOT_FONT_SIZE: usize = 16;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeOverhaulSigner {
