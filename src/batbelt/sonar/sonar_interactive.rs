@@ -233,28 +233,28 @@ impl BatSonarInteractive {
         pb_fd.enable_steady_tick(Duration::from_millis(100));
         pb_fd.set_message("Function dependencies: starting...");
 
-        let handles = vec![
-            {
-                let pb = pb_ep.clone();
-                thread::spawn(move || Self::run_entry_points_with_pb(&pb))
-            },
-            {
-                let pb = pb_ca.clone();
-                thread::spawn(move || Self::run_context_accounts_with_pb(&pb))
-            },
-            {
-                let pb = pb_tr.clone();
-                thread::spawn(move || Self::run_traits_with_pb(&pb))
-            },
-            {
-                let pb = pb_fd.clone();
-                thread::spawn(move || Self::run_function_deps_with_pb(&pb))
-            },
-        ];
+        // Traits must be built BEFORE function_dependencies and entry_points,
+        // because the CallResolver needs trait_metadata to resolve
+        // `ctx.accounts.method()` and `self.method()` calls to the correct
+        // impl block. Running them in parallel causes a race condition where
+        // the trait metadata may not yet be populated when function parsing runs.
+        Self::run_traits_with_pb(&pb_tr)?;
 
-        for h in handles {
-            h.join().expect("Thread panicked")?;
-        }
+        // Context accounts are independent; run it in parallel with the
+        // trait-dependent work below.
+        let ca_handle = {
+            let pb = pb_ca.clone();
+            thread::spawn(move || Self::run_context_accounts_with_pb(&pb))
+        };
+
+        // Entry points and function dependencies both call FunctionParser,
+        // which reads+writes BatMetadata.json and calls get_function_dependencies.
+        // They can race with each other on the metadata file, so run them
+        // sequentially after traits are built.
+        Self::run_function_deps_with_pb(&pb_fd)?;
+        Self::run_entry_points_with_pb(&pb_ep)?;
+
+        ca_handle.join().expect("Thread panicked")?;
 
         println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
         Ok(())

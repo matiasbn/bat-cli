@@ -4,15 +4,18 @@ use error_stack::Result;
 use std::error::Error;
 use std::fmt;
 
+pub mod call_resolver;
 pub mod code_overhaul_parser;
 pub mod context_accounts_parser;
 pub mod entrypoint_parser;
+pub mod file_scope;
 pub mod function_parser;
 pub mod solana_account_parser;
 pub mod source_code_parser;
 pub mod syn_context_accounts_parser;
 pub mod syn_function_dependency_parser;
 pub mod trait_parser;
+pub mod type_resolver;
 
 #[derive(Debug)]
 pub struct ParserError;
