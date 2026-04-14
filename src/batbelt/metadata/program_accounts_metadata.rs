@@ -2,7 +2,6 @@ use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
 use lazy_regex::regex;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -11,7 +10,6 @@ use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::{
     BatMetadata, BatMetadataParser, MetadataError, MetadataResult, SourceCodeMetadata,
 };
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -42,7 +40,7 @@ impl ProgramAccountMetadata {
         .into_iter()
         .map(|sc_meta| sc_meta.name)
         .collect::<Vec<_>>();
-        let bat_metadata = BatMetadata::read_metadata()?;
+        let _bat_metadata = BatMetadata::read_metadata()?;
         let mut program_account_metadata_vec: Vec<ProgramAccountMetadata> = vec![];
         for program_account_name in sc_names.clone() {
             let mut program_account_metadata = Self {
@@ -156,7 +154,7 @@ impl ProgramAccountMetadata {
                     };
 
                     // the state changes for the given account key -> pub account_key: account_value;
-                    let mut state_change_vec = state_change_map
+                    let state_change_vec = state_change_map
                         .get_mut(&account_key)
                         .ok_or(MetadataError)
                         .into_report()?;

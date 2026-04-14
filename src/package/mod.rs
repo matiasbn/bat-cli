@@ -109,7 +109,7 @@ fn bump() -> Result<String, PackageError> {
         format!("patch: {}.{}.{}", major, minor, patch + 1),
     ];
     let selection = batbelt::bat_dialoguer::select(&prompt_text, options, None).unwrap();
-    let mut version_vec = vec![major, minor, patch];
+    let mut version_vec = [major, minor, patch];
     match selection {
         0 => {
             version_vec[0] += 1;

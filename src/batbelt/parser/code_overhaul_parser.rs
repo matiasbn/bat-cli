@@ -11,7 +11,7 @@ use crate::batbelt::templates::code_overhaul_template::{
     CodeOverhaulSection, CoderOverhaulTemplatePlaceholders,
 };
 use crate::batbelt::{silicon, BatEnumerator};
-use crate::commands::miro_commands::{miro_command_functions, MiroCommand};
+use crate::commands::miro_commands::miro_command_functions;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
 use regex::Regex;
@@ -170,7 +170,8 @@ impl CodeOverhaulParser {
     ) -> ParserResult<MiroImage> {
         let file_name = miro_command_functions::parse_screenshot_name(title, &miro_frame.title);
 
-        let sc_path = self.create_screenshot_with_silicon(content.clone(), &file_name, font_size)?;
+        let sc_path =
+            self.create_screenshot_with_silicon(content.clone(), &file_name, font_size)?;
 
         println!(
             "\nCreating {}{} in {} frame",

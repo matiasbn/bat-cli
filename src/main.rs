@@ -336,13 +336,11 @@ fn auto_detect_bat_audit_dir() {
     if Path::new("Bat.toml").exists() {
         return; // Already in the right directory
     }
-    if Path::new("bat-audit/Bat.toml").exists() {
-        if std::env::set_current_dir("bat-audit").is_ok() {
-            println!(
-                "{} auto-detected bat-audit/ directory, changing working directory",
-                "bat-cli".blue()
-            );
-        }
+    if Path::new("bat-audit/Bat.toml").exists() && std::env::set_current_dir("bat-audit").is_ok() {
+        println!(
+            "{} auto-detected bat-audit/ directory, changing working directory",
+            "bat-cli".blue()
+        );
     }
 }
 
@@ -388,4 +386,3 @@ async fn main() -> CommandResult<()> {
         }
     }
 }
-

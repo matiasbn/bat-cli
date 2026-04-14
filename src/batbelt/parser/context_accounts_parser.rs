@@ -1,14 +1,11 @@
-use crate::batbelt::metadata::{BatMetadata, MetadataId};
-use once_cell::sync::Lazy;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use lazy_regex::regex;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use tokio::io::split;
 
 use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
 use crate::batbelt::parser::{ParserError, ParserResult};
-use crate::batbelt::sonar::{SonarResult, SonarResultType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CAAccountAttributeInfo {
@@ -102,7 +99,7 @@ impl CAAccountParser {
         let new_parser = Self::new(
             account_type_info,
             account_attribute_info,
-            &context_account_content,
+            context_account_content,
         );
         Ok(new_parser)
     }
@@ -116,7 +113,7 @@ impl CAAccountParser {
     pub fn get_account_type_info(
         context_account_content: &str,
     ) -> Result<CAAccountTypeInfo, ParserError> {
-        let mut last_line = context_account_content
+        let last_line = context_account_content
             .lines()
             .last()
             .unwrap()
@@ -281,7 +278,7 @@ impl CAAccountParser {
 
         let rent_exemption_close_regex = regex!(r#"close = [A-Za-z0-9_.]+"#);
 
-        if rent_exemption_close_regex.is_match(sonar_result_content.clone()) {
+        if rent_exemption_close_regex.is_match(sonar_result_content) {
             let close_match = rent_exemption_close_regex
                 .find(sonar_result_content)
                 .unwrap()
@@ -294,7 +291,6 @@ impl CAAccountParser {
         Ok("".to_string())
     }
 }
-
 
 // #[test]
 // fn test_get_account_type_info_struct_name() {

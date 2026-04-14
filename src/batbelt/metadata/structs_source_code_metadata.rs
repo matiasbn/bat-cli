@@ -2,7 +2,6 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use std::fmt::Debug;
 
-use crate::batbelt;
 use crate::batbelt::path::BatFile;
 
 use crate::batbelt::metadata::{
@@ -116,14 +115,14 @@ impl StructSourceCodeMetadata {
         let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Struct);
         let mut metadata_result = vec![];
         for result in bat_sonar.results {
-            let struct_type =
-                if Self::assert_struct_is_solana_account(file_content, result.clone()) {
-                    StructMetadataType::SolanaAccount
-                } else if Self::assert_struct_is_context_accounts(file_content, result.clone())? {
-                    StructMetadataType::ContextAccounts
-                } else {
-                    StructMetadataType::Other
-                };
+            let struct_type = if Self::assert_struct_is_solana_account(file_content, result.clone())
+            {
+                StructMetadataType::SolanaAccount
+            } else if Self::assert_struct_is_context_accounts(file_content, result.clone())? {
+                StructMetadataType::ContextAccounts
+            } else {
+                StructMetadataType::Other
+            };
             let struct_metadata = StructSourceCodeMetadata::new(
                 entry_path.to_string(),
                 result.name.to_string(),
@@ -153,7 +152,7 @@ impl StructSourceCodeMetadata {
                 return Ok(true);
             }
         }
-        let context_accounts_content = vec![
+        let context_accounts_content = [
             "Signer<",
             "AccountLoader<",
             "UncheckedAccount<",

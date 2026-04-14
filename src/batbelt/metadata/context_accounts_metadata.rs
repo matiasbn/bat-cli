@@ -114,7 +114,8 @@ impl ContextAccountsMetadata {
                 .context_accounts
                 .iter()
                 .position(|ca_metadata| {
-                    ca_metadata.struct_source_code_metadata_id == self_clone.struct_source_code_metadata_id
+                    ca_metadata.struct_source_code_metadata_id
+                        == self_clone.struct_source_code_metadata_id
                 });
             match position {
                 None => bat_metadata.context_accounts.push(self_clone.clone()),

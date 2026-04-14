@@ -55,12 +55,9 @@ impl TraitMetadata {
     pub fn update_metadata_file(&self) -> MetadataResult<()> {
         let self_clone = self.clone();
         BatMetadata::update_metadata(|bat_metadata| {
-            let position = bat_metadata
-                .traits
-                .iter()
-                .position(|ep| {
-                    ep.trait_source_code_metadata_id == self_clone.trait_source_code_metadata_id
-                });
+            let position = bat_metadata.traits.iter().position(|ep| {
+                ep.trait_source_code_metadata_id == self_clone.trait_source_code_metadata_id
+            });
             match position {
                 None => bat_metadata.traits.push(self_clone.clone()),
                 Some(pos) => bat_metadata.traits[pos] = self_clone.clone(),

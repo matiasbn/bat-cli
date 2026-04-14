@@ -65,16 +65,19 @@ pub struct AddressConstraint {
 pub fn parse_context_accounts_from_file(
     file_path: &str,
 ) -> Result<Vec<ParsedAccountsStruct>, ParserError> {
-    let content = fs::read_to_string(file_path)
-        .map_err(|e| Report::new(ParserError).attach_printable(format!("Failed to read file {}: {}", file_path, e)))?;
+    let content = fs::read_to_string(file_path).map_err(|e| {
+        Report::new(ParserError)
+            .attach_printable(format!("Failed to read file {}: {}", file_path, e))
+    })?;
     parse_context_accounts_from_source(&content)
 }
 
 pub fn parse_context_accounts_from_source(
     source: &str,
 ) -> Result<Vec<ParsedAccountsStruct>, ParserError> {
-    let file = syn::parse_file(source)
-        .map_err(|e| Report::new(ParserError).attach_printable(format!("Failed to parse Rust source: {}", e)))?;
+    let file = syn::parse_file(source).map_err(|e| {
+        Report::new(ParserError).attach_printable(format!("Failed to parse Rust source: {}", e))
+    })?;
 
     let mut results = Vec::new();
 
@@ -143,7 +146,9 @@ fn parse_accounts_struct(
 
 // ─── Attribute parsing ────────────────────────────────────────────────────────
 
-fn parse_account_attributes(attrs: &[syn::Attribute]) -> Result<ParsedAccountAttributes, ParserError> {
+fn parse_account_attributes(
+    attrs: &[syn::Attribute],
+) -> Result<ParsedAccountAttributes, ParserError> {
     let mut result = ParsedAccountAttributes::default();
 
     for attr in attrs {
@@ -249,7 +254,9 @@ fn parse_account_attr_tokens(
                     } else if normalized == "rent_exempt" {
                         result.rent_exempt = value.trim() == "enforce";
                     } else if normalized == "mint::decimals" || normalized == "mint::authority" {
-                        result.constraints.push(format!("{} = {}", normalized, value));
+                        result
+                            .constraints
+                            .push(format!("{} = {}", normalized, value));
                     } else {
                         // Unknown key-value, store as generic constraint
                         result.constraints.push(format!("{} = {}", key, value));
@@ -281,25 +288,55 @@ fn parse_account_attr_tokens(
 fn normalize_token_str(s: &str) -> String {
     let s = s.trim().to_string();
     // Remove spaces around `.`
-    let s = regex::Regex::new(r"\s*\.\s*").unwrap().replace_all(&s, ".").to_string();
+    let s = regex::Regex::new(r"\s*\.\s*")
+        .unwrap()
+        .replace_all(&s, ".")
+        .to_string();
     // Remove spaces around `::`
-    let s = regex::Regex::new(r"\s*::\s*").unwrap().replace_all(&s, "::").to_string();
+    let s = regex::Regex::new(r"\s*::\s*")
+        .unwrap()
+        .replace_all(&s, "::")
+        .to_string();
     // Remove space before `(`
-    let s = regex::Regex::new(r"\s+\(").unwrap().replace_all(&s, "(").to_string();
+    let s = regex::Regex::new(r"\s+\(")
+        .unwrap()
+        .replace_all(&s, "(")
+        .to_string();
     // Remove space after `(`
-    let s = regex::Regex::new(r"\(\s+").unwrap().replace_all(&s, "(").to_string();
+    let s = regex::Regex::new(r"\(\s+")
+        .unwrap()
+        .replace_all(&s, "(")
+        .to_string();
     // Remove space before `)`
-    let s = regex::Regex::new(r"\s+\)").unwrap().replace_all(&s, ")").to_string();
+    let s = regex::Regex::new(r"\s+\)")
+        .unwrap()
+        .replace_all(&s, ")")
+        .to_string();
     // Remove space after `&`
-    let s = regex::Regex::new(r"&\s+").unwrap().replace_all(&s, "&").to_string();
+    let s = regex::Regex::new(r"&\s+")
+        .unwrap()
+        .replace_all(&s, "&")
+        .to_string();
     // Remove space before `[`
-    let s = regex::Regex::new(r"\s+\[").unwrap().replace_all(&s, "[").to_string();
+    let s = regex::Regex::new(r"\s+\[")
+        .unwrap()
+        .replace_all(&s, "[")
+        .to_string();
     // Remove space after `[`
-    let s = regex::Regex::new(r"\[\s+").unwrap().replace_all(&s, "[").to_string();
+    let s = regex::Regex::new(r"\[\s+")
+        .unwrap()
+        .replace_all(&s, "[")
+        .to_string();
     // Remove space before `]`
-    let s = regex::Regex::new(r"\s+\]").unwrap().replace_all(&s, "]").to_string();
+    let s = regex::Regex::new(r"\s+\]")
+        .unwrap()
+        .replace_all(&s, "]")
+        .to_string();
     // Remove space before `!`
-    let s = regex::Regex::new(r"\s+!").unwrap().replace_all(&s, "!").to_string();
+    let s = regex::Regex::new(r"\s+!")
+        .unwrap()
+        .replace_all(&s, "!")
+        .to_string();
     s
 }
 
@@ -348,7 +385,10 @@ fn split_key_value(s: &str) -> Option<(&str, &str)> {
             } else {
                 None
             };
-            if prev != Some(b'!') && prev != Some(b'<') && prev != Some(b'>') && prev != Some(b'=')
+            if prev != Some(b'!')
+                && prev != Some(b'<')
+                && prev != Some(b'>')
+                && prev != Some(b'=')
                 && next != Some(b'=')
             {
                 let key = s[..i].trim();
@@ -512,7 +552,7 @@ impl ParsedAccount {
                     return SolanaAccountType::Mint;
                 }
                 // Check if the struct is a known solana account from metadata
-                if solana_account_names.iter().any(|name| *name == self.account_struct_name) {
+                if solana_account_names.contains(&self.account_struct_name) {
                     return SolanaAccountType::ProgramStateAccount;
                 }
                 SolanaAccountType::Other
@@ -592,7 +632,10 @@ impl ParsedAccount {
         }
 
         // Use associated_token::mint as fallback for token_mint
-        let token_mint = self.attributes.token_mint.clone()
+        let token_mint = self
+            .attributes
+            .token_mint
+            .clone()
             .or_else(|| self.attributes.associated_token_mint.clone());
 
         CAAccountParser {
@@ -670,7 +713,10 @@ mod tests {
         assert!(acc.attributes.is_pda);
         assert_eq!(acc.attributes.seeds.len(), 2);
         assert!(acc.attributes.seeds[0].contains("state.key()"));
-        assert!(acc.attributes.seeds[1].contains("b\"vault\"") || acc.attributes.seeds[1].contains("b \"vault\""));
+        assert!(
+            acc.attributes.seeds[1].contains("b\"vault\"")
+                || acc.attributes.seeds[1].contains("b \"vault\"")
+        );
         assert!(acc.attributes.bump.is_some());
     }
 
@@ -1018,7 +1064,10 @@ mod tests {
         let vl = &result[0].accounts[1];
         assert_eq!(vl.account_wrapper_name, "UncheckedAccount");
         let addr = vl.attributes.address.as_ref().unwrap();
-        assert_eq!(addr.expression, "state.validator_system.validator_list.account");
+        assert_eq!(
+            addr.expression,
+            "state.validator_system.validator_list.account"
+        );
         assert!(addr.error.is_none());
 
         // transfer_sol_to: address with @ error
@@ -1026,7 +1075,10 @@ mod tests {
         assert_eq!(ts.account_wrapper_name, "SystemAccount");
         let addr = ts.attributes.address.as_ref().unwrap();
         assert_eq!(addr.expression, "ticket_account.beneficiary");
-        assert_eq!(addr.error.as_deref(), Some("MarinadeError::WrongBeneficiary"));
+        assert_eq!(
+            addr.error.as_deref(),
+            Some("MarinadeError::WrongBeneficiary")
+        );
 
         // lp_mint: owner constraint
         let lp = &result[0].accounts[3];
@@ -1036,14 +1088,20 @@ mod tests {
         // mint_to: token::mint and token::authority
         let mt = &result[0].accounts[4];
         assert_eq!(mt.attributes.token_mint.as_deref(), Some("state.msol_mint"));
-        assert_eq!(mt.attributes.token_authority.as_deref(), Some("msol_mint_authority"));
+        assert_eq!(
+            mt.attributes.token_authority.as_deref(),
+            Some("msol_mint_authority")
+        );
 
         // stake_account: complex seeds with method chains
         let sa = &result[0].accounts[5];
         assert!(sa.attributes.is_pda);
         assert_eq!(sa.attributes.seeds.len(), 3);
         assert!(sa.attributes.seeds[0].contains("state.key()"));
-        assert!(sa.attributes.seeds[1].contains("b\"vault\"") || sa.attributes.seeds[1].contains("b \"vault\""));
+        assert!(
+            sa.attributes.seeds[1].contains("b\"vault\"")
+                || sa.attributes.seeds[1].contains("b \"vault\"")
+        );
         assert!(sa.attributes.seeds[2].contains("validator_index.to_le_bytes()"));
         assert!(sa.attributes.bump.is_some());
     }
@@ -1075,15 +1133,33 @@ mod tests {
 
         assert!(ata.attributes.is_init);
         assert_eq!(ata.attributes.payer.as_deref(), Some("authority"));
-        assert_eq!(ata.attributes.associated_token_mint.as_deref(), Some("mint"));
-        assert_eq!(ata.attributes.associated_token_authority.as_deref(), Some("authority"));
-        assert_eq!(ata.attributes.associated_token_token_program.as_deref(), Some("token_program"));
+        assert_eq!(
+            ata.attributes.associated_token_mint.as_deref(),
+            Some("mint")
+        );
+        assert_eq!(
+            ata.attributes.associated_token_authority.as_deref(),
+            Some("authority")
+        );
+        assert_eq!(
+            ata.attributes.associated_token_token_program.as_deref(),
+            Some("token_program")
+        );
 
         // Conversion: associated_token::mint should fill token_mint as fallback
         let ca = ata.to_ca_account_parser(SolanaAccountType::TokenAccount, "");
         assert_eq!(ca.token_mint.as_deref(), Some("mint"));
-        assert!(ca.validations.iter().any(|v| v.contains("associated_token::mint")));
-        assert!(ca.validations.iter().any(|v| v.contains("associated_token::authority")));
-        assert!(ca.validations.iter().any(|v| v.contains("associated_token::token_program")));
+        assert!(ca
+            .validations
+            .iter()
+            .any(|v| v.contains("associated_token::mint")));
+        assert!(ca
+            .validations
+            .iter()
+            .any(|v| v.contains("associated_token::authority")));
+        assert!(ca
+            .validations
+            .iter()
+            .any(|v| v.contains("associated_token::token_program")));
     }
 }

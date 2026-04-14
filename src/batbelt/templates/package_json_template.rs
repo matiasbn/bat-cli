@@ -1,4 +1,4 @@
-use error_stack::{FutureExt, IntoReport, Result, ResultExt};
+use error_stack::{FutureExt, Result, ResultExt};
 use log::Level;
 
 use serde_json::Map;
@@ -50,11 +50,17 @@ impl PackageJsonTemplate {
         let (script_key_prefix, script_value_prefix) = if cfg!(debug_assertions) {
             let manifest_path = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
             if verbosity_flag.is_empty() {
-                ("".to_string(), format!("cargo run --manifest-path {} --", manifest_path))
+                (
+                    "".to_string(),
+                    format!("cargo run --manifest-path {} --", manifest_path),
+                )
             } else {
                 (
                     format!("{}::", verbosity_level_name),
-                    format!("cargo run --manifest-path {} -- -{}", manifest_path, verbosity_flag),
+                    format!(
+                        "cargo run --manifest-path {} -- -{}",
+                        manifest_path, verbosity_flag
+                    ),
                 )
             }
         } else if verbosity_flag.is_empty() {

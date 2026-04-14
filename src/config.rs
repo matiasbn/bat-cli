@@ -16,7 +16,6 @@ use crate::batbelt::{bat_dialoguer, BatEnumerator};
 use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
-use figment::error::Kind;
 use normalize_url::normalizer;
 use walkdir::WalkDir;
 
@@ -87,12 +86,7 @@ impl BatAuditorConfig {
 
                 file_names.contains(&"BatMetadata.json".to_string())
             })
-            .map(|f| {
-                format!(
-                    "{}/BatMetadata.json",
-                    f.path().to_str().unwrap().to_string()
-                )
-            })
+            .map(|f| format!("{}/BatMetadata.json", f.path().to_str().unwrap()))
             .collect::<Vec<_>>();
         if bat_metadata_folders.is_empty() {
             println!(
@@ -177,18 +171,13 @@ impl BatAuditorConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub enum ProjectType {
     Anchor,
     Pinocchio,
     VanillaSolana,
+    #[default]
     GenericRust,
-}
-
-impl Default for ProjectType {
-    fn default() -> Self {
-        ProjectType::GenericRust
-    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
@@ -228,21 +217,22 @@ impl BatConfig {
                 "{} Anchor.toml not found — this does not appear to be an Anchor program.",
                 "Warning:".yellow()
             );
-            println!("bat-cli will run in generic Rust mode (no entry points or context accounts).");
-            let continue_anyway =
-                bat_dialoguer::select_yes_or_no("Do you want to continue?")
-                    .change_context(BatConfigError)?;
+            println!(
+                "bat-cli will run in generic Rust mode (no entry points or context accounts)."
+            );
+            let continue_anyway = bat_dialoguer::select_yes_or_no("Do you want to continue?")
+                .change_context(BatConfigError)?;
             if !continue_anyway {
-                return Err(Report::new(BatConfigError)
-                    .attach_printable("Aborted by user"));
+                return Err(Report::new(BatConfigError).attach_printable("Aborted by user"));
             }
             ProjectType::GenericRust
         };
 
         // Validate bat-audit doesn't already exist
         if Path::new("bat-audit").is_dir() {
-            return Err(Report::new(BatConfigError)
-                .attach_printable("bat-audit/ folder already exists"));
+            return Err(
+                Report::new(BatConfigError).attach_printable("bat-audit/ folder already exists")
+            );
         }
 
         // Auto-detect git remote info
@@ -273,7 +263,11 @@ impl BatConfig {
                         e.file_name().to_str() == Some("Cargo.toml")
                             && !e.path().to_str().unwrap_or("").contains("target")
                     });
-                if has_cargo { Some(dir_str) } else { None }
+                if has_cargo {
+                    Some(dir_str)
+                } else {
+                    None
+                }
             })
             .collect();
         let mut root_dirs = root_dirs;
@@ -293,8 +287,7 @@ impl BatConfig {
         .change_context(BatConfigError)?;
 
         if dir_selections.is_empty() {
-            return Err(Report::new(BatConfigError)
-                .attach_printable("No folders selected"));
+            return Err(Report::new(BatConfigError).attach_printable("No folders selected"));
         }
 
         // Step 2: Find all Cargo.toml inside selected folders
@@ -307,9 +300,8 @@ impl BatConfig {
                     && !entry_path.contains("target")
                     && entry_path != "./Cargo.toml"
                 {
-                    cargo_programs_paths.push(
-                        entry_path.trim_end_matches("/Cargo.toml").to_string(),
-                    );
+                    cargo_programs_paths
+                        .push(entry_path.trim_end_matches("/Cargo.toml").to_string());
                 }
             }
         }
@@ -329,8 +321,7 @@ impl BatConfig {
         .change_context(BatConfigError)?;
 
         if prog_selections.is_empty() {
-            return Err(Report::new(BatConfigError)
-                .attach_printable("No programs selected"));
+            return Err(Report::new(BatConfigError).attach_printable("No programs selected"));
         }
 
         // Step 4: Resolve lib.rs or main.rs for each selected program
@@ -344,7 +335,10 @@ impl BatConfig {
             } else if Path::new(&main_path).is_file() {
                 main_path
             } else {
-                log::warn!("Neither lib.rs nor main.rs found in {}, skipping", program_path);
+                log::warn!(
+                    "Neither lib.rs nor main.rs found in {}, skipping",
+                    program_path
+                );
                 continue;
             };
             let normalized = format!("../{}", resolved.trim_start_matches("./"));
@@ -361,7 +355,7 @@ impl BatConfig {
         let selected_program_path = &cargo_programs_paths[prog_selections[0]];
         let program_name = selected_program_path
             .split('/')
-            .last()
+            .next_back()
             .unwrap()
             .to_string()
             .replace('_', "-");
@@ -426,7 +420,8 @@ impl BatConfig {
             let day_of_year = days - (365 * years + years / 4 - years / 100 + years / 400);
             let month_days: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
             let year = 1970 + years;
-            let is_leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+            let is_leap =
+                (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
             let mut remaining = day_of_year;
             let mut month = 0u64;
             for (i, &d) in month_days.iter().enumerate() {
@@ -487,7 +482,10 @@ impl BatConfig {
             .args(["-C", repo_path, "remote", "get-url", "origin"])
             .output()
             .ok()?;
-        let remote_raw = String::from_utf8(remote_output.stdout).ok()?.trim().to_string();
+        let remote_raw = String::from_utf8(remote_output.stdout)
+            .ok()?
+            .trim()
+            .to_string();
 
         // Convert SSH URL to HTTPS if needed
         // git@github.com:owner/repo.git -> https://github.com/owner/repo
@@ -512,7 +510,10 @@ impl BatConfig {
             .args(["-C", repo_path, "log", "-1", "--format=%H"])
             .output()
             .ok()?;
-        let commit_hash = String::from_utf8(hash_output.stdout).ok()?.trim().to_string();
+        let commit_hash = String::from_utf8(hash_output.stdout)
+            .ok()?
+            .trim()
+            .to_string();
 
         Some((remote_https, owner, commit_hash))
     }

@@ -142,7 +142,8 @@ impl FunctionSourceCodeMetadata {
         entry_path: &str,
         sonar_result: SonarResult,
     ) -> MetadataResult<bool> {
-        let entrypoints_names = EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
+        let entrypoints_names =
+            EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
         if entry_path == BatConfig::get_config().unwrap().program_lib_path {
             if entrypoints_names
                 .into_iter()
@@ -312,7 +313,7 @@ fn get_function_parameters_legacy(function_content: String) -> Vec<String> {
             .trim_start_matches("pub (crate) fn ")
             .trim_start_matches("pub fn ")
             .split('(')
-            .last()
+            .next_back()
             .unwrap()
             .trim_end_matches(')')
             .split(' ')
@@ -349,7 +350,7 @@ fn get_function_parameters_legacy(function_content: String) -> Vec<String> {
 }
 
 pub fn get_function_signature(function_content: &str) -> String {
-    let function_signature = function_content.clone();
+    let function_signature = function_content;
     let function_signature = function_signature
         .split('{')
         .next()
@@ -361,7 +362,7 @@ pub fn get_function_signature(function_content: &str) -> String {
 }
 
 pub fn get_function_body(function_content: &str) -> String {
-    let function_body = function_content.clone();
+    let function_body = function_content;
     let mut body = function_body.split('{');
     body.next();
     let body = body.collect::<Vec<_>>().join("{");

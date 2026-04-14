@@ -1,13 +1,11 @@
 use crate::batbelt::analytics::{AnalyticsError, AnalyticsResult, BatAnalytics};
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::metadata::{BatMetadata, SourceCodeMetadata};
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
+use crate::batbelt::metadata::BatMetadata;
 use colored::Colorize;
-use error_stack::{Report, ResultExt};
+use error_stack::ResultExt;
 use lazy_regex::regex;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ConstraintsAnalytics {

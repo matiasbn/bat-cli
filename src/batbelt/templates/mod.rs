@@ -9,9 +9,8 @@ use crate::batbelt::command_line::{execute_command, execute_command_with_child_p
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
-use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::batbelt::BatEnumerator;
-use crate::config::{BatAuditorConfig, BatConfig};
+use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 

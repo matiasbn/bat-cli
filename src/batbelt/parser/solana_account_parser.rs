@@ -1,7 +1,6 @@
 use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 use crate::batbelt::parser::{ParserError, ParserResult};
-use crate::batbelt::sonar::SonarResult;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -101,7 +100,7 @@ impl SolanaAccountParser {
 
     fn parse_program_state_account(&mut self) -> ParserResult<()> {
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
-        return match bat_metadata
+        match bat_metadata
             .source_code
             .structs_source_code
             .into_iter()
@@ -141,6 +140,6 @@ impl SolanaAccountParser {
                 self.accounts = account_vec;
                 Ok(())
             }
-        };
+        }
     }
 }

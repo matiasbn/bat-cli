@@ -121,12 +121,19 @@ impl<'a> TypeResolver<'a> {
                     // Multi-segment path: prefer the last segment as the type name.
                     let last_name = segments.last().unwrap().ident.to_string();
                     let first_name = segments[0].ident.to_string();
-                    let rest: Vec<String> =
-                        segments.iter().skip(1).map(|s| s.ident.to_string()).collect();
+                    let rest: Vec<String> = segments
+                        .iter()
+                        .skip(1)
+                        .map(|s| s.ident.to_string())
+                        .collect();
                     // Try to resolve the first segment through the scope
                     let full_path = match self.file_scope.resolve_name(&first_name) {
                         Some(base) => format!("{}::{}", base, rest.join("::")),
-                        None => type_path.path.to_token_stream().to_string().replace(' ', ""),
+                        None => type_path
+                            .path
+                            .to_token_stream()
+                            .to_string()
+                            .replace(' ', ""),
                     };
                     ResolvedType::Known {
                         type_name: last_name,

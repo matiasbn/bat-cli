@@ -13,7 +13,6 @@ use crate::batbelt::silicon;
 
 use crate::batbelt::path::prettify_source_code_path;
 use crate::batbelt::{self, path::BatFolder};
-use crate::config::BatConfig;
 use error_stack::{Result, ResultExt};
 
 #[derive(Debug, Clone)]

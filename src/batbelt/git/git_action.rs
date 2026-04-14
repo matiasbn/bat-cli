@@ -187,4 +187,3 @@ mod git_action_functions {
         Ok(last_commit_message)
     }
 }
-
