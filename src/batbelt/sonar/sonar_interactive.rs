@@ -9,6 +9,7 @@ use crate::batbelt::metadata::{
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::sonar::{BatSonarError, SonarResultType};
 use crate::batbelt::BatEnumerator;
+use crate::config::BatConfig;
 
 use colored::Colorize;
 use dialoguer::console::{style, Emoji};
@@ -226,8 +227,9 @@ impl BatSonarInteractive {
     }
     pub fn run_post_scan_parallel() -> Result<(), BatSonarError> {
         let started = Instant::now();
-        let is_anchor = std::path::Path::new("Anchor.toml").is_file()
-            || std::path::Path::new("../Anchor.toml").is_file();
+        let is_anchor = BatConfig::get_config()
+            .map(|c| c.project_type == crate::config::ProjectType::Anchor)
+            .unwrap_or(false);
         let m = MultiProgress::new();
         let spinner_style =
             ProgressStyle::with_template("{spinner:.blue} {wide_msg}")

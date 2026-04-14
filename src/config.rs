@@ -177,6 +177,20 @@ impl BatAuditorConfig {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum ProjectType {
+    Anchor,
+    Pinocchio,
+    VanillaSolana,
+    GenericRust,
+}
+
+impl Default for ProjectType {
+    fn default() -> Self {
+        ProjectType::GenericRust
+    }
+}
+
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct BatConfig {
     pub initialized: bool,
@@ -194,6 +208,8 @@ pub struct BatConfig {
     #[serde(default)]
     pub program_name: String,
     pub project_repository_url: String,
+    #[serde(default)]
+    pub project_type: ProjectType,
 }
 
 impl BatConfig {
@@ -203,8 +219,11 @@ impl BatConfig {
     }
 
     fn create_bat_config_file() -> Result<BatConfig, BatConfigError> {
-        // Warn if not an Anchor project
-        if !Path::new("Anchor.toml").is_file() {
+        // Auto-detect project type
+        let project_type = if Path::new("Anchor.toml").is_file() {
+            println!("Detected {} project (Anchor.toml found)", "Anchor".green());
+            ProjectType::Anchor
+        } else {
             println!(
                 "{} Anchor.toml not found — this does not appear to be an Anchor program.",
                 "Warning:".yellow()
@@ -217,7 +236,8 @@ impl BatConfig {
                 return Err(Report::new(BatConfigError)
                     .attach_printable("Aborted by user"));
             }
-        }
+            ProjectType::GenericRust
+        };
 
         // Validate bat-audit doesn't already exist
         if Path::new("bat-audit").is_dir() {
@@ -455,6 +475,7 @@ impl BatConfig {
             project_repository_url,
             program_lib_path: normalized_program_lib_path,
             program_lib_paths: normalized_program_lib_paths,
+            project_type,
         };
         bat_config.save().change_context(BatConfigError)?;
         Ok(bat_config)

@@ -65,7 +65,11 @@ impl PackageJsonTemplate {
                 format!("bat-cli -{}", verbosity_flag),
             )
         };
-        let bat_package_json_commands_vec = BatCommands::get_bat_package_json_commands();
+        let project_type = crate::config::BatConfig::get_config()
+            .map(|c| c.project_type)
+            .unwrap_or_default();
+        let bat_package_json_commands_vec =
+            BatCommands::get_bat_package_json_commands(&project_type);
         let mut scripts_map = Map::new();
         for bat_command in bat_package_json_commands_vec {
             let BatPackageJsonCommand {
