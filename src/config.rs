@@ -177,6 +177,20 @@ impl BatAuditorConfig {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum ProjectType {
+    Anchor,
+    Pinocchio,
+    VanillaSolana,
+    GenericRust,
+}
+
+impl Default for ProjectType {
+    fn default() -> Self {
+        ProjectType::GenericRust
+    }
+}
+
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct BatConfig {
     pub initialized: bool,
@@ -186,10 +200,16 @@ pub struct BatConfig {
     pub starting_date: String,
     pub miro_board_url: String,
     pub auditor_names: Vec<String>,
+    /// Primary program lib path (first selected, used by Anchor entrypoint detection).
     pub program_lib_path: String,
+    /// All selected program lib paths (for multi-program scanning).
+    #[serde(default)]
+    pub program_lib_paths: Vec<String>,
     #[serde(default)]
     pub program_name: String,
     pub project_repository_url: String,
+    #[serde(default)]
+    pub project_type: ProjectType,
 }
 
 impl BatConfig {
@@ -199,12 +219,25 @@ impl BatConfig {
     }
 
     fn create_bat_config_file() -> Result<BatConfig, BatConfigError> {
-        // Validate we're inside an Anchor project
-        if !Path::new("Anchor.toml").is_file() {
-            return Err(Report::new(BatConfigError).attach_printable(
-                "Anchor.toml not found in current directory. Run bat new inside the target repo.",
-            ));
-        }
+        // Auto-detect project type
+        let project_type = if Path::new("Anchor.toml").is_file() {
+            println!("Detected {} project (Anchor.toml found)", "Anchor".green());
+            ProjectType::Anchor
+        } else {
+            println!(
+                "{} Anchor.toml not found — this does not appear to be an Anchor program.",
+                "Warning:".yellow()
+            );
+            println!("bat-cli will run in generic Rust mode (no entry points or context accounts).");
+            let continue_anyway =
+                bat_dialoguer::select_yes_or_no("Do you want to continue?")
+                    .change_context(BatConfigError)?;
+            if !continue_anyway {
+                return Err(Report::new(BatConfigError)
+                    .attach_printable("Aborted by user"));
+            }
+            ProjectType::GenericRust
+        };
 
         // Validate bat-audit doesn't already exist
         if Path::new("bat-audit").is_dir() {
@@ -216,64 +249,123 @@ impl BatConfig {
         let (remote_https_url, owner_name, commit_hash) = Self::detect_remote_info(".")
             .unwrap_or(("".to_string(), "".to_string(), "".to_string()));
 
-        // Find programs with Cargo.toml (excluding target/)
-        let cargo_programs_files_info = WalkDir::new(".")
-            .into_iter()
-            .map(|f| f.unwrap())
-            .filter(|dir_entry| {
-                dir_entry
-                    .file_name()
-                    .to_str()
-                    .unwrap()
-                    .contains("Cargo.toml")
-                    && !dir_entry.path().to_str().unwrap().contains("target")
-                    && dir_entry.path().to_str().unwrap() != "./Cargo.toml"
+        // Step 1: List root-level directories that contain at least one Cargo.toml
+        let root_dirs: Vec<String> = std::fs::read_dir(".")
+            .into_report()
+            .change_context(BatConfigError)?
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if !path.is_dir() {
+                    return None;
+                }
+                let name = path.file_name()?.to_str()?.to_string();
+                // Skip hidden dirs, target/ and bat-audit/
+                if name.starts_with('.') || name == "target" || name == "bat-audit" {
+                    return None;
+                }
+                let dir_str = format!("./{}", name);
+                // Only include if there's at least one Cargo.toml inside
+                let has_cargo = WalkDir::new(&dir_str)
+                    .into_iter()
+                    .filter_map(|f| f.ok())
+                    .any(|e| {
+                        e.file_name().to_str() == Some("Cargo.toml")
+                            && !e.path().to_str().unwrap_or("").contains("target")
+                    });
+                if has_cargo { Some(dir_str) } else { None }
             })
-            .collect::<Vec<_>>();
+            .collect();
+        let mut root_dirs = root_dirs;
+        root_dirs.sort();
 
-        // Program to audit selection
-        let prompt_text = "Select the program to audit";
-        let cargo_programs_paths = cargo_programs_files_info
-            .iter()
-            .map(|f| {
-                f.path()
-                    .to_str()
-                    .unwrap()
-                    .trim_end_matches("/Cargo.toml")
-                    .to_string()
-            })
-            .collect::<Vec<_>>();
+        if root_dirs.is_empty() {
+            return Err(Report::new(BatConfigError)
+                .attach_printable("No directories found in the current folder"));
+        }
+
+        let dir_defaults = vec![true; root_dirs.len()];
+        let dir_selections = bat_dialoguer::multiselect(
+            "Select the folders to scan for programs",
+            root_dirs.clone(),
+            Some(&dir_defaults),
+        )
+        .change_context(BatConfigError)?;
+
+        if dir_selections.is_empty() {
+            return Err(Report::new(BatConfigError)
+                .attach_printable("No folders selected"));
+        }
+
+        // Step 2: Find all Cargo.toml inside selected folders
+        let mut cargo_programs_paths: Vec<String> = vec![];
+        for &sel_idx in &dir_selections {
+            let dir_path = &root_dirs[sel_idx];
+            for entry in WalkDir::new(dir_path).into_iter().filter_map(|f| f.ok()) {
+                let entry_path = entry.path().to_str().unwrap_or("").to_string();
+                if entry.file_name().to_str() == Some("Cargo.toml")
+                    && !entry_path.contains("target")
+                    && entry_path != "./Cargo.toml"
+                {
+                    cargo_programs_paths.push(
+                        entry_path.trim_end_matches("/Cargo.toml").to_string(),
+                    );
+                }
+            }
+        }
 
         if cargo_programs_paths.is_empty() {
             return Err(Report::new(BatConfigError)
-                .attach_printable("No programs with Cargo.toml found in this repository"));
+                .attach_printable("No programs with Cargo.toml found in selected folders"));
         }
 
-        let selection = bat_dialoguer::select(prompt_text, cargo_programs_paths.clone(), None)
-            .change_context(BatConfigError)?;
-        let selected_program_path = &cargo_programs_paths[selection];
-        log::debug!("selected_program: {:#?}", selected_program_path);
+        // Step 3: Let the user select which programs to analyze
+        let prog_defaults = vec![true; cargo_programs_paths.len()];
+        let prog_selections = bat_dialoguer::multiselect(
+            "Select the programs to analyze",
+            cargo_programs_paths.clone(),
+            Some(&prog_defaults),
+        )
+        .change_context(BatConfigError)?;
+
+        if prog_selections.is_empty() {
+            return Err(Report::new(BatConfigError)
+                .attach_printable("No programs selected"));
+        }
+
+        // Step 4: Resolve lib.rs or main.rs for each selected program
+        let mut normalized_program_lib_paths: Vec<String> = vec![];
+        for &sel_idx in &prog_selections {
+            let program_path = &cargo_programs_paths[sel_idx];
+            let lib_path = format!("{}/src/lib.rs", program_path);
+            let main_path = format!("{}/src/main.rs", program_path);
+            let resolved = if Path::new(&lib_path).is_file() {
+                lib_path
+            } else if Path::new(&main_path).is_file() {
+                main_path
+            } else {
+                log::warn!("Neither lib.rs nor main.rs found in {}, skipping", program_path);
+                continue;
+            };
+            let normalized = format!("../{}", resolved.trim_start_matches("./"));
+            normalized_program_lib_paths.push(normalized);
+        }
+
+        if normalized_program_lib_paths.is_empty() {
+            return Err(Report::new(BatConfigError)
+                .attach_printable("No valid programs found (no lib.rs or main.rs)"));
+        }
+
+        // First selected program is the primary (used for Anchor entrypoint detection)
+        let normalized_program_lib_path = normalized_program_lib_paths[0].clone();
+        let selected_program_path = &cargo_programs_paths[prog_selections[0]];
         let program_name = selected_program_path
             .split('/')
             .last()
             .unwrap()
             .to_string()
             .replace('_', "-");
-        log::debug!("program_name: {:#?}", program_name);
-        let program_lib_path = format!("{}/src/lib.rs", selected_program_path);
-        log::debug!("program_lib_path: {:#?}", program_lib_path);
-
-        if !Path::new(&program_lib_path).is_file() {
-            return Err(Report::new(BatConfigError)
-                .attach_printable("lib.rs file not found in selected folder"));
-        }
-
-        // Normalize path relative to bat-audit/ folder
-        // From bat-audit/, we need ../programs/xxx/src/lib.rs
-        let normalized_program_lib_path = format!(
-            "../{}",
-            program_lib_path.trim_start_matches("./")
-        );
+        log::debug!("program_lib_paths: {:#?}", normalized_program_lib_paths);
 
         // Project name is always bat-audit
         let project_name = "bat-audit".to_string();
@@ -382,6 +474,8 @@ impl BatConfig {
             commit_hash_url,
             project_repository_url,
             program_lib_path: normalized_program_lib_path,
+            program_lib_paths: normalized_program_lib_paths,
+            project_type,
         };
         bat_config.save().change_context(BatConfigError)?;
         Ok(bat_config)
@@ -396,13 +490,12 @@ impl BatConfig {
         let remote_raw = String::from_utf8(remote_output.stdout).ok()?.trim().to_string();
 
         // Convert SSH URL to HTTPS if needed
+        // git@github.com:owner/repo.git -> https://github.com/owner/repo
         let remote_https = if remote_raw.starts_with("git@") {
-            // git@github.com:owner/repo.git -> https://github.com/owner/repo
-            remote_raw
-                .replace("git@", "https://")
-                .replace(":", "/")
-                .replace(".git", "")
-                .replacen("//", "//", 1)
+            let without_prefix = remote_raw.trim_start_matches("git@");
+            // Replace the first ":" (host:path separator) with "/"
+            let converted = without_prefix.replacen(":", "/", 1);
+            format!("https://{}", converted.trim_end_matches(".git"))
         } else {
             remote_raw.trim_end_matches(".git").to_string()
         };
