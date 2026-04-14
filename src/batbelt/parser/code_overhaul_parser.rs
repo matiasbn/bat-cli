@@ -18,6 +18,16 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{cmp, fs};
 
+/// Font size used for validations screenshots (tall due to one code block
+/// per dependency).
+pub const SMALL_SCREENSHOT_FONT_SIZE: usize = 12;
+
+/// Font size used for dependency function screenshots. Slightly larger
+/// than `SMALL_SCREENSHOT_FONT_SIZE` because dependency code needs to be
+/// readable when auditing, but still below the default 20 used by entry
+/// point / context accounts screenshots to keep them fitting in the frame.
+pub const DEPENDENCY_SCREENSHOT_FONT_SIZE: usize = 16;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeOverhaulSigner {
     pub name: String,
@@ -113,6 +123,9 @@ impl CodeOverhaulParser {
         let content = self.get_validations_image_content()?;
         let (validations_x_position, validations_y_position) =
             MiroCodeOverhaulConfig::Validations.get_positions();
+        // Validations screenshots tend to be tall (one code block per
+        // dependency), so we render them with a smaller font to keep the
+        // image inside the frame.
         let validations_image = self
             .deploy_image_and_update_position(
                 content,
@@ -120,6 +133,7 @@ impl CodeOverhaulParser {
                 miro_frame,
                 validations_x_position,
                 validations_y_position,
+                Some(SMALL_SCREENSHOT_FONT_SIZE),
             )
             .await?;
         Ok(validations_image)
@@ -139,6 +153,7 @@ impl CodeOverhaulParser {
                 miro_frame,
                 context_accounts_x_position,
                 context_accounts_y_position,
+                None,
             )
             .await?;
         Ok(validations_image)
@@ -151,10 +166,11 @@ impl CodeOverhaulParser {
         miro_frame: MiroFrame,
         x_position: i64,
         y_position: i64,
+        font_size: Option<usize>,
     ) -> ParserResult<MiroImage> {
         let file_name = miro_command_functions::parse_screenshot_name(title, &miro_frame.title);
 
-        let sc_path = self.create_screenshot_with_silicon(content.clone(), &file_name)?;
+        let sc_path = self.create_screenshot_with_silicon(content.clone(), &file_name, font_size)?;
 
         println!(
             "\nCreating {}{} in {} frame",
@@ -207,8 +223,11 @@ impl CodeOverhaulParser {
         let file_name =
             miro_command_functions::parse_screenshot_name("validations", &miro_frame.title);
 
-        let validations_path =
-            self.create_screenshot_with_silicon(validations_content, &file_name)?;
+        let validations_path = self.create_screenshot_with_silicon(
+            validations_content,
+            &file_name,
+            Some(SMALL_SCREENSHOT_FONT_SIZE),
+        )?;
         println!(
             "\nUpdating validations screenshot in {} frame",
             miro_frame.title.green()
@@ -244,7 +263,7 @@ impl CodeOverhaulParser {
         let file_name =
             miro_command_functions::parse_screenshot_name("context_accounts", &miro_frame.title);
 
-        let ca_path = self.create_screenshot_with_silicon(ca_content, &file_name)?;
+        let ca_path = self.create_screenshot_with_silicon(ca_content, &file_name, None)?;
         println!(
             "\nUpdating context accounts screenshot in {} frame",
             miro_frame.title.green()
@@ -265,13 +284,20 @@ impl CodeOverhaulParser {
         &self,
         content: String,
         file_name: &str,
+        font_size: Option<usize>,
     ) -> ParserResult<String> {
         let auditor_figures_path = BatFolder::AuditorFigures
             .get_path(false)
             .change_context(ParserError)?;
 
-        let sc_path =
-            silicon::create_figure(&content, &auditor_figures_path, file_name, 0, None, false);
+        let sc_path = silicon::create_figure(
+            &content,
+            &auditor_figures_path,
+            file_name,
+            0,
+            font_size,
+            false,
+        );
         Ok(sc_path)
     }
 

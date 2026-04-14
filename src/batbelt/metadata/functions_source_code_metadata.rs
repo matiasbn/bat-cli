@@ -106,6 +106,34 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
 }
 
 impl FunctionSourceCodeMetadata {
+    pub fn create_metadata_from_content(
+        entry_path: &str,
+        file_content: &str,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
+        let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Function);
+        for result in bat_sonar.results {
+            let function_type = if Self::assert_function_is_entrypoint(entry_path, result.clone())?
+            {
+                FunctionMetadataType::EntryPoint
+            } else if Self::assert_function_is_handler(entry_path.to_string(), result.clone())? {
+                FunctionMetadataType::Handler
+            } else {
+                FunctionMetadataType::Other
+            };
+            let function_metadata = FunctionSourceCodeMetadata::new(
+                entry_path.to_string(),
+                result.name.to_string(),
+                function_type,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+                Self::create_metadata_id(),
+            );
+            metadata_result.push(function_metadata);
+        }
+        Ok(metadata_result)
+    }
+
     pub fn to_function_parser(&self) -> Result<FunctionParser, MetadataError> {
         FunctionParser::new_from_metadata(self.clone()).change_context(MetadataError)
     }
@@ -114,7 +142,7 @@ impl FunctionSourceCodeMetadata {
         entry_path: &str,
         sonar_result: SonarResult,
     ) -> MetadataResult<bool> {
-        let entrypoints_names = EntrypointParser::get_entrypoint_names(false).unwrap();
+        let entrypoints_names = EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
         if entry_path == BatConfig::get_config().unwrap().program_lib_path {
             if entrypoints_names
                 .into_iter()
@@ -249,11 +277,36 @@ pub enum FunctionMetadataType {
 impl BatEnumerator for FunctionMetadataType {}
 
 pub fn get_function_parameters(function_content: String) -> Vec<String> {
+    use quote::ToTokens;
+
+    let item_fn = syn::parse_str::<syn::ItemFn>(&function_content).or_else(|_| {
+        let wrapped = format!("fn __wrapper() {{ {} }}", function_content);
+        syn::parse_str::<syn::ItemFn>(&wrapped)
+    });
+
+    let Ok(item_fn) = item_fn else {
+        // Fallback to legacy string parsing if syn fails
+        return get_function_parameters_legacy(function_content);
+    };
+
+    item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Receiver(_) => None,
+            syn::FnArg::Typed(pat_type) => {
+                let name = pat_type.pat.to_token_stream().to_string();
+                let ty = pat_type.ty.to_token_stream().to_string();
+                Some(format!("{}: {}", name, ty))
+            }
+        })
+        .collect()
+}
+
+fn get_function_parameters_legacy(function_content: String) -> Vec<String> {
     let content_lines = function_content.lines();
     let function_signature = get_function_signature(&function_content);
-    //Function parameters
-    // single line function
-    // info!("function content: \n {}", function_content);
     if content_lines.clone().next().unwrap().contains('{') {
         let function_signature_tokenized = function_signature
             .trim_start_matches("pub (crate) fn ")
@@ -286,8 +339,6 @@ pub fn get_function_parameters(function_content: String) -> Vec<String> {
             });
         parameters
     } else {
-        //multiline
-        // parameters contains :
         let filtered: Vec<String> = function_signature
             .lines()
             .filter(|line| line.contains(':'))

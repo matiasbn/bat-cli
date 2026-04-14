@@ -1,14 +1,14 @@
-use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit};
+use crate::batbelt::sonar::SonarResultType;
 
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::path::BatFile;
 use error_stack::{Result, ResultExt};
 
 use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
-use crate::batbelt::sonar::SonarResultType;
 use crate::batbelt::templates::TemplateGenerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 
@@ -122,30 +122,9 @@ impl SonarCommand {
             }
             .print_interactive()
             .change_context(CommandError)?;
-
-            BatSonarInteractive::SonarStart {
-                sonar_result_type: SonarResultType::Function,
-            }
-            .print_interactive()
-            .change_context(CommandError)?;
-
-            BatSonarInteractive::SonarStart {
-                sonar_result_type: SonarResultType::Trait,
-            }
-            .print_interactive()
-            .change_context(CommandError)?;
-
-            BatSonarInteractive::SonarStart {
-                sonar_result_type: SonarResultType::Enum,
-            }
-            .print_interactive()
-            .change_context(CommandError)?;
-
             self.execute_source_code()?;
-            self.execute_context_accounts()?;
-            self.execute_entry_points()?;
-            self.execute_traits()?;
-            self.execute_function_dependencies()?;
+            BatSonarInteractive::run_post_scan_parallel()
+                .change_context(CommandError)?;
         } else if only_context_accounts {
             bat_metadata.context_accounts = vec![];
             self.execute_context_accounts()?;
@@ -163,10 +142,8 @@ impl SonarCommand {
             bat_metadata.entry_points = vec![];
             bat_metadata.traits = vec![];
             bat_metadata.function_dependencies = vec![];
-            self.execute_context_accounts()?;
-            self.execute_entry_points()?;
-            self.execute_traits()?;
-            self.execute_function_dependencies()?;
+            BatSonarInteractive::run_post_scan_parallel()
+                .change_context(CommandError)?;
         }
 
         let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
@@ -181,7 +158,7 @@ impl SonarCommand {
         GitCommit::UpdateMetadataJson {
             bat_metadata_commit: BatMetadataCommit::RunSonarMetadataCommit,
         }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
 
         Ok(())

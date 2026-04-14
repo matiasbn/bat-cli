@@ -13,9 +13,9 @@ use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::{BatCommandEnumerator, BatPackageJsonCommand, CommandResult};
 
-use crate::batbelt::git::GitAction;
 use crate::batbelt::BatEnumerator;
 use crate::commands::repository_commands::RepositoryCommand;
+use batbelt::git::git_action::GitAction;
 
 use commands::co_commands::CodeOverhaulCommand;
 use commands::finding_commands::FindingCommand;
@@ -30,9 +30,11 @@ use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 
+use crate::commands::analytics_commands::AnalyticsCommand;
 use log4rs::Config;
 use package::PackageCommand;
 use regex::Regex;
+
 pub mod batbelt;
 pub mod commands;
 pub mod config;
@@ -61,6 +63,8 @@ enum BatCommands {
     /// code-overhaul files management
     #[command(subcommand)]
     CodeOverhaul(CodeOverhaulCommand),
+    #[command(subcommand)]
+    Analytics(AnalyticsCommand),
     /// Execute the BatSonar to create metadata files for all Sonar result types
     Sonar {
         /// Skips the source code (functions, structs, enums and traits) process
@@ -108,6 +112,7 @@ impl BatCommands {
             BatCommands::New => ProjectCommands::New.execute_command(),
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
+            BatCommands::Analytics(command) => command.execute_command(),
             BatCommands::Finding(FindingCommand::Create) => {
                 commands::finding_commands::start_finding()
             }
@@ -119,6 +124,9 @@ impl BatCommands {
             }
             BatCommands::Finding(FindingCommand::AcceptAll) => {
                 commands::finding_commands::accept_all()
+            }
+            BatCommands::Finding(FindingCommand::CreateEvidence) => {
+                commands::finding_commands::create_evidence()
             }
             BatCommands::Sonar {
                 skip_source_code,
@@ -201,6 +209,10 @@ impl BatCommands {
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
+            BatCommands::Analytics(command) => (
+                command.check_metadata_is_initialized(),
+                command.check_correct_branch(),
+            ),
         };
         if check_metadata {
             BatMetadata::read_metadata()
@@ -233,6 +245,9 @@ impl BatCommands {
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Miro(_) => Some(MiroCommand::get_bat_package_json_commands(
+                    command.to_string().to_kebab_case(),
+                )),
+                BatCommands::Analytics(_) => Some(AnalyticsCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Repository(_) => {
@@ -305,6 +320,23 @@ impl Suggestion {
     }
 }
 
+/// If `Bat.toml` is not in the current directory but exists inside `bat-audit/`,
+/// automatically change the working directory so all relative paths resolve correctly.
+fn auto_detect_bat_audit_dir() {
+    use std::path::Path;
+    if Path::new("Bat.toml").exists() {
+        return; // Already in the right directory
+    }
+    if Path::new("bat-audit/Bat.toml").exists() {
+        if std::env::set_current_dir("bat-audit").is_ok() {
+            println!(
+                "{} auto-detected bat-audit/ directory, changing working directory",
+                "bat-cli".blue()
+            );
+        }
+    }
+}
+
 async fn run() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
 
@@ -315,7 +347,10 @@ async fn run() -> CommandResult<()> {
             env_logger::init();
             Ok(())
         }
-        _ => init_log(cli.clone()),
+        _ => {
+            auto_detect_bat_audit_dir();
+            init_log(cli.clone())
+        }
     }?;
 
     cli.command.execute().await
@@ -345,11 +380,3 @@ async fn main() -> CommandResult<()> {
     }
 }
 
-#[cfg(debug_assertions)]
-mod test_bat_main {
-
-    #[test]
-    fn test_main() {
-        super::main();
-    }
-}

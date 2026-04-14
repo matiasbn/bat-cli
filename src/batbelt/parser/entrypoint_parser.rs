@@ -1,5 +1,5 @@
 use crate::batbelt::metadata::functions_source_code_metadata::{
-    get_function_body, get_function_parameters, FunctionMetadataType, FunctionSourceCodeMetadata,
+    FunctionMetadataType, FunctionSourceCodeMetadata,
 };
 
 use crate::batbelt::metadata::structs_source_code_metadata::{
@@ -10,17 +10,19 @@ use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::config::BatConfig;
 
 use error_stack::{IntoReport, Report, Result, ResultExt};
+use std::collections::HashSet;
 use std::fs;
 
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
+use crate::batbelt::parser::function_parser::FunctionParser;
 
 use crate::batbelt::parser::ParserError;
 
 #[derive(Clone, Debug)]
 pub struct EntrypointParser {
     pub name: String,
-    pub handler: Option<FunctionSourceCodeMetadata>,
+    pub dependencies: Vec<FunctionSourceCodeMetadata>,
     pub context_accounts: StructSourceCodeMetadata,
     pub entry_point_function: FunctionSourceCodeMetadata,
 }
@@ -28,13 +30,13 @@ pub struct EntrypointParser {
 impl EntrypointParser {
     pub fn new(
         name: String,
-        handler: Option<FunctionSourceCodeMetadata>,
+        dependencies: Vec<FunctionSourceCodeMetadata>,
         context_accounts: StructSourceCodeMetadata,
         entry_point_function: FunctionSourceCodeMetadata,
     ) -> Self {
         Self {
             name,
-            handler,
+            dependencies,
             context_accounts,
             entry_point_function,
         }
@@ -49,22 +51,23 @@ impl EntrypointParser {
                 .source_code
                 .get_function_by_id(ep_metadata.entrypoint_function_id.clone())
                 .change_context(ParserError)?;
-            let handler = match ep_metadata.handler_id {
-                None => None,
-                Some(h_id) => Some(
-                    bat_metadata
-                        .source_code
-                        .get_function_by_id(h_id)
-                        .change_context(ParserError)?,
-                ),
-            };
             let context_accounts = bat_metadata
                 .source_code
                 .get_struct_by_id(ep_metadata.context_accounts_id.clone())
                 .change_context(ParserError)?;
+
+            // Resolve dependencies recursively from the entrypoint function
+            // First ensure the entrypoint function's dependencies are computed
+            let _ = FunctionParser::new_from_metadata(entry_point_function.clone());
+            let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+            let dependencies = Self::resolve_all_dependencies(
+                &entry_point_function.metadata_id,
+                &bat_metadata,
+            );
+
             return Ok(Self {
                 name: ep_metadata.name,
-                handler,
+                dependencies,
                 context_accounts,
                 entry_point_function,
             });
@@ -93,25 +96,8 @@ impl EntrypointParser {
 
         let entrypoint_function = entrypoint_section.first().unwrap().clone();
 
-        let entrypoint_content = entrypoint_function
-            .to_source_code_parser(None)
-            .get_source_code_content();
-        let entrypoint_function_body = get_function_body(&entrypoint_content);
-
-        let handlers =
-            SourceCodeMetadata::get_filtered_functions(None, Some(FunctionMetadataType::Handler))
-                .change_context(ParserError)?;
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
 
-        let handler = handlers.into_iter().find(|function_metadata| {
-            let function_source_code = function_metadata.to_source_code_parser(None);
-            let function_content = function_source_code.get_source_code_content();
-            let function_parameters = get_function_parameters(function_content);
-            !function_parameters.is_empty()
-                && function_parameters[0].contains("Context<")
-                && function_parameters[0].contains(&context_name)
-                && (entrypoint_function_body.contains(&function_metadata.name))
-        });
         let structs_metadata = SourceCodeMetadata::get_filtered_structs(
             Some(context_name.clone()),
             Some(StructMetadataType::ContextAccounts),
@@ -126,13 +112,11 @@ impl EntrypointParser {
                 "Error context_accounts struct by name {} for entrypoint_name: {}",
                 context_name, entrypoint_name
             ))?;
+
         let ep_metadata = EntrypointMetadata {
             name: entrypoint_name.to_string(),
             metadata_id: BatMetadata::create_metadata_id(),
-            handler_id: match handler.clone() {
-                None => None,
-                Some(handler_function) => Some(handler_function.metadata_id),
-            },
+            handler_id: None,
             context_accounts_id: context_accounts.metadata_id.clone(),
             entrypoint_function_id: entrypoint_function.metadata_id.clone(),
         };
@@ -141,15 +125,57 @@ impl EntrypointParser {
             .update_metadata_file()
             .change_context(ParserError)?;
 
+        // Compute dependencies for the entrypoint function
+        let _ = FunctionParser::new_from_metadata(entrypoint_function.clone());
+        let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+        let dependencies = Self::resolve_all_dependencies(
+            &entrypoint_function.metadata_id,
+            &bat_metadata,
+        );
+
         Ok(Self {
             name: entrypoint_name.to_string(),
-            handler,
+            dependencies,
             context_accounts: context_accounts.clone(),
             entry_point_function: entrypoint_function,
         })
     }
 
-    pub fn get_entrypoint_names(sorted: bool) -> Result<Vec<String>, ParserError> {
+    fn resolve_all_dependencies(
+        entrypoint_function_id: &str,
+        bat_metadata: &BatMetadata,
+    ) -> Vec<FunctionSourceCodeMetadata> {
+        let mut visited = HashSet::new();
+        let mut result = vec![];
+        Self::collect_deps(entrypoint_function_id, bat_metadata, &mut visited, &mut result);
+        result
+    }
+
+    fn collect_deps(
+        function_id: &str,
+        bat_metadata: &BatMetadata,
+        visited: &mut HashSet<String>,
+        result: &mut Vec<FunctionSourceCodeMetadata>,
+    ) {
+        if !visited.insert(function_id.to_string()) {
+            return;
+        }
+        if let Ok(dep_meta) = bat_metadata
+            .get_functions_dependencies_metadata_by_function_metadata_id(function_id.to_string())
+        {
+            for dep in &dep_meta.dependencies {
+                if let Ok(func) = bat_metadata
+                    .source_code
+                    .get_function_by_id(dep.function_metadata_id.clone())
+                {
+                    result.push(func);
+                    Self::collect_deps(&dep.function_metadata_id, bat_metadata, visited, result);
+                }
+            }
+        }
+    }
+
+    pub fn get_entrypoint_names_from_program_lib(sorted: bool) -> Result<Vec<String>, ParserError> {
         let BatConfig {
             program_lib_path, ..
         } = BatConfig::get_config().change_context(ParserError)?;
@@ -171,7 +197,7 @@ impl EntrypointParser {
     }
 
     pub fn get_all_contexts_names() -> Vec<String> {
-        let entrypoints_names = Self::get_entrypoint_names(false).unwrap();
+        let entrypoints_names = Self::get_entrypoint_names_from_program_lib(false).unwrap();
 
         entrypoints_names
             .into_iter()

@@ -18,7 +18,7 @@ pub enum MiroCodeOverhaulConfig {
     EntryPoint,
     ContextAccount,
     Validations,
-    Handler,
+    Dependencies,
 }
 
 impl MiroCodeOverhaulConfig {
@@ -36,7 +36,7 @@ impl MiroCodeOverhaulConfig {
                 MIRO_FRAME_WIDTH as i64 * 10 / 12,
                 (MIRO_FRAME_HEIGHT as i64) / 4,
             ),
-            MiroCodeOverhaulConfig::Handler => (
+            MiroCodeOverhaulConfig::Dependencies => (
                 MIRO_FRAME_WIDTH as i64 * 10 / 12,
                 (MIRO_FRAME_HEIGHT as i64) * 3 / 4,
             ),

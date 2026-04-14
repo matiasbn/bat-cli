@@ -109,6 +109,34 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
 }
 
 impl StructSourceCodeMetadata {
+    pub fn create_metadata_from_content(
+        entry_path: &str,
+        file_content: &str,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Struct);
+        let mut metadata_result = vec![];
+        for result in bat_sonar.results {
+            let struct_type =
+                if Self::assert_struct_is_solana_account(file_content, result.clone()) {
+                    StructMetadataType::SolanaAccount
+                } else if Self::assert_struct_is_context_accounts(file_content, result.clone())? {
+                    StructMetadataType::ContextAccounts
+                } else {
+                    StructMetadataType::Other
+                };
+            let struct_metadata = StructSourceCodeMetadata::new(
+                entry_path.to_string(),
+                result.name.to_string(),
+                struct_type,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+                Self::create_metadata_id(),
+            );
+            metadata_result.push(struct_metadata);
+        }
+        Ok(metadata_result)
+    }
+
     fn assert_struct_is_context_accounts(
         file_info_content: &str,
         sonar_result: SonarResult,
@@ -137,7 +165,8 @@ impl StructSourceCodeMetadata {
         {
             return Ok(true);
         }
-        let lib_file_path = batbelt::path::get_file_path(BatFile::ProgramLib, false)
+        let lib_file_path = BatFile::ProgramLib
+            .get_path(false)
             .change_context(MetadataError)?;
         let entrypoints = BatSonar::new_from_path(
             &lib_file_path,

@@ -53,19 +53,21 @@ impl TraitMetadata {
     }
 
     pub fn update_metadata_file(&self) -> MetadataResult<()> {
-        let mut bat_metadata = BatMetadata::read_metadata()?;
-        let position =
-            bat_metadata.clone().traits.into_iter().position(|ep| {
-                ep.trait_source_code_metadata_id == self.trait_source_code_metadata_id
-            });
-        match position {
-            None => bat_metadata.traits.push(self.clone()),
-            Some(pos) => bat_metadata.traits[pos] = self.clone(),
-        };
-        bat_metadata
-            .traits
-            .sort_by_key(|trait_meta| trait_meta.name.clone());
-        bat_metadata.save_metadata()?;
-        Ok(())
+        let self_clone = self.clone();
+        BatMetadata::update_metadata(|bat_metadata| {
+            let position = bat_metadata
+                .traits
+                .iter()
+                .position(|ep| {
+                    ep.trait_source_code_metadata_id == self_clone.trait_source_code_metadata_id
+                });
+            match position {
+                None => bat_metadata.traits.push(self_clone.clone()),
+                Some(pos) => bat_metadata.traits[pos] = self_clone.clone(),
+            };
+            bat_metadata
+                .traits
+                .sort_by_key(|trait_meta| trait_meta.name.clone());
+        })
     }
 }

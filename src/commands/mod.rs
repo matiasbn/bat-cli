@@ -1,3 +1,4 @@
+pub mod analytics_commands;
 pub mod co_commands;
 pub mod finding_commands;
 pub mod miro_commands;

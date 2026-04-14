@@ -8,7 +8,7 @@ use regex::Regex;
 use strum::IntoEnumIterator;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::git::GitCommit;
+use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::EnumMetadataType;
 use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
@@ -33,7 +33,8 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::solana_account_parser::SolanaAccountType;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
-use crate::batbelt::path::BatFolder;
+use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use crate::{batbelt, Suggestion};
@@ -79,6 +80,12 @@ pub enum MiroCommand {
         /// use external BetMetadata.json files
         #[arg(long)]
         use_external: bool,
+    },
+    /// Creates sticky notes sequentially, that can be connected
+    StickyNotes {
+        /// connect the sticky notes
+        #[arg(long)]
+        connected: bool,
     },
 }
 
@@ -135,7 +142,22 @@ impl MiroCommand {
 
                 self.function_dependencies(*select_all).await
             }
+            MiroCommand::StickyNotes { connected } => self.sticky_notes(*connected).await,
         }
+    }
+
+    async fn sticky_notes(&self, connected: bool) -> CommandResult<()> {
+        let selected_miro_frame = MiroFrame::prompt_select_frame(None)
+            .await
+            .change_context(CommandError)?;
+        miro_command_functions::prompt_deploy_source_code(
+            selected_miro_frame,
+            false,
+            true,
+            connected,
+        )
+        .await?;
+        Ok(())
     }
 
     async fn entrypoint_screenshots(
@@ -151,8 +173,8 @@ impl MiroCommand {
                 .await
                 .change_context(CommandError)?;
         // get entrypoints name
-        let entrypoints_names =
-            EntrypointParser::get_entrypoint_names(sorted).change_context(CommandError)?;
+        let entrypoints_names = EntrypointParser::get_entrypoint_names_from_program_lib(sorted)
+            .change_context(CommandError)?;
 
         // prompt the user to select an entrypoint
         let prompt_text = "Select the entry points to deploy";
@@ -180,7 +202,7 @@ impl MiroCommand {
             show_line_number: false,
         };
 
-        let handler_sc_options = SourceCodeScreenshotOptions {
+        let dependency_sc_options = SourceCodeScreenshotOptions {
             include_path: true,
             offset_to_start_line: true,
             filter_comments: true,
@@ -196,10 +218,10 @@ impl MiroCommand {
         let grid_amount = 24;
         let height_grid = selected_miro_frame.height as i64 / grid_amount;
         // this number indicates the distance between screenshot relate to the grid amount
-        let (ep_multiplier, ca_multiplier, handler_multiplier) = (1, 2, 4);
+        let (ep_multiplier, ca_multiplier, dep_multiplier) = (1, 2, 4);
         for (index, selected_ep_index) in selected_entrypoints_index.iter().enumerate() {
             // this number indicates the distance between screenshot relate to the grid amount
-            let (x_position, ep_y_position, ca_y_position, handler_y_position) =
+            let (x_position, ep_y_position, ca_y_position, dep_y_position) =
                 if index < selected_entrypoints_amount / 2 {
                     let x_position = (selected_miro_frame.width as i64
                         / selected_entrypoints_amount as i64)
@@ -208,7 +230,7 @@ impl MiroCommand {
                         x_position,
                         ep_multiplier * height_grid,
                         ca_multiplier * height_grid,
-                        handler_multiplier * height_grid,
+                        dep_multiplier * height_grid,
                     )
                 } else {
                     let x_position = (selected_miro_frame.width as i64
@@ -218,7 +240,7 @@ impl MiroCommand {
                         x_position,
                         (grid_amount - ep_multiplier) * height_grid,
                         (grid_amount - ca_multiplier) * height_grid,
-                        (grid_amount - handler_multiplier) * height_grid,
+                        (grid_amount - dep_multiplier) * height_grid,
                     )
                 };
             let selected_entrypoint = &entrypoints_names[*selected_ep_index];
@@ -258,25 +280,28 @@ impl MiroCommand {
             create_connector(&ep_image.item_id, &ca_image.item_id, None)
                 .await
                 .change_context(CommandError)?;
-            if let Some(entrypoint_handler) = entrypoint.handler {
-                let handler_source_code = entrypoint_handler.to_source_code_parser(Some(
+            let mut prev_image_id = ca_image.item_id.clone();
+            for (dep_idx, dep_function) in entrypoint.dependencies.iter().enumerate() {
+                let dep_source_code = dep_function.to_source_code_parser(Some(
                     miro_command_functions::parse_screenshot_name(
-                        &entrypoint_handler.name,
+                        &dep_function.name,
                         &selected_miro_frame.title,
                     ),
                 ));
-                let handler_image = handler_source_code
+                let y_offset = dep_y_position + (dep_idx as i64 * 400);
+                let dep_image = dep_source_code
                     .deploy_screenshot_to_miro_frame(
                         selected_miro_frame.clone(),
                         x_position,
-                        handler_y_position,
-                        handler_sc_options.clone(),
+                        y_offset,
+                        dependency_sc_options.clone(),
                     )
                     .await
                     .change_context(CommandError)?;
-                create_connector(&ca_image.item_id, &handler_image.item_id, None)
+                create_connector(&prev_image_id, &dep_image.item_id, None)
                     .await
                     .change_context(CommandError)?;
+                prev_image_id = dep_image.item_id;
             }
         }
         Ok(())
@@ -286,321 +311,13 @@ impl MiroCommand {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
-        let mut continue_selection = true;
-        let metadata_types_vec = BatMetadataType::get_type_vec();
-        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
-        while continue_selection {
-            // Choose metadata section selection
-            let prompt_text = format!("Please enter the {}", "metadata type".green());
-            let selection = batbelt::bat_dialoguer::select(
-                &prompt_text,
-                metadata_types_colorized_vec.clone(),
-                None,
-            )
-            .unwrap();
-            let metadata_type_selected = &metadata_types_vec[selection];
-            let (sourcecode_metadata_vec, screenshot_options): (
-                Vec<SourceCodeParser>,
-                SourceCodeScreenshotOptions,
-            ) = match metadata_type_selected {
-                BatMetadataType::Struct => {
-                    // Choose metadata subsection selection
-                    let prompt_text =
-                        format!("Please enter the {}", "struct type to deploy".green());
-                    let struct_types_colorized = StructMetadataType::get_colorized_type_vec(true);
-                    let selection = batbelt::bat_dialoguer::select(
-                        &prompt_text,
-                        struct_types_colorized.clone(),
-                        None,
-                    )
-                    .unwrap();
-                    let selected_struct_type = StructMetadataType::get_type_vec()[selection];
-                    let struct_metadata_vec =
-                        SourceCodeMetadata::get_filtered_structs(None, Some(selected_struct_type))
-                            .change_context(CommandError)?;
-                    let struct_metadata_names = struct_metadata_vec
-                        .iter()
-                        .map(|struct_metadata| {
-                            miro_command_functions::get_formatted_path(
-                                struct_metadata.name.clone(),
-                                struct_metadata.path.clone(),
-                                struct_metadata.start_line_index,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let prompt_text = format!("Please enter the {}", "struct to deploy".green());
-                    let selections = BatDialoguer::multiselect(
-                        prompt_text,
-                        struct_metadata_names.clone(),
-                        Some(&vec![select_all; struct_metadata_names.len()]),
-                        true,
-                    )
-                    .unwrap();
-                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Struct,
-                    );
-
-                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
-                        "Do you want to {}\n{:#?}",
-                        "use the default screenshot config?".yellow(),
-                        default_config
-                    ))
-                    .unwrap();
-
-                    let screenshot_options = if use_default {
-                        default_config
-                    } else {
-                        SourceCodeParser::prompt_screenshot_options()
-                    };
-                    let sc_vec = struct_metadata_vec
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(sc_index, sc_metadata)| {
-                            if selections.iter().any(|selection| &sc_index == selection) {
-                                Some(sc_metadata.to_source_code_parser(Some(
-                                    miro_command_functions::parse_screenshot_name(
-                                        &sc_metadata.name,
-                                        &selected_miro_frame.title,
-                                    ),
-                                )))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (sc_vec, screenshot_options)
-                }
-                BatMetadataType::Function => {
-                    // Choose metadata subsection selection
-                    let prompt_text =
-                        format!("Please enter the {}", "function type to deploy".green());
-                    let function_types_colorized =
-                        FunctionMetadataType::get_colorized_type_vec(true);
-                    let selection = batbelt::bat_dialoguer::select(
-                        &prompt_text,
-                        function_types_colorized.clone(),
-                        None,
-                    )
-                    .unwrap();
-                    let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
-                    let function_metadata_vec = SourceCodeMetadata::get_filtered_functions(
-                        None,
-                        Some(selected_function_type),
-                    )
-                    .change_context(CommandError)?;
-                    let function_metadata_names = function_metadata_vec
-                        .iter()
-                        .map(|function_metadata| {
-                            miro_command_functions::get_formatted_path(
-                                function_metadata.name.clone(),
-                                function_metadata.path.clone(),
-                                function_metadata.start_line_index,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let prompt_text = format!("Please enter the {}", "function to deploy".green());
-                    let selections = BatDialoguer::multiselect(
-                        prompt_text,
-                        function_metadata_names.clone(),
-                        Some(&vec![select_all; function_metadata_names.len()]),
-                        true,
-                    )
-                    .unwrap();
-
-                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Function,
-                    );
-
-                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
-                        "Do you want to {}\n{:#?}",
-                        "use the default screenshot config?".yellow(),
-                        default_config
-                    ))
-                    .unwrap();
-
-                    let screenshot_options = if use_default {
-                        default_config
-                    } else {
-                        SourceCodeParser::prompt_screenshot_options()
-                    };
-
-                    let sc_vec = function_metadata_vec
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(sc_index, sc_metadata)| {
-                            if selections.iter().any(|selection| &sc_index == selection) {
-                                Some(sc_metadata.to_source_code_parser(Some(
-                                    miro_command_functions::parse_screenshot_name(
-                                        &sc_metadata.name,
-                                        &selected_miro_frame.title,
-                                    ),
-                                )))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (sc_vec, screenshot_options)
-                }
-
-                BatMetadataType::Trait => {
-                    // Choose metadata subsection selection
-                    let prompt_text =
-                        format!("Please enter the {}", "trait type to deploy".green());
-                    let trait_types_colorized = TraitMetadataType::get_colorized_type_vec(true);
-                    let selection = batbelt::bat_dialoguer::select(
-                        &prompt_text,
-                        trait_types_colorized.clone(),
-                        None,
-                    )
-                    .unwrap();
-                    let selected_trait_type = TraitMetadataType::get_type_vec()[selection];
-                    let trait_metadata_vec =
-                        SourceCodeMetadata::get_filtered_traits(None, Some(selected_trait_type))
-                            .change_context(CommandError)?;
-                    let trait_metadata_names = trait_metadata_vec
-                        .iter()
-                        .map(|trait_metadata| {
-                            miro_command_functions::get_formatted_path(
-                                trait_metadata.name.clone(),
-                                trait_metadata.path.clone(),
-                                trait_metadata.start_line_index,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let prompt_text = format!("Please enter the {}", "trait to deploy".green());
-                    let selections = BatDialoguer::multiselect(
-                        prompt_text,
-                        trait_metadata_names.clone(),
-                        Some(&vec![select_all; trait_metadata_names.len()]),
-                        true,
-                    )
-                    .unwrap();
-
-                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Function,
-                    );
-
-                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
-                        "Do you want to {}\n{:#?}",
-                        "use the default screenshot config?".yellow(),
-                        default_config
-                    ))
-                    .unwrap();
-
-                    let screenshot_options = if use_default {
-                        default_config
-                    } else {
-                        SourceCodeParser::prompt_screenshot_options()
-                    };
-
-                    let sc_vec = trait_metadata_vec
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(sc_index, sc_metadata)| {
-                            if selections.iter().any(|selection| &sc_index == selection) {
-                                Some(sc_metadata.to_source_code_parser(Some(
-                                    miro_command_functions::parse_screenshot_name(
-                                        &sc_metadata.name,
-                                        &selected_miro_frame.title,
-                                    ),
-                                )))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (sc_vec, screenshot_options)
-                }
-                BatMetadataType::Enum => {
-                    // Choose metadata subsection selection
-                    let prompt_text = format!("Please enter the {}", "enum type to deploy".green());
-                    let enum_types_colorized = EnumMetadataType::get_colorized_type_vec(true);
-                    let selection = batbelt::bat_dialoguer::select(
-                        &prompt_text,
-                        enum_types_colorized.clone(),
-                        None,
-                    )
-                    .unwrap();
-                    let selected_enum_type = EnumMetadataType::get_type_vec()[selection];
-                    let enum_metadata_vec =
-                        SourceCodeMetadata::get_filtered_enums(None, Some(selected_enum_type))
-                            .change_context(CommandError)?;
-                    let enum_metadata_names = enum_metadata_vec
-                        .iter()
-                        .map(|enum_metadata| {
-                            miro_command_functions::get_formatted_path(
-                                enum_metadata.name.clone(),
-                                enum_metadata.path.clone(),
-                                enum_metadata.start_line_index,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let prompt_text = format!("Please enter the {}", "enum to deploy".green());
-                    let selections = BatDialoguer::multiselect(
-                        prompt_text,
-                        enum_metadata_names.clone(),
-                        Some(&vec![select_all; enum_metadata_names.len()]),
-                        true,
-                    )
-                    .unwrap();
-
-                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
-                        BatMetadataType::Function,
-                    );
-
-                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
-                        "Do you want to {}\n{:#?}",
-                        "use the default screenshot config?".yellow(),
-                        default_config
-                    ))
-                    .unwrap();
-
-                    let screenshot_options = if use_default {
-                        default_config
-                    } else {
-                        SourceCodeParser::prompt_screenshot_options()
-                    };
-
-                    let sc_vec = enum_metadata_vec
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(sc_index, sc_metadata)| {
-                            if selections.iter().any(|selection| &sc_index == selection) {
-                                Some(sc_metadata.to_source_code_parser(Some(
-                                    miro_command_functions::parse_screenshot_name(
-                                        &sc_metadata.name,
-                                        &selected_miro_frame.title,
-                                    ),
-                                )))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (sc_vec, screenshot_options)
-                }
-            };
-            // promp if continue
-            for sc_metadata in sourcecode_metadata_vec {
-                sc_metadata
-                    .deploy_screenshot_to_miro_frame(
-                        selected_miro_frame.clone(),
-                        0,
-                        selected_miro_frame.height as i64,
-                        screenshot_options.clone(),
-                    )
-                    .await
-                    .change_context(CommandError)?;
-            }
-            let prompt_text = format!(
-                "Do you want to {} in the {} frame?",
-                "continue creating screenshots".yellow(),
-                selected_miro_frame.title.yellow()
-            );
-            continue_selection = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
-            BatMetadataEnvVariables::BatMetadataFileSelected.clean_value();
-        }
+        miro_command_functions::prompt_deploy_source_code(
+            selected_miro_frame,
+            select_all,
+            false,
+            false,
+        )
+        .await?;
         Ok(())
     }
 
@@ -635,8 +352,12 @@ impl MiroCommand {
 
             pending_to_check.push(selected_function_metadata.clone());
 
+            let mut processed_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
             while !pending_to_check.is_empty() {
                 let parent_function = pending_to_check.pop().unwrap();
+                if !processed_ids.insert(parent_function.metadata_id.clone()) {
+                    continue;
+                }
                 let miro_image = deployed_dependencies.clone().into_iter().find_map(|image| {
                     if image.1 == parent_function {
                         Some(image.0)
@@ -668,8 +389,8 @@ impl MiroCommand {
     async fn deploy_co_frames(&self) -> Result<(), CommandError> {
         println!("Deploying code-overhaul frames to the Miro board");
 
-        let entry_point_names =
-            EntrypointParser::get_entrypoint_names(false).change_context(CommandError)?;
+        let entry_point_names = EntrypointParser::get_entrypoint_names_from_program_lib(false)
+            .change_context(CommandError)?;
 
         for (entrypoint_index, entrypoint_name) in entry_point_names.iter().enumerate() {
             match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())
@@ -710,6 +431,7 @@ impl MiroCommand {
                                 context_accounts_image_id: "".to_string(),
                                 validations_image_id: "".to_string(),
                                 handler_image_id: "".to_string(),
+                                dependency_image_ids: vec![],
                                 signers: vec![],
                             };
                             new_co_metadata
@@ -728,6 +450,7 @@ impl MiroCommand {
                         context_accounts_image_id: "".to_string(),
                         validations_image_id: "".to_string(),
                         handler_image_id: "".to_string(),
+                        dependency_image_ids: vec![],
                         signers: vec![],
                     };
 
@@ -747,7 +470,7 @@ impl MiroCommand {
         GitCommit::UpdateMetadataJson {
             bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
         }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
         Ok(())
     }
@@ -843,12 +566,32 @@ impl MiroCommand {
                 }
             };
 
-        if co_miro_frame.frame_url.is_some() {
+        if let Some(ref frame_url) = co_miro_frame.frame_url {
             println!(
                 "Miro frame url for {}: {}",
                 miro_co_metadata.entry_point_name.clone().green(),
-                co_miro_frame.clone().frame_url.unwrap().green()
+                frame_url.green()
             );
+            // Update the code-overhaul file with the Miro frame URL
+            let miro_placeholder =
+                CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder();
+            let co_file_name = format!("{}.md", entrypoint_name);
+            // Try started folder first, then finished
+            let co_bat_file =
+                if BatFolder::CodeOverhaulStarted.get_all_files_names(true, None, None)
+                    .unwrap_or_default()
+                    .contains(&co_file_name)
+                {
+                    BatFile::CodeOverhaulStarted { file_name: co_file_name }
+                } else {
+                    BatFile::CodeOverhaulFinished { file_name: co_file_name }
+                };
+            if let Ok(content) = co_bat_file.read_content(true) {
+                if content.contains(&miro_placeholder) {
+                    let new_content = content.replace(&miro_placeholder, frame_url);
+                    let _ = co_bat_file.write_content(true, &new_content);
+                }
+            }
         }
 
         if !miro_co_metadata.images_deployed {
@@ -939,37 +682,6 @@ impl MiroCommand {
 
             let (entrypoint_x_position, entrypoint_y_position) =
                 MiroCodeOverhaulConfig::EntryPoint.get_positions();
-            let (handler_x_position, handler_y_position) =
-                MiroCodeOverhaulConfig::Handler.get_positions();
-
-            match entrypoint_parser.handler.clone() {
-                None => {}
-                Some(handler_meta) => {
-                    let handler_sc = handler_meta.to_source_code_parser(Some(
-                        miro_command_functions::parse_screenshot_name(
-                            &handler_meta.name,
-                            &co_miro_frame.title,
-                        ),
-                    ));
-                    let handler_image = handler_sc
-                        .deploy_screenshot_to_miro_frame(
-                            co_miro_frame.clone(),
-                            handler_x_position,
-                            handler_y_position,
-                            SourceCodeScreenshotOptions {
-                                include_path: true,
-                                offset_to_start_line: true,
-                                filter_comments: false,
-                                font_size: None,
-                                filters: None,
-                                show_line_number: true,
-                            },
-                        )
-                        .await
-                        .change_context(CommandError)?;
-                    miro_co_metadata.handler_image_id = handler_image.item_id;
-                }
-            }
 
             let entrypoint_function_image = entrypoint_parser
                 .entry_point_function
@@ -1016,7 +728,7 @@ impl MiroCommand {
             GitCommit::UpdateMetadataJson {
                 bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
             }
-            .create_commit()
+            .create_commit(true)
             .change_context(CommandError)?;
 
             println!("Connecting signers to entrypoint");
@@ -1060,16 +772,189 @@ impl MiroCommand {
             .await
             .change_context(CommandError)?;
 
-            if !miro_co_metadata.handler_image_id.is_empty() {
-                println!("Connecting validations screenshot to handler screenshot in Miro");
-                batbelt::miro::connector::create_connector(
-                    &miro_co_metadata.validations_image_id,
-                    &miro_co_metadata.handler_image_id,
-                    None,
-                )
-                .await
-                .change_context(CommandError)?;
+            // Interactive BFS deployment of dependency screenshots.
+            //
+            // Instead of dumping every dependency into the frame at once and
+            // trying to auto-layout them (which gets chaotic fast with many
+            // functions), we walk the dependency graph breadth-first starting
+            // at the entry point and, for each function that has at least one
+            // undeployed direct dependency, we:
+            //
+            //   1. Ask the user to press Enter to deploy that function's deps
+            //   2. Deploy every direct dep as a fresh screenshot at a
+            //      cascaded position in the top-left corner of the frame
+            //      (easy to grab one by one).
+            //   3. Create arrows caller -> callee inline, so arrows appear as
+            //      the screenshots are deployed.
+            //
+            // Between prompts the user can rearrange the freshly-deployed
+            // screenshots in Miro however they want — the next prompt only
+            // fires when they press Enter, so there's no rush.
+            //
+            // We track `deployed_function_ids` to keep the DAG sane (a
+            // function might appear as a dep of multiple ancestors, but we
+            // only want one screenshot per function).
+            let bat_metadata_for_deps =
+                BatMetadata::read_metadata().change_context(CommandError)?;
+
+            let direct_deps_of = |function_id: &str| -> Vec<(String, String)> {
+                // Returns (dep_function_metadata_id, dep_function_name)
+                match bat_metadata_for_deps
+                    .get_functions_dependencies_metadata_by_function_metadata_id(
+                        function_id.to_string(),
+                    ) {
+                    Ok(fd_meta) => fd_meta
+                        .dependencies
+                        .iter()
+                        .map(|d| (d.function_metadata_id.clone(), d.function_name.clone()))
+                        .collect(),
+                    Err(_) => vec![],
+                }
+            };
+
+            // Maps function_metadata_id -> miro image id for every deployed
+            // screenshot, including the entry point. Used to draw arrows.
+            let mut id_to_image: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
+            id_to_image.insert(
+                entrypoint_parser.entry_point_function.metadata_id.clone(),
+                miro_co_metadata.entry_point_image_id.clone(),
+            );
+
+            let mut deployed_function_ids: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            deployed_function_ids
+                .insert(entrypoint_parser.entry_point_function.metadata_id.clone());
+
+            let mut bfs_queue: std::collections::VecDeque<(String, String)> =
+                std::collections::VecDeque::new();
+            bfs_queue.push_back((
+                entrypoint_parser.entry_point_function.metadata_id.clone(),
+                entrypoint_parser.entry_point_function.name.clone(),
+            ));
+
+            // Cascaded starting position for freshly-deployed screenshots,
+            // close to the top-left of the frame so the user can see and
+            // grab them immediately. Each new screenshot lands slightly
+            // below-right of the previous one.
+            const CASCADE_START_X: i64 = 200;
+            const CASCADE_START_Y: i64 = 200;
+            const CASCADE_STEP: i64 = 60;
+
+            let mut dependency_image_ids: Vec<String> = vec![];
+
+            while let Some((caller_id, caller_name)) = bfs_queue.pop_front() {
+                let direct_deps = direct_deps_of(&caller_id);
+                // Filter out deps that are already deployed (DAG dedup).
+                let new_deps: Vec<(String, String)> = direct_deps
+                    .into_iter()
+                    .filter(|(id, _)| !deployed_function_ids.contains(id))
+                    .collect();
+
+                if new_deps.is_empty() {
+                    continue;
+                }
+
+                // Look up the actual function metadata for each new dep so
+                // we can produce a screenshot from its source code.
+                let mut new_dep_functions: Vec<FunctionSourceCodeMetadata> = vec![];
+                for (dep_id, _) in &new_deps {
+                    match bat_metadata_for_deps
+                        .source_code
+                        .get_function_by_id(dep_id.clone())
+                    {
+                        Ok(func_meta) => new_dep_functions.push(func_meta),
+                        Err(_) => {
+                            log::warn!(
+                                "Could not find function metadata for dependency id {}",
+                                dep_id
+                            );
+                        }
+                    }
+                }
+
+                if new_dep_functions.is_empty() {
+                    continue;
+                }
+
+                let prompt = format!(
+                    "Press Enter to deploy {} dependencies of `{}`",
+                    new_dep_functions.len(),
+                    caller_name
+                );
+                BatDialoguer::input_with_default(prompt, "".to_string())
+                    .change_context(CommandError)?;
+
+                for (idx, dep_function) in new_dep_functions.iter().enumerate() {
+                    let dep_sc = dep_function.to_source_code_parser(Some(
+                        miro_command_functions::parse_screenshot_name(
+                            &dep_function.name,
+                            &co_miro_frame.title,
+                        ),
+                    ));
+                    let cascade_x = CASCADE_START_X + (idx as i64) * CASCADE_STEP;
+                    let cascade_y = CASCADE_START_Y + (idx as i64) * CASCADE_STEP;
+                    let dep_image = dep_sc
+                        .deploy_screenshot_to_miro_frame(
+                            co_miro_frame.clone(),
+                            cascade_x,
+                            cascade_y,
+                            SourceCodeScreenshotOptions {
+                                include_path: true,
+                                offset_to_start_line: true,
+                                filter_comments: false,
+                                // Use a reduced font size for dependency
+                                // screenshots to prevent them from
+                                // overflowing the frame. The entry point
+                                // and context accounts keep the default
+                                // (larger) font size.
+                                font_size: Some(
+                                    crate::batbelt::parser::code_overhaul_parser::DEPENDENCY_SCREENSHOT_FONT_SIZE,
+                                ),
+                                filters: None,
+                                show_line_number: true,
+                            },
+                        )
+                        .await
+                        .change_context(CommandError)?;
+
+                    // Draw the caller -> callee arrow right away.
+                    if let Some(caller_image_id) = id_to_image.get(&caller_id) {
+                        batbelt::miro::connector::create_connector(
+                            caller_image_id,
+                            &dep_image.item_id,
+                            None,
+                        )
+                        .await
+                        .change_context(CommandError)?;
+                    }
+
+                    id_to_image
+                        .insert(dep_function.metadata_id.clone(), dep_image.item_id.clone());
+                    deployed_function_ids.insert(dep_function.metadata_id.clone());
+                    dependency_image_ids.push(dep_image.item_id.clone());
+
+                    bfs_queue.push_back((
+                        dep_function.metadata_id.clone(),
+                        dep_function.name.clone(),
+                    ));
+                }
             }
+
+            miro_co_metadata.dependency_image_ids = dependency_image_ids.clone();
+            miro_co_metadata
+                .update_code_overhaul_metadata()
+                .change_context(CommandError)?;
+
+            // Commit the updated metadata so the dependency image ids
+            // deployed in the BFS loop above aren't lost. The earlier
+            // commit (before the BFS) only captured the entry point,
+            // validations and context accounts image ids.
+            GitCommit::UpdateMetadataJson {
+                bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
+            }
+            .create_commit(true)
+            .change_context(CommandError)?;
 
             // Deploy mut_accounts
             let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
@@ -1122,15 +1007,15 @@ impl MiroCommand {
                     .change_context(CommandError)?;
             }
 
-            // Deploy handler parameters
-            if let Some(handler_meta) = entrypoint_parser.handler.clone() {
-                let handler_function_parser =
-                    FunctionParser::new_from_metadata(handler_meta).change_context(CommandError)?;
-                for handler_function_parameter in handler_function_parser.parameters {
+            // Deploy dependency function parameters
+            for dep_function in &entrypoint_parser.dependencies {
+                let dep_function_parser =
+                    FunctionParser::new_from_metadata(dep_function.clone()).change_context(CommandError)?;
+                for dep_function_parameter in dep_function_parser.parameters {
                     // parameters are most likely Structs
                     if let Ok(parameter_metadata_vec) = SourceCodeMetadata::get_filtered_structs(
                         Some(
-                            handler_function_parameter
+                            dep_function_parameter
                                 .parameter_type
                                 .trim_start_matches("&")
                                 .to_string(),
@@ -1171,7 +1056,7 @@ impl MiroCommand {
                 "Entrypoint function".to_string(),
                 "Context accounts".to_string(),
                 "Validations".to_string(),
-                "Handler function".to_string(),
+                "Dependency functions".to_string(),
             ];
             let prompt_text = "Which screenshots you want to update?".to_string();
             let selections = BatDialoguer::multiselect(prompt_text, options.clone(), None, true)?;
@@ -1230,52 +1115,55 @@ impl MiroCommand {
                         .update_validations_screenshot()
                         .await
                         .change_context(CommandError)?,
-                    // Handler function
+                    // Dependency functions
                     3 => {
-                        if ep_parser.handler.is_none() {
-                            println!("No handler function");
+                        if ep_parser.dependencies.is_empty() {
+                            println!("No dependency functions");
                             continue;
                         }
-                        let handler_sc_parser = ep_parser
-                            .handler
-                            .clone()
-                            .unwrap()
-                            .to_source_code_parser(Some(
+                        for (dep_idx, dep_function) in ep_parser.dependencies.iter().enumerate() {
+                            if dep_idx >= miro_co_metadata.dependency_image_ids.len() {
+                                println!("No Miro image ID for dependency {}, skipping update", dep_function.name);
+                                continue;
+                            }
+                            let dep_sc_parser = dep_function.to_source_code_parser(Some(
                                 miro_command_functions::parse_screenshot_name(
-                                    &ep_parser.handler.clone().unwrap().name,
+                                    &dep_function.name,
                                     &co_miro_frame.title,
                                 ),
                             ));
-                        let handler_screenshot_path = handler_sc_parser
-                            .create_screenshot(SourceCodeScreenshotOptions {
-                                include_path: true,
-                                offset_to_start_line: true,
-                                filter_comments: true,
-                                font_size: None,
-                                filters: None,
-                                show_line_number: true,
-                            })
-                            .change_context(CommandError)?;
-                        let mut handler_image = MiroImage::new_from_item_id(
-                            &miro_co_metadata.handler_image_id,
-                            MiroImageType::FromPath,
-                        )
-                        .await
-                        .change_context(CommandError)?;
-
-                        println!(
-                            "\nUpdating handler screenshot in {} frame",
-                            co_miro_frame.title.green()
-                        );
-
-                        handler_image
-                            .update_from_path(&handler_screenshot_path)
+                            let dep_screenshot_path = dep_sc_parser
+                                .create_screenshot(SourceCodeScreenshotOptions {
+                                    include_path: true,
+                                    offset_to_start_line: true,
+                                    filter_comments: true,
+                                    font_size: None,
+                                    filters: None,
+                                    show_line_number: true,
+                                })
+                                .change_context(CommandError)?;
+                            let mut dep_image = MiroImage::new_from_item_id(
+                                &miro_co_metadata.dependency_image_ids[dep_idx],
+                                MiroImageType::FromPath,
+                            )
                             .await
                             .change_context(CommandError)?;
 
-                        fs::remove_file(&handler_screenshot_path)
-                            .into_report()
-                            .change_context(CommandError)?;
+                            println!(
+                                "\nUpdating dependency {} screenshot in {} frame",
+                                dep_function.name.green(),
+                                co_miro_frame.title.green()
+                            );
+
+                            dep_image
+                                .update_from_path(&dep_screenshot_path)
+                                .await
+                                .change_context(CommandError)?;
+
+                            fs::remove_file(&dep_screenshot_path)
+                                .into_report()
+                                .change_context(CommandError)?;
+                        }
                     }
                     _ => {
                         unimplemented!()
@@ -1289,7 +1177,394 @@ impl MiroCommand {
 
 pub mod miro_command_functions {
     use super::*;
+    use crate::batbelt::miro::MiroColor;
     use crate::batbelt::path::prettify_source_code_path;
+
+    pub async fn prompt_deploy_source_code(
+        selected_miro_frame: MiroFrame,
+        select_all: bool,
+        sticky_notes: bool,
+        connected: bool,
+    ) -> CommandResult<()> {
+        let metadata_types_vec = BatMetadataType::get_type_vec();
+        let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
+        let mut continue_selection = true;
+
+        while continue_selection {
+            // Choose metadata section selection
+            let prompt_text = format!("Please enter the {}", "metadata type".green());
+            let selection = batbelt::bat_dialoguer::select(
+                &prompt_text,
+                metadata_types_colorized_vec.clone(),
+                None,
+            )
+            .unwrap();
+            let metadata_type_selected = &metadata_types_vec[selection];
+            let (mut sourcecode_metadata_vec, screenshot_options): (
+                Vec<SourceCodeParser>,
+                SourceCodeScreenshotOptions,
+            ) = match metadata_type_selected {
+                BatMetadataType::Struct => {
+                    // Choose metadata subsection selection
+                    let prompt_text =
+                        format!("Please enter the {}", "struct type to deploy".green());
+                    let struct_types_colorized = StructMetadataType::get_colorized_type_vec(true);
+                    let selection = batbelt::bat_dialoguer::select(
+                        &prompt_text,
+                        struct_types_colorized.clone(),
+                        None,
+                    )
+                    .unwrap();
+                    let selected_struct_type = StructMetadataType::get_type_vec()[selection];
+                    let struct_metadata_vec =
+                        SourceCodeMetadata::get_filtered_structs(None, Some(selected_struct_type))
+                            .change_context(CommandError)?;
+                    let struct_metadata_names = struct_metadata_vec
+                        .iter()
+                        .map(|struct_metadata| {
+                            miro_command_functions::get_formatted_path(
+                                struct_metadata.name.clone(),
+                                struct_metadata.path.clone(),
+                                struct_metadata.start_line_index,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let prompt_text = format!("Please enter the {}", "struct to deploy".green());
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
+                        struct_metadata_names.clone(),
+                        Some(&vec![select_all; struct_metadata_names.len()]),
+                        true,
+                    )
+                    .unwrap();
+                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                        BatMetadataType::Struct,
+                    );
+
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                        "Do you want to {}\n{:#?}",
+                        "use the default screenshot config?".yellow(),
+                        default_config
+                    ))
+                    .unwrap();
+
+                    let screenshot_options = if use_default {
+                        default_config
+                    } else {
+                        SourceCodeParser::prompt_screenshot_options()
+                    };
+                    let sc_vec = struct_metadata_vec
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(sc_index, sc_metadata)| {
+                            if selections.iter().any(|selection| &sc_index == selection) {
+                                Some(sc_metadata.to_source_code_parser(None))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    (sc_vec, screenshot_options)
+                }
+                BatMetadataType::Function => {
+                    // Choose metadata subsection selection
+                    let prompt_text =
+                        format!("Please enter the {}", "function type to deploy".green());
+                    let function_types_colorized =
+                        FunctionMetadataType::get_colorized_type_vec(true);
+                    let selection = batbelt::bat_dialoguer::select(
+                        &prompt_text,
+                        function_types_colorized.clone(),
+                        None,
+                    )
+                    .unwrap();
+                    let selected_function_type = FunctionMetadataType::get_type_vec()[selection];
+                    let function_metadata_vec = SourceCodeMetadata::get_filtered_functions(
+                        None,
+                        Some(selected_function_type),
+                    )
+                    .change_context(CommandError)?;
+                    let function_metadata_names = function_metadata_vec
+                        .iter()
+                        .map(|function_metadata| {
+                            miro_command_functions::get_formatted_path(
+                                function_metadata.name.clone(),
+                                function_metadata.path.clone(),
+                                function_metadata.start_line_index,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let prompt_text = format!("Please enter the {}", "function to deploy".green());
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
+                        function_metadata_names.clone(),
+                        Some(&vec![select_all; function_metadata_names.len()]),
+                        true,
+                    )
+                    .unwrap();
+
+                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                        BatMetadataType::Function,
+                    );
+
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                        "Do you want to {}\n{:#?}",
+                        "use the default screenshot config?".yellow(),
+                        default_config
+                    ))
+                    .unwrap();
+
+                    let screenshot_options = if use_default {
+                        default_config
+                    } else {
+                        SourceCodeParser::prompt_screenshot_options()
+                    };
+
+                    let sc_vec = function_metadata_vec
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(sc_index, sc_metadata)| {
+                            if selections.iter().any(|selection| &sc_index == selection) {
+                                Some(sc_metadata.to_source_code_parser(None))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    (sc_vec, screenshot_options)
+                }
+
+                BatMetadataType::Trait => {
+                    // Choose metadata subsection selection
+                    let prompt_text =
+                        format!("Please enter the {}", "trait type to deploy".green());
+                    let trait_types_colorized = TraitMetadataType::get_colorized_type_vec(true);
+                    let selection = batbelt::bat_dialoguer::select(
+                        &prompt_text,
+                        trait_types_colorized.clone(),
+                        None,
+                    )
+                    .unwrap();
+                    let selected_trait_type = TraitMetadataType::get_type_vec()[selection];
+                    let trait_metadata_vec =
+                        SourceCodeMetadata::get_filtered_traits(None, Some(selected_trait_type))
+                            .change_context(CommandError)?;
+                    let trait_metadata_names = trait_metadata_vec
+                        .iter()
+                        .map(|trait_metadata| {
+                            miro_command_functions::get_formatted_path(
+                                trait_metadata.name.clone(),
+                                trait_metadata.path.clone(),
+                                trait_metadata.start_line_index,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let prompt_text = format!("Please enter the {}", "trait to deploy".green());
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
+                        trait_metadata_names.clone(),
+                        Some(&vec![select_all; trait_metadata_names.len()]),
+                        true,
+                    )
+                    .unwrap();
+
+                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                        BatMetadataType::Function,
+                    );
+
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                        "Do you want to {}\n{:#?}",
+                        "use the default screenshot config?".yellow(),
+                        default_config
+                    ))
+                    .unwrap();
+
+                    let screenshot_options = if use_default {
+                        default_config
+                    } else {
+                        SourceCodeParser::prompt_screenshot_options()
+                    };
+
+                    let sc_vec = trait_metadata_vec
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(sc_index, sc_metadata)| {
+                            if selections.iter().any(|selection| &sc_index == selection) {
+                                Some(sc_metadata.to_source_code_parser(None))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    (sc_vec, screenshot_options)
+                }
+                BatMetadataType::Enum => {
+                    // Choose metadata subsection selection
+                    let prompt_text = format!("Please enter the {}", "enum type to deploy".green());
+                    let enum_types_colorized = EnumMetadataType::get_colorized_type_vec(true);
+                    let selection = batbelt::bat_dialoguer::select(
+                        &prompt_text,
+                        enum_types_colorized.clone(),
+                        None,
+                    )
+                    .unwrap();
+                    let selected_enum_type = EnumMetadataType::get_type_vec()[selection];
+                    let enum_metadata_vec =
+                        SourceCodeMetadata::get_filtered_enums(None, Some(selected_enum_type))
+                            .change_context(CommandError)?;
+                    let enum_metadata_names = enum_metadata_vec
+                        .iter()
+                        .map(|enum_metadata| {
+                            miro_command_functions::get_formatted_path(
+                                enum_metadata.name.clone(),
+                                enum_metadata.path.clone(),
+                                enum_metadata.start_line_index,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let prompt_text = format!("Please enter the {}", "enum to deploy".green());
+                    let selections = BatDialoguer::multiselect(
+                        prompt_text,
+                        enum_metadata_names.clone(),
+                        Some(&vec![select_all; enum_metadata_names.len()]),
+                        true,
+                    )
+                    .unwrap();
+
+                    let default_config = SourceCodeScreenshotOptions::get_default_metadata_options(
+                        BatMetadataType::Function,
+                    );
+
+                    let use_default = batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                        "Do you want to {}\n{:#?}",
+                        "use the default screenshot config?".yellow(),
+                        default_config
+                    ))
+                    .unwrap();
+
+                    let screenshot_options = if use_default {
+                        default_config
+                    } else {
+                        SourceCodeParser::prompt_screenshot_options()
+                    };
+
+                    let sc_vec = enum_metadata_vec
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(sc_index, sc_metadata)| {
+                            if selections.iter().any(|selection| &sc_index == selection) {
+                                Some(sc_metadata.to_source_code_parser(None))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    (sc_vec, screenshot_options)
+                }
+            };
+
+            if sticky_notes {
+                let mut counting_index = 0;
+                let mut selected_sc_metadata_names: Vec<String> = vec![];
+                loop {
+                    let sc_metadata_names = sourcecode_metadata_vec
+                        .clone()
+                        .into_iter()
+                        .filter_map(|meta| {
+                            if !selected_sc_metadata_names.contains(&meta.name) {
+                                Some(meta.name)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    let prompt_text =
+                        format!("Select the {} sticky note to deploy", counting_index + 1);
+                    let sc_metadata_selected_index =
+                        BatDialoguer::select(prompt_text, sc_metadata_names.clone(), None)?;
+                    selected_sc_metadata_names
+                        .push(sc_metadata_names[sc_metadata_selected_index].clone());
+                    counting_index += 1;
+                    if counting_index == sourcecode_metadata_vec.len() {
+                        break;
+                    }
+                }
+
+                let mut deployed_sticky_notes: Vec<MiroStickyNote> = vec![];
+
+                let deploy_space = selected_miro_frame.width * 9 / 10;
+                let sticky_notes_space = deploy_space * 8 / 10;
+                let sticky_note_width = sticky_notes_space / counting_index as u64;
+                let frame_grid = selected_miro_frame.width / (counting_index as u64 + 1);
+                let y_position = selected_miro_frame.height / 2;
+
+                for (sc_metadata_name_index, sc_metadata_name) in
+                    selected_sc_metadata_names.clone().into_iter().enumerate()
+                {
+                    let mut sticky_note = MiroStickyNote::new(
+                        &sc_metadata_name,
+                        MiroColor::LightYellow,
+                        &selected_miro_frame.item_id,
+                        frame_grid as i64 * (sc_metadata_name_index as i64 + 1),
+                        y_position as i64,
+                        sticky_note_width,
+                        100,
+                    );
+                    println!("Deploying {}", sticky_note.content.bright_green());
+                    sticky_note.deploy().await.change_context(CommandError)?;
+                    deployed_sticky_notes.push(sticky_note.clone());
+                }
+
+                if connected && deployed_sticky_notes.len() > 1 {
+                    for (deployed_sticky_note_index, deployed_sticky_note) in
+                        deployed_sticky_notes.clone().into_iter().enumerate()
+                    {
+                        if deployed_sticky_note_index < deployed_sticky_notes.clone().len() - 1 {
+                            println!(
+                                "Connecting {} to {}",
+                                deployed_sticky_note.content.bright_green(),
+                                &deployed_sticky_notes[deployed_sticky_note_index + 1]
+                                    .content
+                                    .bright_green()
+                            );
+                            batbelt::miro::connector::create_connector(
+                                &deployed_sticky_note.item_id,
+                                &deployed_sticky_notes[deployed_sticky_note_index + 1].item_id,
+                                None,
+                            )
+                            .await
+                            .change_context(CommandError)?;
+                        }
+                    }
+                }
+            } else {
+                for mut sc_metadata in sourcecode_metadata_vec {
+                    sc_metadata.name = miro_command_functions::parse_screenshot_name(
+                        &sc_metadata.name,
+                        &selected_miro_frame.title,
+                    );
+                    sc_metadata
+                        .deploy_screenshot_to_miro_frame(
+                            selected_miro_frame.clone(),
+                            0,
+                            selected_miro_frame.height as i64,
+                            screenshot_options.clone(),
+                        )
+                        .await
+                        .change_context(CommandError)?;
+                }
+            }
+            // prompt if continue
+            let prompt_text = format!(
+                "Do you want to {} in the {} frame?",
+                "continue creating screenshots".yellow(),
+                selected_miro_frame.title.yellow()
+            );
+            continue_selection = batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
+            BatMetadataEnvVariables::BatMetadataFileSelected.clean_value();
+        }
+        Ok(())
+    }
 
     pub async fn deploy_miro_frame_for_co(
         entry_point_name: &str,
@@ -1440,10 +1715,10 @@ pub mod miro_command_functions {
                 .find(|dep| dep.1 == selected_dependency);
             if already_deployed.is_none() {
                 pending_to_deploy.push(selected_dependency.clone());
+                pending_to_check.push(selected_dependency.clone());
             } else {
                 pending_to_connect.push(already_deployed.unwrap().0);
             }
-            pending_to_check.push(selected_dependency.clone());
         }
 
         while !pending_to_deploy.is_empty() {

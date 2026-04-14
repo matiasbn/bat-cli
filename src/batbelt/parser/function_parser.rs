@@ -2,6 +2,18 @@ use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCode
 
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
 
+/// Normalizes spaces around angle brackets in generic types.
+/// syn's `to_token_stream()` produces `Context < Initialize >` but
+/// source code has `Context<Initialize>`. This normalizes to the compact form.
+pub fn normalize_generic_type(ty: &str) -> String {
+    ty.replace(" < ", "<")
+        .replace("< ", "<")
+        .replace(" <", "<")
+        .replace(" > ", ">")
+        .replace("> ", ">")
+        .replace(" >", ">")
+        .replace(" , ", ", ")
+}
 use crate::batbelt::parser::ParserError;
 
 use crate::batbelt::metadata::function_dependencies_metadata::{
@@ -9,7 +21,6 @@ use crate::batbelt::metadata::function_dependencies_metadata::{
 };
 
 use error_stack::{Report, Result, ResultExt};
-use regex::Regex;
 
 #[derive(Clone, Debug)]
 pub struct FunctionDependencyParser {
@@ -134,107 +145,105 @@ impl FunctionParser {
     }
 
     fn get_function_dependencies(&mut self) -> Result<(), ParserError> {
+        use crate::batbelt::parser::call_resolver::{CallResolver, Resolution};
+        use crate::batbelt::parser::file_scope::FileScope;
+
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         let function_metadata = bat_metadata.source_code.functions_source_code.clone();
-        // only not external
         let trait_metadata_vec = bat_metadata
             .traits
             .into_iter()
             .filter(|t_metadata| !t_metadata.external_trait)
             .collect::<Vec<_>>();
-        let mut body_clone = self.body.clone();
 
-        let double_parentheses_regex = Regex::new(r"[A-Z][a-z]*\(\([A-Za-z, _:.]*\)\)").unwrap();
-        let mut dependency_function_metadata_id_vec = vec![];
+        // Build the FileScope for the file that contains this function.
+        // FileScope gives us the imports map for deterministic name resolution.
+        let file_content = match std::fs::read_to_string(&self.function_metadata.path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!(
+                    "Could not read file '{}' for dependency resolution: {}",
+                    self.function_metadata.path,
+                    e
+                );
+                return Ok(());
+            }
+        };
 
-        let impl_function_regex =
-            Regex::new(r"[A-Za-z0-9_]+::[A-Za-z0-9]+\(\(?[&._A-Za-z0-9]*\)?\)").unwrap();
+        let file_scope = match FileScope::from_file_content(
+            self.function_metadata.path.clone(),
+            &file_content,
+        ) {
+            Ok(scope) => scope,
+            Err(e) => {
+                log::warn!(
+                    "Could not parse file '{}' for FileScope: {}",
+                    self.function_metadata.path,
+                    e
+                );
+                return Ok(());
+            }
+        };
 
-        let impl_function_matches = impl_function_regex
-            .find_iter(&body_clone)
-            .map(|impl_match| impl_match.as_str().to_string())
-            .collect::<Vec<_>>();
-        log::debug!("impl_function_matches: \n{:#?}", impl_function_matches);
-        for impl_match in impl_function_matches {
-            log::debug!("impl_match: {}", impl_match);
-            // delete from body to avoid double checking
-            body_clone = body_clone.replace(&impl_match, "");
-            let impl_function_signature_match = Self::get_function_name_from_signature(&impl_match);
-            log::debug!("impl_match_signature: {}", &impl_function_signature_match);
-            let impl_function_metadata_id =
-                trait_metadata_vec
-                    .clone()
-                    .into_iter()
-                    .find_map(|trait_metadata| {
-                        match trait_metadata.impl_functions.into_iter().find(|impl_func| {
-                            impl_func.trait_signature == impl_function_signature_match
-                        }) {
-                            None => None,
-                            Some(impl_func) => Some(impl_func.function_source_code_metadata_id),
-                        }
-                    });
-            log::debug!(
-                "impl_function_metadata_match {:#?}",
-                impl_function_metadata_id
-            );
-            if impl_function_metadata_id.is_some() {
-                dependency_function_metadata_id_vec.push(impl_function_metadata_id.unwrap());
+        // Parse the function itself. We try parsing as a standalone ItemFn first;
+        // if that fails (e.g. for method bodies without the fn keyword visible),
+        // we wrap it.
+        let item_fn = syn::parse_str::<syn::ItemFn>(&self.content).or_else(|_| {
+            let wrapped = format!("fn __wrapper() {{ {} }}", &self.content);
+            syn::parse_str::<syn::ItemFn>(&wrapped)
+        });
+
+        let item_fn = match item_fn {
+            Ok(f) => f,
+            Err(e) => {
+                log::warn!("syn parse failed for function '{}': {}", self.name, e);
+                return Ok(());
+            }
+        };
+
+        // Create the resolver and run it.
+        let resolver = CallResolver::new(
+            &file_scope,
+            &trait_metadata_vec,
+            &function_metadata,
+            &self.function_metadata.metadata_id,
+        );
+        let resolved_calls = resolver.resolve_function(&item_fn);
+
+        log::debug!(
+            "CallResolver: function '{}' has {} calls",
+            self.name,
+            resolved_calls.len()
+        );
+
+        let mut dependency_function_metadata_id_vec: Vec<MetadataId> = vec![];
+
+        for call in resolved_calls {
+            match call.resolution {
+                Resolution::Internal(metadata_id) => {
+                    if !dependency_function_metadata_id_vec.contains(&metadata_id) {
+                        dependency_function_metadata_id_vec.push(metadata_id);
+                    }
+                }
+                Resolution::External(name) => {
+                    if !self.external_dependencies.contains(&name) {
+                        self.external_dependencies.push(name);
+                    }
+                }
+                Resolution::Unresolved(name) => {
+                    log::debug!(
+                        "Unresolved call '{}' in function '{}' ({}), marking external",
+                        name,
+                        self.name,
+                        self.function_metadata.path
+                    );
+                    if !self.external_dependencies.contains(&name) {
+                        self.external_dependencies.push(name);
+                    }
+                }
             }
         }
 
-        let dependency_regex = Regex::new(r"[A-Za-z0-9_]+\(([A-Za-z0-9_:.&, ()]*)\)").unwrap(); //[A-Za-z0-9_]+\(([A-Za-z0-9_,():\s])*\)$
-        let dependency_function_names_vec = dependency_regex
-            .find_iter(&body_clone)
-            .filter_map(|reg_match| {
-                let match_str = reg_match.as_str().to_string();
-                log::debug!("match_str_regex {}", match_str);
-                let function_name = Self::get_function_name_from_signature(&match_str);
-                log::debug!("match_str_regex_function_name {}", function_name);
-                if function_name == "Ok" || function_name == "Some" {
-                    return None;
-                };
-                let matching_line = body_clone
-                    .lines()
-                    .find(|line| line.contains(&match_str))
-                    .unwrap()
-                    .to_string();
-                if function_name != self.name
-                    && !double_parentheses_regex.is_match(&match_str)
-                    && !matching_line.contains("self.")
-                    && !matching_line.contains("Self::")
-                {
-                    Some(function_name)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        // filter the already found dependencies
-        let filtered_function_metadata_vec = function_metadata
-            .into_iter()
-            .filter(|f_meta| {
-                !dependency_function_metadata_id_vec
-                    .clone()
-                    .into_iter()
-                    .any(|dep_metadata_id| dep_metadata_id == f_meta.metadata_id.clone())
-            })
-            .collect::<Vec<_>>();
-        let _bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
-        for dependency_function_name in dependency_function_names_vec {
-            let dependency_function_metadata_vec = filtered_function_metadata_vec
-                .clone()
-                .into_iter()
-                .filter(|f_metadata| f_metadata.clone().name == dependency_function_name.clone())
-                .collect::<Vec<_>>();
-            if !dependency_function_metadata_vec.clone().is_empty() {
-                for dependency_metadata in dependency_function_metadata_vec.clone() {
-                    dependency_function_metadata_id_vec
-                        .push(dependency_metadata.metadata_id.clone())
-                }
-            } else {
-                self.external_dependencies.push(dependency_function_name);
-            }
-        }
         self.dependencies = dependency_function_metadata_id_vec;
         Ok(())
     }
@@ -252,72 +261,98 @@ impl FunctionParser {
     }
 
     fn get_function_parameters(&mut self) -> Result<(), ParserError> {
-        if self.content.is_empty() || self.signature.is_empty() {
+        use quote::ToTokens;
+
+        if self.content.is_empty() {
             return Err(Report::new(ParserError).attach_printable(
-                "Error parsing function, both content and signature needs to be initialized",
+                "Error parsing function, content needs to be initialized",
             ))?;
         }
-        let content_lines = self.content.lines();
-        let function_signature = self.signature.clone();
 
-        //Function parameters
-        // single line function
-        let parameters = if content_lines.clone().next().unwrap().contains('{') {
-            let function_signature_tokenized = function_signature
-                .trim_start_matches("pub (crate) fn ")
-                .trim_start_matches("pub fn ")
-                .split('(')
-                .last()
-                .unwrap()
-                .trim_end_matches(')')
-                .split(' ')
-                .collect::<Vec<_>>();
-            if function_signature_tokenized.is_empty() || function_signature_tokenized[0].is_empty()
-            {
-                return Ok(());
-            }
-            let mut parameters: Vec<String> = vec![];
-            function_signature_tokenized.iter().enumerate().fold(
-                "".to_string(),
-                |total, current| {
-                    if current.1.contains(':') {
-                        if !total.is_empty() {
-                            parameters.push(total);
+        let item_fn = syn::parse_str::<syn::ItemFn>(&self.content).or_else(|_| {
+            let wrapped = format!("fn __wrapper() {{ {} }}", &self.content);
+            syn::parse_str::<syn::ItemFn>(&wrapped)
+        });
+
+        let result = match item_fn {
+            Ok(item_fn) => {
+                item_fn
+                    .sig
+                    .inputs
+                    .iter()
+                    .filter_map(|arg| match arg {
+                        syn::FnArg::Receiver(_) => None,
+                        syn::FnArg::Typed(pat_type) => {
+                            let name = pat_type.pat.to_token_stream().to_string();
+                            let ty = pat_type.ty.to_token_stream().to_string();
+                            Some(FunctionParameterParser {
+                                parameter_name: name,
+                                parameter_type: ty,
+                            })
                         }
-                        current.1.to_string()
-                    } else if current.0 == function_signature_tokenized.len() - 1 {
-                        parameters.push(format!("{} {}", total, current.1));
-                        total
-                    } else {
-                        format!("{} {}", total, current.1)
+                    })
+                    .collect::<Vec<_>>()
+            }
+            Err(_) => {
+                // Fallback to legacy string parsing
+                let function_signature = self.signature.clone();
+                let content_lines = self.content.lines();
+                let parameters = if content_lines.clone().next().unwrap().contains('{') {
+                    let function_signature_tokenized = function_signature
+                        .trim_start_matches("pub (crate) fn ")
+                        .trim_start_matches("pub fn ")
+                        .split('(')
+                        .last()
+                        .unwrap()
+                        .trim_end_matches(')')
+                        .split(' ')
+                        .collect::<Vec<_>>();
+                    if function_signature_tokenized.is_empty()
+                        || function_signature_tokenized[0].is_empty()
+                    {
+                        return Ok(());
                     }
-                },
-            );
-            parameters
-        } else {
-            //multiline
-            // parameters contains :
-            let filtered: Vec<String> = function_signature
-                .lines()
-                .filter(|line| {
-                    line.contains(':')
-                        && !line.contains("pub fn")
-                        && !line.contains("pub (crate) fn")
-                })
-                .map(|line| line.trim().trim_end_matches(',').to_string())
-                .collect();
-            filtered
+                    let mut parameters: Vec<String> = vec![];
+                    function_signature_tokenized.iter().enumerate().fold(
+                        "".to_string(),
+                        |total, current| {
+                            if current.1.contains(':') {
+                                if !total.is_empty() {
+                                    parameters.push(total);
+                                }
+                                current.1.to_string()
+                            } else if current.0 == function_signature_tokenized.len() - 1 {
+                                parameters.push(format!("{} {}", total, current.1));
+                                total
+                            } else {
+                                format!("{} {}", total, current.1)
+                            }
+                        },
+                    );
+                    parameters
+                } else {
+                    function_signature
+                        .lines()
+                        .filter(|line| {
+                            line.contains(':')
+                                && !line.contains("pub fn")
+                                && !line.contains("pub (crate) fn")
+                        })
+                        .map(|line| line.trim().trim_end_matches(',').to_string())
+                        .collect()
+                };
+                parameters
+                    .into_iter()
+                    .map(|parameter| {
+                        let tokenized = parameter.split(": ");
+                        FunctionParameterParser {
+                            parameter_name: tokenized.clone().next().unwrap().to_string(),
+                            parameter_type: tokenized.clone().last().unwrap().to_string(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            }
         };
-        let result = parameters
-            .into_iter()
-            .map(|parameter| {
-                let tokenized = parameter.split(": ");
-                FunctionParameterParser {
-                    parameter_name: tokenized.clone().next().unwrap().to_string(),
-                    parameter_type: tokenized.clone().last().unwrap().to_string(),
-                }
-            })
-            .collect::<Vec<_>>();
         self.parameters = result;
         Ok(())
     }
@@ -436,3 +471,4 @@ impl FunctionParser {
 //     let result = test_regex.is_match(test_text);
 //     println!("{}", result);
 // }
+

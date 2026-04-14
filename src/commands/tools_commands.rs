@@ -2,15 +2,16 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::CodeEditor;
 use std::env;
 
-use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::path::{prettify_source_code_path, BatFile, BatFolder};
 
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 
 use clap::Subcommand;
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 
 use error_stack::{Report, ResultExt};
+use lazy_regex::regex;
 
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
@@ -24,6 +25,8 @@ use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::config::BatAuditorConfig;
 use log::Level;
+use tabled::object::Rows;
+use tabled::{Modify, Panel, Style, Table, Tabled, Width};
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -40,6 +43,10 @@ pub enum ToolCommand {
     GetMetadataById,
     /// Counts the to-review, started, finished and total co files
     CountCodeOverhaul,
+    /// Shows a list of entry points along with the file path
+    ListEntryPointsPath,
+    /// Shows a list of code overhaul files an the state
+    ListCodeOverhaul,
 }
 
 impl BatEnumerator for ToolCommand {}
@@ -52,6 +59,8 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::GetMetadataById => self.execute_get_metadata_by_id(),
             ToolCommand::OpenCodeOverhaulFile => self.execute_open_co(),
             ToolCommand::CountCodeOverhaul => self.execute_count_co_files(),
+            ToolCommand::ListEntryPointsPath => self.execute_list_entry_points(),
+            ToolCommand::ListCodeOverhaul => self.execute_list_co(),
         }
     }
 
@@ -62,6 +71,8 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::GetMetadataById => true,
             ToolCommand::OpenCodeOverhaulFile => true,
             ToolCommand::CountCodeOverhaul => false,
+            ToolCommand::ListEntryPointsPath => true,
+            ToolCommand::ListCodeOverhaul => false,
         }
     }
 
@@ -72,11 +83,159 @@ impl BatCommandEnumerator for ToolCommand {
             ToolCommand::GetMetadataById => false,
             ToolCommand::OpenCodeOverhaulFile => false,
             ToolCommand::CountCodeOverhaul => false,
+            ToolCommand::ListEntryPointsPath => false,
+            ToolCommand::ListCodeOverhaul => false,
         }
     }
 }
 
 impl ToolCommand {
+    fn execute_list_co(&self) -> CommandResult<()> {
+        let co_bat_folder = BatFolder::CodeOverhaulFolderPath;
+        let co_dir_entries = co_bat_folder
+            .get_all_files_dir_entries(true, None, None)
+            .change_context(CommandError)?;
+
+        #[derive(Tabled, Clone)]
+        struct Path {
+            #[tabled(rename = "Code overhaul file")]
+            co_file_name: String,
+            #[tabled(rename = "Code overhaul file path")]
+            co_path: String,
+            #[tabled(rename = "Status")]
+            status: ColoredString,
+        }
+
+        let path_regex = regex!(r#"code-overhaul/[\w\-]+"#);
+        let path_vec = co_dir_entries
+            .into_iter()
+            .map(|dir_entry| {
+                let co_path = dir_entry.path().to_str().unwrap().to_string();
+                let co_file_name = dir_entry.file_name().to_str().unwrap().to_string();
+                let status = path_regex
+                    .find(&co_path)
+                    .unwrap()
+                    .as_str()
+                    .split("/")
+                    .last()
+                    .unwrap();
+                let status = match status {
+                    "to-review" => status.bright_red(),
+                    "started" => status.bright_yellow(),
+                    "finished" => status.bright_green(),
+                    "deprecated" => status.bright_blue(),
+                    _ => status.bright_magenta(),
+                };
+                Path {
+                    co_file_name,
+                    status,
+                    co_path,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let to_review_regex = regex!(r#"code-overhaul/to-review"#);
+        let started_regex = regex!(r#"code-overhaul/started"#);
+        let finished_regex = regex!(r#"code-overhaul/finished"#);
+        let deprecated_regex = regex!(r#"code-overhaul/deprecated"#);
+
+        let to_review_count = path_vec
+            .clone()
+            .into_iter()
+            .filter(|path| to_review_regex.is_match(&path.co_path))
+            .count();
+        let started_count = path_vec
+            .clone()
+            .into_iter()
+            .filter(|path| started_regex.is_match(&path.co_path))
+            .count();
+        let finished_count = path_vec
+            .clone()
+            .into_iter()
+            .filter(|path| finished_regex.is_match(&path.co_path))
+            .count();
+        let deprecated_count = path_vec
+            .clone()
+            .into_iter()
+            .filter(|path| deprecated_regex.is_match(&path.co_path))
+            .count();
+
+        let mut table = Table::new(path_vec);
+        table.with(Style::re_structured_text());
+        println!("{}", table.to_string());
+
+        println!(
+            "{}: {}, {}: {}, {}: {}, {}: {}; {}: {}",
+            "To review".bright_red(),
+            to_review_count,
+            "Started".bright_yellow(),
+            started_count,
+            "Finished".bright_green(),
+            finished_count,
+            "Deprecated".bright_blue(),
+            deprecated_count,
+            "Total (to review + started + finished)".bright_white(),
+            to_review_count + started_count + finished_count,
+        );
+
+        Ok(())
+    }
+
+    fn execute_list_entry_points(&self) -> CommandResult<()> {
+        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+        let entry_points_metadata = bat_metadata.entry_points;
+        let ep_parser_vec = entry_points_metadata
+            .into_iter()
+            .map(|ep_meta| EntrypointParser::new_from_name(&ep_meta.name))
+            .collect::<Result<Vec<_>, _>>()
+            .change_context(CommandError)?;
+        println!(
+            "Printing {}, with {}:\n",
+            "entry points".bright_green(),
+            "dependency paths".bright_yellow()
+        );
+
+        #[derive(Tabled)]
+        struct Path {
+            #[tabled(rename = "Entry point name")]
+            entry_point_name: String,
+            #[tabled(rename = "Dependencies")]
+            dependencies_path: String,
+        }
+
+        let mut path_vec: Vec<Path> = vec![];
+
+        for ep_parser in ep_parser_vec {
+            let deps_str = ep_parser
+                .dependencies
+                .iter()
+                .map(|dep| {
+                    format!(
+                        "{}:{}",
+                        prettify_source_code_path(&dep.path)
+                            .unwrap_or_else(|_| dep.path.clone()),
+                        dep.start_line_index
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            path_vec.push(Path {
+                entry_point_name: ep_parser.name,
+                dependencies_path: if deps_str.is_empty() {
+                    "No dependencies".to_string()
+                } else {
+                    deps_str
+                },
+            });
+        }
+
+        let mut table = Table::new(path_vec);
+        table.with(Style::sharp());
+
+        println!("{}", table.to_string());
+        Ok(())
+    }
+
     fn execute_open_source_code(&self) -> CommandResult<()> {
         let selected_bat_metadata_type =
             BatMetadataType::prompt_metadata_type_selection().change_context(CommandError)?;
@@ -285,13 +444,11 @@ impl ToolCommand {
                 bat_file
                     .open_in_editor(false, None)
                     .change_context(CommandError)?;
-                if ep_parser.handler.is_some() {
-                    let handler_metadata = ep_parser.handler.unwrap();
-                    let instruction_file_path = handler_metadata.path;
-                    let start_line_index = handler_metadata.start_line_index;
-                    CodeEditor::open_file_in_editor(&instruction_file_path, Some(start_line_index))
-                        .change_context(CommandError)?;
-                }
+                CodeEditor::open_file_in_editor(
+                    &ep_parser.entry_point_function.path,
+                    Some(ep_parser.entry_point_function.start_line_index),
+                )
+                .change_context(CommandError)?;
                 return Ok(());
             } else {
                 println!("Empty {} folder", options[selection].clone());

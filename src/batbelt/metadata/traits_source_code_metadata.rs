@@ -111,6 +111,40 @@ impl BatMetadataParser<TraitMetadataType> for TraitSourceCodeMetadata {
 }
 
 impl TraitSourceCodeMetadata {
+    pub fn create_metadata_from_content(
+        entry_path: &str,
+        file_content: &str,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let mut metadata_result = vec![];
+        let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::TraitImpl);
+        for result in bat_sonar.results {
+            let trait_metadata = TraitSourceCodeMetadata::new(
+                entry_path.to_string(),
+                result.name.to_string(),
+                TraitMetadataType::Implementation,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+                Self::create_metadata_id(),
+            );
+            metadata_result.push(trait_metadata);
+        }
+
+        let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Trait);
+        for result in bat_sonar.results {
+            let trait_metadata = TraitSourceCodeMetadata::new(
+                entry_path.to_string(),
+                result.name.to_string(),
+                TraitMetadataType::Definition,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+                Self::create_metadata_id(),
+            );
+            metadata_result.push(trait_metadata);
+        }
+
+        Ok(metadata_result)
+    }
+
     pub fn to_trait_impl_parser(&self) -> Result<TraitParser, MetadataError> {
         TraitParser::new_from_metadata(self.clone()).change_context(MetadataError)
     }

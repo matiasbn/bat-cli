@@ -54,13 +54,14 @@ impl CodeEditor {
                 .change_context(CommandError)?;
             }
             CodeEditor::VSCode => {
-                let formatted_path = if starting_line == 0 {
-                    path.to_string()
+                if starting_line == 0 {
+                    execute_command("code", &["-a", path], false)
+                        .change_context(CommandError)?;
                 } else {
-                    format!("{};{}", path, starting_line)
+                    let goto_path = format!("{}:{}", path, starting_line);
+                    execute_command("code", &["-a", "--goto", &goto_path], false)
+                        .change_context(CommandError)?;
                 };
-                execute_command("code", &["-a", &formatted_path], false)
-                    .change_context(CommandError)?;
             }
             _ => {
                 println!("Path to file: {:#?}:{}", path, starting_line);
@@ -143,16 +144,3 @@ pub fn execute_command_with_child_process(command: &str, args: &[&str]) -> Comma
     // Ok("output_string".to_string())
 }
 
-#[cfg(test)]
-mod command_line_tester {
-    use crate::batbelt::command_line::execute_command_with_child_process;
-
-    #[test]
-    fn test_executed_piped() {
-        env_logger::init();
-        let ls_result = execute_command_with_child_process("gflfs", &["2.0.0"]).unwrap();
-        // let ls_result = execute_child_process("cargo", &["install"]).unwrap();
-        println!("ls_rrsuylt {}", ls_result)
-        // let ls_result = execute_piped_process("ls", &["-la"], true).unwrap();
-    }
-}

@@ -2,16 +2,19 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::templates::finding_template::FindingTemplate;
 use crate::batbelt::{
-    git::GitCommit,
     path::{BatFile, BatFolder},
     BatEnumerator,
 };
 use colored::Colorize;
 
+use crate::batbelt::git::git_commit::GitCommit;
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
+use crate::batbelt::path::prettify_source_code_path;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 use error_stack::{Report, Result, ResultExt};
 use inflector::Inflector;
+use lazy_regex::regex;
 use std::{
     fs::File,
     io::{self, BufRead},
@@ -29,6 +32,8 @@ pub enum FindingCommand {
     Create,
     /// Finish a finding file by creating a commit
     Finish,
+    /// Creates evidence from source code
+    CreateEvidence,
     /// Update a finding file by creating a commit
     Update,
     /// Moves all the to-review findings to accepted
@@ -51,6 +56,73 @@ impl BatCommandEnumerator for FindingCommand {
     fn check_correct_branch(&self) -> bool {
         true
     }
+}
+
+pub fn create_evidence() -> CommandResult<()> {
+    let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
+    let mut total_source_code = vec![];
+    let SourceCodeMetadata {
+        mut functions_source_code,
+        mut structs_source_code,
+        mut traits_source_code,
+        mut enums_source_code,
+    } = bat_metadata.source_code;
+
+    let findings_bat_folder = BatFolder::FindingsFolderPath;
+    let findings_dir_entry = findings_bat_folder
+        .get_all_files_dir_entries(true, None, None)
+        .change_context(CommandError)?;
+    let findings_path_regex = regex!(r#"(findings/to-review)|(findings/accepted)"#);
+    let filtered_finding = findings_dir_entry
+        .into_iter()
+        .filter(|finding| findings_path_regex.is_match(finding.path().to_str().unwrap()))
+        .collect::<Vec<_>>();
+    let filtered_findings_names = filtered_finding
+        .clone()
+        .into_iter()
+        .map(|finding| finding.file_name().to_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    let prompt_text = format!("Select the {} to create evidence", "finding".bright_green());
+    let selected_finding_index = BatDialoguer::select(prompt_text, filtered_findings_names, None)?;
+    let selected_finding = filtered_finding[selected_finding_index].clone();
+
+    for meta in functions_source_code {
+        total_source_code.push(meta.to_source_code_parser(None));
+    }
+    for meta in structs_source_code {
+        total_source_code.push(meta.to_source_code_parser(None));
+    }
+    for meta in traits_source_code {
+        total_source_code.push(meta.to_source_code_parser(None));
+    }
+    for meta in enums_source_code {
+        total_source_code.push(meta.to_source_code_parser(None));
+    }
+
+    total_source_code.sort_by_key(|sc| sc.name.clone());
+
+    let formatted_total_sc = total_source_code
+        .clone()
+        .into_iter()
+        .map(|sc| {
+            format!(
+                "{}: [{}:{}]",
+                sc.name,
+                prettify_source_code_path(&sc.path).unwrap(),
+                sc.start_line_index
+            )
+        })
+        .collect::<Vec<_>>();
+    let prompt_text = format!(
+        "Select the source code to create the {}",
+        "evidence".bright_yellow()
+    );
+
+    let selected_sc_index = BatDialoguer::select(prompt_text, formatted_total_sc, None)?;
+    let selected_sc = total_source_code[selected_sc_index].clone();
+    println!("selected_sc: {:#?}", selected_sc);
+
+    Ok(())
 }
 
 pub fn reject() -> Result<(), CommandError> {
@@ -81,7 +153,7 @@ pub fn reject() -> Result<(), CommandError> {
     GitCommit::RejectFinding {
         finding_name: rejected_file_name.clone(),
     }
-    .create_commit()
+    .create_commit(true)
     .change_context(CommandError)?;
 
     println!("{rejected_file_name} file moved to rejected");
@@ -108,7 +180,7 @@ pub fn accept_all() -> Result<(), CommandError> {
         )?;
     }
     GitCommit::AcceptFindings
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
     println!(
         "All findings has been moved to the {} folder",
@@ -127,7 +199,7 @@ pub fn start_finding() -> Result<(), CommandError> {
     GitCommit::StartFinding {
         finding_name: finding_name.clone(),
     }
-    .create_commit()
+    .create_commit(true)
     .change_context(CommandError)?;
 
     BatFile::FindingToReview {
@@ -153,7 +225,7 @@ pub fn finish_finding() -> Result<(), CommandError> {
     GitCommit::FinishFinding {
         finding_name: finding_name.to_string(),
     }
-    .create_commit()
+    .create_commit(true)
     .change_context(CommandError)?;
     Ok(())
 }
@@ -169,7 +241,7 @@ pub fn update_finding() -> Result<(), CommandError> {
 
     let finding_name = to_review_files[selection].clone();
     GitCommit::UpdateFinding { finding_name }
-        .create_commit()
+        .create_commit(true)
         .change_context(CommandError)?;
     Ok(())
 }

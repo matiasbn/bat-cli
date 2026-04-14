@@ -34,20 +34,19 @@ impl FunctionDependenciesMetadata {
     }
 
     pub fn update_metadata_file(&self) -> MetadataResult<()> {
-        let mut bat_metadata = BatMetadata::read_metadata()?;
-        let position = bat_metadata
-            .clone()
-            .function_dependencies
-            .into_iter()
-            .position(|ep| ep.function_metadata_id == self.function_metadata_id);
-        match position {
-            None => bat_metadata.function_dependencies.push(self.clone()),
-            Some(pos) => bat_metadata.function_dependencies[pos] = self.clone(),
-        };
-        bat_metadata
-            .function_dependencies
-            .sort_by_key(|func_dep| func_dep.function_name.clone());
-        bat_metadata.save_metadata()?;
-        Ok(())
+        let self_clone = self.clone();
+        BatMetadata::update_metadata(|bat_metadata| {
+            let position = bat_metadata
+                .function_dependencies
+                .iter()
+                .position(|ep| ep.function_metadata_id == self_clone.function_metadata_id);
+            match position {
+                None => bat_metadata.function_dependencies.push(self_clone.clone()),
+                Some(pos) => bat_metadata.function_dependencies[pos] = self_clone.clone(),
+            };
+            bat_metadata
+                .function_dependencies
+                .sort_by_key(|func_dep| func_dep.function_name.clone());
+        })
     }
 }

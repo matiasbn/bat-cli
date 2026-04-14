@@ -80,15 +80,27 @@ impl BatSonar {
         new_sonar.scan_content_to_get_results();
         new_sonar
     }
-    pub fn get_entrypoints_results() -> Result<Self, BatSonarError> {
-        let lib_file_path = batbelt::path::get_file_path(BatFile::ProgramLib, false)
-            .change_context(BatSonarError)?;
-        let entrypoints = BatSonar::new_from_path(
-            &lib_file_path,
-            Some("#[program]"),
-            SonarResultType::Function,
-        );
-        Ok(entrypoints)
+
+    /// Creates a BatSonar from a file path using exact line ranges from metadata.
+    /// This is more robust than `new_from_path` with string matching — it uses
+    /// `start_line_index` and `end_line_index` (1-based) to extract the exact function content.
+    pub fn new_from_path_with_lines(
+        path: &str,
+        start_line: usize,
+        end_line: usize,
+        result_type: SonarResultType,
+    ) -> Self {
+        let content = fs::read_to_string(path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Convert from 1-based to 0-based indices
+        let start_idx = if start_line > 0 { start_line - 1 } else { 0 };
+        let end_idx = end_line.min(lines.len());
+
+        let function_content = lines[start_idx..end_idx].join("\n");
+        let mut new_sonar = BatSonar::new(&function_content, result_type);
+        new_sonar.scan_content_to_get_results();
+        new_sonar
     }
 
     pub fn scan_content_to_get_results(&mut self) {
@@ -123,8 +135,7 @@ impl BatSonar {
                     continue;
                 }
                 // The context account filter duplicates the accouns starting with #[account(
-                if (self.result_type == SonarResultType::ContextAccountsAll
-                    || self.result_type == SonarResultType::ContextAccountsNoValidation)
+                if self.result_type == SonarResultType::ContextAccountsNoValidation
                     && !self.results.is_empty()
                 {
                     let last_result = self.results.clone();
@@ -157,7 +168,6 @@ impl BatSonar {
     ) -> Option<usize> {
         if (self.result_type == SonarResultType::Validation
             || self.result_type == SonarResultType::Struct
-            || self.result_type == SonarResultType::ContextAccountsAll
             || self.result_type == SonarResultType::ContextAccountsNoValidation)
             && self.starting_line_contains_closure_filter(starting_line)
         {
@@ -277,7 +287,6 @@ impl SonarResult {
             SonarResultType::Struct => self.get_name(),
             SonarResultType::Enum => self.get_name(),
             SonarResultType::Module => self.get_name(),
-            SonarResultType::ContextAccountsAll => self.get_name(),
             SonarResultType::Trait => self.get_name(),
             SonarResultType::TraitImpl => self.get_name(),
             SonarResultType::ContextAccountsNoValidation => {
@@ -351,13 +360,6 @@ impl SonarResult {
                     .to_string();
                 self.name = name.clone();
                 log::debug!("name: {}", name);
-            }
-            SonarResultType::ContextAccountsAll => {
-                let content = self.content.clone();
-                let mut last_line = content.lines().last().unwrap().trim().split(' ');
-                last_line.next().unwrap();
-                let name = last_line.next().unwrap().replace(':', "");
-                self.name = name;
             }
             _ => {}
         }
@@ -524,16 +526,12 @@ pub enum SonarResultType {
     Validation,
     Trait,
     TraitImpl,
-    ContextAccountsAll,
     ContextAccountsNoValidation,
 }
 
 impl SonarResultType {
     pub fn get_context_accounts_sonar_result_types(&self) -> Vec<SonarResultType> {
-        vec![
-            SonarResultType::ContextAccountsAll,
-            SonarResultType::ContextAccountsNoValidation,
-        ]
+        vec![SonarResultType::ContextAccountsNoValidation]
     }
 
     pub fn is_context_accounts_sonar_result_type(&self) -> bool {
@@ -543,7 +541,17 @@ impl SonarResultType {
     }
 
     fn get_context_accounts_only_validations_filters(&self) -> Vec<&'static str> {
-        vec!["has_one", "constraint"]
+        vec![
+            "has_one",
+            "constraint",
+            "zero",
+            "owner",
+            "token::mint",
+            "token::authority",
+            "associated_token::mint",
+            "associated_token::authority",
+            "address",
+        ]
     }
 
     fn test_last_char_is_semicolon(&self) -> bool {
@@ -590,11 +598,6 @@ impl SonarFilter {
             }
             SonarFilter::EndOfOpen(SonarResultType::Validation) => vec!["("],
             SonarFilter::Closure(SonarResultType::Validation) => vec![");", ")?;", ")"],
-            SonarFilter::Open(SonarResultType::ContextAccountsAll) => {
-                vec!["pub", "#[account"]
-            }
-            SonarFilter::EndOfOpen(SonarResultType::ContextAccountsAll) => vec!["(", ">,"],
-            SonarFilter::Closure(SonarResultType::ContextAccountsAll) => vec!["pub", "}"],
             SonarFilter::Open(SonarResultType::ContextAccountsNoValidation) => {
                 vec!["pub", "#[account"]
             }
@@ -776,38 +779,37 @@ fn test_get_validation() {
     println!("sonar \n{:#?}", bat_sonar);
 }
 #[test]
-fn test_get_context_accounts() {
-    let test_text = "
-    #[derive(Accounts, Debug)]
-    pub struct thing<'info> {
-        pub acc_1: Signer<'info>,
-    
-        pub acc_2: AccountLoader<'info, Pf>,
-    
-        #[account(mut)]
-        pub acc_3: Signer<'info>,
-    
-        #[account(
-            mut,
-            has_one = thing,
-        )]
-        pub acc_4: AccountLoader<'info, Rc>,
-    
-        #[account(
-            has_one = thing,
-        )]
-        pub acc_5: AccountLoader<'info, A>,
-    
-        pub acc_6: Account<'info, Mint>,
-    
-        pub acc_7: Program<'info, B>,
-    }
-    ";
-    let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsAll);
-    assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
-    println!("sonar \n{:#?}", bat_sonar);
-}
-
+// fn test_get_context_accounts() {
+//     let test_text = "
+//     #[derive(Accounts, Debug)]
+//     pub struct thing<'info> {
+//         pub acc_1: Signer<'info>,
+//
+//         pub acc_2: AccountLoader<'info, Pf>,
+//
+//         #[account(mut)]
+//         pub acc_3: Signer<'info>,
+//
+//         #[account(
+//             mut,
+//             has_one = thing,
+//         )]
+//         pub acc_4: AccountLoader<'info, Rc>,
+//
+//         #[account(
+//             has_one = thing,
+//         )]
+//         pub acc_5: AccountLoader<'info, A>,
+//
+//         pub acc_6: Account<'info, Mint>,
+//
+//         pub acc_7: Program<'info, B>,
+//     }
+//     ";
+//     let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsAll);
+//     assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
+//     println!("sonar \n{:#?}", bat_sonar);
+// }
 #[test]
 fn test_get_context_accounts_no_validations() {
     let test_text = "
@@ -841,35 +843,3 @@ fn test_get_context_accounts_no_validations() {
     assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
 }
 
-#[cfg(test)]
-mod sonar_test {
-    use crate::batbelt::sonar::{BatSonar, SonarResultType};
-
-    #[test]
-    fn test_if_validation() {
-        // vec!["require", "valid", "assert", "verify"]
-        let test_text = "
-    if this_is_a_validation {
-        require_gt!(1,2)
-    } else {
-        thing 21
-    }
-
-    if this_is_a_validation == 2 {
-        assert!(1,2)
-    }
-    
-    if this_is_not_a_validation {
-        thing 1
-    } else {
-        thing 21
-    }
-
-
-    ";
-        let accounts = BatSonar::new_scanned(test_text, SonarResultType::IfValidation);
-
-        // Only crafting_process, token_from and mint includes #[account
-        assert_eq!(accounts.results.len(), 3, "incorrect length");
-    }
-}

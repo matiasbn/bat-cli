@@ -3,8 +3,9 @@ use crate::batbelt::command_line::{execute_command, CodeEditor};
 use crate::config::{BatAuditorConfig, BatConfig};
 
 use crate::batbelt::BatEnumerator;
-use error_stack::{FutureExt, IntoReport, Result, ResultExt};
+use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 
+use crate::batbelt::git::git_commit::GitCommit;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, fs, path::Path};
 use walkdir::{DirEntry, WalkDir};
@@ -30,6 +31,7 @@ pub enum BatFile {
     BatAuditorToml,
     Batlog,
     BatMetadataFile,
+    BatAnalyticsFile,
     ThreatModeling,
     FindingCandidates,
     OpenQuestions,
@@ -38,10 +40,12 @@ pub enum BatFile {
     GitIgnore,
     PackageJson,
     RobotFile,
+    ProgramAccountsMetadataFile,
     CodeOverhaulSummaryFile,
     CodeOverhaulToReview { file_name: String },
     CodeOverhaulStarted { file_name: String },
     CodeOverhaulFinished { file_name: String },
+    CodeOverhaulDeprecated { file_name: String },
     FindingToReview { file_name: String },
     FindingAccepted { file_name: String },
     FindingRejected { file_name: String },
@@ -86,6 +90,12 @@ impl BatFile {
                     BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
+            BatFile::ProgramAccountsMetadataFile => {
+                format!(
+                    "{}/program_accounts_metadata.json",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
             BatFile::CodeOverhaulSummaryFile => {
                 format!(
                     "{}/code_overhaul_summary.md",
@@ -113,6 +123,13 @@ impl BatFile {
                     BatFolder::CodeOverhaulFinished.get_path(canonicalize)?
                 )
             }
+            BatFile::CodeOverhaulDeprecated { file_name } => {
+                let entrypoint_name = file_name.trim_end_matches(".md");
+                format!(
+                    "{}/{entrypoint_name}.md",
+                    BatFolder::CodeOverhaulDeprecated.get_path(canonicalize)?
+                )
+            }
             BatFile::FindingToReview { file_name } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
@@ -135,6 +152,12 @@ impl BatFile {
                 )
             }
             BatFile::BatMetadataFile => "./BatMetadata.json".to_string(),
+            BatFile::BatAnalyticsFile => {
+                format!(
+                    "{}/BatAnalytics.json",
+                    BatFolder::AuditorNotes.get_path(canonicalize)?
+                )
+            }
             BatFile::Generic { file_path } => file_path.clone(),
         };
 
@@ -221,6 +244,29 @@ impl BatFile {
             .unwrap()
             .to_string())
     }
+    pub fn commit_file(&self, commit_message: Option<String>) -> BatPathResult<()> {
+        let commit_message = commit_message.unwrap_or(self.default_commit_message()?);
+        GitCommit::BatFileCommit {
+            bat_file: self.clone(),
+            commit_message,
+        }
+        .create_commit(true)
+        .change_context(BatPathError)?;
+        Ok(())
+    }
+
+    pub fn default_commit_message(&self) -> BatPathResult<String> {
+        let message = match self {
+            BatFile::BatAnalyticsFile => "cache: BatAnalytics.json updated".to_string(),
+            _ => {
+                return Err(Report::new(BatPathError).attach_printable(format!(
+                    "{} does not implement default commit message",
+                    self.to_string()
+                )));
+            }
+        };
+        Ok(message)
+    }
 }
 
 #[derive(
@@ -237,6 +283,7 @@ pub enum BatFolder {
     CodeOverhaulToReview,
     CodeOverhaulStarted,
     CodeOverhaulFinished,
+    CodeOverhaulDeprecated,
     AuditorNotes,
     AuditorFigures,
     Notes,
@@ -308,6 +355,12 @@ impl BatFolder {
             BatFolder::CodeOverhaulStarted => {
                 format!(
                     "{}/started",
+                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                )
+            }
+            BatFolder::CodeOverhaulDeprecated => {
+                format!(
+                    "{}/deprecated",
                     BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
                 )
             }
@@ -409,6 +462,12 @@ impl BatFolder {
     pub fn folder_exists(&self) -> BatPathResult<bool> {
         Ok(Path::new(&self.get_path(false)?).is_dir())
     }
+
+    pub fn create_folder(&self) -> BatPathResult<()> {
+        fs::create_dir_all(&self.get_path(false)?)
+            .into_report()
+            .change_context(BatPathError)
+    }
 }
 
 pub fn prettify_source_code_path(path: &str) -> BatPathResult<String> {
@@ -420,16 +479,8 @@ pub fn prettify_source_code_path(path: &str) -> BatPathResult<String> {
     Ok(pretty_path.to_string())
 }
 
-pub fn get_file_path(file_type: BatFile, canonicalize: bool) -> Result<String, BatPathError> {
-    file_type.get_path(canonicalize)
-}
-
-pub fn get_folder_path(folder_type: BatFolder, canonicalize: bool) -> Result<String, BatPathError> {
-    folder_type.get_path(canonicalize)
-}
-
 pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, BatPathError> {
-    let error_message = format!("Error canonicalizing path: {}", path_to_canonicalize);
+    let error_message = format!("Error canonicalization path: {}", path_to_canonicalize);
     let canonicalized_path = Path::new(&(path_to_canonicalize))
         .canonicalize()
         .into_report()

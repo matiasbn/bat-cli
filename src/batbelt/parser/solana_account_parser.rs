@@ -21,13 +21,16 @@ pub enum SolanaAccountType {
     Mint,
     Signer,
     UncheckedAccount,
+    SystemAccount,
     ProgramStateAccount,
     Other,
 }
 
 impl SolanaAccountType {
-    pub fn from_sonar_result(sonar_result: SonarResult) -> Result<Self, ParserError> {
-        let last_line = sonar_result.content.lines();
+    pub fn from_context_account_content(
+        context_account_content: &str,
+    ) -> Result<Self, ParserError> {
+        let last_line = context_account_content.lines();
         let last_line = last_line.last().unwrap();
 
         if last_line.contains("Signer<") {
@@ -36,6 +39,10 @@ impl SolanaAccountType {
 
         if last_line.contains(&Self::UncheckedAccount.to_string()) {
             return Ok(Self::UncheckedAccount);
+        }
+
+        if last_line.contains(&Self::SystemAccount.to_string()) {
+            return Ok(Self::SystemAccount);
         }
 
         if last_line.contains(&Self::TokenAccount.to_string()) {
@@ -107,7 +114,7 @@ impl SolanaAccountParser {
                 self.account_struct_name
             ))),
             Some(struct_metadata) => {
-                let account_param_regex = Regex::new(r"pub [A-Za-z0-9_]+: [\w]+,")
+                let account_param_regex = Regex::new(r"pub [A-Za-z0-9_]+: [\w;\[\] ]+,")
                     .into_report()
                     .change_context(ParserError)?;
                 let struct_metadata_content = struct_metadata

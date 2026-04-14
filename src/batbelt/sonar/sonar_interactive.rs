@@ -7,7 +7,7 @@ use crate::batbelt::metadata::{
     BatMetadata, BatMetadataParser, BatMetadataType, SourceCodeMetadata,
 };
 use crate::batbelt::path::BatFolder;
-use crate::batbelt::sonar::{BatSonar, BatSonarError, SonarResultType};
+use crate::batbelt::sonar::{BatSonarError, SonarResultType};
 use crate::batbelt::BatEnumerator;
 
 use colored::Colorize;
@@ -19,6 +19,7 @@ use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata
 use crate::batbelt::parser::context_accounts_parser::CAAccountParser;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
+use crate::batbelt::parser::syn_context_accounts_parser;
 use crate::batbelt::parser::trait_parser::TraitParser;
 
 use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
@@ -47,26 +48,32 @@ impl BatSonarInteractive {
                 self.sonar_start(*sonar_result_type)?
             }
             BatSonarInteractive::GetSourceCodeMetadata => self.get_source_code_metadata()?,
-            BatSonarInteractive::GetEntryPointsMetadata => self.get_entry_points_metadata()?,
-            BatSonarInteractive::GetTraitsMetadata => self.get_traits_metadata()?,
+            BatSonarInteractive::GetEntryPointsMetadata => {
+                let pb = ProgressBar::new_spinner();
+                pb.enable_steady_tick(Duration::from_millis(100));
+                Self::run_entry_points_with_pb(&pb)?;
+            }
+            BatSonarInteractive::GetTraitsMetadata => {
+                let pb = ProgressBar::new_spinner();
+                pb.enable_steady_tick(Duration::from_millis(100));
+                Self::run_traits_with_pb(&pb)?;
+            }
             BatSonarInteractive::GetFunctionDependenciesMetadata => {
-                self.get_functions_dependencies_metadata()?
+                let pb = ProgressBar::new_spinner();
+                pb.enable_steady_tick(Duration::from_millis(100));
+                Self::run_function_deps_with_pb(&pb)?;
             }
             BatSonarInteractive::GetContextAccountsMetadata => {
-                self.get_context_accounts_metadata()?
+                let pb = ProgressBar::new_spinner();
+                pb.enable_steady_tick(Duration::from_millis(100));
+                Self::run_context_accounts_with_pb(&pb)?;
             }
         }
         Ok(())
     }
 
-    fn sonar_start(&self, sonar_result_type: SonarResultType) -> Result<(), BatSonarError> {
+    fn sonar_start(&self, _sonar_result_type: SonarResultType) -> Result<(), BatSonarError> {
         let pb = ProgressBar::new_spinner();
-        let result_type_colorized = match sonar_result_type {
-            SonarResultType::Function => BatMetadataType::Function.get_colored_name(true),
-            SonarResultType::Struct => BatMetadataType::Struct.get_colored_name(true),
-            SonarResultType::Trait => BatMetadataType::Trait.get_colored_name(true),
-            _ => sonar_result_type.to_string().bright_cyan(),
-        };
         pb.enable_steady_tick(Duration::from_millis(100));
         pb.set_style(
             ProgressStyle::with_template("{spinner:.blue} {msg}")
@@ -95,16 +102,17 @@ impl BatSonarInteractive {
                 ]),
         );
         pb.set_message(format!(
-            "Looking for {} with {}...",
-            result_type_colorized,
+            "Initializing {}...",
             "BatSonar".red(),
         ));
-        thread::sleep(Duration::from_millis(1800));
-        pb.finish_with_message(format!("{} search finished ", result_type_colorized,));
+        thread::sleep(Duration::from_millis(1500));
+        pb.finish_with_message(format!("{} initialized", "BatSonar".red()));
         Ok(())
     }
 
     fn get_source_code_metadata(&self) -> Result<(), BatSonarError> {
+        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+
         let started = Instant::now();
         let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
             .unwrap()
@@ -112,263 +120,254 @@ impl BatSonarInteractive {
         let program_dir_entries = BatFolder::ProgramPath
             .get_all_files_dir_entries(false, None, None)
             .change_context(BatSonarError)?;
+        let total_files = program_dir_entries.len();
         println!(
             "Analyzing {} files",
-            style(format!("{}", program_dir_entries.len())).bold().dim(),
+            style(format!("{}", total_files)).bold().dim(),
         );
-        let m = MultiProgress::new();
-        let metadata_types_vec = BatMetadataType::get_type_vec();
-        let metadata_types_colored = BatMetadataType::get_colorized_type_vec(true);
-        let handles: Vec<_> = (0..metadata_types_vec.len())
-            .map(|i| {
-                let mut structs_result = vec![];
-                let mut functions_result = vec![];
-                let mut traits_result = vec![];
-                let mut enums_result = vec![];
-                let program_dir_clone = program_dir_entries.clone();
-                let metadata_type = metadata_types_vec[i];
-                let metadata_type_color = metadata_types_colored[i].clone();
-                let pb = m.add(ProgressBar::new(program_dir_clone.len() as u64));
-                let mut total = 0;
-                pb.set_style(spinner_style.clone());
+
+        let pb = ProgressBar::new(total_files as u64);
+        pb.set_style(spinner_style);
+
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .min(total_files.max(1));
+        let chunk_size = (total_files + num_threads - 1) / num_threads;
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let handles: Vec<_> = program_dir_entries
+            .chunks(chunk_size)
+            .map(|chunk| {
+                let entries: Vec<_> = chunk.to_vec();
+                let pb = pb.clone();
+                let counter = Arc::clone(&counter);
                 thread::spawn(move || {
-                    for (idx, entry) in program_dir_clone.iter().enumerate().clone() {
-                        pb.set_prefix(format!("[{}/{}]", idx + 1, program_dir_clone.len()));
-                        pb.set_message(format!(
-                            "Getting {} from: {}",
-                            metadata_type_color.clone(),
-                            entry.clone().path().to_str().unwrap().clone()
-                        ));
-                        match metadata_type {
-                            BatMetadataType::Struct => {
-                                let mut struct_res =
-                                    StructSourceCodeMetadata::create_metadata_from_dir_entry(
-                                        entry.clone(),
-                                    )
-                                    .unwrap();
-                                total += struct_res.len();
-                                structs_result.append(&mut struct_res);
-                            }
-                            BatMetadataType::Function => {
-                                let mut func_res =
-                                    FunctionSourceCodeMetadata::create_metadata_from_dir_entry(
-                                        entry.clone(),
-                                    )
-                                    .unwrap();
-                                total += func_res.len();
-                                functions_result.append(&mut func_res);
-                            }
-                            BatMetadataType::Trait => {
-                                let mut trait_res =
-                                    TraitSourceCodeMetadata::create_metadata_from_dir_entry(
-                                        entry.clone(),
-                                    )
-                                    .unwrap();
+                    let mut structs = vec![];
+                    let mut functions = vec![];
+                    let mut traits = vec![];
+                    let mut enums = vec![];
 
-                                total += trait_res.len();
-                                traits_result.append(&mut trait_res);
-                            }
-                            BatMetadataType::Enum => {
-                                let mut enum_res =
-                                    EnumSourceCodeMetadata::create_metadata_from_dir_entry(
-                                        entry.clone(),
-                                    )
-                                    .unwrap();
+                    for entry in &entries {
+                        let entry_path = entry.path().to_str().unwrap().to_string();
+                        let current = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                        pb.set_prefix(format!("[{}/{}]", current, total_files));
+                        pb.set_message(format!("Scanning: {}", &entry_path));
 
-                                total += enum_res.len();
-                                enums_result.append(&mut enum_res);
-                            }
-                        };
+                        let file_content = std::fs::read_to_string(entry.path()).unwrap();
+
+                        structs.append(
+                            &mut StructSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                        );
+                        functions.append(
+                            &mut FunctionSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                        );
+                        traits.append(
+                            &mut TraitSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                        );
+                        enums.append(
+                            &mut EnumSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                        );
+
                         pb.inc(1);
-                        thread::sleep(Duration::from_millis(200));
                     }
-                    pb.finish_with_message(format!("{} {} found", total, metadata_type_color));
-                    let bat_metadata = BatMetadata::read_metadata().unwrap();
-                    if !functions_result.is_empty() {
-                        bat_metadata
-                            .source_code
-                            .update_functions(functions_result.clone())
-                            .unwrap();
-                    }
-                    if !structs_result.is_empty() {
-                        bat_metadata
-                            .source_code
-                            .update_structs(structs_result.clone())
-                            .unwrap();
-                    }
-                    if !traits_result.is_empty() {
-                        bat_metadata
-                            .source_code
-                            .update_traits(traits_result.clone())
-                            .unwrap();
-                    }
-                    if !enums_result.is_empty() {
-                        bat_metadata
-                            .source_code
-                            .update_enums(enums_result.clone())
-                            .unwrap();
-                    }
+
+                    (structs, functions, traits, enums)
                 })
             })
             .collect();
+
+        let mut all_structs = vec![];
+        let mut all_functions = vec![];
+        let mut all_traits = vec![];
+        let mut all_enums = vec![];
+
         for h in handles {
-            let _ = h.join();
+            let (s, f, t, e) = h.join().unwrap();
+            all_structs.extend(s);
+            all_functions.extend(f);
+            all_traits.extend(t);
+            all_enums.extend(e);
         }
-        // m.clear().unwrap();
+
+        pb.finish_with_message(format!(
+            "Found {} structs, {} functions, {} traits, {} enums",
+            all_structs.len(), all_functions.len(), all_traits.len(), all_enums.len()
+        ));
+
+        let bat_metadata = BatMetadata::read_metadata().unwrap();
+        bat_metadata.source_code.update_structs(all_structs).unwrap();
+        bat_metadata.source_code.update_functions(all_functions).unwrap();
+        bat_metadata.source_code.update_traits(all_traits).unwrap();
+        bat_metadata.source_code.update_enums(all_enums).unwrap();
 
         println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
 
         Ok(())
     }
-    fn get_entry_points_metadata(&self) -> Result<(), BatSonarError> {
+    pub fn run_post_scan_parallel() -> Result<(), BatSonarError> {
         let started = Instant::now();
-        let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
-            .unwrap()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
-        let entrypoint_names =
-            EntrypointParser::get_entrypoint_names(false).change_context(BatSonarError)?;
-        println!(
-            "Getting metadata for {}, analyzing {} entry points",
-            "Entry points".green(),
-            style(format!("{}", entrypoint_names.len())).bold().dim(),
-        );
         let m = MultiProgress::new();
-        let handles: Vec<_> = (0..1)
-            .map(|_i| {
-                let entrypoint_names_clone = entrypoint_names.clone();
-                let pb = m.add(ProgressBar::new(entrypoint_names_clone.len() as u64));
-                pb.set_style(spinner_style.clone());
-                thread::spawn(move || {
-                    for (idx, entry) in entrypoint_names_clone.iter().enumerate().clone() {
-                        pb.set_prefix(format!("[{}/{}]", idx + 1, entrypoint_names_clone.len()));
-                        pb.set_message(format!("Getting information for: {}", entry));
-                        pb.inc(1);
-                        EntrypointParser::new_from_name(entry).unwrap();
-                        thread::sleep(Duration::from_millis(200));
-                    }
-                })
-            })
-            .collect();
-        for h in handles {
-            let _ = h.join();
-        }
-        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
+        let spinner_style =
+            ProgressStyle::with_template("{spinner:.blue} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
 
+        let pb_ep = m.add(ProgressBar::new_spinner());
+        pb_ep.set_style(spinner_style.clone());
+        pb_ep.enable_steady_tick(Duration::from_millis(100));
+        pb_ep.set_message("Entry points: starting...");
+
+        let pb_ca = m.add(ProgressBar::new_spinner());
+        pb_ca.set_style(spinner_style.clone());
+        pb_ca.enable_steady_tick(Duration::from_millis(100));
+        pb_ca.set_message("Context accounts: starting...");
+
+        let pb_tr = m.add(ProgressBar::new_spinner());
+        pb_tr.set_style(spinner_style.clone());
+        pb_tr.enable_steady_tick(Duration::from_millis(100));
+        pb_tr.set_message("Traits: starting...");
+
+        let pb_fd = m.add(ProgressBar::new_spinner());
+        pb_fd.set_style(spinner_style.clone());
+        pb_fd.enable_steady_tick(Duration::from_millis(100));
+        pb_fd.set_message("Function dependencies: starting...");
+
+        // Traits must be built BEFORE function_dependencies and entry_points,
+        // because the CallResolver needs trait_metadata to resolve
+        // `ctx.accounts.method()` and `self.method()` calls to the correct
+        // impl block. Running them in parallel causes a race condition where
+        // the trait metadata may not yet be populated when function parsing runs.
+        Self::run_traits_with_pb(&pb_tr)?;
+
+        // Context accounts are independent; run it in parallel with the
+        // trait-dependent work below.
+        let ca_handle = {
+            let pb = pb_ca.clone();
+            thread::spawn(move || Self::run_context_accounts_with_pb(&pb))
+        };
+
+        // Entry points and function dependencies both call FunctionParser,
+        // which reads+writes BatMetadata.json and calls get_function_dependencies.
+        // They can race with each other on the metadata file, so run them
+        // sequentially after traits are built.
+        Self::run_function_deps_with_pb(&pb_fd)?;
+        Self::run_entry_points_with_pb(&pb_ep)?;
+
+        ca_handle.join().expect("Thread panicked")?;
+
+        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
         Ok(())
     }
 
-    fn get_traits_metadata(&self) -> Result<(), BatSonarError> {
-        let started = Instant::now();
-        let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
-            .unwrap()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+    fn run_entry_points_with_pb(pb: &ProgressBar) -> Result<(), BatSonarError> {
+        let entrypoint_names = EntrypointParser::get_entrypoint_names_from_program_lib(false)
+            .change_context(BatSonarError)?;
+        let total = entrypoint_names.len();
+        pb.set_message(format!("Entry points [0/{}]", total));
+        for (idx, entry) in entrypoint_names.iter().enumerate() {
+            pb.set_message(format!(
+                "Entry points [{}/{}]: {}",
+                idx + 1,
+                total,
+                entry,
+            ));
+            EntrypointParser::new_from_name(entry).unwrap();
+        }
+        pb.finish_with_message(format!("{} Entry points: {} processed", SPARKLE, total));
+        Ok(())
+    }
+
+    fn run_traits_with_pb(pb: &ProgressBar) -> Result<(), BatSonarError> {
         let bat_metadata = BatMetadata::read_metadata().change_context(BatSonarError)?;
         let traits_sc_metadata = bat_metadata.source_code.traits_source_code;
-        println!(
-            "Getting metadata for {}, analyzing {} {}",
-            BatMetadataType::Trait.get_colored_name(true),
-            BatMetadataType::Trait.get_colored_name(true),
-            style(format!("{}", traits_sc_metadata.len())).bold().dim(),
-        );
-        let m = MultiProgress::new();
-        let handles: Vec<_> = (0..1)
-            .map(|_i| {
-                let traits_sc_clone = traits_sc_metadata.clone();
-                let pb = m.add(ProgressBar::new(traits_sc_clone.len() as u64));
-                pb.set_style(spinner_style.clone());
-                thread::spawn(move || {
-                    for (idx, trait_sc) in traits_sc_clone.iter().enumerate().clone() {
-                        pb.set_prefix(format!("[{}/{}]", idx + 1, traits_sc_clone.len()));
-                        pb.set_message(format!("Getting information for: {}", trait_sc.name));
-                        pb.inc(1);
-                        TraitParser::new_from_metadata(trait_sc.clone()).unwrap();
-                        thread::sleep(Duration::from_millis(200));
-                    }
-                })
-            })
-            .collect();
-        for h in handles {
-            let _ = h.join();
+        let total = traits_sc_metadata.len();
+        pb.set_message(format!("Traits [0/{}]", total));
+        for (idx, trait_sc) in traits_sc_metadata.iter().enumerate() {
+            pb.set_message(format!(
+                "Traits [{}/{}]: {}",
+                idx + 1,
+                total,
+                trait_sc.name,
+            ));
+            TraitParser::new_from_metadata(trait_sc.clone()).unwrap();
         }
-        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
-
+        pb.finish_with_message(format!("{} Traits: {} processed", SPARKLE, total));
         Ok(())
     }
-    fn get_functions_dependencies_metadata(&self) -> Result<(), BatSonarError> {
-        let started = Instant::now();
-        let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
-            .unwrap()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+
+    fn run_function_deps_with_pb(pb: &ProgressBar) -> Result<(), BatSonarError> {
         let bat_metadata = BatMetadata::read_metadata().change_context(BatSonarError)?;
         let functions_sc_metadata = bat_metadata.source_code.functions_source_code;
-        println!(
-            "Getting metadata for {}, analyzing {} {}",
-            "Function dependencies".green(),
-            style(format!("{}", functions_sc_metadata.len()))
-                .bold()
-                .dim(),
-            BatMetadataType::Function.get_colored_name(true),
-        );
-        let m = MultiProgress::new();
-        let handles: Vec<_> = (0..1)
-            .map(|_i| {
-                let functions_sc_clone = functions_sc_metadata.clone();
-                let pb = m.add(ProgressBar::new(functions_sc_clone.len() as u64));
-                pb.set_style(spinner_style.clone());
-                thread::spawn(move || {
-                    for (idx, function_sc) in functions_sc_clone.iter().enumerate().clone() {
-                        pb.set_prefix(format!("[{}/{}]", idx + 1, functions_sc_clone.len()));
-                        pb.set_message(format!("Getting information for: {}", function_sc.name));
-                        pb.inc(1);
-                        FunctionParser::new_from_metadata(function_sc.clone()).unwrap();
-                        thread::sleep(Duration::from_millis(200));
-                    }
-                })
-            })
-            .collect();
-        for h in handles {
-            let _ = h.join();
+        let total = functions_sc_metadata.len();
+        pb.set_message(format!("Function dependencies [0/{}]", total));
+        for (idx, function_sc) in functions_sc_metadata.iter().enumerate() {
+            pb.set_message(format!(
+                "Function dependencies [{}/{}]: {}",
+                idx + 1,
+                total,
+                function_sc.name,
+            ));
+            match FunctionParser::new_from_metadata(function_sc.clone()) {
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!(
+                        "Failed to parse dependencies for {}: {:?}",
+                        function_sc.name, e
+                    );
+                }
+            }
         }
-        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
-
+        pb.finish_with_message(format!("{} Function dependencies: {} processed", SPARKLE, total));
         Ok(())
     }
 
-    fn get_context_accounts_metadata(&self) -> Result<(), BatSonarError> {
-        let started = Instant::now();
-        let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
-            .unwrap()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+    fn run_context_accounts_with_pb(pb: &ProgressBar) -> Result<(), BatSonarError> {
         let ca_sc_metadata = SourceCodeMetadata::get_filtered_structs(
             None,
             Some(StructMetadataType::ContextAccounts),
         )
         .change_context(BatSonarError)?;
-        println!(
-            "Getting metadata for {}, analyzing {} {}",
-            StructMetadataType::ContextAccounts.get_colored_name(true),
-            style(format!("{}", ca_sc_metadata.len())).bold().dim(),
-            BatMetadataType::Struct.get_colored_name(true),
-        );
-        let m = MultiProgress::new();
-        let handles: Vec<_> = (0..1)
-            .map(|_i| {
-                let ca_sc_clone = ca_sc_metadata.clone();
-                let pb = m.add(ProgressBar::new(ca_sc_clone.len() as u64));
-                pb.set_style(spinner_style.clone());
-                thread::spawn(move || {
-                    for (idx, ca_sc) in ca_sc_clone.iter().enumerate().clone() {
-                        pb.set_prefix(format!("[{}/{}]", idx + 1, ca_sc_clone.len()));
-                        pb.set_message(format!("Getting information for: {}", ca_sc.name));
-                        pb.inc(1);
-                        let ca_content =
-                            ca_sc.to_source_code_parser(None).get_source_code_content();
-                        let bat_sonar =
-                            BatSonar::new_scanned(&ca_content, SonarResultType::ContextAccountsAll);
-                        let ca_info = bat_sonar
-                            .results
-                            .into_iter()
-                            .map(|result| CAAccountParser::new_from_sonar_result(result).unwrap())
+        let total = ca_sc_metadata.len();
+        pb.set_message(format!("Context accounts [0/{}]", total));
+
+        let solana_account_names: Vec<String> = SourceCodeMetadata::get_filtered_structs(
+            None,
+            Some(StructMetadataType::SolanaAccount),
+        )
+        .change_context(BatSonarError)?
+        .iter()
+        .map(|s| s.name.clone())
+        .collect();
+
+        let mut structs_by_file: std::collections::HashMap<String, Vec<_>> =
+            std::collections::HashMap::new();
+        for ca_sc in &ca_sc_metadata {
+            structs_by_file
+                .entry(ca_sc.path.clone())
+                .or_default()
+                .push(ca_sc.clone());
+        }
+
+        let mut count = 0usize;
+        for (file_path, ca_structs) in &structs_by_file {
+            let parsed_structs = match syn_context_accounts_parser::parse_context_accounts_from_file(file_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("Failed to parse file {} with syn: {:?}", file_path, e);
+                    for ca_sc in ca_structs {
+                        count += 1;
+                        pb.set_message(format!(
+                            "Context accounts [{}/{}]: {} (fallback)",
+                            count, total, ca_sc.name,
+                        ));
+                        let ca_content = ca_sc.to_source_code_parser(None).get_source_code_content();
+                        let context_account_regex = CAAccountParser::get_context_account_lazy_regex();
+                        let ca_info = context_account_regex
+                            .find_iter(&ca_content)
+                            .map(|result| {
+                                CAAccountParser::new_from_context_account_content(result.as_str()).unwrap()
+                            })
                             .collect::<Vec<_>>();
                         let context_accounts_metadata = ContextAccountsMetadata::new(
                             ca_sc.name.clone(),
@@ -377,16 +376,50 @@ impl BatSonarInteractive {
                             ca_info,
                         );
                         context_accounts_metadata.update_metadata_file().unwrap();
-                        thread::sleep(Duration::from_millis(200));
                     }
-                })
-            })
-            .collect();
-        for h in handles {
-            let _ = h.join();
-        }
-        println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
+                    continue;
+                }
+            };
 
+            for ca_sc in ca_structs {
+                count += 1;
+                pb.set_message(format!(
+                    "Context accounts [{}/{}]: {}",
+                    count, total, ca_sc.name,
+                ));
+
+                let ca_info = if let Some(parsed) = parsed_structs.iter().find(|p| p.name == ca_sc.name) {
+                    parsed
+                        .accounts
+                        .iter()
+                        .map(|acc| {
+                            let solana_type = acc.determine_solana_account_type(&solana_account_names);
+                            let content = ca_sc.to_source_code_parser(None).get_source_code_content();
+                            acc.to_ca_account_parser(solana_type, &content)
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    log::warn!("Struct {} not found in syn parse of {}, using fallback", ca_sc.name, file_path);
+                    let ca_content = ca_sc.to_source_code_parser(None).get_source_code_content();
+                    let context_account_regex = CAAccountParser::get_context_account_lazy_regex();
+                    context_account_regex
+                        .find_iter(&ca_content)
+                        .map(|result| {
+                            CAAccountParser::new_from_context_account_content(result.as_str()).unwrap()
+                        })
+                        .collect::<Vec<_>>()
+                };
+
+                let context_accounts_metadata = ContextAccountsMetadata::new(
+                    ca_sc.name.clone(),
+                    BatMetadata::create_metadata_id(),
+                    ca_sc.metadata_id.clone(),
+                    ca_info,
+                );
+                context_accounts_metadata.update_metadata_file().unwrap();
+            }
+        }
+        pb.finish_with_message(format!("{} Context accounts: {} processed", SPARKLE, total));
         Ok(())
     }
 }

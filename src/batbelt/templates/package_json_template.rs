@@ -48,12 +48,13 @@ impl PackageJsonTemplate {
             ("".to_string(), "".to_string())
         };
         let (script_key_prefix, script_value_prefix) = if cfg!(debug_assertions) {
+            let manifest_path = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
             if verbosity_flag.is_empty() {
-                ("".to_string(), "cargo run".to_string())
+                ("".to_string(), format!("cargo run --manifest-path {} --", manifest_path))
             } else {
                 (
                     format!("{}::", verbosity_level_name),
-                    format!("cargo run -- -{}", verbosity_flag),
+                    format!("cargo run --manifest-path {} -- -{}", manifest_path, verbosity_flag),
                 )
             }
         } else if verbosity_flag.is_empty() {

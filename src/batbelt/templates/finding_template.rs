@@ -46,13 +46,6 @@ Fill the impact
 
 ### Evidence {{-}}
 
-<figure style="display:block">
-    <img style="max-width:100%" src="../../figures/finding-name-1.png"/>
-</figure>
-<figure style="display:block">
-    <img style="max-width:100%" src="../../figures/finding-name-2.png"/>
-</figure>
-
 Add a description of the evidence here
 
 ### Recommendation {{-}}

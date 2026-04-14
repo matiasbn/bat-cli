@@ -96,6 +96,26 @@ impl BatMetadataParser<EnumMetadataType> for EnumSourceCodeMetadata {
 }
 
 impl EnumSourceCodeMetadata {
+    pub fn create_metadata_from_content(
+        entry_path: &str,
+        file_content: &str,
+    ) -> Result<Vec<Self>, MetadataError> {
+        let mut metadata_result = vec![];
+        let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Enum);
+        for result in bat_sonar.results {
+            let enum_metadata = EnumSourceCodeMetadata::new(
+                entry_path.to_string(),
+                result.name.to_string(),
+                EnumMetadataType::Enum,
+                result.start_line_index + 1,
+                result.end_line_index + 1,
+                Self::create_metadata_id(),
+            );
+            metadata_result.push(enum_metadata);
+        }
+        Ok(metadata_result)
+    }
+
     pub fn prompt_selection() -> Result<Self, MetadataError> {
         let (metadata_vec, metadata_names) = Self::prompt_types()?;
         let prompt_text = format!("Please select the {}:", Self::metadata_name().blue());
