@@ -1,4 +1,3 @@
-use image::DynamicImage;
 use silicon::assets::HighlightingAssets;
 use silicon::formatter::ImageFormatterBuilder;
 use silicon::utils::{Background, ShadowAdder};
@@ -54,7 +53,7 @@ pub fn create_figure(
         .offset_y(0);
 
     // Build the image formatter.
-    let formatter = ImageFormatterBuilder::new()
+    let mut formatter = ImageFormatterBuilder::new()
         .font(vec![("Hack".to_string(), size)])
         .line_number(show_line_number)
         .line_offset(offset as u32)
@@ -67,7 +66,7 @@ pub fn create_figure(
 
     let image = formatter.format(&highlight, theme);
 
-    DynamicImage::ImageRgba8(image)
+    image
         .save(&dest_png_path)
         .expect("Failed to save screenshot PNG");
 
