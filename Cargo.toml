@@ -42,6 +42,7 @@ quote = "1"
 log4rs = "1.2.0"
 assert_fs = "1.0.10"
 lazy-regex = "2.5.0"
+once_cell = "1"
 tabled = "0.10.0"
 
 [profile.dev]

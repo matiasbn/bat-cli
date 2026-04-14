@@ -181,6 +181,7 @@ dependencies = [
  "log",
  "log4rs",
  "normalize_url",
+ "once_cell",
  "proc-macro2",
  "quote",
  "rand",

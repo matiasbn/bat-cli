@@ -365,7 +365,7 @@ impl BatSonarInteractive {
                         let context_account_regex = CAAccountParser::get_context_account_lazy_regex();
                         let ca_info = context_account_regex
                             .find_iter(&ca_content)
-                            .map(|result| {
+                            .map(|result: regex::Match<'_>| {
                                 CAAccountParser::new_from_context_account_content(result.as_str()).unwrap()
                             })
                             .collect::<Vec<_>>();
@@ -404,7 +404,7 @@ impl BatSonarInteractive {
                     let context_account_regex = CAAccountParser::get_context_account_lazy_regex();
                     context_account_regex
                         .find_iter(&ca_content)
-                        .map(|result| {
+                        .map(|result: regex::Match<'_>| {
                             CAAccountParser::new_from_context_account_content(result.as_str()).unwrap()
                         })
                         .collect::<Vec<_>>()
