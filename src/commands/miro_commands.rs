@@ -335,10 +335,42 @@ impl MiroCommand {
         let mut id_to_image: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 
+        // Group functions by program (crate) name extracted from path.
+        let mut program_names: Vec<String> = function_metadata_vec
+            .iter()
+            .map(|f| {
+                // Path is like "../lang/syn/src/..." -> split by /src/ -> take last segment before /src/
+                let without_prefix = f.path.trim_start_matches("../");
+                let prefix = without_prefix.split("/src/").next().unwrap_or(without_prefix);
+                prefix.to_string()
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        program_names.sort();
+
         while keep_deploying {
-            let function_metadata_names_vec = function_metadata_vec
-                .clone()
-                .into_iter()
+            // Step 1: Select the program/crate
+            let program_prompt = "Select the program containing the function";
+            let selected_program_index = batbelt::bat_dialoguer::select(
+                program_prompt,
+                program_names.clone(),
+                None,
+            )?;
+            let selected_program = &program_names[selected_program_index];
+
+            // Step 2: Filter functions belonging to that program
+            let filtered_functions: Vec<&FunctionSourceCodeMetadata> = function_metadata_vec
+                .iter()
+                .filter(|f| {
+                    let without_prefix = f.path.trim_start_matches("../");
+                    let prefix = without_prefix.split("/src/").next().unwrap_or(without_prefix);
+                    prefix == selected_program.as_str()
+                })
+                .collect();
+
+            let function_names_vec = filtered_functions
+                .iter()
                 .map(|f_meta| {
                     miro_command_functions::get_formatted_path(
                         f_meta.name.clone(),
@@ -350,10 +382,10 @@ impl MiroCommand {
             let prompt_text = "Select the root function to deploy";
             let selected_function_index = batbelt::bat_dialoguer::select(
                 prompt_text,
-                function_metadata_names_vec.clone(),
+                function_names_vec.clone(),
                 None,
             )?;
-            let root_function = function_metadata_vec[selected_function_index].clone();
+            let root_function = filtered_functions[selected_function_index].clone();
 
             let function_sc_options = SourceCodeScreenshotOptions {
                 include_path: true,
@@ -409,8 +441,10 @@ impl MiroCommand {
                 root_function.name.clone(),
             ));
 
-            const CASCADE_START_X: i64 = 200;
-            const CASCADE_START_Y: i64 = 200;
+            // Deploy new screenshots near the bottom-right corner of the frame
+            // so they don't overlap with existing screenshots.
+            const CASCADE_START_X: i64 = (MIRO_FRAME_WIDTH as i64) / 2 - 400;
+            const CASCADE_START_Y: i64 = (MIRO_FRAME_HEIGHT as i64) / 2 - 400;
             const CASCADE_STEP: i64 = 60;
 
             while let Some((caller_id, caller_name)) = bfs_queue.pop_front() {
@@ -965,8 +999,10 @@ impl MiroCommand {
             // close to the top-left of the frame so the user can see and
             // grab them immediately. Each new screenshot lands slightly
             // below-right of the previous one.
-            const CASCADE_START_X: i64 = 200;
-            const CASCADE_START_Y: i64 = 200;
+            // Deploy new screenshots near the bottom-right corner of the frame
+            // so they don't overlap with existing screenshots.
+            const CASCADE_START_X: i64 = (MIRO_FRAME_WIDTH as i64) / 2 - 400;
+            const CASCADE_START_Y: i64 = (MIRO_FRAME_HEIGHT as i64) / 2 - 400;
             const CASCADE_STEP: i64 = 60;
 
             let mut dependency_image_ids: Vec<String> = vec![];

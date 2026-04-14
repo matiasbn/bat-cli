@@ -130,6 +130,10 @@ impl BatSonarInteractive {
                     {
                         return None;
                     }
+                    // Only scan Rust source files
+                    if !dir_entry.file_name().to_str()?.ends_with(".rs") {
+                        return None;
+                    }
                     Some(dir_entry)
                 })
                 .collect();
@@ -222,7 +226,8 @@ impl BatSonarInteractive {
     }
     pub fn run_post_scan_parallel() -> Result<(), BatSonarError> {
         let started = Instant::now();
-        let is_anchor = std::path::Path::new("Anchor.toml").is_file();
+        let is_anchor = std::path::Path::new("Anchor.toml").is_file()
+            || std::path::Path::new("../Anchor.toml").is_file();
         let m = MultiProgress::new();
         let spinner_style =
             ProgressStyle::with_template("{spinner:.blue} {wide_msg}")
