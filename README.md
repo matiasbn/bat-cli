@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" width="200" alt="BAT CLI logo">
+</p>
+
 # BAT CLI — Blockchain Audit Toolkit
 
 A Rust CLI that automates the repetitive parts of Solana/Anchor security audits: static analysis, dependency graphing, Miro board generation, and findings management.
