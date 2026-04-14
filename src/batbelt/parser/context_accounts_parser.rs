@@ -1,5 +1,5 @@
 use crate::batbelt::metadata::{BatMetadata, MetadataId};
-use clap::__macro_refs::once_cell::sync::Lazy;
+use once_cell::sync::Lazy;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use lazy_regex::regex;
 use regex::Regex;
