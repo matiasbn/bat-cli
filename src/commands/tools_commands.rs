@@ -1,6 +1,5 @@
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::CodeEditor;
-use std::env;
 
 use crate::batbelt::path::{prettify_source_code_path, BatFile, BatFolder};
 
@@ -25,8 +24,7 @@ use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::config::BatAuditorConfig;
 use log::Level;
-use tabled::object::Rows;
-use tabled::{Modify, Panel, Style, Table, Tabled, Width};
+use tabled::{Style, Table, Tabled};
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -162,7 +160,7 @@ impl ToolCommand {
 
         let mut table = Table::new(path_vec);
         table.with(Style::re_structured_text());
-        println!("{}", table.to_string());
+        println!("{}", table);
 
         println!(
             "{}: {}, {}: {}, {}: {}, {}: {}; {}: {}",
@@ -212,8 +210,7 @@ impl ToolCommand {
                 .map(|dep| {
                     format!(
                         "{}:{}",
-                        prettify_source_code_path(&dep.path)
-                            .unwrap_or_else(|_| dep.path.clone()),
+                        prettify_source_code_path(&dep.path).unwrap_or_else(|_| dep.path.clone()),
                         dep.start_line_index
                     )
                 })
@@ -232,7 +229,7 @@ impl ToolCommand {
         let mut table = Table::new(path_vec);
         table.with(Style::sharp());
 
-        println!("{}", table.to_string());
+        println!("{}", table);
         Ok(())
     }
 

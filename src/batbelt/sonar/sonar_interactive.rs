@@ -3,12 +3,10 @@ use crate::batbelt::metadata::structs_source_code_metadata::{
     StructMetadataType, StructSourceCodeMetadata,
 };
 use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
-use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, SourceCodeMetadata,
-};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::sonar::{BatSonarError, SonarResultType};
-use crate::batbelt::BatEnumerator;
+use crate::config::BatConfig;
 
 use colored::Colorize;
 use dialoguer::console::{style, Emoji};
@@ -101,25 +99,42 @@ impl BatSonarInteractive {
                     &format!("{} {}", FOLDER, BAT),
                 ]),
         );
-        pb.set_message(format!(
-            "Initializing {}...",
-            "BatSonar".red(),
-        ));
+        pb.set_message(format!("Initializing {}...", "BatSonar".red(),));
         thread::sleep(Duration::from_millis(1500));
         pb.finish_with_message(format!("{} initialized", "BatSonar".red()));
         Ok(())
     }
 
     fn get_source_code_metadata(&self) -> Result<(), BatSonarError> {
-        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
 
         let started = Instant::now();
         let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
-        let program_dir_entries = BatFolder::ProgramPath
-            .get_all_files_dir_entries(false, None, None)
-            .change_context(BatSonarError)?;
+        let all_program_paths = BatFolder::get_all_program_paths().change_context(BatSonarError)?;
+        let mut program_dir_entries = vec![];
+        for program_path in &all_program_paths {
+            let entries: Vec<walkdir::DirEntry> = walkdir::WalkDir::new(program_path)
+                .into_iter()
+                .filter_map(|f| {
+                    let dir_entry = f.ok()?;
+                    if !dir_entry.metadata().ok()?.is_file() || dir_entry.file_name() == ".gitkeep"
+                    {
+                        return None;
+                    }
+                    // Only scan Rust source files
+                    if !dir_entry.file_name().to_str()?.ends_with(".rs") {
+                        return None;
+                    }
+                    Some(dir_entry)
+                })
+                .collect();
+            program_dir_entries.extend(entries);
+        }
         let total_files = program_dir_entries.len();
         println!(
             "Analyzing {} files",
@@ -133,7 +148,7 @@ impl BatSonarInteractive {
             .map(|n| n.get())
             .unwrap_or(4)
             .min(total_files.max(1));
-        let chunk_size = (total_files + num_threads - 1) / num_threads;
+        let chunk_size = total_files.div_ceil(num_threads);
         let counter = Arc::new(AtomicUsize::new(0));
 
         let handles: Vec<_> = program_dir_entries
@@ -157,16 +172,32 @@ impl BatSonarInteractive {
                         let file_content = std::fs::read_to_string(entry.path()).unwrap();
 
                         structs.append(
-                            &mut StructSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                            &mut StructSourceCodeMetadata::create_metadata_from_content(
+                                &entry_path,
+                                &file_content,
+                            )
+                            .unwrap(),
                         );
                         functions.append(
-                            &mut FunctionSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                            &mut FunctionSourceCodeMetadata::create_metadata_from_content(
+                                &entry_path,
+                                &file_content,
+                            )
+                            .unwrap(),
                         );
                         traits.append(
-                            &mut TraitSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                            &mut TraitSourceCodeMetadata::create_metadata_from_content(
+                                &entry_path,
+                                &file_content,
+                            )
+                            .unwrap(),
                         );
                         enums.append(
-                            &mut EnumSourceCodeMetadata::create_metadata_from_content(&entry_path, &file_content).unwrap()
+                            &mut EnumSourceCodeMetadata::create_metadata_from_content(
+                                &entry_path,
+                                &file_content,
+                            )
+                            .unwrap(),
                         );
 
                         pb.inc(1);
@@ -192,12 +223,21 @@ impl BatSonarInteractive {
 
         pb.finish_with_message(format!(
             "Found {} structs, {} functions, {} traits, {} enums",
-            all_structs.len(), all_functions.len(), all_traits.len(), all_enums.len()
+            all_structs.len(),
+            all_functions.len(),
+            all_traits.len(),
+            all_enums.len()
         ));
 
         let bat_metadata = BatMetadata::read_metadata().unwrap();
-        bat_metadata.source_code.update_structs(all_structs).unwrap();
-        bat_metadata.source_code.update_functions(all_functions).unwrap();
+        bat_metadata
+            .source_code
+            .update_structs(all_structs)
+            .unwrap();
+        bat_metadata
+            .source_code
+            .update_functions(all_functions)
+            .unwrap();
         bat_metadata.source_code.update_traits(all_traits).unwrap();
         bat_metadata.source_code.update_enums(all_enums).unwrap();
 
@@ -207,21 +247,13 @@ impl BatSonarInteractive {
     }
     pub fn run_post_scan_parallel() -> Result<(), BatSonarError> {
         let started = Instant::now();
+        let is_anchor = BatConfig::get_config()
+            .map(|c| c.project_type == crate::config::ProjectType::Anchor)
+            .unwrap_or(false);
         let m = MultiProgress::new();
-        let spinner_style =
-            ProgressStyle::with_template("{spinner:.blue} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
-
-        let pb_ep = m.add(ProgressBar::new_spinner());
-        pb_ep.set_style(spinner_style.clone());
-        pb_ep.enable_steady_tick(Duration::from_millis(100));
-        pb_ep.set_message("Entry points: starting...");
-
-        let pb_ca = m.add(ProgressBar::new_spinner());
-        pb_ca.set_style(spinner_style.clone());
-        pb_ca.enable_steady_tick(Duration::from_millis(100));
-        pb_ca.set_message("Context accounts: starting...");
+        let spinner_style = ProgressStyle::with_template("{spinner:.blue} {wide_msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
 
         let pb_tr = m.add(ProgressBar::new_spinner());
         pb_tr.set_style(spinner_style.clone());
@@ -240,21 +272,36 @@ impl BatSonarInteractive {
         // the trait metadata may not yet be populated when function parsing runs.
         Self::run_traits_with_pb(&pb_tr)?;
 
-        // Context accounts are independent; run it in parallel with the
-        // trait-dependent work below.
-        let ca_handle = {
-            let pb = pb_ca.clone();
-            thread::spawn(move || Self::run_context_accounts_with_pb(&pb))
-        };
+        if is_anchor {
+            let pb_ep = m.add(ProgressBar::new_spinner());
+            pb_ep.set_style(spinner_style.clone());
+            pb_ep.enable_steady_tick(Duration::from_millis(100));
+            pb_ep.set_message("Entry points: starting...");
 
-        // Entry points and function dependencies both call FunctionParser,
-        // which reads+writes BatMetadata.json and calls get_function_dependencies.
-        // They can race with each other on the metadata file, so run them
-        // sequentially after traits are built.
-        Self::run_function_deps_with_pb(&pb_fd)?;
-        Self::run_entry_points_with_pb(&pb_ep)?;
+            let pb_ca = m.add(ProgressBar::new_spinner());
+            pb_ca.set_style(spinner_style.clone());
+            pb_ca.enable_steady_tick(Duration::from_millis(100));
+            pb_ca.set_message("Context accounts: starting...");
 
-        ca_handle.join().expect("Thread panicked")?;
+            // Context accounts are independent; run it in parallel with the
+            // trait-dependent work below.
+            let ca_handle = {
+                let pb = pb_ca.clone();
+                thread::spawn(move || Self::run_context_accounts_with_pb(&pb))
+            };
+
+            // Entry points and function dependencies both call FunctionParser,
+            // which reads+writes BatMetadata.json and calls get_function_dependencies.
+            // They can race with each other on the metadata file, so run them
+            // sequentially after traits are built.
+            Self::run_function_deps_with_pb(&pb_fd)?;
+            Self::run_entry_points_with_pb(&pb_ep)?;
+
+            ca_handle.join().expect("Thread panicked")?;
+        } else {
+            // Generic Rust project: only resolve function dependencies.
+            Self::run_function_deps_with_pb(&pb_fd)?;
+        }
 
         println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
         Ok(())
@@ -266,12 +313,7 @@ impl BatSonarInteractive {
         let total = entrypoint_names.len();
         pb.set_message(format!("Entry points [0/{}]", total));
         for (idx, entry) in entrypoint_names.iter().enumerate() {
-            pb.set_message(format!(
-                "Entry points [{}/{}]: {}",
-                idx + 1,
-                total,
-                entry,
-            ));
+            pb.set_message(format!("Entry points [{}/{}]: {}", idx + 1, total, entry,));
             EntrypointParser::new_from_name(entry).unwrap();
         }
         pb.finish_with_message(format!("{} Entry points: {} processed", SPARKLE, total));
@@ -284,12 +326,7 @@ impl BatSonarInteractive {
         let total = traits_sc_metadata.len();
         pb.set_message(format!("Traits [0/{}]", total));
         for (idx, trait_sc) in traits_sc_metadata.iter().enumerate() {
-            pb.set_message(format!(
-                "Traits [{}/{}]: {}",
-                idx + 1,
-                total,
-                trait_sc.name,
-            ));
+            pb.set_message(format!("Traits [{}/{}]: {}", idx + 1, total, trait_sc.name,));
             TraitParser::new_from_metadata(trait_sc.clone()).unwrap();
         }
         pb.finish_with_message(format!("{} Traits: {} processed", SPARKLE, total));
@@ -313,12 +350,16 @@ impl BatSonarInteractive {
                 Err(e) => {
                     log::warn!(
                         "Failed to parse dependencies for {}: {:?}",
-                        function_sc.name, e
+                        function_sc.name,
+                        e
                     );
                 }
             }
         }
-        pb.finish_with_message(format!("{} Function dependencies: {} processed", SPARKLE, total));
+        pb.finish_with_message(format!(
+            "{} Function dependencies: {} processed",
+            SPARKLE, total
+        ));
         Ok(())
     }
 
@@ -331,14 +372,12 @@ impl BatSonarInteractive {
         let total = ca_sc_metadata.len();
         pb.set_message(format!("Context accounts [0/{}]", total));
 
-        let solana_account_names: Vec<String> = SourceCodeMetadata::get_filtered_structs(
-            None,
-            Some(StructMetadataType::SolanaAccount),
-        )
-        .change_context(BatSonarError)?
-        .iter()
-        .map(|s| s.name.clone())
-        .collect();
+        let solana_account_names: Vec<String> =
+            SourceCodeMetadata::get_filtered_structs(None, Some(StructMetadataType::SolanaAccount))
+                .change_context(BatSonarError)?
+                .iter()
+                .map(|s| s.name.clone())
+                .collect();
 
         let mut structs_by_file: std::collections::HashMap<String, Vec<_>> =
             std::collections::HashMap::new();
@@ -351,35 +390,41 @@ impl BatSonarInteractive {
 
         let mut count = 0usize;
         for (file_path, ca_structs) in &structs_by_file {
-            let parsed_structs = match syn_context_accounts_parser::parse_context_accounts_from_file(file_path) {
-                Ok(s) => s,
-                Err(e) => {
-                    log::warn!("Failed to parse file {} with syn: {:?}", file_path, e);
-                    for ca_sc in ca_structs {
-                        count += 1;
-                        pb.set_message(format!(
-                            "Context accounts [{}/{}]: {} (fallback)",
-                            count, total, ca_sc.name,
-                        ));
-                        let ca_content = ca_sc.to_source_code_parser(None).get_source_code_content();
-                        let context_account_regex = CAAccountParser::get_context_account_lazy_regex();
-                        let ca_info = context_account_regex
-                            .find_iter(&ca_content)
-                            .map(|result: regex::Match<'_>| {
-                                CAAccountParser::new_from_context_account_content(result.as_str()).unwrap()
-                            })
-                            .collect::<Vec<_>>();
-                        let context_accounts_metadata = ContextAccountsMetadata::new(
-                            ca_sc.name.clone(),
-                            BatMetadata::create_metadata_id(),
-                            ca_sc.metadata_id.clone(),
-                            ca_info,
-                        );
-                        context_accounts_metadata.update_metadata_file().unwrap();
+            let parsed_structs =
+                match syn_context_accounts_parser::parse_context_accounts_from_file(file_path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("Failed to parse file {} with syn: {:?}", file_path, e);
+                        for ca_sc in ca_structs {
+                            count += 1;
+                            pb.set_message(format!(
+                                "Context accounts [{}/{}]: {} (fallback)",
+                                count, total, ca_sc.name,
+                            ));
+                            let ca_content =
+                                ca_sc.to_source_code_parser(None).get_source_code_content();
+                            let context_account_regex =
+                                CAAccountParser::get_context_account_lazy_regex();
+                            let ca_info = context_account_regex
+                                .find_iter(&ca_content)
+                                .map(|result: regex::Match<'_>| {
+                                    CAAccountParser::new_from_context_account_content(
+                                        result.as_str(),
+                                    )
+                                    .unwrap()
+                                })
+                                .collect::<Vec<_>>();
+                            let context_accounts_metadata = ContextAccountsMetadata::new(
+                                ca_sc.name.clone(),
+                                BatMetadata::create_metadata_id(),
+                                ca_sc.metadata_id.clone(),
+                                ca_info,
+                            );
+                            context_accounts_metadata.update_metadata_file().unwrap();
+                        }
+                        continue;
                     }
-                    continue;
-                }
-            };
+                };
 
             for ca_sc in ca_structs {
                 count += 1;
@@ -388,24 +433,33 @@ impl BatSonarInteractive {
                     count, total, ca_sc.name,
                 ));
 
-                let ca_info = if let Some(parsed) = parsed_structs.iter().find(|p| p.name == ca_sc.name) {
+                let ca_info = if let Some(parsed) =
+                    parsed_structs.iter().find(|p| p.name == ca_sc.name)
+                {
                     parsed
                         .accounts
                         .iter()
                         .map(|acc| {
-                            let solana_type = acc.determine_solana_account_type(&solana_account_names);
-                            let content = ca_sc.to_source_code_parser(None).get_source_code_content();
+                            let solana_type =
+                                acc.determine_solana_account_type(&solana_account_names);
+                            let content =
+                                ca_sc.to_source_code_parser(None).get_source_code_content();
                             acc.to_ca_account_parser(solana_type, &content)
                         })
                         .collect::<Vec<_>>()
                 } else {
-                    log::warn!("Struct {} not found in syn parse of {}, using fallback", ca_sc.name, file_path);
+                    log::warn!(
+                        "Struct {} not found in syn parse of {}, using fallback",
+                        ca_sc.name,
+                        file_path
+                    );
                     let ca_content = ca_sc.to_source_code_parser(None).get_source_code_content();
                     let context_account_regex = CAAccountParser::get_context_account_lazy_regex();
                     context_account_regex
                         .find_iter(&ca_content)
                         .map(|result: regex::Match<'_>| {
-                            CAAccountParser::new_from_context_account_content(result.as_str()).unwrap()
+                            CAAccountParser::new_from_context_account_content(result.as_str())
+                                .unwrap()
                         })
                         .collect::<Vec<_>>()
                 };

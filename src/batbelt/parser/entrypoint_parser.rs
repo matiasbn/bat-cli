@@ -60,10 +60,8 @@ impl EntrypointParser {
             // First ensure the entrypoint function's dependencies are computed
             let _ = FunctionParser::new_from_metadata(entry_point_function.clone());
             let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
-            let dependencies = Self::resolve_all_dependencies(
-                &entry_point_function.metadata_id,
-                &bat_metadata,
-            );
+            let dependencies =
+                Self::resolve_all_dependencies(&entry_point_function.metadata_id, &bat_metadata);
 
             return Ok(Self {
                 name: ep_metadata.name,
@@ -128,10 +126,8 @@ impl EntrypointParser {
         // Compute dependencies for the entrypoint function
         let _ = FunctionParser::new_from_metadata(entrypoint_function.clone());
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
-        let dependencies = Self::resolve_all_dependencies(
-            &entrypoint_function.metadata_id,
-            &bat_metadata,
-        );
+        let dependencies =
+            Self::resolve_all_dependencies(&entrypoint_function.metadata_id, &bat_metadata);
 
         Ok(Self {
             name: entrypoint_name.to_string(),
@@ -147,7 +143,12 @@ impl EntrypointParser {
     ) -> Vec<FunctionSourceCodeMetadata> {
         let mut visited = HashSet::new();
         let mut result = vec![];
-        Self::collect_deps(entrypoint_function_id, bat_metadata, &mut visited, &mut result);
+        Self::collect_deps(
+            entrypoint_function_id,
+            bat_metadata,
+            &mut visited,
+            &mut result,
+        );
         result
     }
 
@@ -231,7 +232,7 @@ impl EntrypointParser {
                 }
             })
             .unwrap();
-        let canditate_lines = vec![
+        let canditate_lines = [
             lib_file_lines[entrypoint_index],
             lib_file_lines[entrypoint_index + 1],
         ];

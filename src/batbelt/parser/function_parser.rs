@@ -264,9 +264,8 @@ impl FunctionParser {
         use quote::ToTokens;
 
         if self.content.is_empty() {
-            return Err(Report::new(ParserError).attach_printable(
-                "Error parsing function, content needs to be initialized",
-            ))?;
+            return Err(Report::new(ParserError)
+                .attach_printable("Error parsing function, content needs to be initialized"))?;
         }
 
         let item_fn = syn::parse_str::<syn::ItemFn>(&self.content).or_else(|_| {
@@ -275,24 +274,22 @@ impl FunctionParser {
         });
 
         let result = match item_fn {
-            Ok(item_fn) => {
-                item_fn
-                    .sig
-                    .inputs
-                    .iter()
-                    .filter_map(|arg| match arg {
-                        syn::FnArg::Receiver(_) => None,
-                        syn::FnArg::Typed(pat_type) => {
-                            let name = pat_type.pat.to_token_stream().to_string();
-                            let ty = pat_type.ty.to_token_stream().to_string();
-                            Some(FunctionParameterParser {
-                                parameter_name: name,
-                                parameter_type: ty,
-                            })
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            }
+            Ok(item_fn) => item_fn
+                .sig
+                .inputs
+                .iter()
+                .filter_map(|arg| match arg {
+                    syn::FnArg::Receiver(_) => None,
+                    syn::FnArg::Typed(pat_type) => {
+                        let name = pat_type.pat.to_token_stream().to_string();
+                        let ty = pat_type.ty.to_token_stream().to_string();
+                        Some(FunctionParameterParser {
+                            parameter_name: name,
+                            parameter_type: ty,
+                        })
+                    }
+                })
+                .collect::<Vec<_>>(),
             Err(_) => {
                 // Fallback to legacy string parsing
                 let function_signature = self.signature.clone();
@@ -302,7 +299,7 @@ impl FunctionParser {
                         .trim_start_matches("pub (crate) fn ")
                         .trim_start_matches("pub fn ")
                         .split('(')
-                        .last()
+                        .next_back()
                         .unwrap()
                         .trim_end_matches(')')
                         .split(' ')
@@ -471,4 +468,3 @@ impl FunctionParser {
 //     let result = test_regex.is_match(test_text);
 //     println!("{}", result);
 // }
-

@@ -1,20 +1,9 @@
 use crate::batbelt::analytics::{AnalyticsError, AnalyticsResult, BatAnalytics};
-use crate::batbelt::git::git_commit::GitCommit;
-use colored::Colorize;
-use error_stack::{IntoReport, Report, ResultExt};
-use lazy_regex::regex;
-use regex::Regex;
+use error_stack::{IntoReport, ResultExt};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
-use std::collections::{HashMap, HashSet};
 
 use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
-use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
-use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, MetadataError, MetadataResult, SourceCodeMetadata,
-};
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct EntryPointFlowAnalytics {

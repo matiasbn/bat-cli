@@ -52,10 +52,7 @@ impl FileScope {
     }
 
     /// Build a `FileScope` from file contents (parses with `syn::parse_file`).
-    pub fn from_file_content(
-        path: impl Into<String>,
-        content: &str,
-    ) -> Result<Self, syn::Error> {
+    pub fn from_file_content(path: impl Into<String>, content: &str) -> Result<Self, syn::Error> {
         let syn_file = syn::parse_file(content)?;
         Ok(Self::from_syn_file(path, &syn_file))
     }
@@ -266,7 +263,10 @@ mod tests {
             }
             "#,
         );
-        assert_eq!(scope.resolve_name("Bar"), Some("crate::foo::Bar".to_string()));
+        assert_eq!(
+            scope.resolve_name("Bar"),
+            Some("crate::foo::Bar".to_string())
+        );
         assert!(scope.local_items.contains("inner"));
     }
 
@@ -289,6 +289,8 @@ mod tests {
             scope.resolve_name("State"),
             Some("crate::state::State".to_string())
         );
-        assert!(scope.glob_imports.contains(&"anchor_lang::prelude".to_string()));
+        assert!(scope
+            .glob_imports
+            .contains(&"anchor_lang::prelude".to_string()));
     }
 }

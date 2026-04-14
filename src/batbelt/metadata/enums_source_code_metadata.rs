@@ -1,10 +1,9 @@
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::batbelt::metadata::{
-    BatMetadata, BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
+    BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
 };
 
-use crate::batbelt::parser::trait_parser::TraitParser;
 use error_stack::{Result, ResultExt};
 
 use super::MetadataError;

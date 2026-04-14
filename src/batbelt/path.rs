@@ -261,7 +261,7 @@ impl BatFile {
             _ => {
                 return Err(Report::new(BatPathError).attach_printable(format!(
                     "{} does not implement default commit message",
-                    self.to_string()
+                    self
                 )));
             }
         };
@@ -297,7 +297,7 @@ impl BatFolder {
 
         let path = match self {
             BatFolder::Notes => "notes".to_string(),
-            BatFolder::ProjectFolderPath => format!("{}", bat_config.project_name),
+            BatFolder::ProjectFolderPath => bat_config.project_name.to_string(),
             BatFolder::AuditorNotes => {
                 let bat_auditor_config =
                     BatAuditorConfig::get_config().change_context(BatPathError)?;
@@ -317,7 +317,8 @@ impl BatFolder {
             }
             BatFolder::ProgramPath => bat_config
                 .program_lib_path
-                .trim_end_matches("/lib.rs")
+                .trim_end_matches("/src/lib.rs")
+                .trim_end_matches("/src/main.rs")
                 .to_string(),
             BatFolder::FindingsFolderPath => {
                 format!("{}/findings", BatFolder::AuditorNotes.get_path(true)?)
@@ -377,6 +378,30 @@ impl BatFolder {
         }
 
         Ok(path)
+    }
+
+    /// Returns all program directory paths from config (for multi-program scanning).
+    pub fn get_all_program_paths() -> Result<Vec<String>, BatPathError> {
+        let bat_config = BatConfig::get_config().change_context(BatPathError)?;
+        let paths = if bat_config.program_lib_paths.is_empty() {
+            // Backwards compatibility: use single program_lib_path
+            vec![bat_config
+                .program_lib_path
+                .trim_end_matches("/src/lib.rs")
+                .trim_end_matches("/src/main.rs")
+                .to_string()]
+        } else {
+            bat_config
+                .program_lib_paths
+                .iter()
+                .map(|p| {
+                    p.trim_end_matches("/src/lib.rs")
+                        .trim_end_matches("/src/main.rs")
+                        .to_string()
+                })
+                .collect()
+        };
+        Ok(paths)
     }
 
     pub fn get_all_files_dir_entries(

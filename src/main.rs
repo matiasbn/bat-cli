@@ -229,15 +229,27 @@ impl BatCommands {
         Ok(())
     }
 
-    pub fn get_bat_package_json_commands() -> Vec<BatPackageJsonCommand> {
+    pub fn get_bat_package_json_commands(
+        project_type: &crate::config::ProjectType,
+    ) -> Vec<BatPackageJsonCommand> {
+        use crate::config::ProjectType;
+        let is_anchor = *project_type == ProjectType::Anchor;
+
         BatCommands::get_type_vec()
             .into_iter()
             .filter_map(|command| match command {
-                BatCommands::CodeOverhaul(_) => {
+                // Anchor-only commands
+                BatCommands::CodeOverhaul(_) if is_anchor => {
                     Some(CodeOverhaulCommand::get_bat_package_json_commands(
                         command.to_string().to_kebab_case(),
                     ))
                 }
+                BatCommands::Analytics(_) if is_anchor => {
+                    Some(AnalyticsCommand::get_bat_package_json_commands(
+                        command.to_string().to_kebab_case(),
+                    ))
+                }
+                // Universal commands
                 BatCommands::Finding(_) => Some(FindingCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
@@ -245,9 +257,6 @@ impl BatCommands {
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Miro(_) => Some(MiroCommand::get_bat_package_json_commands(
-                    command.to_string().to_kebab_case(),
-                )),
-                BatCommands::Analytics(_) => Some(AnalyticsCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Repository(_) => {
@@ -327,13 +336,11 @@ fn auto_detect_bat_audit_dir() {
     if Path::new("Bat.toml").exists() {
         return; // Already in the right directory
     }
-    if Path::new("bat-audit/Bat.toml").exists() {
-        if std::env::set_current_dir("bat-audit").is_ok() {
-            println!(
-                "{} auto-detected bat-audit/ directory, changing working directory",
-                "bat-cli".blue()
-            );
-        }
+    if Path::new("bat-audit/Bat.toml").exists() && std::env::set_current_dir("bat-audit").is_ok() {
+        println!(
+            "{} auto-detected bat-audit/ directory, changing working directory",
+            "bat-cli".blue()
+        );
     }
 }
 
@@ -379,4 +386,3 @@ async fn main() -> CommandResult<()> {
         }
     }
 }
-

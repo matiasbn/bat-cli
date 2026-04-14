@@ -20,7 +20,7 @@ impl BatDialoguer {
         let waiting_response = true;
         while waiting_response {
             let colorful_theme = &ColorfulTheme::default();
-            let mut multi_select = MultiSelect::with_theme(colorful_theme);
+            let multi_select = MultiSelect::with_theme(colorful_theme);
             let mut dialog = multi_select.with_prompt(&prompt_text).items(&items);
 
             if let Some(def) = default {
@@ -55,7 +55,7 @@ impl BatDialoguer {
         T: ToString + Clone,
     {
         let colorful_theme = &ColorfulTheme::default();
-        let mut select = Select::with_theme(colorful_theme);
+        let select = Select::with_theme(colorful_theme);
         let mut dialog = select.with_prompt(&prompt_text).items(&items);
 
         if let Some(def) = default {
@@ -64,17 +64,17 @@ impl BatDialoguer {
             dialog = dialog.default(0);
         }
 
-        Ok(dialog
+        dialog
             .interact_on_opt(&Term::stderr())
             .into_report()
             .change_context(CommandError)?
             .ok_or(CommandError)
-            .into_report()?)
+            .into_report()
     }
 
     pub fn select_yes_or_no(prompt_text: String) -> Result<bool, CommandError> {
         let colorful_theme = &ColorfulTheme::default();
-        let mut select = Select::with_theme(colorful_theme);
+        let select = Select::with_theme(colorful_theme);
         let dialog = select
             .with_prompt(&prompt_text)
             .item("yes")
@@ -92,7 +92,7 @@ impl BatDialoguer {
 
     pub fn input(prompt_text: String) -> Result<String, CommandError> {
         let colorful_theme = &ColorfulTheme::default();
-        let mut input = Input::with_theme(colorful_theme);
+        let input = Input::with_theme(colorful_theme);
         let dialog: String = input
             .with_prompt(&prompt_text)
             .interact_text()

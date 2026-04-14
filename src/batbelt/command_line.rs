@@ -55,8 +55,7 @@ impl CodeEditor {
             }
             CodeEditor::VSCode => {
                 if starting_line == 0 {
-                    execute_command("code", &["-a", path], false)
-                        .change_context(CommandError)?;
+                    execute_command("code", &["-a", path], false).change_context(CommandError)?;
                 } else {
                     let goto_path = format!("{}:{}", path, starting_line);
                     execute_command("code", &["-a", "--goto", &goto_path], false)
@@ -143,4 +142,3 @@ pub fn execute_command_with_child_process(command: &str, args: &[&str]) -> Comma
     Ok(output_string)
     // Ok("output_string".to_string())
 }
-

@@ -1,6 +1,3 @@
-use crate::batbelt;
-use crate::batbelt::path::BatFile;
-
 use std::error::Error;
 use std::fmt::{self, Debug};
 
@@ -10,7 +7,6 @@ pub mod functions;
 pub mod sonar_interactive;
 pub mod structs;
 
-use error_stack::{Result, ResultExt};
 use regex::Regex;
 
 #[derive(Debug)]
@@ -64,18 +60,27 @@ impl BatSonar {
         if let Some(starting_content) = starting_line_content {
             let start_line_index = content
                 .lines()
-                .position(|line| line.contains(starting_content))
-                .unwrap();
-            let first_line = content
-                .lines()
-                .find(|line| line.contains(starting_content))
-                .unwrap();
-            let trailing_whitespaces = Self::get_trailing_whitespaces(first_line);
-            let end_line_index = new_sonar
-                .get_end_line_index(start_line_index, trailing_whitespaces, "")
-                .unwrap();
-            let new_content = new_sonar.get_result_content(start_line_index, end_line_index);
-            new_sonar.content = new_content;
+                .position(|line| line.contains(starting_content));
+            if let Some(start_line_index) = start_line_index {
+                let first_line = content
+                    .lines()
+                    .find(|line| line.contains(starting_content))
+                    .unwrap();
+                let trailing_whitespaces = Self::get_trailing_whitespaces(first_line);
+                let end_line_index =
+                    new_sonar.get_end_line_index(start_line_index, trailing_whitespaces, "");
+                if let Some(end_line_index) = end_line_index {
+                    let new_content =
+                        new_sonar.get_result_content(start_line_index, end_line_index);
+                    new_sonar.content = new_content;
+                } else {
+                    // Could not find closing delimiter; return empty results
+                    return new_sonar;
+                }
+            } else {
+                // starting_line_content not found in file; return empty results
+                return new_sonar;
+            }
         }
         new_sonar.scan_content_to_get_results();
         new_sonar
@@ -555,7 +560,7 @@ impl SonarResultType {
     }
 
     fn test_last_char_is_semicolon(&self) -> bool {
-        vec![SonarResultType::Function].contains(self)
+        [SonarResultType::Function].contains(self)
     }
 }
 
@@ -842,4 +847,3 @@ fn test_get_context_accounts_no_validations() {
     let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsNoValidation);
     assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
 }
-

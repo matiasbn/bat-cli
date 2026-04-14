@@ -1,12 +1,11 @@
 use super::CommandError;
-use std::env;
 
 use crate::batbelt::templates::TemplateGenerator;
-use crate::batbelt::{BatEnumerator, ShareableData};
+use crate::batbelt::BatEnumerator;
 use crate::config::{BatAuditorConfig, BatConfig};
 use colored::Colorize;
+use error_stack::Result;
 use error_stack::{FutureExt, Report, ResultExt};
-use error_stack::{IntoReport, Result};
 
 use crate::batbelt;
 
@@ -15,7 +14,6 @@ use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile::GitIgnore;
 use crate::batbelt::path::{BatFile, BatFolder};
-use crate::batbelt::templates::code_overhaul_template::CodeOverhaulTemplate;
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
@@ -159,7 +157,6 @@ impl ProjectCommands {
 mod project_commands_functions {
     use super::*;
     use lazy_regex::regex;
-    use walkdir::DirEntry;
 
     pub fn init_auditor_configuration(auditor_name: String) -> CommandResult<()> {
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
@@ -208,7 +205,7 @@ mod project_commands_functions {
             .change_context(CommandError)?;
         // get new entry points
 
-        let (old_ep, deprecated_ep): (Vec<BatFile>, Vec<BatFile>) =
+        let (_old_ep, deprecated_ep): (Vec<BatFile>, Vec<BatFile>) =
             co_dir_file_name.clone().into_iter().partition(|bat_file| {
                 entry_points_names.contains(
                     &bat_file

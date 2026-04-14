@@ -62,10 +62,10 @@ pub fn create_evidence() -> CommandResult<()> {
     let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
     let mut total_source_code = vec![];
     let SourceCodeMetadata {
-        mut functions_source_code,
-        mut structs_source_code,
-        mut traits_source_code,
-        mut enums_source_code,
+        functions_source_code,
+        structs_source_code,
+        traits_source_code,
+        enums_source_code,
     } = bat_metadata.source_code;
 
     let findings_bat_folder = BatFolder::FindingsFolderPath;
@@ -84,7 +84,7 @@ pub fn create_evidence() -> CommandResult<()> {
         .collect::<Vec<_>>();
     let prompt_text = format!("Select the {} to create evidence", "finding".bright_green());
     let selected_finding_index = BatDialoguer::select(prompt_text, filtered_findings_names, None)?;
-    let selected_finding = filtered_finding[selected_finding_index].clone();
+    let _selected_finding = filtered_finding[selected_finding_index].clone();
 
     for meta in functions_source_code {
         total_source_code.push(meta.to_source_code_parser(None));
