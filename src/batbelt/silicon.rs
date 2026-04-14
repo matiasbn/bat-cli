@@ -1,4 +1,19 @@
+use silicon::assets::HighlightingAssets;
+use silicon::formatter::ImageFormatterBuilder;
+use silicon::utils::{Background, ShadowAdder};
+use syntect::easy::HighlightLines;
+use syntect::util::LinesWithEndings;
+
 use std::fs;
+
+/// Dracula background color.
+const BG: image::Rgba<u8> = image::Rgba([0x28, 0x2a, 0x36, 0xff]);
+
+/// Default font size when none is specified.
+const DEFAULT_FONT_SIZE: f32 = 20.0;
+
+/// Horizontal and vertical padding around the code image.
+const PAD: u32 = 10;
 
 pub fn create_figure(
     content: &str,
@@ -8,83 +23,62 @@ pub fn create_figure(
     font_size: Option<usize>,
     show_line_number: bool,
 ) -> String {
-    // write the temporary markdown file
-    let (dest_md_path, dest_png_path) = get_dest_md_and_png_path(file_name, dest_folder_path);
-    fs::write(&dest_md_path, content).unwrap();
-    // take the snapshot
-    take_silicon_snapshot(
-        &dest_md_path,
-        &dest_png_path,
-        offset,
-        font_size,
-        show_line_number,
-    );
-    fs::remove_file(dest_md_path).unwrap();
+    let dest_png_path = format!("{dest_folder_path}/{file_name}.png");
+
+    let size = font_size.map(|s| s as f32).unwrap_or(DEFAULT_FONT_SIZE);
+
+    // Load syntax definitions and themes bundled with silicon/syntect.
+    let ha = HighlightingAssets::new();
+    let (ps, ts) = (ha.syntax_set, ha.theme_set);
+
+    let theme = &ts.themes["Dracula"];
+
+    // Syntax-highlight every line.
+    let syntax = ps
+        .find_syntax_by_extension("rs")
+        .expect("Rust syntax not found in syntect");
+    let mut highlighter = HighlightLines::new(syntax, theme);
+    let highlight: Vec<Vec<(syntect::highlighting::Style, &str)>> = LinesWithEndings::from(content)
+        .map(|line| highlighter.highlight_line(line, &ps).unwrap())
+        .collect();
+
+    // Configure background + padding (no shadow).
+    let shadow = ShadowAdder::default()
+        .background(Background::Solid(BG))
+        .shadow_color(image::Rgba([0, 0, 0, 0]))
+        .blur_radius(0.0)
+        .pad_horiz(PAD)
+        .pad_vert(PAD)
+        .offset_x(0)
+        .offset_y(0);
+
+    // Build the image formatter.
+    let mut formatter = ImageFormatterBuilder::new()
+        .font(vec![("Hack".to_string(), size)])
+        .line_number(show_line_number)
+        .line_offset(offset as u32)
+        .tab_width(4)
+        .window_controls(false)
+        .round_corner(false)
+        .shadow_adder(shadow)
+        .build()
+        .expect("Failed to build silicon ImageFormatter");
+
+    let image = formatter.format(&highlight, theme);
+
+    image
+        .save(&dest_png_path)
+        .expect("Failed to save screenshot PNG");
+
     dest_png_path
-}
-
-fn get_dest_md_and_png_path(file_name: &str, dest_folder_path: &str) -> (String, String) {
-    (
-        format!("{dest_folder_path}/{file_name}.md"),
-        format!("{dest_folder_path}/{file_name}.png"),
-    )
-}
-
-fn take_silicon_snapshot(
-    source_md_path: &str,
-    dest_png_path: &str,
-    offset: usize,
-    font_size: Option<usize>,
-    show_line_number: bool,
-) {
-    let offset = format!("{}", offset);
-    let font = if let Some(size) = font_size {
-        format!("Hack={size}")
-    } else {
-        "Hack=20".to_string()
-    };
-
-    let mut args = vec![
-        "--no-window-controls",
-        // show_line_number.as_str(),
-        "--language",
-        "Rust",
-        "--line-offset",
-        offset.as_str(),
-        "--theme",
-        "Dracula",
-        "--pad-horiz",
-        "10",
-        "--pad-vert",
-        "10",
-        "--background",
-        "#282a36",
-        "--font",
-        font.as_str(),
-        "--output",
-        dest_png_path,
-        source_md_path,
-    ];
-    if !show_line_number {
-        args.insert(1, "--no-line-number")
-    }
-    let mut child = std::process::Command::new("silicon")
-        .args(args)
-        .spawn()
-        .unwrap();
-    child.wait().unwrap();
 }
 
 pub fn delete_png_file(path: String) {
     fs::remove_file(path).unwrap();
 }
 
+/// No longer needed — silicon is now a library dependency.
+/// Kept for backwards compatibility; always returns true.
 pub fn check_silicon_installed() -> bool {
-    let output = std::process::Command::new("silicon")
-        .args(["--version"])
-        .output();
-    match output {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    true
 }
