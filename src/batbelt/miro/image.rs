@@ -174,7 +174,7 @@ mod api {
             board_id,
             ..
         } = MiroConfig::new()?;
-        let file_name = file_path.split('/').last().unwrap().to_string();
+        let file_name = file_path.split('/').next_back().unwrap().to_string();
         let file = File::open(file_path).await.unwrap();
         // read file body stream
         let stream = FramedRead::new(file, BytesCodec::new());
@@ -243,8 +243,8 @@ mod api {
             board_id,
             ..
         } = MiroConfig::new()?;
-        let file_name = file_path.clone().split('/').last().unwrap().to_string();
-        let file = File::open(file_path.clone()).await.unwrap();
+        let file_name = file_path.split('/').next_back().unwrap().to_string();
+        let file = File::open(file_path).await.unwrap();
         // read file body stream
         let stream = FramedRead::new(file, BytesCodec::new());
         let file_body = reqwest::Body::wrap_stream(stream);

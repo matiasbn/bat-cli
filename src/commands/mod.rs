@@ -8,7 +8,6 @@ pub mod sonar_commands;
 pub mod tools_commands;
 
 use crate::batbelt::BatEnumerator;
-use crate::BatCommands;
 use inflector::Inflector;
 use regex::Regex;
 use std::{error::Error, fmt};
@@ -70,11 +69,11 @@ where
             }
             command_options.push(json_command_options);
         }
-        let bat_package_json_command = BatPackageJsonCommand {
+
+        BatPackageJsonCommand {
             command_name,
             command_options,
-        };
-        bat_package_json_command
+        }
     }
 }
 
@@ -121,7 +120,7 @@ impl BatPackageJsonCommandOptions {
                     idx += 1;
                 }
             }
-            result.sort_by(|vec_a, vec_b| vec_a.len().cmp(&vec_b.len()));
+            result.sort_by_key(|vec_a| vec_a.len());
             result
         }
     }

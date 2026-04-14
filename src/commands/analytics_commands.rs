@@ -1,33 +1,13 @@
-use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::command_line::CodeEditor;
-use std::env;
-
-use crate::batbelt::path::{prettify_source_code_path, BatFile, BatFolder};
-
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
 
 use clap::Subcommand;
-use colored::{ColoredString, Colorize};
 
-use error_stack::{Report, ResultExt};
-use lazy_regex::regex;
+use error_stack::ResultExt;
 
-use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
-use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
-use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::BatMetadataParser;
 
-use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
-
-use crate::batbelt;
 use crate::batbelt::analytics::BatAnalytics;
-use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::config::BatAuditorConfig;
-use log::Level;
-use tabled::object::Rows;
-use tabled::{Modify, Panel, Style, Table, Tabled, Width};
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,

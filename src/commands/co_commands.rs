@@ -1,17 +1,13 @@
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::command_line::{execute_command, CodeEditor};
+use crate::batbelt::command_line::execute_command;
 use crate::batbelt::git::git_commit::GitCommit;
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::{
     CodeOverhaulSection, CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
 };
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
-use std::fs;
 
-use crate::batbelt::analytics::entry_points_flow::EntryPointFlowAnalytics;
-use crate::batbelt::analytics::BatAnalytics;
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
@@ -19,20 +15,12 @@ use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use lazy_regex::regex;
 use regex::Regex;
 
-use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata;
-use crate::batbelt::metadata::miro_metadata::{SignerInfo, SignerType};
 use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit, BatMetadataParser, MiroMetadata};
-use crate::batbelt::miro::connector::ConnectorOptions;
-use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
-use crate::batbelt::miro::image::{MiroImage, MiroImageType};
+use crate::batbelt::metadata::{BatMetadataParser, MiroMetadata};
+use crate::batbelt::miro::frame::MiroFrame;
 
-use crate::batbelt::miro::sticky_note::MiroStickyNote;
-use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
-use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
-use crate::batbelt::parser::source_code_parser::SourceCodeScreenshotOptions;
-use crate::commands::miro_commands::{miro_command_functions, MiroCommand};
+use crate::commands::miro_commands::MiroCommand;
 
 #[derive(
     Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter, Default,
@@ -118,7 +106,7 @@ impl CodeOverhaulCommand {
             let co_parser = CodeOverhaulParser::new_from_entry_point_name(entry_point_name)
                 .change_context(CommandError)?;
             log::debug!("co_parser:\n{:#?}", co_parser);
-            let state_changes_section_content = co_parser.section_content.state_changes.replace(
+            let _state_changes_section_content = co_parser.section_content.state_changes.replace(
                 &CodeOverhaulSection::StateChanges.to_markdown_header(),
                 &CodeOverhaulSection::StateChanges
                     .to_markdown_header()
@@ -146,7 +134,7 @@ impl CodeOverhaulCommand {
                 .filter(|line| !checkbox_regex.is_match(line))
                 .collect::<Vec<_>>();
 
-            if notes_section_filtered.len() == 2 && notes_section_filtered[1] == "" {
+            if notes_section_filtered.len() == 2 && notes_section_filtered[1].is_empty() {
                 continue;
             }
 
@@ -258,7 +246,7 @@ impl CodeOverhaulCommand {
     async fn execute_start(
         &self,
         skip_miro: bool,
-        interactive: bool,
+        _interactive: bool,
     ) -> error_stack::Result<(), CommandError> {
         // if interactive {
         //     let entry_point_name = self.execute_start_interactive()?;
@@ -329,7 +317,8 @@ impl CodeOverhaulCommand {
                 .change_context(CommandError)?;
         }
         if !skip_miro {
-            let deployed = co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;
+            let deployed =
+                co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;
             if deployed {
                 GitCommit::UpdateCO {
                     entrypoint_name: to_start_file_name.clone(),
@@ -415,21 +404,20 @@ impl CodeOverhaulCommand {
 mod co_commands_functions {
     use super::*;
     use lazy_regex::regex;
-    use regex::Match;
 
     pub fn get_value_single_line(line: &str) -> CommandResult<String> {
         let inline_assignment_regex = regex!(r#"[\w_.()? ]+= "#);
         match inline_assignment_regex.find(line.trim()) {
             None => {}
-            Some(line_match) => {}
+            Some(_line_match) => {}
         }
-        let struct_assignment_regex = regex!(r#"[\w_ ]+: ]"#);
+        let _struct_assignment_regex = regex!(r#"[\w_ ]+: ]"#);
         Ok("".to_string())
     }
 
     pub fn get_value_multi_line(
-        lines_vec: Vec<&str>,
-        selection_vec: Vec<usize>,
+        _lines_vec: Vec<&str>,
+        _selection_vec: Vec<usize>,
     ) -> CommandResult<String> {
         // let inline_assignment_regex = regex!(r#"[\w_.()? ]+= "#);
         // match inline_assignment_regex.find(line.trim()) {
@@ -556,7 +544,7 @@ mod co_commands_functions {
         log::debug!("{section_header}");
         log::debug!("{next_section_header}");
         let section_content = section_content_regex
-            .find(&co_file_content)
+            .find(co_file_content)
             .ok_or(CommandError)
             .into_report()?
             .as_str()

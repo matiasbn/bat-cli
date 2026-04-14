@@ -1,7 +1,7 @@
 use std::fs;
 
 use clap::Subcommand;
-use colored::{ColoredString, Colorize};
+use colored::Colorize;
 use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
 use regex::Regex;
@@ -18,7 +18,7 @@ use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::traits_source_code_metadata::TraitMetadataType;
 use crate::batbelt::metadata::{
     BatMetadata, BatMetadataCommit, BatMetadataEnvVariables, BatMetadataParser, BatMetadataType,
-    MetadataError, MiroMetadata, SourceCodeMetadata,
+    MiroMetadata, SourceCodeMetadata,
 };
 use crate::batbelt::miro::connector::{create_connector, ConnectorOptions};
 use crate::batbelt::miro::frame::{MiroCodeOverhaulConfig, MiroFrame};
@@ -341,7 +341,10 @@ impl MiroCommand {
             .map(|f| {
                 // Path is like "../lang/syn/src/..." -> split by /src/ -> take last segment before /src/
                 let without_prefix = f.path.trim_start_matches("../");
-                let prefix = without_prefix.split("/src/").next().unwrap_or(without_prefix);
+                let prefix = without_prefix
+                    .split("/src/")
+                    .next()
+                    .unwrap_or(without_prefix);
                 prefix.to_string()
             })
             .collect::<std::collections::BTreeSet<_>>()
@@ -352,11 +355,8 @@ impl MiroCommand {
         while keep_deploying {
             // Step 1: Select the program/crate
             let program_prompt = "Select the program containing the function";
-            let selected_program_index = batbelt::bat_dialoguer::select(
-                program_prompt,
-                program_names.clone(),
-                None,
-            )?;
+            let selected_program_index =
+                batbelt::bat_dialoguer::select(program_prompt, program_names.clone(), None)?;
             let selected_program = &program_names[selected_program_index];
 
             // Step 2: Filter functions belonging to that program
@@ -364,7 +364,10 @@ impl MiroCommand {
                 .iter()
                 .filter(|f| {
                     let without_prefix = f.path.trim_start_matches("../");
-                    let prefix = without_prefix.split("/src/").next().unwrap_or(without_prefix);
+                    let prefix = without_prefix
+                        .split("/src/")
+                        .next()
+                        .unwrap_or(without_prefix);
                     prefix == selected_program.as_str()
                 })
                 .collect();
@@ -380,11 +383,8 @@ impl MiroCommand {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let prompt_text = "Select the root function to deploy";
-            let selected_function_index = batbelt::bat_dialoguer::select(
-                prompt_text,
-                function_names_vec.clone(),
-                None,
-            )?;
+            let selected_function_index =
+                batbelt::bat_dialoguer::select(prompt_text, function_names_vec.clone(), None)?;
             let root_function = filtered_functions[selected_function_index].clone();
 
             let function_sc_options = SourceCodeScreenshotOptions {
@@ -420,10 +420,9 @@ impl MiroCommand {
 
             // Helper closure: get direct deps of a function from metadata.
             let direct_deps_of = |function_id: &str| -> Vec<(String, String)> {
-                match bat_metadata
-                    .get_functions_dependencies_metadata_by_function_metadata_id(
-                        function_id.to_string(),
-                    ) {
+                match bat_metadata.get_functions_dependencies_metadata_by_function_metadata_id(
+                    function_id.to_string(),
+                ) {
                     Ok(fd_meta) => fd_meta
                         .dependencies
                         .iter()
@@ -460,10 +459,7 @@ impl MiroCommand {
 
                 let mut new_dep_functions: Vec<FunctionSourceCodeMetadata> = vec![];
                 for (dep_id, _) in &new_deps {
-                    match bat_metadata
-                        .source_code
-                        .get_function_by_id(dep_id.clone())
-                    {
+                    match bat_metadata.source_code.get_function_by_id(dep_id.clone()) {
                         Ok(func_meta) => new_dep_functions.push(func_meta),
                         Err(_) => {
                             log::warn!(
@@ -524,16 +520,11 @@ impl MiroCommand {
                         .change_context(CommandError)?;
                     }
 
-                    id_to_image.insert(
-                        dep_function.metadata_id.clone(),
-                        dep_image.item_id.clone(),
-                    );
+                    id_to_image.insert(dep_function.metadata_id.clone(), dep_image.item_id.clone());
                     deployed_function_ids.insert(dep_function.metadata_id.clone());
 
-                    bfs_queue.push_back((
-                        dep_function.metadata_id.clone(),
-                        dep_function.name.clone(),
-                    ));
+                    bfs_queue
+                        .push_back((dep_function.metadata_id.clone(), dep_function.name.clone()));
                 }
             }
 
@@ -658,10 +649,10 @@ impl MiroCommand {
 
         let co_started_bat_folder = BatFolder::CodeOverhaulStarted;
         let co_finished_bat_folder = BatFolder::CodeOverhaulFinished;
-        let mut started_files_names = co_started_bat_folder
+        let started_files_names = co_started_bat_folder
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
-        let mut finished_files_names = co_finished_bat_folder
+        let finished_files_names = co_finished_bat_folder
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
         if started_files_names.is_empty() && finished_files_names.is_empty() {
@@ -739,15 +730,19 @@ impl MiroCommand {
                 CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder();
             let co_file_name = format!("{}.md", entrypoint_name);
             // Try started folder first, then finished
-            let co_bat_file =
-                if BatFolder::CodeOverhaulStarted.get_all_files_names(true, None, None)
-                    .unwrap_or_default()
-                    .contains(&co_file_name)
-                {
-                    BatFile::CodeOverhaulStarted { file_name: co_file_name }
-                } else {
-                    BatFile::CodeOverhaulFinished { file_name: co_file_name }
-                };
+            let co_bat_file = if BatFolder::CodeOverhaulStarted
+                .get_all_files_names(true, None, None)
+                .unwrap_or_default()
+                .contains(&co_file_name)
+            {
+                BatFile::CodeOverhaulStarted {
+                    file_name: co_file_name,
+                }
+            } else {
+                BatFile::CodeOverhaulFinished {
+                    file_name: co_file_name,
+                }
+            };
             if let Ok(content) = co_bat_file.read_content(true) {
                 if content.contains(&miro_placeholder) {
                     let new_content = content.replace(&miro_placeholder, frame_url);
@@ -1093,15 +1088,12 @@ impl MiroCommand {
                         .change_context(CommandError)?;
                     }
 
-                    id_to_image
-                        .insert(dep_function.metadata_id.clone(), dep_image.item_id.clone());
+                    id_to_image.insert(dep_function.metadata_id.clone(), dep_image.item_id.clone());
                     deployed_function_ids.insert(dep_function.metadata_id.clone());
                     dependency_image_ids.push(dep_image.item_id.clone());
 
-                    bfs_queue.push_back((
-                        dep_function.metadata_id.clone(),
-                        dep_function.name.clone(),
-                    ));
+                    bfs_queue
+                        .push_back((dep_function.metadata_id.clone(), dep_function.name.clone()));
                 }
             }
 
@@ -1173,8 +1165,8 @@ impl MiroCommand {
 
             // Deploy dependency function parameters
             for dep_function in &entrypoint_parser.dependencies {
-                let dep_function_parser =
-                    FunctionParser::new_from_metadata(dep_function.clone()).change_context(CommandError)?;
+                let dep_function_parser = FunctionParser::new_from_metadata(dep_function.clone())
+                    .change_context(CommandError)?;
                 for dep_function_parameter in dep_function_parser.parameters {
                     // parameters are most likely Structs
                     if let Ok(parameter_metadata_vec) = SourceCodeMetadata::get_filtered_structs(
@@ -1287,7 +1279,10 @@ impl MiroCommand {
                         }
                         for (dep_idx, dep_function) in ep_parser.dependencies.iter().enumerate() {
                             if dep_idx >= miro_co_metadata.dependency_image_ids.len() {
-                                println!("No Miro image ID for dependency {}, skipping update", dep_function.name);
+                                println!(
+                                    "No Miro image ID for dependency {}, skipping update",
+                                    dep_function.name
+                                );
                                 continue;
                             }
                             let dep_sc_parser = dep_function.to_source_code_parser(Some(
@@ -1364,7 +1359,7 @@ pub mod miro_command_functions {
             )
             .unwrap();
             let metadata_type_selected = &metadata_types_vec[selection];
-            let (mut sourcecode_metadata_vec, screenshot_options): (
+            let (sourcecode_metadata_vec, screenshot_options): (
                 Vec<SourceCodeParser>,
                 SourceCodeScreenshotOptions,
             ) = match metadata_type_selected {
@@ -1758,12 +1753,11 @@ pub mod miro_command_functions {
         Ok(format!(
             "{}: {}:{}",
             name,
-            prettify_source_code_path(&path.trim_start_matches("../"))
+            prettify_source_code_path(path.trim_start_matches("../"))
                 .change_context(CommandError)?,
             start_line_index
         ))
     }
-
 
     pub fn parse_screenshot_name(name: &str, frame_title: &str) -> String {
         format!(

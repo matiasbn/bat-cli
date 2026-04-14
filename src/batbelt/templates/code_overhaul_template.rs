@@ -1,6 +1,5 @@
 use error_stack::{IntoReport, Result, ResultExt};
 use inflector::Inflector;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::batbelt::git::git_action::GitAction;
@@ -10,7 +9,6 @@ use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadat
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
 use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
-use crate::batbelt::parser::ParserResult;
 use crate::batbelt::path::BatFile;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders::{
@@ -18,7 +16,6 @@ use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlac
 };
 use crate::batbelt::templates::{TemplateError, TemplateResult};
 use crate::batbelt::{BatEnumerator, ShareableData};
-use crate::config::BatConfig;
 
 pub struct CodeOverhaulTemplate {
     pub entrypoint_name: String,
@@ -185,7 +182,7 @@ impl CodeOverhaulSection {
         }
 
         let mut result = vec![];
-        result.push(format!("- [ ] check constraints:"));
+        result.push("- [ ] check constraints:".to_string());
         for ca_info_validations_vec in ca_info_with_validation.clone() {
             for ca_info_validation in ca_info_validations_vec.clone() {
                 let validation_line = ca_sc_file_content_lines
@@ -450,10 +447,8 @@ impl CodeOverhaulSection {
                 .results
                 .iter()
                 .map(|if_validation| {
-                    let if_in_validations = BatSonar::new_scanned(
-                        &if_validation.content,
-                        SonarResultType::Validation,
-                    );
+                    let if_in_validations =
+                        BatSonar::new_scanned(&if_validation.content, SonarResultType::Validation);
                     if !if_in_validations.results.is_empty() {
                         if_in_validations.results
                     } else {
@@ -499,9 +494,10 @@ impl CodeOverhaulSection {
                     .results
                     .iter()
                     .filter(|validation| {
-                        !dep_if_validations.results.iter().any(|if_val| {
-                            if_val.content.contains(&validation.content.to_string())
-                        })
+                        !dep_if_validations
+                            .results
+                            .iter()
+                            .any(|if_val| if_val.content.contains(&validation.content.to_string()))
                     })
                     .map(|val| val.content.clone())
                     .collect::<Vec<_>>()
@@ -512,10 +508,7 @@ impl CodeOverhaulSection {
                 // function's start line so the auditor can jump straight to
                 // the source. Leading `../` from the bat-audit -> program
                 // path is stripped for readability.
-                let relative_path = dep_function
-                    .path
-                    .trim_start_matches("../")
-                    .to_string();
+                let relative_path = dep_function.path.trim_start_matches("../").to_string();
                 dependency_validations.push(format!(
                     "// {} — {}:{}:",
                     dep_function.name, relative_path, dep_function.start_line_index
@@ -678,10 +671,9 @@ impl CodeOverhaulSection {
             }
         }
         if signers.is_empty() {
-            return format!(
-                "{}",
-                CoderOverhaulTemplatePlaceholders::PermissionlessFunction.to_placeholder(),
-            );
+            return CoderOverhaulTemplatePlaceholders::PermissionlessFunction
+                .to_placeholder()
+                .to_string();
         }
         signers.join("\n")
     }
@@ -724,22 +716,25 @@ impl CodeOverhaulSection {
         entrypoint_parser: EntrypointParser,
     ) -> TemplateResult<String> {
         if entrypoint_parser.dependencies.is_empty() {
-            return Ok(format!(
-                "{}",
+            return Ok(
                 CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
                     .to_placeholder()
-            ));
+                    .to_string(),
+            );
         }
 
         let mut all_parameters = vec![];
         for dep_function in &entrypoint_parser.dependencies {
-            let dep_function_parser =
-                FunctionParser::new_from_metadata(dep_function.clone()).change_context(TemplateError)?;
+            let dep_function_parser = FunctionParser::new_from_metadata(dep_function.clone())
+                .change_context(TemplateError)?;
             let filtered_parameters = dep_function_parser
                 .parameters
                 .into_iter()
                 .filter(|parameter| {
-                    let normalized = crate::batbelt::parser::function_parser::normalize_generic_type(&parameter.parameter_type);
+                    let normalized =
+                        crate::batbelt::parser::function_parser::normalize_generic_type(
+                            &parameter.parameter_type,
+                        );
                     !normalized.contains("Context<")
                 })
                 .collect::<Vec<_>>();
@@ -772,11 +767,9 @@ impl CodeOverhaulSection {
         }
 
         let function_parameters_content = if all_parameters.is_empty() {
-            format!(
-                "{}",
-                CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
-                    .to_placeholder()
-            )
+            CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
+                .to_placeholder()
+                .to_string()
         } else {
             all_parameters.join("\n")
         };

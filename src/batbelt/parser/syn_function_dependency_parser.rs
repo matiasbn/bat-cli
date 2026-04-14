@@ -14,29 +14,126 @@ pub enum CallType {
 }
 
 const FILTERED_NAMES: &[&str] = &[
-    "Ok", "Some", "Err", "None", "vec", "format", "println", "eprintln", "print", "eprint",
-    "panic", "todo", "unimplemented", "unreachable", "assert", "assert_eq", "assert_ne",
-    "debug_assert", "debug_assert_eq", "debug_assert_ne", "write", "writeln", "log",
-    "cfg", "include", "include_str", "include_bytes", "env", "option_env",
-    "concat", "stringify", "file", "line", "column", "module_path",
-    "Box", "Vec", "String", "Arc", "Rc", "Mutex", "RefCell",
+    "Ok",
+    "Some",
+    "Err",
+    "None",
+    "vec",
+    "format",
+    "println",
+    "eprintln",
+    "print",
+    "eprint",
+    "panic",
+    "todo",
+    "unimplemented",
+    "unreachable",
+    "assert",
+    "assert_eq",
+    "assert_ne",
+    "debug_assert",
+    "debug_assert_eq",
+    "debug_assert_ne",
+    "write",
+    "writeln",
+    "log",
+    "cfg",
+    "include",
+    "include_str",
+    "include_bytes",
+    "env",
+    "option_env",
+    "concat",
+    "stringify",
+    "file",
+    "line",
+    "column",
+    "module_path",
+    "Box",
+    "Vec",
+    "String",
+    "Arc",
+    "Rc",
+    "Mutex",
+    "RefCell",
 ];
 
 const FILTERED_METHOD_NAMES: &[&str] = &[
-    "unwrap", "expect", "clone", "to_string", "to_owned",
-    "iter", "into_iter", "map", "filter", "collect", "fold", "for_each", "find", "any", "all",
-    "push", "pop", "len", "is_empty", "contains", "get", "insert", "remove", "extend",
-    "ok_or", "ok_or_else", "map_err", "and_then", "or_else", "unwrap_or", "unwrap_or_else",
-    "as_ref", "as_mut", "borrow", "borrow_mut",
-    "into", "from", "try_into", "try_from",
-    "default", "to_vec", "as_slice", "as_str",
-    "change_context", "attach_printable",
-    "is_some", "is_none", "is_ok", "is_err",
-    "trim", "trim_start", "trim_end", "split", "join", "replace", "starts_with", "ends_with",
-    "lines", "chars", "bytes",
-    "next", "enumerate", "skip", "take", "zip", "chain", "flat_map", "flatten",
-    "filter_map", "position", "count",
-    "sort", "sort_by", "sort_by_key", "dedup",
+    "unwrap",
+    "expect",
+    "clone",
+    "to_string",
+    "to_owned",
+    "iter",
+    "into_iter",
+    "map",
+    "filter",
+    "collect",
+    "fold",
+    "for_each",
+    "find",
+    "any",
+    "all",
+    "push",
+    "pop",
+    "len",
+    "is_empty",
+    "contains",
+    "get",
+    "insert",
+    "remove",
+    "extend",
+    "ok_or",
+    "ok_or_else",
+    "map_err",
+    "and_then",
+    "or_else",
+    "unwrap_or",
+    "unwrap_or_else",
+    "as_ref",
+    "as_mut",
+    "borrow",
+    "borrow_mut",
+    "into",
+    "from",
+    "try_into",
+    "try_from",
+    "default",
+    "to_vec",
+    "as_slice",
+    "as_str",
+    "change_context",
+    "attach_printable",
+    "is_some",
+    "is_none",
+    "is_ok",
+    "is_err",
+    "trim",
+    "trim_start",
+    "trim_end",
+    "split",
+    "join",
+    "replace",
+    "starts_with",
+    "ends_with",
+    "lines",
+    "chars",
+    "bytes",
+    "next",
+    "enumerate",
+    "skip",
+    "take",
+    "zip",
+    "chain",
+    "flat_map",
+    "flatten",
+    "filter_map",
+    "position",
+    "count",
+    "sort",
+    "sort_by",
+    "sort_by_key",
+    "dedup",
 ];
 
 pub fn detect_function_calls(function_source: &str) -> Result<Vec<DetectedCall>, String> {
@@ -50,9 +147,7 @@ pub fn detect_function_calls(function_source: &str) -> Result<Vec<DetectedCall>,
         Err(e) => return Err(format!("syn parse error: {}", e)),
     };
 
-    let mut visitor = CallVisitor {
-        calls: Vec::new(),
-    };
+    let mut visitor = CallVisitor { calls: Vec::new() };
     visitor.visit_item_fn(&item_fn);
 
     // Deduplicate by function_name
@@ -80,12 +175,15 @@ fn receiver_to_string(expr: &syn::Expr) -> Option<String> {
                 None => Some(member),
             }
         }
-        syn::Expr::Path(path_expr) => {
-            Some(path_expr.path.segments.iter()
+        syn::Expr::Path(path_expr) => Some(
+            path_expr
+                .path
+                .segments
+                .iter()
                 .map(|seg| seg.ident.to_string())
                 .collect::<Vec<_>>()
-                .join("::"))
-        }
+                .join("::"),
+        ),
         // For method calls like `self.something()`, extract `self`
         syn::Expr::MethodCall(method_call) => {
             let base = receiver_to_string(&method_call.receiver);
@@ -149,8 +247,9 @@ mod tests {
     fn test_detect_free_function() {
         let source = r#"fn test() { foo(1, 2); }"#;
         let calls = detect_function_calls(source).unwrap();
-        assert!(calls.iter().any(|c| c.function_name == "foo"
-            && c.call_type == CallType::FreeFunction));
+        assert!(calls
+            .iter()
+            .any(|c| c.function_name == "foo" && c.call_type == CallType::FreeFunction));
     }
 
     #[test]
@@ -158,9 +257,10 @@ mod tests {
         let source = r#"fn test() { MyStruct::do_something(x); }"#;
         let calls = detect_function_calls(source).unwrap();
         assert!(calls.iter().any(|c| c.function_name == "do_something"
-            && c.call_type == CallType::StaticMethod {
-                type_name: "MyStruct".to_string()
-            }));
+            && c.call_type
+                == CallType::StaticMethod {
+                    type_name: "MyStruct".to_string()
+                }));
     }
 
     #[test]
@@ -234,8 +334,9 @@ mod tests {
         let source = r#"fn test() { module::SubModule::create(arg); }"#;
         let calls = detect_function_calls(source).unwrap();
         assert!(calls.iter().any(|c| c.function_name == "create"
-            && c.call_type == CallType::StaticMethod {
-                type_name: "SubModule".to_string()
-            }));
+            && c.call_type
+                == CallType::StaticMethod {
+                    type_name: "SubModule".to_string()
+                }));
     }
 }

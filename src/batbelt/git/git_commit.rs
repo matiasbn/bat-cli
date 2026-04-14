@@ -256,9 +256,7 @@ impl GitCommit {
             GitCommit::UpdateCO { entrypoint_name } => {
                 format!("co: {} updated", entrypoint_name)
             }
-            GitCommit::UpdateCOSummary => {
-                format!("co: code_overhaul_summary.md updated")
-            }
+            GitCommit::UpdateCOSummary => "co: code_overhaul_summary.md updated".to_string(),
             GitCommit::StartFinding { finding_name } => {
                 format!("finding: {} started", finding_name)
             }

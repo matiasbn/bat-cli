@@ -123,8 +123,7 @@ impl SonarCommand {
             .print_interactive()
             .change_context(CommandError)?;
             self.execute_source_code()?;
-            BatSonarInteractive::run_post_scan_parallel()
-                .change_context(CommandError)?;
+            BatSonarInteractive::run_post_scan_parallel().change_context(CommandError)?;
         } else if only_context_accounts {
             bat_metadata.context_accounts = vec![];
             self.execute_context_accounts()?;
@@ -142,8 +141,7 @@ impl SonarCommand {
             bat_metadata.entry_points = vec![];
             bat_metadata.traits = vec![];
             bat_metadata.function_dependencies = vec![];
-            BatSonarInteractive::run_post_scan_parallel()
-                .change_context(CommandError)?;
+            BatSonarInteractive::run_post_scan_parallel().change_context(CommandError)?;
         }
 
         let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;

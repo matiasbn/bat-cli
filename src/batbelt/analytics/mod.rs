@@ -1,7 +1,6 @@
-use crate::batbelt::analytics::constraints::{ConstraintInfo, ConstraintsAnalytics};
+use crate::batbelt::analytics::constraints::ConstraintsAnalytics;
 use crate::batbelt::analytics::entry_points_flow::EntryPointFlowAnalytics;
 use crate::batbelt::path::BatFile;
-use crate::config::BatConfig;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use serde::{Deserialize, Serialize};
@@ -60,9 +59,8 @@ impl BatAnalytics {
     pub fn update_analytics() -> AnalyticsResult<()> {
         let bat_analytics = BatAnalytics::read_analytics()?;
         if !bat_analytics.initialized {
-            return Err(
-                Report::new(AnalyticsError).attach_printable(format!("Analytics not initialized"))
-            );
+            return Err(Report::new(AnalyticsError)
+                .attach_printable("Analytics not initialized".to_string()));
         }
         ConstraintsAnalytics::update_analytics_data()?;
         bat_analytics.commit_file()?;
@@ -86,7 +84,7 @@ impl BatAnalytics {
         )
         .into_report()
         .change_context(AnalyticsError)?;
-        let mut bat_cache: BatAnalytics = serde_json::from_value(bat_cache_value)
+        let bat_cache: BatAnalytics = serde_json::from_value(bat_cache_value)
             .into_report()
             .change_context(AnalyticsError)?;
         Ok(bat_cache)

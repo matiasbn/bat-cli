@@ -4,21 +4,14 @@ pub mod git_commit;
 use std::error::Error;
 use std::fmt;
 
-use std::cell::RefCell;
-
-use colored::Colorize;
-use std::rc::Rc;
 use std::str::from_utf8;
 use std::{process::Command, str};
 
-use super::path::BatFolder;
-use crate::batbelt::command_line::{execute_command, execute_command_with_child_process};
+use crate::batbelt::command_line::execute_command;
 
-use crate::batbelt::metadata::BatMetadataCommit;
 use crate::config::BatAuditorConfig;
-use crate::{batbelt::path::BatFile, config::BatConfig, Suggestion};
+use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
-use regex::Regex;
 
 #[derive(Debug)]
 pub struct GitError;
@@ -118,4 +111,3 @@ pub fn get_current_branch_name() -> GitResult<String> {
 fn test_get_branches_list() {
     let _branches_list = get_local_branches().unwrap();
 }
-

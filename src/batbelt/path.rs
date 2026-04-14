@@ -261,7 +261,7 @@ impl BatFile {
             _ => {
                 return Err(Report::new(BatPathError).attach_printable(format!(
                     "{} does not implement default commit message",
-                    self.to_string()
+                    self
                 )));
             }
         };
@@ -297,7 +297,7 @@ impl BatFolder {
 
         let path = match self {
             BatFolder::Notes => "notes".to_string(),
-            BatFolder::ProjectFolderPath => format!("{}", bat_config.project_name),
+            BatFolder::ProjectFolderPath => bat_config.project_name.to_string(),
             BatFolder::AuditorNotes => {
                 let bat_auditor_config =
                     BatAuditorConfig::get_config().change_context(BatPathError)?;

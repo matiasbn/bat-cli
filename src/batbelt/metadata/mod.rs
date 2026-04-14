@@ -53,7 +53,6 @@ use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::{
     EnumMetadataType, EnumSourceCodeMetadata,
 };
-use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
 use crate::config::{BatAuditorConfig, BatConfig};
 use serde_json::{json, Value};
 use strum::IntoEnumIterator;
@@ -383,7 +382,7 @@ impl BatMetadataEnvVariables {
     pub fn assert_use_external_metadata() -> bool {
         let use_external = Self::UseExternalMetadata;
         match use_external.read_value() {
-            Ok(value) => value == "true".to_string(),
+            Ok(value) => value == "true",
             Err(_) => false,
         }
     }
