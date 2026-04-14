@@ -211,7 +211,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bat-cli"
-version = "0.8.9"
+version = "0.8.10"
 dependencies = [
  "Inflector",
  "assert_fs",
