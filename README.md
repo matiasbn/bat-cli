@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" width="200" alt="BAT CLI logo">
+  <img src="https://raw.githubusercontent.com/matiasbn/bat-cli/main/assets/logo.png" width="200" alt="BAT CLI logo">
 </p>
 
 # BAT CLI — Blockchain Audit Toolkit
