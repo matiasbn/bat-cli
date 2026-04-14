@@ -186,7 +186,11 @@ pub struct BatConfig {
     pub starting_date: String,
     pub miro_board_url: String,
     pub auditor_names: Vec<String>,
+    /// Primary program lib path (first selected, used by Anchor entrypoint detection).
     pub program_lib_path: String,
+    /// All selected program lib paths (for multi-program scanning).
+    #[serde(default)]
+    pub program_lib_paths: Vec<String>,
     #[serde(default)]
     pub program_name: String,
     pub project_repository_url: String,
@@ -199,11 +203,20 @@ impl BatConfig {
     }
 
     fn create_bat_config_file() -> Result<BatConfig, BatConfigError> {
-        // Validate we're inside an Anchor project
+        // Warn if not an Anchor project
         if !Path::new("Anchor.toml").is_file() {
-            return Err(Report::new(BatConfigError).attach_printable(
-                "Anchor.toml not found in current directory. Run bat new inside the target repo.",
-            ));
+            println!(
+                "{} Anchor.toml not found — this does not appear to be an Anchor program.",
+                "Warning:".yellow()
+            );
+            println!("bat-cli will run in generic Rust mode (no entry points or context accounts).");
+            let continue_anyway =
+                bat_dialoguer::select_yes_or_no("Do you want to continue?")
+                    .change_context(BatConfigError)?;
+            if !continue_anyway {
+                return Err(Report::new(BatConfigError)
+                    .attach_printable("Aborted by user"));
+            }
         }
 
         // Validate bat-audit doesn't already exist
@@ -249,31 +262,51 @@ impl BatConfig {
                 .attach_printable("No programs with Cargo.toml found in this repository"));
         }
 
-        let selection = bat_dialoguer::select(prompt_text, cargo_programs_paths.clone(), None)
-            .change_context(BatConfigError)?;
-        let selected_program_path = &cargo_programs_paths[selection];
-        log::debug!("selected_program: {:#?}", selected_program_path);
+        let defaults = vec![true; cargo_programs_paths.len()];
+        let selections = bat_dialoguer::multiselect(
+            prompt_text,
+            cargo_programs_paths.clone(),
+            Some(&defaults),
+        )
+        .change_context(BatConfigError)?;
+
+        if selections.is_empty() {
+            return Err(Report::new(BatConfigError)
+                .attach_printable("No programs selected"));
+        }
+
+        let mut normalized_program_lib_paths: Vec<String> = vec![];
+        for &sel_idx in &selections {
+            let program_path = &cargo_programs_paths[sel_idx];
+            let lib_path = format!("{}/src/lib.rs", program_path);
+            let main_path = format!("{}/src/main.rs", program_path);
+            let resolved = if Path::new(&lib_path).is_file() {
+                lib_path
+            } else if Path::new(&main_path).is_file() {
+                main_path
+            } else {
+                log::warn!("Neither lib.rs nor main.rs found in {}, skipping", program_path);
+                continue;
+            };
+            let normalized = format!("../{}", resolved.trim_start_matches("./"));
+            normalized_program_lib_paths.push(normalized);
+        }
+
+        if normalized_program_lib_paths.is_empty() {
+            return Err(Report::new(BatConfigError)
+                .attach_printable("No valid programs found (no lib.rs or main.rs)"));
+        }
+
+        // First selected program is the primary (used for Anchor entrypoint detection)
+        let normalized_program_lib_path = normalized_program_lib_paths[0].clone();
+        let selected_program_path = &cargo_programs_paths[selections[0]];
         let program_name = selected_program_path
             .split('/')
             .last()
             .unwrap()
             .to_string()
             .replace('_', "-");
-        log::debug!("program_name: {:#?}", program_name);
-        let program_lib_path = format!("{}/src/lib.rs", selected_program_path);
-        log::debug!("program_lib_path: {:#?}", program_lib_path);
-
-        if !Path::new(&program_lib_path).is_file() {
-            return Err(Report::new(BatConfigError)
-                .attach_printable("lib.rs file not found in selected folder"));
-        }
-
-        // Normalize path relative to bat-audit/ folder
-        // From bat-audit/, we need ../programs/xxx/src/lib.rs
-        let normalized_program_lib_path = format!(
-            "../{}",
-            program_lib_path.trim_start_matches("./")
-        );
+        log::debug!("program_lib_paths: {:#?}", normalized_program_lib_paths);
 
         // Project name is always bat-audit
         let project_name = "bat-audit".to_string();
@@ -382,6 +415,7 @@ impl BatConfig {
             commit_hash_url,
             project_repository_url,
             program_lib_path: normalized_program_lib_path,
+            program_lib_paths: normalized_program_lib_paths,
         };
         bat_config.save().change_context(BatConfigError)?;
         Ok(bat_config)
