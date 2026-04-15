@@ -16,11 +16,21 @@ pub async fn create_connector(
     end_item_id: &str,
     connect_options: Option<ConnectorOptions>,
 ) -> MiroApiResult {
+    create_connector_with_color(start_item_id, end_item_id, connect_options, None).await
+}
+
+pub async fn create_connector_with_color(
+    start_item_id: &str,
+    end_item_id: &str,
+    connect_options: Option<ConnectorOptions>,
+    stroke_color: Option<&str>,
+) -> MiroApiResult {
     let MiroConfig {
         access_token,
         board_id,
         ..
     } = MiroConfig::new()?;
+    let stroke_color_value = stroke_color.unwrap_or("#000000");
     let body = if let Some(options) = connect_options {
         let ConnectorOptions {
             start_x_position,
@@ -44,7 +54,8 @@ pub async fn create_connector(
                 },
             },
             "style": {
-                 "strokeWidth": "3"
+                 "strokeWidth": "3",
+                 "strokeColor": stroke_color_value
             },
            "shape": "elbowed"
         })
@@ -58,7 +69,8 @@ pub async fn create_connector(
                 "id": end_item_id
            },
            "style": {
-                "strokeWidth": "3"
+                "strokeWidth": "3",
+                "strokeColor": stroke_color_value
            },
            "shape": "elbowed"
         })

@@ -31,7 +31,7 @@ use std::process::Command;
 )]
 pub enum ProjectCommands {
     #[default]
-    New,
+    Init,
     Reload,
 }
 impl BatEnumerator for ProjectCommands {}
@@ -39,8 +39,8 @@ impl BatEnumerator for ProjectCommands {}
 impl BatCommandEnumerator for ProjectCommands {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
-            ProjectCommands::New => {
-                panic!("Use new_bat_project() directly for async Miro support")
+            ProjectCommands::Init => {
+                panic!("Use init_bat_project() directly for async Miro support")
             }
             ProjectCommands::Reload => self.reload_bat_project(),
         }
@@ -98,7 +98,7 @@ impl ProjectCommands {
         Ok(())
     }
 
-    pub async fn new_bat_project(&self) -> Result<(), CommandError> {
+    pub async fn init_bat_project(&self) -> Result<(), CommandError> {
         let bat_config = BatConfig::new_with_prompt().change_context(CommandError)?;
         println!("Creating {:#?} project", bat_config);
         TemplateGenerator

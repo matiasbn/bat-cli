@@ -996,6 +996,23 @@ impl MiroCommand {
 
             let mut dependency_image_ids: Vec<String> = vec![];
 
+            // Distinct colors for each caller's dependency arrows: (hex, name)
+            const DEP_ARROW_COLORS: &[(&str, &str)] = &[
+                ("#ff0000", "red"),
+                ("#0000ff", "blue"),
+                ("#00aa00", "green"),
+                ("#ff8800", "orange"),
+                ("#aa00ff", "purple"),
+                ("#00cccc", "teal"),
+                ("#ff00aa", "pink"),
+                ("#888800", "olive"),
+                ("#0088ff", "sky blue"),
+                ("#aa5500", "brown"),
+                ("#ff4444", "light red"),
+                ("#4444ff", "light blue"),
+            ];
+            let mut color_index: usize = 0;
+
             while let Some((caller_id, caller_name)) = bfs_queue.pop_front() {
                 let direct_deps = direct_deps_of(&caller_id);
                 // Filter out deps that are already deployed (DAG dedup).
@@ -1030,10 +1047,15 @@ impl MiroCommand {
                     continue;
                 }
 
+                // Pick a unique color for all arrows of this caller's deps
+                let (arrow_hex, arrow_name) = DEP_ARROW_COLORS[color_index % DEP_ARROW_COLORS.len()];
+                color_index += 1;
+
                 let prompt = format!(
-                    "Press Enter to deploy {} dependencies of `{}`",
+                    "Press Enter to deploy {} dependencies of `{}` (arrow color: {})",
                     new_dep_functions.len(),
-                    caller_name
+                    caller_name,
+                    arrow_name
                 );
                 BatDialoguer::input_with_default(prompt, "".to_string())
                     .change_context(CommandError)?;
@@ -1071,12 +1093,13 @@ impl MiroCommand {
                         .await
                         .change_context(CommandError)?;
 
-                    // Draw the caller -> callee arrow right away.
+                    // Draw arrow: dep -> caller (sub-dependency points to the function that uses it)
                     if let Some(caller_image_id) = id_to_image.get(&caller_id) {
-                        batbelt::miro::connector::create_connector(
-                            caller_image_id,
+                        batbelt::miro::connector::create_connector_with_color(
                             &dep_image.item_id,
+                            caller_image_id,
                             None,
+                            Some(arrow_hex),
                         )
                         .await
                         .change_context(CommandError)?;

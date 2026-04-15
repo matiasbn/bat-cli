@@ -55,9 +55,9 @@ struct Cli {
     Default, strum_macros::Display, Subcommand, Debug, PartialEq, Clone, strum_macros::EnumIter,
 )]
 enum BatCommands {
-    /// Creates a Bat project
+    /// Initialize a Bat project
     #[default]
-    New,
+    Init,
     /// Reload the Bat project files (ideal to resume work from git clone)
     Reload,
     /// code-overhaul files management
@@ -93,7 +93,7 @@ impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         self.validate_command()?;
         match self {
-            BatCommands::New => ProjectCommands::New.new_bat_project().await,
+            BatCommands::Init => ProjectCommands::Init.init_bat_project().await,
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
             // BatCommands::Analytics(command) => command.execute_command(),
@@ -133,7 +133,7 @@ impl BatCommands {
 
     fn validate_command(&self) -> CommandResult<()> {
         let (check_metadata, check_branch) = match self {
-            BatCommands::New => {
+            BatCommands::Init => {
                 return Ok(());
             }
             BatCommands::Reload => {
@@ -307,7 +307,7 @@ async fn run() -> CommandResult<()> {
     Suggestion::set_report();
     // env_logger selectively
     match cli.command {
-        BatCommands::Package(..) | BatCommands::New => {
+        BatCommands::Package(..) | BatCommands::Init => {
             env_logger::init();
             Ok(())
         }
