@@ -1,8 +1,11 @@
+#[allow(dead_code, unused_imports)]
 pub mod analytics_commands;
 pub mod co_commands;
+#[allow(dead_code, unused_imports)]
 pub mod finding_commands;
 pub mod miro_commands;
 pub mod project_commands;
+#[allow(dead_code, unused_imports)]
 pub mod repository_commands;
 pub mod sonar_commands;
 pub mod tools_commands;

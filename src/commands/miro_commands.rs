@@ -37,6 +37,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
+use crate::config::BatConfig;
 use crate::{batbelt, Suggestion};
 
 use super::CommandError;
@@ -55,38 +56,11 @@ pub enum MiroCommand {
         entry_point_name: Option<String>,
     },
     /// Deploys the entry point function, context accounts and handler function screenshots to a Miro frame
-    EntrypointScreenshots {
-        /// if true, deploy screenshots for al entry points
-        #[arg(short, long)]
-        select_all_entry_points: bool,
-        /// shows the list of entrypoints sorted by name
-        #[arg(long)]
-        sorted: bool,
-    },
+    EntrypointScreenshots,
     /// Creates an screenshot in a determined frame from source code
-    SourceCodeScreenshots {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-        /// use external BetMetadata.json files
-        #[arg(long)]
-        use_external: bool,
-    },
+    SourceCodeScreenshots,
     /// Creates screenshot for a function and it dependencies
-    FunctionDependencies {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-        /// use external BetMetadata.json files
-        #[arg(long)]
-        use_external: bool,
-    },
-    /// Creates sticky notes sequentially, that can be connected
-    StickyNotes {
-        /// connect the sticky notes
-        #[arg(long)]
-        connected: bool,
-    },
+    FunctionDependencies,
 }
 
 impl BatEnumerator for MiroCommand {}
@@ -113,58 +87,13 @@ impl MiroCommand {
             MiroCommand::CodeOverhaulScreenshots { entry_point_name } => {
                 self.deploy_co_screenshots(entry_point_name.clone()).await
             }
-            MiroCommand::EntrypointScreenshots {
-                select_all_entry_points,
-                sorted,
-            } => {
-                self.entrypoint_screenshots(*select_all_entry_points, *sorted)
-                    .await
-            }
-            MiroCommand::SourceCodeScreenshots {
-                select_all,
-                use_external,
-            } => {
-                if *use_external {
-                    BatMetadataEnvVariables::set_use_external_metadata_to_true()
-                        .change_context(CommandError)?;
-                }
-
-                self.source_code_screenshots(*select_all).await
-            }
-            MiroCommand::FunctionDependencies {
-                select_all,
-                use_external,
-            } => {
-                if *use_external {
-                    BatMetadataEnvVariables::set_use_external_metadata_to_true()
-                        .change_context(CommandError)?;
-                }
-
-                self.function_dependencies(*select_all).await
-            }
-            MiroCommand::StickyNotes { connected } => self.sticky_notes(*connected).await,
+            MiroCommand::EntrypointScreenshots => self.entrypoint_screenshots().await,
+            MiroCommand::SourceCodeScreenshots => self.source_code_screenshots().await,
+            MiroCommand::FunctionDependencies => self.function_dependencies().await,
         }
     }
 
-    async fn sticky_notes(&self, connected: bool) -> CommandResult<()> {
-        let selected_miro_frame = MiroFrame::prompt_select_frame(None)
-            .await
-            .change_context(CommandError)?;
-        miro_command_functions::prompt_deploy_source_code(
-            selected_miro_frame,
-            false,
-            true,
-            connected,
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn entrypoint_screenshots(
-        &self,
-        select_all: bool,
-        sorted: bool,
-    ) -> Result<(), CommandError> {
+    async fn entrypoint_screenshots(&self) -> Result<(), CommandError> {
         let code_overhaul_frame_title_regex = Regex::new(r"co: [A-Za-z0-9_]+")
             .into_report()
             .change_context(CommandError)?;
@@ -173,17 +102,26 @@ impl MiroCommand {
                 .await
                 .change_context(CommandError)?;
         // get entrypoints name
-        let entrypoints_names = EntrypointParser::get_entrypoint_names_from_program_lib(sorted)
-            .change_context(CommandError)?;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let entrypoints_names = if bat_config.is_multi_program() {
+            let program_name = bat_config
+                .prompt_select_program()
+                .change_context(CommandError)?;
+            let lib_path = bat_config
+                .get_program_lib_path_by_name(&program_name)
+                .unwrap();
+            EntrypointParser::get_entrypoint_names_filtered(true, Some(&lib_path))
+                .change_context(CommandError)?
+        } else {
+            EntrypointParser::get_entrypoint_names_from_program_lib(true)
+                .change_context(CommandError)?
+        };
 
         // prompt the user to select an entrypoint
         let prompt_text = "Select the entry points to deploy";
-        let selected_entrypoints_index = batbelt::bat_dialoguer::multiselect(
-            prompt_text,
-            entrypoints_names.clone(),
-            Some(&vec![select_all; entrypoints_names.clone().len()]),
-        )
-        .unwrap();
+        let selected_entrypoints_index =
+            batbelt::bat_dialoguer::multiselect(prompt_text, entrypoints_names.clone(), None)
+                .unwrap();
 
         let entrypoint_sc_options = SourceCodeScreenshotOptions {
             include_path: false,
@@ -307,21 +245,15 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn source_code_screenshots(&self, select_all: bool) -> Result<(), CommandError> {
+    async fn source_code_screenshots(&self) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
-        miro_command_functions::prompt_deploy_source_code(
-            selected_miro_frame,
-            select_all,
-            false,
-            false,
-        )
-        .await?;
+        miro_command_functions::prompt_deploy_source_code(selected_miro_frame, false).await?;
         Ok(())
     }
 
-    async fn function_dependencies(&self, _select_all: bool) -> Result<(), CommandError> {
+    async fn function_dependencies(&self) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
@@ -542,82 +474,110 @@ impl MiroCommand {
     async fn deploy_co_frames(&self) -> Result<(), CommandError> {
         println!("Deploying code-overhaul frames to the Miro board");
 
-        let entry_point_names = EntrypointParser::get_entrypoint_names_from_program_lib(false)
-            .change_context(CommandError)?;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let is_multi = bat_config.is_multi_program();
 
-        for (entrypoint_index, entrypoint_name) in entry_point_names.iter().enumerate() {
-            match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())
-                .change_context(CommandError)
-            {
-                Ok(miro_co_metadata) => {
-                    match MiroFrame::new_from_item_id(&miro_co_metadata.miro_frame_id)
-                        .await
-                        .change_context(CommandError)
-                    {
-                        Ok(miro_frame) => {
-                            println!(
-                                "Frame already deployed for {}, \nurl: {}\n",
-                                entrypoint_name.clone().green(),
-                                MiroFrame::get_frame_url_by_frame_id(&miro_frame.item_id)
-                                    .change_context(CommandError)?
-                            );
-                        }
-                        // the item id is incorrect, is necessary to replace the old metadata
-                        Err(_) => {
-                            println!(
-                                "Incorrect frame deployed for {}, \nurl: {}\nUpdating the Miro metadata\n",
-                                entrypoint_name.clone().red(),
-                                MiroFrame::get_frame_url_by_frame_id(&miro_co_metadata.miro_frame_id)
-                                    .change_context(CommandError)?
-                            );
-                            let new_frame = miro_command_functions::deploy_miro_frame_for_co(
-                                entrypoint_name,
-                                entrypoint_index,
-                            )
-                            .await?;
-                            let new_co_metadata = MiroCodeOverhaulMetadata {
-                                metadata_id: miro_co_metadata.metadata_id.clone(),
-                                entry_point_name: entrypoint_name.clone(),
-                                miro_frame_id: new_frame.item_id.clone(),
-                                images_deployed: false,
-                                entry_point_image_id: "".to_string(),
-                                context_accounts_image_id: "".to_string(),
-                                validations_image_id: "".to_string(),
-                                handler_image_id: "".to_string(),
-                                dependency_image_ids: vec![],
-                                signers: vec![],
-                            };
-                            new_co_metadata
-                                .update_code_overhaul_metadata()
-                                .change_context(CommandError)?;
+        // Collect (program_name, entrypoint_names) for all programs
+        let programs_entrypoints: Vec<(Option<String>, Vec<String>)> = if is_multi {
+            let mut result = vec![];
+            for program_name in bat_config.get_program_names() {
+                let lib_path = bat_config
+                    .get_program_lib_path_by_name(&program_name)
+                    .unwrap();
+                let ep_names =
+                    EntrypointParser::get_entrypoint_names_filtered(false, Some(&lib_path))
+                        .change_context(CommandError)?;
+                result.push((Some(program_name), ep_names));
+            }
+            result
+        } else {
+            let ep_names = EntrypointParser::get_entrypoint_names_from_program_lib(false)
+                .change_context(CommandError)?;
+            vec![(None, ep_names)]
+        };
+
+        let mut global_index: usize = 0;
+        for (program_name, entry_point_names) in &programs_entrypoints {
+            for entrypoint_name in entry_point_names {
+                let frame_prefix = match program_name {
+                    Some(pn) => format!("{}:{}", pn, entrypoint_name),
+                    None => entrypoint_name.clone(),
+                };
+                match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())
+                    .change_context(CommandError)
+                {
+                    Ok(miro_co_metadata) => {
+                        match MiroFrame::new_from_item_id(&miro_co_metadata.miro_frame_id)
+                            .await
+                            .change_context(CommandError)
+                        {
+                            Ok(miro_frame) => {
+                                println!(
+                                    "Frame already deployed for {}, \nurl: {}\n",
+                                    frame_prefix.clone().green(),
+                                    MiroFrame::get_frame_url_by_frame_id(&miro_frame.item_id)
+                                        .change_context(CommandError)?
+                                );
+                            }
+                            Err(_) => {
+                                println!(
+                                    "Incorrect frame deployed for {}, \nurl: {}\nUpdating the Miro metadata\n",
+                                    frame_prefix.clone().red(),
+                                    MiroFrame::get_frame_url_by_frame_id(&miro_co_metadata.miro_frame_id)
+                                        .change_context(CommandError)?
+                                );
+                                let new_frame = miro_command_functions::deploy_miro_frame_for_co(
+                                    entrypoint_name,
+                                    global_index,
+                                    program_name.as_deref(),
+                                )
+                                .await?;
+                                let new_co_metadata = MiroCodeOverhaulMetadata {
+                                    metadata_id: miro_co_metadata.metadata_id.clone(),
+                                    entry_point_name: entrypoint_name.clone(),
+                                    miro_frame_id: new_frame.item_id.clone(),
+                                    images_deployed: false,
+                                    entry_point_image_id: "".to_string(),
+                                    context_accounts_image_id: "".to_string(),
+                                    validations_image_id: "".to_string(),
+                                    handler_image_id: "".to_string(),
+                                    dependency_image_ids: vec![],
+                                    signers: vec![],
+                                };
+                                new_co_metadata
+                                    .update_code_overhaul_metadata()
+                                    .change_context(CommandError)?;
+                            }
                         }
                     }
-                }
-                Err(_) => {
-                    let mut miro_co_metadata = MiroCodeOverhaulMetadata {
-                        metadata_id: BatMetadata::create_metadata_id(),
-                        entry_point_name: entrypoint_name.clone(),
-                        miro_frame_id: "".to_string(),
-                        images_deployed: false,
-                        entry_point_image_id: "".to_string(),
-                        context_accounts_image_id: "".to_string(),
-                        validations_image_id: "".to_string(),
-                        handler_image_id: "".to_string(),
-                        dependency_image_ids: vec![],
-                        signers: vec![],
-                    };
+                    Err(_) => {
+                        let mut miro_co_metadata = MiroCodeOverhaulMetadata {
+                            metadata_id: BatMetadata::create_metadata_id(),
+                            entry_point_name: entrypoint_name.clone(),
+                            miro_frame_id: "".to_string(),
+                            images_deployed: false,
+                            entry_point_image_id: "".to_string(),
+                            context_accounts_image_id: "".to_string(),
+                            validations_image_id: "".to_string(),
+                            handler_image_id: "".to_string(),
+                            dependency_image_ids: vec![],
+                            signers: vec![],
+                        };
 
-                    let miro_frame = miro_command_functions::deploy_miro_frame_for_co(
-                        entrypoint_name,
-                        entrypoint_index,
-                    )
-                    .await?;
+                        let miro_frame = miro_command_functions::deploy_miro_frame_for_co(
+                            entrypoint_name,
+                            global_index,
+                            program_name.as_deref(),
+                        )
+                        .await?;
 
-                    miro_co_metadata.miro_frame_id = miro_frame.item_id.clone();
-                    miro_co_metadata
-                        .update_code_overhaul_metadata()
-                        .change_context(CommandError)?;
+                        miro_co_metadata.miro_frame_id = miro_frame.item_id.clone();
+                        miro_co_metadata
+                            .update_code_overhaul_metadata()
+                            .change_context(CommandError)?;
+                    }
                 }
+                global_index += 1;
             }
         }
         GitCommit::UpdateMetadataJson {
@@ -629,6 +589,13 @@ impl MiroCommand {
     }
 
     async fn deploy_co_screenshots(&self, entry_point_name: Option<String>) -> CommandResult<()> {
+        Self::deploy_co_screenshots_with_program(entry_point_name, None).await
+    }
+
+    pub async fn deploy_co_screenshots_with_program(
+        entry_point_name: Option<String>,
+        program_name: Option<String>,
+    ) -> CommandResult<()> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
 
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
@@ -647,8 +614,24 @@ impl MiroCommand {
                 .attach(Suggestion(suggestion_message)));
         }
 
-        let co_started_bat_folder = BatFolder::CodeOverhaulStarted;
-        let co_finished_bat_folder = BatFolder::CodeOverhaulFinished;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let selected_program_name = if program_name.is_some() {
+            program_name
+        } else if bat_config.is_multi_program() {
+            Some(
+                bat_config
+                    .prompt_select_program()
+                    .change_context(CommandError)?,
+            )
+        } else {
+            None
+        };
+        let co_started_bat_folder = BatFolder::CodeOverhaulStarted {
+            program_name: selected_program_name.clone(),
+        };
+        let co_finished_bat_folder = BatFolder::CodeOverhaulFinished {
+            program_name: selected_program_name.clone(),
+        };
         let started_files_names = co_started_bat_folder
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
@@ -730,17 +713,21 @@ impl MiroCommand {
                 CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder();
             let co_file_name = format!("{}.md", entrypoint_name);
             // Try started folder first, then finished
-            let co_bat_file = if BatFolder::CodeOverhaulStarted
-                .get_all_files_names(true, None, None)
-                .unwrap_or_default()
-                .contains(&co_file_name)
+            let co_bat_file = if (BatFolder::CodeOverhaulStarted {
+                program_name: selected_program_name.clone(),
+            })
+            .get_all_files_names(true, None, None)
+            .unwrap_or_default()
+            .contains(&co_file_name)
             {
                 BatFile::CodeOverhaulStarted {
                     file_name: co_file_name,
+                    program_name: selected_program_name.clone(),
                 }
             } else {
                 BatFile::CodeOverhaulFinished {
                     file_name: co_file_name,
+                    program_name: selected_program_name.clone(),
                 }
             };
             if let Ok(content) = co_bat_file.read_content(true) {
@@ -754,8 +741,11 @@ impl MiroCommand {
         if !miro_co_metadata.images_deployed {
             let entrypoint_parser =
                 EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
-            let co_parser = CodeOverhaulParser::new_from_entry_point_name(entrypoint_name.clone())
-                .change_context(CommandError)?;
+            let co_parser = CodeOverhaulParser::new_from_entry_point_name_and_program(
+                entrypoint_name.clone(),
+                selected_program_name.clone(),
+            )
+            .change_context(CommandError)?;
             let mut signers_info: Vec<SignerInfo> = vec![];
             if !co_parser.signers.is_empty() {
                 for signer in co_parser.signers.clone().into_iter() {
@@ -1002,6 +992,23 @@ impl MiroCommand {
 
             let mut dependency_image_ids: Vec<String> = vec![];
 
+            // Distinct colors for each caller's dependency arrows: (hex, name)
+            const DEP_ARROW_COLORS: &[(&str, &str)] = &[
+                ("#ff0000", "red"),
+                ("#0000ff", "blue"),
+                ("#00aa00", "green"),
+                ("#ff8800", "orange"),
+                ("#aa00ff", "purple"),
+                ("#00cccc", "teal"),
+                ("#ff00aa", "pink"),
+                ("#888800", "olive"),
+                ("#0088ff", "sky blue"),
+                ("#aa5500", "brown"),
+                ("#ff4444", "light red"),
+                ("#4444ff", "light blue"),
+            ];
+            let mut color_index: usize = 0;
+
             while let Some((caller_id, caller_name)) = bfs_queue.pop_front() {
                 let direct_deps = direct_deps_of(&caller_id);
                 // Filter out deps that are already deployed (DAG dedup).
@@ -1036,10 +1043,16 @@ impl MiroCommand {
                     continue;
                 }
 
+                // Pick a unique color for all arrows of this caller's deps
+                let (arrow_hex, arrow_name) =
+                    DEP_ARROW_COLORS[color_index % DEP_ARROW_COLORS.len()];
+                color_index += 1;
+
                 let prompt = format!(
-                    "Press Enter to deploy {} dependencies of `{}`",
+                    "Press Enter to deploy {} dependencies of `{}` (arrow color: {})",
                     new_dep_functions.len(),
-                    caller_name
+                    caller_name,
+                    arrow_name
                 );
                 BatDialoguer::input_with_default(prompt, "".to_string())
                     .change_context(CommandError)?;
@@ -1077,12 +1090,13 @@ impl MiroCommand {
                         .await
                         .change_context(CommandError)?;
 
-                    // Draw the caller -> callee arrow right away.
+                    // Draw arrow: dep -> caller (sub-dependency points to the function that uses it)
                     if let Some(caller_image_id) = id_to_image.get(&caller_id) {
-                        batbelt::miro::connector::create_connector(
-                            caller_image_id,
+                        batbelt::miro::connector::create_connector_with_color(
                             &dep_image.item_id,
+                            caller_image_id,
                             None,
+                            Some(arrow_hex),
                         )
                         .await
                         .change_context(CommandError)?;
@@ -1216,8 +1230,11 @@ impl MiroCommand {
             ];
             let prompt_text = "Which screenshots you want to update?".to_string();
             let selections = BatDialoguer::multiselect(prompt_text, options.clone(), None, true)?;
-            let co_parser = CodeOverhaulParser::new_from_entry_point_name(entrypoint_name.clone())
-                .change_context(CommandError)?;
+            let co_parser = CodeOverhaulParser::new_from_entry_point_name_and_program(
+                entrypoint_name.clone(),
+                selected_program_name.clone(),
+            )
+            .change_context(CommandError)?;
             let ep_parser =
                 EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
             for selection in selections {
@@ -1336,14 +1353,11 @@ impl MiroCommand {
 
 pub mod miro_command_functions {
     use super::*;
-    use crate::batbelt::miro::MiroColor;
     use crate::batbelt::path::prettify_source_code_path;
 
     pub async fn prompt_deploy_source_code(
         selected_miro_frame: MiroFrame,
         select_all: bool,
-        sticky_notes: bool,
-        connected: bool,
     ) -> CommandResult<()> {
         let metadata_types_vec = BatMetadataType::get_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
@@ -1622,96 +1636,20 @@ pub mod miro_command_functions {
                 }
             };
 
-            if sticky_notes {
-                let mut counting_index = 0;
-                let mut selected_sc_metadata_names: Vec<String> = vec![];
-                loop {
-                    let sc_metadata_names = sourcecode_metadata_vec
-                        .clone()
-                        .into_iter()
-                        .filter_map(|meta| {
-                            if !selected_sc_metadata_names.contains(&meta.name) {
-                                Some(meta.name)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    let prompt_text =
-                        format!("Select the {} sticky note to deploy", counting_index + 1);
-                    let sc_metadata_selected_index =
-                        BatDialoguer::select(prompt_text, sc_metadata_names.clone(), None)?;
-                    selected_sc_metadata_names
-                        .push(sc_metadata_names[sc_metadata_selected_index].clone());
-                    counting_index += 1;
-                    if counting_index == sourcecode_metadata_vec.len() {
-                        break;
-                    }
-                }
-
-                let mut deployed_sticky_notes: Vec<MiroStickyNote> = vec![];
-
-                let deploy_space = selected_miro_frame.width * 9 / 10;
-                let sticky_notes_space = deploy_space * 8 / 10;
-                let sticky_note_width = sticky_notes_space / counting_index as u64;
-                let frame_grid = selected_miro_frame.width / (counting_index as u64 + 1);
-                let y_position = selected_miro_frame.height / 2;
-
-                for (sc_metadata_name_index, sc_metadata_name) in
-                    selected_sc_metadata_names.clone().into_iter().enumerate()
-                {
-                    let mut sticky_note = MiroStickyNote::new(
-                        &sc_metadata_name,
-                        MiroColor::LightYellow,
-                        &selected_miro_frame.item_id,
-                        frame_grid as i64 * (sc_metadata_name_index as i64 + 1),
-                        y_position as i64,
-                        sticky_note_width,
-                        100,
-                    );
-                    println!("Deploying {}", sticky_note.content.bright_green());
-                    sticky_note.deploy().await.change_context(CommandError)?;
-                    deployed_sticky_notes.push(sticky_note.clone());
-                }
-
-                if connected && deployed_sticky_notes.len() > 1 {
-                    for (deployed_sticky_note_index, deployed_sticky_note) in
-                        deployed_sticky_notes.clone().into_iter().enumerate()
-                    {
-                        if deployed_sticky_note_index < deployed_sticky_notes.clone().len() - 1 {
-                            println!(
-                                "Connecting {} to {}",
-                                deployed_sticky_note.content.bright_green(),
-                                &deployed_sticky_notes[deployed_sticky_note_index + 1]
-                                    .content
-                                    .bright_green()
-                            );
-                            batbelt::miro::connector::create_connector(
-                                &deployed_sticky_note.item_id,
-                                &deployed_sticky_notes[deployed_sticky_note_index + 1].item_id,
-                                None,
-                            )
-                            .await
-                            .change_context(CommandError)?;
-                        }
-                    }
-                }
-            } else {
-                for mut sc_metadata in sourcecode_metadata_vec {
-                    sc_metadata.name = miro_command_functions::parse_screenshot_name(
-                        &sc_metadata.name,
-                        &selected_miro_frame.title,
-                    );
-                    sc_metadata
-                        .deploy_screenshot_to_miro_frame(
-                            selected_miro_frame.clone(),
-                            0,
-                            selected_miro_frame.height as i64,
-                            screenshot_options.clone(),
-                        )
-                        .await
-                        .change_context(CommandError)?;
-                }
+            for mut sc_metadata in sourcecode_metadata_vec {
+                sc_metadata.name = miro_command_functions::parse_screenshot_name(
+                    &sc_metadata.name,
+                    &selected_miro_frame.title,
+                );
+                sc_metadata
+                    .deploy_screenshot_to_miro_frame(
+                        selected_miro_frame.clone(),
+                        0,
+                        selected_miro_frame.height as i64,
+                        screenshot_options.clone(),
+                    )
+                    .await
+                    .change_context(CommandError)?;
             }
             // prompt if continue
             let prompt_text = format!(
@@ -1728,16 +1666,20 @@ pub mod miro_command_functions {
     pub async fn deploy_miro_frame_for_co(
         entry_point_name: &str,
         entry_point_index: usize,
+        program_name: Option<&str>,
     ) -> CommandResult<MiroFrame> {
-        let frame_name = format!("co: {}", entry_point_name);
+        let frame_name = match program_name {
+            Some(pn) => format!("co:{}:{}", pn, entry_point_name),
+            None => format!("co: {}", entry_point_name),
+        };
 
         println!("Creating frame in Miro for {}", entry_point_name.green());
         let mut miro_frame = MiroFrame::new(&frame_name, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, 0, 0);
         miro_frame.deploy().await.change_context(CommandError)?;
         let x_modifier = entry_point_index as i64 % MIRO_BOARD_COLUMNS;
         let y_modifier = entry_point_index as i64 / MIRO_BOARD_COLUMNS;
-        let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
-        let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
+        let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 200) * x_modifier;
+        let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 400) * y_modifier;
         miro_frame
             .update_position(x_position, y_position)
             .await

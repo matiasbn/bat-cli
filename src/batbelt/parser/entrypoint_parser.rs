@@ -177,20 +177,32 @@ impl EntrypointParser {
     }
 
     pub fn get_entrypoint_names_from_program_lib(sorted: bool) -> Result<Vec<String>, ParserError> {
-        let BatConfig {
-            program_lib_path, ..
-        } = BatConfig::get_config().change_context(ParserError)?;
+        Self::get_entrypoint_names_filtered(sorted, None)
+    }
 
-        let bat_sonar = BatSonar::new_from_path(
-            &program_lib_path,
-            Some("#[program"),
-            SonarResultType::Function,
-        );
-        let mut entrypoints_names: Vec<String> = bat_sonar
-            .results
-            .iter()
-            .map(|entrypoint| entrypoint.name.clone())
-            .collect();
+    pub fn get_entrypoint_names_filtered(
+        sorted: bool,
+        program_lib_path: Option<&str>,
+    ) -> Result<Vec<String>, ParserError> {
+        let config = BatConfig::get_config().change_context(ParserError)?;
+
+        let lib_paths = match program_lib_path {
+            Some(path) => vec![path.to_string()],
+            None => {
+                if config.program_lib_paths.is_empty() {
+                    vec![config.program_lib_path.clone()]
+                } else {
+                    config.program_lib_paths.clone()
+                }
+            }
+        };
+
+        let mut entrypoints_names: Vec<String> = Vec::new();
+        for lib_path in &lib_paths {
+            let bat_sonar =
+                BatSonar::new_from_path(lib_path, Some("#[program"), SonarResultType::Function);
+            entrypoints_names.extend(bat_sonar.results.iter().map(|ep| ep.name.clone()));
+        }
         if sorted {
             entrypoints_names.sort();
         }
@@ -207,10 +219,40 @@ impl EntrypointParser {
     }
 
     pub fn get_context_name(entrypoint_name: &str) -> Result<String, ParserError> {
-        let BatConfig {
-            program_lib_path, ..
-        } = BatConfig::get_config().change_context(ParserError)?;
-        let lib_file = fs::read_to_string(program_lib_path).unwrap();
+        let config = BatConfig::get_config().change_context(ParserError)?;
+        let lib_paths = if config.program_lib_paths.is_empty() {
+            vec![config.program_lib_path.clone()]
+        } else {
+            config.program_lib_paths.clone()
+        };
+        // Find the lib file that contains this entrypoint
+        let mut lib_file = String::new();
+        for lib_path in &lib_paths {
+            let content = fs::read_to_string(lib_path).unwrap_or_default();
+            if content.lines().any(|line| {
+                if line.contains("pub fn") {
+                    let function_name = line
+                        .split('(')
+                        .next()
+                        .unwrap()
+                        .split('<')
+                        .next()
+                        .unwrap()
+                        .split_whitespace()
+                        .last()
+                        .unwrap();
+                    function_name == entrypoint_name.replace(".md", "")
+                } else {
+                    false
+                }
+            }) {
+                lib_file = content;
+                break;
+            }
+        }
+        if lib_file.is_empty() {
+            lib_file = fs::read_to_string(&lib_paths[0]).unwrap();
+        }
         let lib_file_lines: Vec<&str> = lib_file.lines().collect();
         let entrypoint_index = lib_file
             .lines()

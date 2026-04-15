@@ -104,6 +104,64 @@ impl MiroConfig {
             .to_string();
         Ok(miro_board_id)
     }
+
+    /// Fetches the user's boards from the Miro API using the given OAuth token.
+    /// Returns a list of (board_name, board_url) tuples.
+    pub async fn list_boards(access_token: &str) -> Result<Vec<(String, String)>, MiroError> {
+        let client = reqwest::Client::new();
+        let mut all_boards: Vec<(String, String)> = vec![];
+        let mut offset: usize = 0;
+        let limit = 50;
+
+        loop {
+            let response = client
+                .get(format!(
+                    "https://api.miro.com/v2/boards?limit={}&offset={}&sort=last_modified",
+                    limit, offset
+                ))
+                .header(AUTHORIZATION, format!("Bearer {}", access_token))
+                .header(CONTENT_TYPE, "application/json")
+                .send()
+                .await
+                .map_err(|e| {
+                    log::error!("Miro list boards error: {:#?}", e);
+                    Report::new(MiroError).attach_printable("Failed to fetch boards from Miro")
+                })?;
+
+            let body = response.text().await.map_err(|_| {
+                Report::new(MiroError).attach_printable("Failed to read Miro response body")
+            })?;
+
+            let json: Value = serde_json::from_str(&body).map_err(|_| {
+                Report::new(MiroError).attach_printable("Failed to parse Miro response JSON")
+            })?;
+
+            let data = json["data"].as_array().ok_or_else(|| {
+                Report::new(MiroError).attach_printable("No 'data' array in Miro response")
+            })?;
+
+            if data.is_empty() {
+                break;
+            }
+
+            for board in data {
+                let name = board["name"].as_str().unwrap_or("(unnamed)").to_string();
+                let id = board["id"].as_str().unwrap_or("").to_string();
+                if !id.is_empty() {
+                    let url = format!("https://miro.com/app/board/{}/", id);
+                    all_boards.push((name, url));
+                }
+            }
+
+            let total = json["total"].as_u64().unwrap_or(0) as usize;
+            offset += limit;
+            if offset >= total {
+                break;
+            }
+        }
+
+        Ok(all_boards)
+    }
 }
 
 #[derive(Debug, Clone)]

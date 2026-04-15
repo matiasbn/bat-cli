@@ -1,5 +1,6 @@
 use crate::batbelt;
 use crate::batbelt::command_line::execute_command;
+use crate::config::BatConfig;
 
 use crate::batbelt::git::{get_current_branch_name, get_not_committed_files};
 
@@ -225,11 +226,25 @@ impl RepositoryCommand {
 
     fn execute_update_co_file(&self) -> CommandResult<()> {
         println!("Select the code-overhaul file to finish:");
-        let co_finished_folder = BatFolder::CodeOverhaulFinished;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let selected_program_name = if bat_config.is_multi_program() {
+            Some(
+                bat_config
+                    .prompt_select_program()
+                    .change_context(CommandError)?,
+            )
+        } else {
+            None
+        };
+        let co_finished_folder = BatFolder::CodeOverhaulFinished {
+            program_name: selected_program_name.clone(),
+        };
 
-        let finished_files_names = BatFolder::CodeOverhaulFinished
-            .get_all_files_names(true, None, None)
-            .change_context(CommandError)?;
+        let finished_files_names = BatFolder::CodeOverhaulFinished {
+            program_name: selected_program_name.clone(),
+        }
+        .get_all_files_names(true, None, None)
+        .change_context(CommandError)?;
 
         if finished_files_names.is_empty() {
             return Err(Report::new(CommandError).attach_printable(format!(
@@ -274,6 +289,7 @@ impl RepositoryCommand {
 
         GitCommit::UpdateCO {
             entrypoint_name: finished_file_name,
+            program_name: selected_program_name,
         }
         .create_commit(true)
         .change_context(CommandError)?;

@@ -14,11 +14,11 @@ use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::{BatCommandEnumerator, BatPackageJsonCommand, CommandResult};
 
 use crate::batbelt::BatEnumerator;
-use crate::commands::repository_commands::RepositoryCommand;
+// use crate::commands::repository_commands::RepositoryCommand;
 use batbelt::git::git_action::GitAction;
 
 use commands::co_commands::CodeOverhaulCommand;
-use commands::finding_commands::FindingCommand;
+// use commands::finding_commands::FindingCommand;
 use commands::CommandError;
 use error_stack::fmt::{Charset, ColorMode};
 use error_stack::{FutureExt, IntoReport, Result};
@@ -30,7 +30,7 @@ use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 
-use crate::commands::analytics_commands::AnalyticsCommand;
+// use crate::commands::analytics_commands::AnalyticsCommand;
 use log4rs::Config;
 use package::PackageCommand;
 use regex::Regex;
@@ -55,49 +55,33 @@ struct Cli {
     Default, strum_macros::Display, Subcommand, Debug, PartialEq, Clone, strum_macros::EnumIter,
 )]
 enum BatCommands {
-    /// Creates a Bat project
+    /// Initialize a Bat project
     #[default]
-    New,
+    Init,
     /// Reload the Bat project files (ideal to resume work from git clone)
     Reload,
     /// code-overhaul files management
     #[command(subcommand)]
     CodeOverhaul(CodeOverhaulCommand),
-    #[command(subcommand)]
-    Analytics(AnalyticsCommand),
+    // #[command(subcommand)]
+    // Analytics(AnalyticsCommand),
     /// Execute the BatSonar to create metadata files for all Sonar result types
-    Sonar {
-        /// Skips the source code (functions, structs, enums and traits) process
-        #[arg(long)]
-        skip_source_code: bool,
-        /// Runs Sonar only for Context Accounts
-        #[arg(long)]
-        only_context_accounts: bool,
-        /// Runs Sonar only for entry points
-        #[arg(long)]
-        only_entry_points: bool,
-        /// Runs Sonar only for traits implemenetations and definitions data
-        #[arg(long)]
-        only_traits: bool,
-        /// Runs Sonar only for function dependencies
-        #[arg(long)]
-        only_function_dependencies: bool,
-    },
+    Sonar,
     // /// Execute specific BatSonar commands
     // #[command(subcommand)]
     // SonarSpecific(SonarSpecificCommand),
-    /// findings files management
-    #[command(subcommand)]
-    Finding(FindingCommand),
+    // /// findings files management
+    // #[command(subcommand)]
+    // Finding(FindingCommand),
     /// utils tools
     #[command(subcommand)]
     Tool(ToolCommand),
     /// Miro integration
     #[command(subcommand)]
     Miro(MiroCommand),
-    /// Git actions to manage repository
-    #[command(subcommand)]
-    Repository(RepositoryCommand),
+    // /// Git actions to manage repository
+    // #[command(subcommand)]
+    // Repository(RepositoryCommand),
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageCommand),
@@ -109,44 +93,31 @@ impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         self.validate_command()?;
         match self {
-            BatCommands::New => ProjectCommands::New.execute_command(),
+            BatCommands::Init => ProjectCommands::Init.init_bat_project().await,
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
-            BatCommands::Analytics(command) => command.execute_command(),
-            BatCommands::Finding(FindingCommand::Create) => {
-                commands::finding_commands::start_finding()
-            }
-            BatCommands::Finding(FindingCommand::Finish) => {
-                commands::finding_commands::finish_finding()
-            }
-            BatCommands::Finding(FindingCommand::Update) => {
-                commands::finding_commands::update_finding()
-            }
-            BatCommands::Finding(FindingCommand::AcceptAll) => {
-                commands::finding_commands::accept_all()
-            }
-            BatCommands::Finding(FindingCommand::CreateEvidence) => {
-                commands::finding_commands::create_evidence()
-            }
-            BatCommands::Sonar {
-                skip_source_code,
-                only_context_accounts,
-                only_entry_points,
-                only_traits,
-                only_function_dependencies,
-            } => SonarCommand::Run {
-                skip_source_code: *skip_source_code,
-                only_context_accounts: *only_context_accounts,
-                only_entry_points: *only_entry_points,
-                only_traits: *only_traits,
-                only_function_dependencies: *only_function_dependencies,
-            }
-            .execute_command(),
+            // BatCommands::Analytics(command) => command.execute_command(),
+            // BatCommands::Finding(FindingCommand::Create) => {
+            //     commands::finding_commands::start_finding()
+            // }
+            // BatCommands::Finding(FindingCommand::Finish) => {
+            //     commands::finding_commands::finish_finding()
+            // }
+            // BatCommands::Finding(FindingCommand::Update) => {
+            //     commands::finding_commands::update_finding()
+            // }
+            // BatCommands::Finding(FindingCommand::AcceptAll) => {
+            //     commands::finding_commands::accept_all()
+            // }
+            // BatCommands::Finding(FindingCommand::CreateEvidence) => {
+            //     commands::finding_commands::create_evidence()
+            // }
+            BatCommands::Sonar => SonarCommand::Run.execute_command(),
             // BatCommands::SonarSpecific(command) => command.execute_command(),
-            BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
+            // BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tool(command) => command.execute_command(),
-            BatCommands::Repository(command) => command.execute_command(),
+            // BatCommands::Repository(command) => command.execute_command(),
             // only for dev
             #[cfg(debug_assertions)]
             BatCommands::Package(PackageCommand::Format) => {
@@ -162,7 +133,7 @@ impl BatCommands {
 
     fn validate_command(&self) -> CommandResult<()> {
         let (check_metadata, check_branch) = match self {
-            BatCommands::New => {
+            BatCommands::Init => {
                 return Ok(());
             }
             BatCommands::Reload => {
@@ -171,23 +142,9 @@ impl BatCommands {
             BatCommands::Package(_) => {
                 return Ok(());
             }
-            BatCommands::Sonar { .. } => (
-                SonarCommand::Run {
-                    skip_source_code: false,
-                    only_context_accounts: false,
-                    only_entry_points: false,
-                    only_traits: false,
-                    only_function_dependencies: false,
-                }
-                .check_metadata_is_initialized(),
-                SonarCommand::Run {
-                    skip_source_code: false,
-                    only_context_accounts: false,
-                    only_entry_points: false,
-                    only_traits: false,
-                    only_function_dependencies: false,
-                }
-                .check_correct_branch(),
+            BatCommands::Sonar => (
+                SonarCommand::Run.check_metadata_is_initialized(),
+                SonarCommand::Run.check_correct_branch(),
             ),
             BatCommands::Tool(command) => (
                 command.check_metadata_is_initialized(),
@@ -197,22 +154,22 @@ impl BatCommands {
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
-            BatCommands::Finding(command) => (
-                command.check_metadata_is_initialized(),
-                command.check_correct_branch(),
-            ),
+            // BatCommands::Finding(command) => (
+            //     command.check_metadata_is_initialized(),
+            //     command.check_correct_branch(),
+            // ),
             BatCommands::Miro(command) => (
                 command.check_metadata_is_initialized(),
                 command.check_correct_branch(),
             ),
-            BatCommands::Repository(command) => (
-                command.check_metadata_is_initialized(),
-                command.check_correct_branch(),
-            ),
-            BatCommands::Analytics(command) => (
-                command.check_metadata_is_initialized(),
-                command.check_correct_branch(),
-            ),
+            // BatCommands::Repository(command) => (
+            //     command.check_metadata_is_initialized(),
+            //     command.check_correct_branch(),
+            // ),
+            // BatCommands::Analytics(command) => (
+            //     command.check_metadata_is_initialized(),
+            //     command.check_correct_branch(),
+            // ),
         };
         if check_metadata {
             BatMetadata::read_metadata()
@@ -244,27 +201,27 @@ impl BatCommands {
                         command.to_string().to_kebab_case(),
                     ))
                 }
-                BatCommands::Analytics(_) if is_anchor => {
-                    Some(AnalyticsCommand::get_bat_package_json_commands(
-                        command.to_string().to_kebab_case(),
-                    ))
-                }
+                // BatCommands::Analytics(_) if is_anchor => {
+                //     Some(AnalyticsCommand::get_bat_package_json_commands(
+                //         command.to_string().to_kebab_case(),
+                //     ))
+                // }
                 // Universal commands
-                BatCommands::Finding(_) => Some(FindingCommand::get_bat_package_json_commands(
-                    command.to_string().to_kebab_case(),
-                )),
+                // BatCommands::Finding(_) => Some(FindingCommand::get_bat_package_json_commands(
+                //     command.to_string().to_kebab_case(),
+                // )),
                 BatCommands::Tool(_) => Some(ToolCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Miro(_) => Some(MiroCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
-                BatCommands::Repository(_) => {
-                    Some(RepositoryCommand::get_bat_package_json_commands(
-                        command.to_string().to_kebab_case(),
-                    ))
-                }
-                BatCommands::Sonar { .. } => Some(SonarCommand::get_bat_package_json_commands(
+                // BatCommands::Repository(_) => {
+                //     Some(RepositoryCommand::get_bat_package_json_commands(
+                //         command.to_string().to_kebab_case(),
+                //     ))
+                // }
+                BatCommands::Sonar => Some(SonarCommand::get_bat_package_json_commands(
                     command.to_string().to_kebab_case(),
                 )),
                 BatCommands::Reload => Some(BatPackageJsonCommand {
@@ -350,7 +307,7 @@ async fn run() -> CommandResult<()> {
     Suggestion::set_report();
     // env_logger selectively
     match cli.command {
-        BatCommands::Package(..) | BatCommands::New => {
+        BatCommands::Package(..) | BatCommands::Init => {
             env_logger::init();
             Ok(())
         }

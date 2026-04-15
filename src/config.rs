@@ -54,7 +54,6 @@ impl BatAuditorConfig {
             external_bat_metadata: vec![],
         };
         bat_auditor_config.prompt_auditor_name()?;
-        bat_auditor_config.prompt_miro_integration()?;
         bat_auditor_config.prompt_code_editor_integration()?;
         bat_auditor_config.get_external_bat_metadata()?;
         bat_auditor_config.save()?;
@@ -443,17 +442,8 @@ impl BatConfig {
             today
         };
 
-        // Miro board URL - default to "none"
-        let mut miro_board_url: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input_with_default("Miro board url:", "none")
-                .change_context(BatConfigError)?
-        } else {
-            "none".to_string()
-        };
-
-        if miro_board_url != "none" {
-            miro_board_url = Self::normalize_miro_board_url(&miro_board_url)?;
-        }
+        // Miro board URL - set to "none" by default (configured later in new_bat_project if user wants Miro)
+        let miro_board_url = "none".to_string();
 
         // Project repository URL - auto-detect from git remote
         let project_repository_url = remote_https_url.clone();
@@ -518,7 +508,7 @@ impl BatConfig {
         Some((remote_https, owner, commit_hash))
     }
 
-    fn normalize_miro_board_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
+    pub fn normalize_miro_board_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
         let url = normalizer::UrlNormalizer::new(url_to_normalize)
             .into_report()
             .attach_printable(format!(
@@ -589,5 +579,53 @@ impl BatConfig {
         confy::store_path(path, self)
             .into_report()
             .change_context(BatConfigError)
+    }
+
+    pub fn is_multi_program(&self) -> bool {
+        self.program_lib_paths.len() > 1
+    }
+
+    pub fn prompt_select_program(&self) -> Result<String, BatConfigError> {
+        let program_names = self.get_program_names();
+        let prompt_text = "Select the program:".to_string();
+        let selection = BatDialoguer::select(prompt_text, program_names.clone(), None)
+            .change_context(BatConfigError)?;
+        Ok(program_names[selection].clone())
+    }
+
+    pub fn get_program_lib_path_by_name(&self, program_name: &str) -> Option<String> {
+        let paths = if self.program_lib_paths.is_empty() {
+            vec![self.program_lib_path.clone()]
+        } else {
+            self.program_lib_paths.clone()
+        };
+        paths.into_iter().find(|p| {
+            let name = p
+                .trim_end_matches("/src/lib.rs")
+                .trim_end_matches("/src/main.rs")
+                .split('/')
+                .next_back()
+                .unwrap_or("");
+            name == program_name
+        })
+    }
+
+    pub fn get_program_names(&self) -> Vec<String> {
+        let paths = if self.program_lib_paths.is_empty() {
+            vec![self.program_lib_path.clone()]
+        } else {
+            self.program_lib_paths.clone()
+        };
+        paths
+            .iter()
+            .map(|p| {
+                p.trim_end_matches("/src/lib.rs")
+                    .trim_end_matches("/src/main.rs")
+                    .split('/')
+                    .next_back()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect()
     }
 }

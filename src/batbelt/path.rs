@@ -42,14 +42,34 @@ pub enum BatFile {
     RobotFile,
     ProgramAccountsMetadataFile,
     CodeOverhaulSummaryFile,
-    CodeOverhaulToReview { file_name: String },
-    CodeOverhaulStarted { file_name: String },
-    CodeOverhaulFinished { file_name: String },
-    CodeOverhaulDeprecated { file_name: String },
-    FindingToReview { file_name: String },
-    FindingAccepted { file_name: String },
-    FindingRejected { file_name: String },
-    Generic { file_path: String },
+    CodeOverhaulToReview {
+        file_name: String,
+        program_name: Option<String>,
+    },
+    CodeOverhaulStarted {
+        file_name: String,
+        program_name: Option<String>,
+    },
+    CodeOverhaulFinished {
+        file_name: String,
+        program_name: Option<String>,
+    },
+    CodeOverhaulDeprecated {
+        file_name: String,
+        program_name: Option<String>,
+    },
+    FindingToReview {
+        file_name: String,
+    },
+    FindingAccepted {
+        file_name: String,
+    },
+    FindingRejected {
+        file_name: String,
+    },
+    Generic {
+        file_path: String,
+    },
 }
 
 impl BatEnumerator for BatFile {}
@@ -102,32 +122,56 @@ impl BatFile {
                     BatFolder::AuditorNotes.get_path(canonicalize)?
                 )
             }
-            BatFile::CodeOverhaulToReview { file_name } => {
+            BatFile::CodeOverhaulToReview {
+                file_name,
+                program_name,
+            } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulToReview.get_path(canonicalize)?
+                    BatFolder::CodeOverhaulToReview {
+                        program_name: program_name.clone()
+                    }
+                    .get_path(canonicalize)?
                 )
             }
-            BatFile::CodeOverhaulStarted { file_name } => {
+            BatFile::CodeOverhaulStarted {
+                file_name,
+                program_name,
+            } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulStarted.get_path(canonicalize)?
+                    BatFolder::CodeOverhaulStarted {
+                        program_name: program_name.clone()
+                    }
+                    .get_path(canonicalize)?
                 )
             }
-            BatFile::CodeOverhaulFinished { file_name } => {
+            BatFile::CodeOverhaulFinished {
+                file_name,
+                program_name,
+            } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulFinished.get_path(canonicalize)?
+                    BatFolder::CodeOverhaulFinished {
+                        program_name: program_name.clone()
+                    }
+                    .get_path(canonicalize)?
                 )
             }
-            BatFile::CodeOverhaulDeprecated { file_name } => {
+            BatFile::CodeOverhaulDeprecated {
+                file_name,
+                program_name,
+            } => {
                 let entrypoint_name = file_name.trim_end_matches(".md");
                 format!(
                     "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulDeprecated.get_path(canonicalize)?
+                    BatFolder::CodeOverhaulDeprecated {
+                        program_name: program_name.clone()
+                    }
+                    .get_path(canonicalize)?
                 )
             }
             BatFile::FindingToReview { file_name } => {
@@ -279,11 +323,11 @@ pub enum BatFolder {
     FindingsToReview,
     FindingsAccepted,
     FindingsRejected,
-    CodeOverhaulFolderPath,
-    CodeOverhaulToReview,
-    CodeOverhaulStarted,
-    CodeOverhaulFinished,
-    CodeOverhaulDeprecated,
+    CodeOverhaulFolderPath { program_name: Option<String> },
+    CodeOverhaulToReview { program_name: Option<String> },
+    CodeOverhaulStarted { program_name: Option<String> },
+    CodeOverhaulFinished { program_name: Option<String> },
+    CodeOverhaulDeprecated { program_name: Option<String> },
     AuditorNotes,
     AuditorFigures,
     Notes,
@@ -341,34 +385,50 @@ impl BatFolder {
                     BatFolder::FindingsFolderPath.get_path(canonicalize)?
                 )
             }
-            BatFolder::CodeOverhaulFolderPath => {
-                format!(
+            BatFolder::CodeOverhaulFolderPath { program_name } => {
+                let base = format!(
                     "{}/code-overhaul",
                     BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
+                );
+                match program_name {
+                    Some(name) => format!("{}/{}", base, name),
+                    None => base,
+                }
             }
-            BatFolder::CodeOverhaulToReview => {
+            BatFolder::CodeOverhaulToReview { program_name } => {
                 format!(
                     "{}/to-review",
-                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                    BatFolder::CodeOverhaulFolderPath {
+                        program_name: program_name.clone()
+                    }
+                    .get_path(canonicalize)?
                 )
             }
-            BatFolder::CodeOverhaulStarted => {
+            BatFolder::CodeOverhaulStarted { program_name } => {
                 format!(
                     "{}/started",
-                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                    BatFolder::CodeOverhaulFolderPath {
+                        program_name: program_name.clone()
+                    }
+                    .get_path(canonicalize)?
                 )
             }
-            BatFolder::CodeOverhaulDeprecated => {
+            BatFolder::CodeOverhaulDeprecated { program_name } => {
                 format!(
                     "{}/deprecated",
-                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                    BatFolder::CodeOverhaulFolderPath {
+                        program_name: program_name.clone()
+                    }
+                    .get_path(canonicalize)?
                 )
             }
-            BatFolder::CodeOverhaulFinished => {
+            BatFolder::CodeOverhaulFinished { program_name } => {
                 format!(
                     "{}/finished",
-                    BatFolder::CodeOverhaulFolderPath.get_path(canonicalize)?
+                    BatFolder::CodeOverhaulFolderPath {
+                        program_name: program_name.clone()
+                    }
+                    .get_path(canonicalize)?
                 )
             }
         };

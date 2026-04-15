@@ -7,6 +7,7 @@ use crate::batbelt::templates::code_overhaul_template::{
 };
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
+use crate::config::BatConfig;
 
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
@@ -15,6 +16,7 @@ use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use lazy_regex::regex;
 use regex::Regex;
 
+#[allow(unused_imports)]
 use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, MiroMetadata};
 use crate::batbelt::miro::frame::MiroFrame;
@@ -27,23 +29,16 @@ use crate::commands::miro_commands::MiroCommand;
 )]
 pub enum CodeOverhaulCommand {
     /// Starts a code-overhaul file audit
-    Start {
-        /// Skips miro deployment
-        #[arg(long)]
-        skip_miro: bool,
-        /// Starts a guided process to start a co file
-        #[arg(long)]
-        interactive: bool,
-    },
+    Start,
     /// Moves the code-overhaul file from to-review to finished
     #[default]
     Finish,
-    /// creates a code-overhaul summary from the code-overhaul finished notes
-    Summary,
-    /// creates program accounts metadata
-    CreateProgramAccountsMetadata,
-    /// calculates state changes from the program accounts metadata
-    UpdateProgramAccountsMetadata,
+    // /// creates a code-overhaul summary from the code-overhaul finished notes
+    // Summary,
+    // /// creates program accounts metadata
+    // CreateProgramAccountsMetadata,
+    // /// calculates state changes from the program accounts metadata
+    // UpdateProgramAccountsMetadata,
 }
 
 impl BatEnumerator for CodeOverhaulCommand {}
@@ -65,19 +60,17 @@ impl BatCommandEnumerator for CodeOverhaulCommand {
 impl CodeOverhaulCommand {
     pub async fn execute_command(&self) -> CommandResult<()> {
         match self {
-            CodeOverhaulCommand::Start {
-                skip_miro,
-                interactive,
-            } => self.execute_start(*skip_miro, *interactive).await,
+            CodeOverhaulCommand::Start => self.execute_start().await,
             CodeOverhaulCommand::Finish => self.execute_finish(),
-            CodeOverhaulCommand::Summary => self.execute_summary(),
-            CodeOverhaulCommand::CreateProgramAccountsMetadata => {
-                self.execute_program_accounts_metadata()
-            }
-            CodeOverhaulCommand::UpdateProgramAccountsMetadata => self.execute_calculate_sc(),
+            // CodeOverhaulCommand::Summary => self.execute_summary(),
+            // CodeOverhaulCommand::CreateProgramAccountsMetadata => {
+            //     self.execute_program_accounts_metadata()
+            // }
+            // CodeOverhaulCommand::UpdateProgramAccountsMetadata => self.execute_calculate_sc(),
         }
     }
 
+    #[allow(dead_code)]
     fn execute_calculate_sc(&self) -> CommandResult<()> {
         ProgramAccountMetadata::update_program_accounts_metadata_file()
             .change_context(CommandError)?;
@@ -85,6 +78,7 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn execute_program_accounts_metadata(&self) -> CommandResult<()> {
         ProgramAccountMetadata::create_program_accounts_metadata_file()
             .change_context(CommandError)?;
@@ -92,11 +86,29 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn execute_summary(&self) -> CommandResult<()> {
         let mut co_summary_content = String::new();
-        let co_finished_bat_files_vec = BatFolder::CodeOverhaulFinished
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let program_names: Vec<Option<String>> = if bat_config.is_multi_program() {
+            bat_config
+                .get_program_names()
+                .into_iter()
+                .map(Some)
+                .collect()
+        } else {
+            vec![None]
+        };
+        let mut all_finished_files = vec![];
+        for pn in &program_names {
+            let files = BatFolder::CodeOverhaulFinished {
+                program_name: pn.clone(),
+            }
             .get_all_bat_files(true, None, None)
             .change_context(CommandError)?;
+            all_finished_files.extend(files);
+        }
+        let co_finished_bat_files_vec = all_finished_files;
         for finished_co_file in co_finished_bat_files_vec {
             let entry_point_name = finished_co_file
                 .get_file_name()
@@ -164,10 +176,23 @@ impl CodeOverhaulCommand {
     }
 
     fn execute_finish(&self) -> error_stack::Result<(), CommandError> {
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let program_name = if bat_config.is_multi_program() {
+            Some(
+                bat_config
+                    .prompt_select_program()
+                    .change_context(CommandError)?,
+            )
+        } else {
+            None
+        };
+
         // get to-review files
-        let started_entrypoint_direntry_vec = BatFolder::CodeOverhaulStarted
-            .get_all_files_dir_entries(true, None, None)
-            .change_context(CommandError)?;
+        let started_entrypoint_direntry_vec = BatFolder::CodeOverhaulStarted {
+            program_name: program_name.clone(),
+        }
+        .get_all_files_dir_entries(true, None, None)
+        .change_context(CommandError)?;
         let started_entrypoint_names = started_entrypoint_direntry_vec
             .into_iter()
             .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
@@ -195,11 +220,14 @@ impl CodeOverhaulCommand {
             started_entrypoint_names[selection].clone()
         };
 
-        let finished_co_folder_path = BatFolder::CodeOverhaulFinished
-            .get_path(true)
-            .change_context(CommandError)?;
+        let finished_co_folder_path = BatFolder::CodeOverhaulFinished {
+            program_name: program_name.clone(),
+        }
+        .get_path(true)
+        .change_context(CommandError)?;
         let started_co_bat_file = BatFile::CodeOverhaulStarted {
             file_name: finished_endpoint.clone(),
+            program_name: program_name.clone(),
         };
         let started_co_bat_file_path = started_co_bat_file
             .get_path(true)
@@ -235,6 +263,7 @@ impl CodeOverhaulCommand {
         .change_context(CommandError)?;
         GitCommit::FinishCO {
             entrypoint_name: finished_endpoint.clone(),
+            program_name: program_name.clone(),
         }
         .create_commit(true)
         .change_context(CommandError)?;
@@ -243,22 +272,23 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
-    async fn execute_start(
-        &self,
-        skip_miro: bool,
-        _interactive: bool,
-    ) -> error_stack::Result<(), CommandError> {
-        // if interactive {
-        //     let entry_point_name = self.execute_start_interactive()?;
-        //     if !skip_miro {
-        //         co_commands_functions::prompt_deploy_miro(entry_point_name).await?;
-        //     }
-        //     return Ok(());
-        // }
+    async fn execute_start(&self) -> error_stack::Result<(), CommandError> {
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let program_name = if bat_config.is_multi_program() {
+            Some(
+                bat_config
+                    .prompt_select_program()
+                    .change_context(CommandError)?,
+            )
+        } else {
+            None
+        };
 
-        let review_files = BatFolder::CodeOverhaulToReview
-            .get_all_files_names(true, None, None)
-            .change_context(CommandError)?;
+        let review_files = BatFolder::CodeOverhaulToReview {
+            program_name: program_name.clone(),
+        }
+        .get_all_files_names(true, None, None)
+        .change_context(CommandError)?;
 
         if review_files.is_empty() {
             return Err(Report::new(CommandError).attach_printable(format!(
@@ -276,12 +306,14 @@ impl CodeOverhaulCommand {
 
         BatFile::CodeOverhaulToReview {
             file_name: to_start_file_name.clone(),
+            program_name: program_name.clone(),
         }
         .remove_file()
         .change_context(CommandError)?;
 
         let started_bat_file = BatFile::CodeOverhaulStarted {
             file_name: to_start_file_name.clone(),
+            program_name: program_name.clone(),
         };
 
         let started_template =
@@ -299,6 +331,7 @@ impl CodeOverhaulCommand {
 
         GitCommit::StartCO {
             entrypoint_name: to_start_file_name.clone(),
+            program_name: program_name.clone(),
         }
         .create_commit(true)
         .change_context(CommandError)?;
@@ -316,16 +349,18 @@ impl CodeOverhaulCommand {
                 .open_in_editor(true, Some(ep_parser.entry_point_function.start_line_index))
                 .change_context(CommandError)?;
         }
-        if !skip_miro {
-            let deployed =
-                co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;
-            if deployed {
-                GitCommit::UpdateCO {
-                    entrypoint_name: to_start_file_name.clone(),
-                }
-                .create_commit(true)
-                .change_context(CommandError)?;
+        let deployed = co_commands_functions::prompt_deploy_miro(
+            entrypoint_name.to_string(),
+            program_name.clone(),
+        )
+        .await?;
+        if deployed {
+            GitCommit::UpdateCO {
+                entrypoint_name: to_start_file_name.clone(),
+                program_name: program_name.clone(),
             }
+            .create_commit(true)
+            .change_context(CommandError)?;
         }
         Ok(())
     }
@@ -428,17 +463,20 @@ mod co_commands_functions {
         Ok("".to_string())
     }
 
-    pub async fn prompt_deploy_miro(entry_point_name: String) -> CommandResult<bool> {
+    pub async fn prompt_deploy_miro(
+        entry_point_name: String,
+        program_name: Option<String>,
+    ) -> CommandResult<bool> {
         let prompt_text = format!(
             "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
             entry_point_name.clone().bright_green()
         );
         let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
         if deploy_frame {
-            MiroCommand::CodeOverhaulScreenshots {
-                entry_point_name: Some(entry_point_name.to_string()),
-            }
-            .execute_command()
+            MiroCommand::deploy_co_screenshots_with_program(
+                Some(entry_point_name.to_string()),
+                program_name,
+            )
             .await?
         }
         Ok(deploy_frame)
