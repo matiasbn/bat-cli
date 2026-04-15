@@ -1,6 +1,0 @@
-{
-    "rust-analyzer.linkedProjects": [
-        "Cargo.toml",
-        "test-workspace/liquid-staking-program/Cargo.toml"
-    ]
-}
