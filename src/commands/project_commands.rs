@@ -107,9 +107,38 @@ impl ProjectCommands {
 
         let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
 
-        // Create audit branch from current HEAD (repo already initialized)
-        println!("Creating audit branch");
-        project_commands_functions::initialize_audit_branch()?;
+        // Prompt for auditor config (name + code editor)
+        BatAuditorConfig::new_with_prompt().change_context(CommandError)?;
+        let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+
+        // Create auditor branch from HEAD — all work happens here
+        let auditor_branch = format!(
+            "{}-{}",
+            bat_auditor_config.auditor_name, bat_config.project_name
+        );
+        let branch_exists = batbelt::git::check_if_branch_exists(&auditor_branch)
+            .change_context(CommandError)?;
+        if branch_exists {
+            println!("Checking out {:?} branch", auditor_branch);
+            Command::new("git")
+                .args(["checkout", &auditor_branch])
+                .output()
+                .unwrap();
+        } else {
+            println!("Creating branch {:?}", auditor_branch);
+            Command::new("git")
+                .args(["checkout", "-b", &auditor_branch])
+                .output()
+                .unwrap();
+        }
+
+        // Initial commit with project files
+        GitAction::AddAll
+            .execute_action()
+            .change_context(CommandError)?;
+        GitCommit::Init
+            .create_commit(true)
+            .change_context(CommandError)?;
 
         PackageJsonTemplate::create_package_json(None).change_context(CommandError)?;
 
@@ -120,48 +149,54 @@ impl ProjectCommands {
 
         SonarCommand::Run.execute_command()?;
 
-        // create auditors branches from develop
-        for auditor_name in bat_config.auditor_names {
-            BatFile::BatAuditorToml
-                .create_empty(false)
-                .change_context(CommandError)?;
-            let bat_auditor_config = BatAuditorConfig {
-                auditor_name: auditor_name.clone(),
-                miro_oauth_access_token: "".to_string(),
-                use_code_editor: false,
-                code_editor: Default::default(),
-                external_bat_metadata: vec![],
-            };
-            bat_auditor_config.save().change_context(CommandError)?;
-
-            project_commands_functions::init_auditor_configuration(auditor_name.clone())?;
-
-            BatFile::BatAuditorToml
-                .remove_file()
-                .change_context(CommandError)?;
-        }
-
-        BatAuditorConfig::new_with_prompt().change_context(CommandError)?;
-
-        // Miro integration — ask at the end of the flow
-        let use_miro = BatDialoguer::select_yes_or_no("Do you want to use the Miro integration?".to_string())
+        // Create auditor folders and code overhaul files
+        TemplateGenerator
+            .create_folders_for_current_auditor()
+            .change_context(CommandError)?;
+        project_commands_functions::initialize_code_overhaul_files()?;
+        GitCommit::InitAuditor
+            .create_commit(true)
             .change_context(CommandError)?;
 
+        // Miro integration — ask at the end of the flow
+        let use_miro = BatDialoguer::select_yes_or_no(
+            "Do you want to use the Miro integration?".to_string(),
+        )
+        .change_context(CommandError)?;
+
         if use_miro {
-            // Get board URL
-            let miro_board_url_input: String =
-                bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
-            let miro_board_url =
-                BatConfig::normalize_miro_board_url(&miro_board_url_input).change_context(CommandError)?;
+            let miro_oauth_token: String =
+                bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?;
+
+            println!("Fetching boards from Miro...");
+            let boards = crate::batbelt::miro::MiroConfig::list_boards(&miro_oauth_token)
+                .await
+                .change_context(CommandError)?;
+
+            if boards.is_empty() {
+                return Err(Report::new(CommandError)
+                    .attach_printable("No boards found for this Miro token"));
+            }
+
+            let board_names: Vec<String> =
+                boards.iter().map(|(name, _)| name.clone()).collect();
+            let selection = BatDialoguer::select(
+                "Select the Miro board:".to_string(),
+                board_names,
+                None,
+            )
+            .change_context(CommandError)?;
+
+            let miro_board_url = boards[selection].1.clone();
 
             // Update Bat.toml with the board URL
             let mut bat_config = BatConfig::get_config().change_context(CommandError)?;
             bat_config.miro_board_url = miro_board_url;
             bat_config.save().change_context(CommandError)?;
 
-            // Get OAuth token
-            let miro_oauth_token: String =
-                bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?;
+            GitCommit::UpdateBatToml
+                .create_commit(true)
+                .change_context(CommandError)?;
 
             // Update BatAuditor.toml with the token
             let mut bat_auditor_config =
