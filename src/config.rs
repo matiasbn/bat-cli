@@ -590,4 +590,52 @@ impl BatConfig {
             .into_report()
             .change_context(BatConfigError)
     }
+
+    pub fn is_multi_program(&self) -> bool {
+        self.program_lib_paths.len() > 1
+    }
+
+    pub fn prompt_select_program(&self) -> Result<String, BatConfigError> {
+        let program_names = self.get_program_names();
+        let prompt_text = "Select the program:".to_string();
+        let selection = BatDialoguer::select(prompt_text, program_names.clone(), None)
+            .change_context(BatConfigError)?;
+        Ok(program_names[selection].clone())
+    }
+
+    pub fn get_program_lib_path_by_name(&self, program_name: &str) -> Option<String> {
+        let paths = if self.program_lib_paths.is_empty() {
+            vec![self.program_lib_path.clone()]
+        } else {
+            self.program_lib_paths.clone()
+        };
+        paths.into_iter().find(|p| {
+            let name = p
+                .trim_end_matches("/src/lib.rs")
+                .trim_end_matches("/src/main.rs")
+                .split('/')
+                .last()
+                .unwrap_or("");
+            name == program_name
+        })
+    }
+
+    pub fn get_program_names(&self) -> Vec<String> {
+        let paths = if self.program_lib_paths.is_empty() {
+            vec![self.program_lib_path.clone()]
+        } else {
+            self.program_lib_paths.clone()
+        };
+        paths
+            .iter()
+            .map(|p| {
+                p.trim_end_matches("/src/lib.rs")
+                    .trim_end_matches("/src/main.rs")
+                    .split('/')
+                    .last()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect()
+    }
 }

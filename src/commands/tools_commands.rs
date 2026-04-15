@@ -22,7 +22,7 @@ use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::batbelt;
 use crate::batbelt::metadata::enums_source_code_metadata::EnumSourceCodeMetadata;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-use crate::config::BatAuditorConfig;
+use crate::config::{BatAuditorConfig, BatConfig};
 use log::Level;
 use tabled::{Style, Table, Tabled};
 
@@ -89,7 +89,9 @@ impl BatCommandEnumerator for ToolCommand {
 
 impl ToolCommand {
     fn execute_list_co(&self) -> CommandResult<()> {
-        let co_bat_folder = BatFolder::CodeOverhaulFolderPath;
+        let co_bat_folder = BatFolder::CodeOverhaulFolderPath {
+            program_name: None,
+        };
         let co_dir_entries = co_bat_folder
             .get_all_files_dir_entries(true, None, None)
             .change_context(CommandError)?;
@@ -409,10 +411,24 @@ impl ToolCommand {
             let selection = BatDialoguer::select(prompt_text, options.clone(), None)
                 .change_context(CommandError)?;
             let open_started = selection == 0;
-            let co_folder = if open_started {
-                BatFolder::CodeOverhaulStarted
+            let bat_config = BatConfig::get_config().change_context(CommandError)?;
+            let selected_program_name = if bat_config.is_multi_program() {
+                Some(
+                    bat_config
+                        .prompt_select_program()
+                        .change_context(CommandError)?,
+                )
             } else {
-                BatFolder::CodeOverhaulFinished
+                None
+            };
+            let co_folder = if open_started {
+                BatFolder::CodeOverhaulStarted {
+                    program_name: selected_program_name.clone(),
+                }
+            } else {
+                BatFolder::CodeOverhaulFinished {
+                    program_name: selected_program_name.clone(),
+                }
             };
             let co_files = co_folder
                 .get_all_files_dir_entries(true, None, None)
@@ -428,10 +444,12 @@ impl ToolCommand {
                 let bat_file = if open_started {
                     BatFile::CodeOverhaulStarted {
                         file_name: file_name.clone(),
+                        program_name: selected_program_name.clone(),
                     }
                 } else {
                     BatFile::CodeOverhaulFinished {
                         file_name: file_name.clone(),
+                        program_name: selected_program_name.clone(),
                     }
                 };
                 let ep_parser =
@@ -469,18 +487,39 @@ impl ToolCommand {
     }
 
     fn co_counter(&self) -> error_stack::Result<(usize, usize, usize), CommandError> {
-        let to_review_count = BatFolder::CodeOverhaulToReview
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let program_names: Vec<Option<String>> = if bat_config.is_multi_program() {
+            bat_config
+                .get_program_names()
+                .into_iter()
+                .map(Some)
+                .collect()
+        } else {
+            vec![None]
+        };
+        let mut to_review_count = 0;
+        let mut started_count = 0;
+        let mut finished_count = 0;
+        for pn in &program_names {
+            to_review_count += BatFolder::CodeOverhaulToReview {
+                program_name: pn.clone(),
+            }
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?
             .len();
-        let started_count = BatFolder::CodeOverhaulStarted
+            started_count += BatFolder::CodeOverhaulStarted {
+                program_name: pn.clone(),
+            }
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?
             .len();
-        let finished_count = BatFolder::CodeOverhaulFinished
+            finished_count += BatFolder::CodeOverhaulFinished {
+                program_name: pn.clone(),
+            }
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?
             .len();
+        }
         Ok((to_review_count, started_count, finished_count))
     }
 }

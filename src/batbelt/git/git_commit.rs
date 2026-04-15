@@ -12,12 +12,15 @@ pub enum GitCommit {
     InitAuditor,
     StartCO {
         entrypoint_name: String,
+        program_name: Option<String>,
     },
     FinishCO {
         entrypoint_name: String,
+        program_name: Option<String>,
     },
     UpdateCO {
         entrypoint_name: String,
+        program_name: Option<String>,
     },
     UpdateCOSummary,
     StartFinding {
@@ -83,15 +86,20 @@ impl GitCommit {
                     .get_path(true)
                     .change_context(GitError)?]
             }
-            GitCommit::StartCO { entrypoint_name } => {
+            GitCommit::StartCO {
+                entrypoint_name,
+                program_name,
+            } => {
                 vec![
                     BatFile::CodeOverhaulToReview {
                         file_name: entrypoint_name.clone(),
+                        program_name: program_name.clone(),
                     }
                     .get_path(false)
                     .change_context(GitError)?,
                     BatFile::CodeOverhaulStarted {
                         file_name: entrypoint_name.clone(),
+                        program_name: program_name.clone(),
                     }
                     .get_path(true)
                     .change_context(GitError)?,
@@ -100,27 +108,37 @@ impl GitCommit {
                         .change_context(GitError)?,
                 ]
             }
-            GitCommit::FinishCO { entrypoint_name } => {
+            GitCommit::FinishCO {
+                entrypoint_name,
+                program_name,
+            } => {
                 vec![
                     BatFile::CodeOverhaulStarted {
                         file_name: entrypoint_name.clone(),
+                        program_name: program_name.clone(),
                     }
                     .get_path(false)
                     .change_context(GitError)?,
                     BatFile::CodeOverhaulFinished {
                         file_name: entrypoint_name.clone(),
+                        program_name: program_name.clone(),
                     }
                     .get_path(true)
                     .change_context(GitError)?,
                 ]
             }
-            GitCommit::UpdateCO { entrypoint_name } => {
+            GitCommit::UpdateCO {
+                entrypoint_name,
+                program_name,
+            } => {
                 // Try started first, then finished
                 let started = BatFile::CodeOverhaulStarted {
                     file_name: entrypoint_name.clone(),
+                    program_name: program_name.clone(),
                 };
                 let finished = BatFile::CodeOverhaulFinished {
                     file_name: entrypoint_name.clone(),
+                    program_name: program_name.clone(),
                 };
                 let path = if started.get_path(true).is_ok() {
                     started.get_path(true).change_context(GitError)?
@@ -247,13 +265,19 @@ impl GitCommit {
                     bat_config.project_name, bat_auditor_config.auditor_name
                 )
             }
-            GitCommit::StartCO { entrypoint_name } => {
+            GitCommit::StartCO {
+                entrypoint_name, ..
+            } => {
                 format!("co: {} started", entrypoint_name)
             }
-            GitCommit::FinishCO { entrypoint_name } => {
+            GitCommit::FinishCO {
+                entrypoint_name, ..
+            } => {
                 format!("co: {} finished", entrypoint_name)
             }
-            GitCommit::UpdateCO { entrypoint_name } => {
+            GitCommit::UpdateCO {
+                entrypoint_name, ..
+            } => {
                 format!("co: {} updated", entrypoint_name)
             }
             GitCommit::UpdateCOSummary => "co: code_overhaul_summary.md updated".to_string(),

@@ -2,6 +2,7 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::path::{BatFile, BatFolder};
+use crate::config::BatConfig;
 use crate::batbelt::templates::code_overhaul_template::{
     CodeOverhaulSection, CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
 };
@@ -94,9 +95,26 @@ impl CodeOverhaulCommand {
 
     fn execute_summary(&self) -> CommandResult<()> {
         let mut co_summary_content = String::new();
-        let co_finished_bat_files_vec = BatFolder::CodeOverhaulFinished
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let program_names: Vec<Option<String>> = if bat_config.is_multi_program() {
+            bat_config
+                .get_program_names()
+                .into_iter()
+                .map(Some)
+                .collect()
+        } else {
+            vec![None]
+        };
+        let mut all_finished_files = vec![];
+        for pn in &program_names {
+            let files = BatFolder::CodeOverhaulFinished {
+                program_name: pn.clone(),
+            }
             .get_all_bat_files(true, None, None)
             .change_context(CommandError)?;
+            all_finished_files.extend(files);
+        }
+        let co_finished_bat_files_vec = all_finished_files;
         for finished_co_file in co_finished_bat_files_vec {
             let entry_point_name = finished_co_file
                 .get_file_name()
@@ -164,9 +182,22 @@ impl CodeOverhaulCommand {
     }
 
     fn execute_finish(&self) -> error_stack::Result<(), CommandError> {
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let program_name = if bat_config.is_multi_program() {
+            Some(
+                bat_config
+                    .prompt_select_program()
+                    .change_context(CommandError)?,
+            )
+        } else {
+            None
+        };
+
         // get to-review files
-        let started_entrypoint_direntry_vec = BatFolder::CodeOverhaulStarted
-            .get_all_files_dir_entries(true, None, None)
+        let started_entrypoint_direntry_vec = BatFolder::CodeOverhaulStarted {
+            program_name: program_name.clone(),
+        }
+        .get_all_files_dir_entries(true, None, None)
             .change_context(CommandError)?;
         let started_entrypoint_names = started_entrypoint_direntry_vec
             .into_iter()
@@ -195,11 +226,14 @@ impl CodeOverhaulCommand {
             started_entrypoint_names[selection].clone()
         };
 
-        let finished_co_folder_path = BatFolder::CodeOverhaulFinished
-            .get_path(true)
+        let finished_co_folder_path = BatFolder::CodeOverhaulFinished {
+            program_name: program_name.clone(),
+        }
+        .get_path(true)
             .change_context(CommandError)?;
         let started_co_bat_file = BatFile::CodeOverhaulStarted {
             file_name: finished_endpoint.clone(),
+            program_name: program_name.clone(),
         };
         let started_co_bat_file_path = started_co_bat_file
             .get_path(true)
@@ -235,6 +269,7 @@ impl CodeOverhaulCommand {
         .change_context(CommandError)?;
         GitCommit::FinishCO {
             entrypoint_name: finished_endpoint.clone(),
+            program_name: program_name.clone(),
         }
         .create_commit(true)
         .change_context(CommandError)?;
@@ -248,16 +283,21 @@ impl CodeOverhaulCommand {
         skip_miro: bool,
         _interactive: bool,
     ) -> error_stack::Result<(), CommandError> {
-        // if interactive {
-        //     let entry_point_name = self.execute_start_interactive()?;
-        //     if !skip_miro {
-        //         co_commands_functions::prompt_deploy_miro(entry_point_name).await?;
-        //     }
-        //     return Ok(());
-        // }
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let program_name = if bat_config.is_multi_program() {
+            Some(
+                bat_config
+                    .prompt_select_program()
+                    .change_context(CommandError)?,
+            )
+        } else {
+            None
+        };
 
-        let review_files = BatFolder::CodeOverhaulToReview
-            .get_all_files_names(true, None, None)
+        let review_files = BatFolder::CodeOverhaulToReview {
+            program_name: program_name.clone(),
+        }
+        .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
 
         if review_files.is_empty() {
@@ -276,12 +316,14 @@ impl CodeOverhaulCommand {
 
         BatFile::CodeOverhaulToReview {
             file_name: to_start_file_name.clone(),
+            program_name: program_name.clone(),
         }
         .remove_file()
         .change_context(CommandError)?;
 
         let started_bat_file = BatFile::CodeOverhaulStarted {
             file_name: to_start_file_name.clone(),
+            program_name: program_name.clone(),
         };
 
         let started_template =
@@ -299,6 +341,7 @@ impl CodeOverhaulCommand {
 
         GitCommit::StartCO {
             entrypoint_name: to_start_file_name.clone(),
+            program_name: program_name.clone(),
         }
         .create_commit(true)
         .change_context(CommandError)?;
@@ -317,11 +360,15 @@ impl CodeOverhaulCommand {
                 .change_context(CommandError)?;
         }
         if !skip_miro {
-            let deployed =
-                co_commands_functions::prompt_deploy_miro(entrypoint_name.to_string()).await?;
+            let deployed = co_commands_functions::prompt_deploy_miro(
+                entrypoint_name.to_string(),
+                program_name.clone(),
+            )
+            .await?;
             if deployed {
                 GitCommit::UpdateCO {
                     entrypoint_name: to_start_file_name.clone(),
+                    program_name: program_name.clone(),
                 }
                 .create_commit(true)
                 .change_context(CommandError)?;
@@ -428,17 +475,20 @@ mod co_commands_functions {
         Ok("".to_string())
     }
 
-    pub async fn prompt_deploy_miro(entry_point_name: String) -> CommandResult<bool> {
+    pub async fn prompt_deploy_miro(
+        entry_point_name: String,
+        program_name: Option<String>,
+    ) -> CommandResult<bool> {
         let prompt_text = format!(
             "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
             entry_point_name.clone().bright_green()
         );
         let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
         if deploy_frame {
-            MiroCommand::CodeOverhaulScreenshots {
-                entry_point_name: Some(entry_point_name.to_string()),
-            }
-            .execute_command()
+            MiroCommand::deploy_co_screenshots_with_program(
+                Some(entry_point_name.to_string()),
+                program_name,
+            )
             .await?
         }
         Ok(deploy_frame)

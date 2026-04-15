@@ -55,12 +55,21 @@ pub struct CodeOverhaulParser {
 
 impl CodeOverhaulParser {
     pub fn new_from_entry_point_name(entry_point_name: String) -> ParserResult<Self> {
+        Self::new_from_entry_point_name_and_program(entry_point_name, None)
+    }
+
+    pub fn new_from_entry_point_name_and_program(
+        entry_point_name: String,
+        program_name: Option<String>,
+    ) -> ParserResult<Self> {
         let entry_point_name = entry_point_name.trim_end_matches(".md").to_string();
         let bat_file_started = BatFile::CodeOverhaulStarted {
             file_name: entry_point_name.clone(),
+            program_name: program_name.clone(),
         };
         let bat_file_finished = BatFile::CodeOverhaulFinished {
             file_name: entry_point_name.clone(),
+            program_name: program_name.clone(),
         };
 
         let co_bat_file = if bat_file_started.file_exists().change_context(ParserError)? {

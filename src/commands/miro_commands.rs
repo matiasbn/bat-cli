@@ -7,6 +7,7 @@ use inflector::Inflector;
 use regex::Regex;
 use strum::IntoEnumIterator;
 
+use crate::config::BatConfig;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::EnumMetadataType;
@@ -173,8 +174,20 @@ impl MiroCommand {
                 .await
                 .change_context(CommandError)?;
         // get entrypoints name
-        let entrypoints_names = EntrypointParser::get_entrypoint_names_from_program_lib(sorted)
-            .change_context(CommandError)?;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let entrypoints_names = if bat_config.is_multi_program() {
+            let program_name = bat_config
+                .prompt_select_program()
+                .change_context(CommandError)?;
+            let lib_path = bat_config
+                .get_program_lib_path_by_name(&program_name)
+                .unwrap();
+            EntrypointParser::get_entrypoint_names_filtered(sorted, Some(&lib_path))
+                .change_context(CommandError)?
+        } else {
+            EntrypointParser::get_entrypoint_names_from_program_lib(sorted)
+                .change_context(CommandError)?
+        };
 
         // prompt the user to select an entrypoint
         let prompt_text = "Select the entry points to deploy";
@@ -542,8 +555,20 @@ impl MiroCommand {
     async fn deploy_co_frames(&self) -> Result<(), CommandError> {
         println!("Deploying code-overhaul frames to the Miro board");
 
-        let entry_point_names = EntrypointParser::get_entrypoint_names_from_program_lib(false)
-            .change_context(CommandError)?;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let entry_point_names = if bat_config.is_multi_program() {
+            let program_name = bat_config
+                .prompt_select_program()
+                .change_context(CommandError)?;
+            let lib_path = bat_config
+                .get_program_lib_path_by_name(&program_name)
+                .unwrap();
+            EntrypointParser::get_entrypoint_names_filtered(false, Some(&lib_path))
+                .change_context(CommandError)?
+        } else {
+            EntrypointParser::get_entrypoint_names_from_program_lib(false)
+                .change_context(CommandError)?
+        };
 
         for (entrypoint_index, entrypoint_name) in entry_point_names.iter().enumerate() {
             match MiroMetadata::get_co_metadata_by_entrypoint_name(entrypoint_name.clone())
@@ -629,6 +654,13 @@ impl MiroCommand {
     }
 
     async fn deploy_co_screenshots(&self, entry_point_name: Option<String>) -> CommandResult<()> {
+        Self::deploy_co_screenshots_with_program(entry_point_name, None).await
+    }
+
+    pub async fn deploy_co_screenshots_with_program(
+        entry_point_name: Option<String>,
+        program_name: Option<String>,
+    ) -> CommandResult<()> {
         MiroConfig::check_miro_enabled().change_context(CommandError)?;
 
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
@@ -647,8 +679,24 @@ impl MiroCommand {
                 .attach(Suggestion(suggestion_message)));
         }
 
-        let co_started_bat_folder = BatFolder::CodeOverhaulStarted;
-        let co_finished_bat_folder = BatFolder::CodeOverhaulFinished;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let selected_program_name = if program_name.is_some() {
+            program_name
+        } else if bat_config.is_multi_program() {
+            Some(
+                bat_config
+                    .prompt_select_program()
+                    .change_context(CommandError)?,
+            )
+        } else {
+            None
+        };
+        let co_started_bat_folder = BatFolder::CodeOverhaulStarted {
+            program_name: selected_program_name.clone(),
+        };
+        let co_finished_bat_folder = BatFolder::CodeOverhaulFinished {
+            program_name: selected_program_name.clone(),
+        };
         let started_files_names = co_started_bat_folder
             .get_all_files_names(true, None, None)
             .change_context(CommandError)?;
@@ -730,17 +778,21 @@ impl MiroCommand {
                 CoderOverhaulTemplatePlaceholders::CompleteWithMiroFrameUrl.to_placeholder();
             let co_file_name = format!("{}.md", entrypoint_name);
             // Try started folder first, then finished
-            let co_bat_file = if BatFolder::CodeOverhaulStarted
-                .get_all_files_names(true, None, None)
+            let co_bat_file = if (BatFolder::CodeOverhaulStarted {
+                program_name: selected_program_name.clone(),
+            })
+            .get_all_files_names(true, None, None)
                 .unwrap_or_default()
                 .contains(&co_file_name)
             {
                 BatFile::CodeOverhaulStarted {
                     file_name: co_file_name,
+                    program_name: selected_program_name.clone(),
                 }
             } else {
                 BatFile::CodeOverhaulFinished {
                     file_name: co_file_name,
+                    program_name: selected_program_name.clone(),
                 }
             };
             if let Ok(content) = co_bat_file.read_content(true) {
@@ -754,8 +806,11 @@ impl MiroCommand {
         if !miro_co_metadata.images_deployed {
             let entrypoint_parser =
                 EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
-            let co_parser = CodeOverhaulParser::new_from_entry_point_name(entrypoint_name.clone())
-                .change_context(CommandError)?;
+            let co_parser = CodeOverhaulParser::new_from_entry_point_name_and_program(
+                entrypoint_name.clone(),
+                selected_program_name.clone(),
+            )
+            .change_context(CommandError)?;
             let mut signers_info: Vec<SignerInfo> = vec![];
             if !co_parser.signers.is_empty() {
                 for signer in co_parser.signers.clone().into_iter() {
@@ -1216,8 +1271,11 @@ impl MiroCommand {
             ];
             let prompt_text = "Which screenshots you want to update?".to_string();
             let selections = BatDialoguer::multiselect(prompt_text, options.clone(), None, true)?;
-            let co_parser = CodeOverhaulParser::new_from_entry_point_name(entrypoint_name.clone())
-                .change_context(CommandError)?;
+            let co_parser = CodeOverhaulParser::new_from_entry_point_name_and_program(
+                entrypoint_name.clone(),
+                selected_program_name.clone(),
+            )
+            .change_context(CommandError)?;
             let ep_parser =
                 EntrypointParser::new_from_name(&entrypoint_name).change_context(CommandError)?;
             for selection in selections {

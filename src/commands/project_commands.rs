@@ -195,87 +195,117 @@ mod project_commands_functions {
 
     pub fn update_co_to_review() -> CommandResult<()> {
         println!("Updating code overhaul files");
-        // deprecate old entry points
-        let co_bat_folder = BatFolder::CodeOverhaulFolderPath;
-        let co_dir_file_name = co_bat_folder
-            .get_all_bat_files(false, None, None)
-            .change_context(CommandError)?;
-        // get new entry points
-        let entry_points_names = EntrypointParser::get_entrypoint_names_from_program_lib(true)
-            .change_context(CommandError)?;
-        // get new entry points
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
 
-        let (_old_ep, deprecated_ep): (Vec<BatFile>, Vec<BatFile>) =
-            co_dir_file_name.clone().into_iter().partition(|bat_file| {
-                entry_points_names.contains(
-                    &bat_file
-                        .get_file_name()
-                        .unwrap()
-                        .trim_end_matches(".md")
-                        .to_string(),
-                )
-            });
-
-        let (_, new_ep): (Vec<String>, Vec<String>) =
-            entry_points_names.clone().into_iter().partition(|ep_name| {
-                co_dir_file_name.clone().into_iter().any(|bat_file| {
-                    bat_file.get_file_name().unwrap().trim_end_matches(".md") == ep_name
-                })
-            });
+        let program_names: Vec<Option<String>> = if bat_config.is_multi_program() {
+            bat_config
+                .get_program_names()
+                .into_iter()
+                .map(Some)
+                .collect()
+        } else {
+            vec![None]
+        };
 
         let mut updated_eps = vec![];
-        // create new ep files
-        for ep_name in new_ep {
-            println!(
-                "Creating code overhaul file for new entry point: {}{}",
-                ep_name.bright_blue(),
-                ".md".bright_blue()
-            );
-            let bat_file = BatFile::CodeOverhaulToReview { file_name: ep_name };
-            bat_file.create_empty(false).change_context(CommandError)?;
-            updated_eps.push(bat_file.get_path(false).change_context(CommandError)?);
-        }
 
-        let deprecated_regex = regex!(r#"/code-overhaul/deprecated/"#);
+        for program_name in &program_names {
+            let co_bat_folder = BatFolder::CodeOverhaulFolderPath {
+                program_name: program_name.clone(),
+            };
+            let co_dir_file_name = co_bat_folder
+                .get_all_bat_files(false, None, None)
+                .change_context(CommandError)?;
 
-        let filtered_dep = deprecated_ep
-            .into_iter()
-            .filter(|dep_bat_file| {
-                !deprecated_regex.is_match(&dep_bat_file.get_path(false).unwrap())
-            })
-            .collect::<Vec<_>>();
+            // get entry points for this program
+            let entry_points_names = if let Some(pn) = program_name {
+                let lib_path = bat_config.get_program_lib_path_by_name(pn).unwrap();
+                EntrypointParser::get_entrypoint_names_filtered(true, Some(&lib_path))
+                    .change_context(CommandError)?
+            } else {
+                EntrypointParser::get_entrypoint_names_from_program_lib(true)
+                    .change_context(CommandError)?
+            };
 
-        // move deprecated to dep folder
-        if !filtered_dep.is_empty() {
-            let deprecated_co_bat_folder = BatFolder::CodeOverhaulDeprecated;
-            if !deprecated_co_bat_folder
-                .folder_exists()
-                .change_context(CommandError)?
-            {
-                deprecated_co_bat_folder
-                    .create_folder()
-                    .change_context(CommandError)?;
+            let (_old_ep, deprecated_ep): (Vec<BatFile>, Vec<BatFile>) =
+                co_dir_file_name.clone().into_iter().partition(|bat_file| {
+                    entry_points_names.contains(
+                        &bat_file
+                            .get_file_name()
+                            .unwrap()
+                            .trim_end_matches(".md")
+                            .to_string(),
+                    )
+                });
+
+            let (_, new_ep): (Vec<String>, Vec<String>) =
+                entry_points_names.clone().into_iter().partition(|ep_name| {
+                    co_dir_file_name.clone().into_iter().any(|bat_file| {
+                        bat_file.get_file_name().unwrap().trim_end_matches(".md") == ep_name
+                    })
+                });
+
+            // create new ep files
+            for ep_name in new_ep {
+                println!(
+                    "Creating code overhaul file for new entry point: {}{}",
+                    ep_name.bright_blue(),
+                    ".md".bright_blue()
+                );
+                let bat_file = BatFile::CodeOverhaulToReview {
+                    file_name: ep_name,
+                    program_name: program_name.clone(),
+                };
+                bat_file.create_empty(false).change_context(CommandError)?;
+                updated_eps.push(bat_file.get_path(false).change_context(CommandError)?);
             }
 
-            for ep_file in filtered_dep {
-                println!(
-                    "Moving code overhaul file to deprecated folder: {}",
-                    ep_file.get_path(false).unwrap().bright_blue()
-                );
-                let file_content = ep_file.read_content(false).change_context(CommandError)?;
-                let file_name = ep_file.get_file_name().change_context(CommandError)?;
-                let deprecated_file = BatFile::CodeOverhaulDeprecated { file_name };
-                deprecated_file
-                    .write_content(false, &file_content)
-                    .change_context(CommandError)?;
-                ep_file.remove_file().change_context(CommandError)?;
+            let deprecated_regex = regex!(r#"/code-overhaul/deprecated/"#);
 
-                updated_eps.push(
+            let filtered_dep = deprecated_ep
+                .into_iter()
+                .filter(|dep_bat_file| {
+                    !deprecated_regex.is_match(&dep_bat_file.get_path(false).unwrap())
+                })
+                .collect::<Vec<_>>();
+
+            // move deprecated to dep folder
+            if !filtered_dep.is_empty() {
+                let deprecated_co_bat_folder = BatFolder::CodeOverhaulDeprecated {
+                    program_name: program_name.clone(),
+                };
+                if !deprecated_co_bat_folder
+                    .folder_exists()
+                    .change_context(CommandError)?
+                {
+                    deprecated_co_bat_folder
+                        .create_folder()
+                        .change_context(CommandError)?;
+                }
+
+                for ep_file in filtered_dep {
+                    println!(
+                        "Moving code overhaul file to deprecated folder: {}",
+                        ep_file.get_path(false).unwrap().bright_blue()
+                    );
+                    let file_content = ep_file.read_content(false).change_context(CommandError)?;
+                    let file_name = ep_file.get_file_name().change_context(CommandError)?;
+                    let deprecated_file = BatFile::CodeOverhaulDeprecated {
+                        file_name,
+                        program_name: program_name.clone(),
+                    };
                     deprecated_file
-                        .get_path(false)
-                        .change_context(CommandError)?,
-                );
-                updated_eps.push(ep_file.get_path(false).change_context(CommandError)?);
+                        .write_content(false, &file_content)
+                        .change_context(CommandError)?;
+                    ep_file.remove_file().change_context(CommandError)?;
+
+                    updated_eps.push(
+                        deprecated_file
+                            .get_path(false)
+                            .change_context(CommandError)?,
+                    );
+                    updated_eps.push(ep_file.get_path(false).change_context(CommandError)?);
+                }
             }
         }
 
@@ -300,18 +330,36 @@ mod project_commands_functions {
     }
 
     pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {
-        let entrypoints_names =
-            EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
-
-        for entrypoint_name in entrypoints_names {
-            create_overhaul_file(entrypoint_name.clone())?;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        if bat_config.is_multi_program() {
+            for program_name in bat_config.get_program_names() {
+                let lib_path = bat_config
+                    .get_program_lib_path_by_name(&program_name)
+                    .unwrap();
+                let entrypoints_names =
+                    EntrypointParser::get_entrypoint_names_filtered(false, Some(&lib_path))
+                        .change_context(CommandError)?;
+                for entrypoint_name in entrypoints_names {
+                    create_overhaul_file(entrypoint_name, Some(program_name.clone()))?;
+                }
+            }
+        } else {
+            let entrypoints_names =
+                EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
+            for entrypoint_name in entrypoints_names {
+                create_overhaul_file(entrypoint_name, None)?;
+            }
         }
         Ok(())
     }
 
-    pub fn create_overhaul_file(entrypoint_name: String) -> Result<(), CommandError> {
+    pub fn create_overhaul_file(
+        entrypoint_name: String,
+        program_name: Option<String>,
+    ) -> Result<(), CommandError> {
         let code_overhaul_file_path = BatFile::CodeOverhaulToReview {
             file_name: entrypoint_name.clone(),
+            program_name: program_name.clone(),
         }
         .get_path(false)
         .change_context(CommandError)?;
@@ -324,6 +372,7 @@ mod project_commands_functions {
 
         BatFile::CodeOverhaulToReview {
             file_name: entrypoint_name.clone(),
+            program_name: program_name.clone(),
         }
         .write_content(false, "")
         .change_context(CommandError)?;

@@ -157,22 +157,42 @@ impl TemplateGenerator {
     }
 
     fn create_code_overhaul_folders(&self) -> Result<(), TemplateError> {
-        let finished_co_path = BatFolder::CodeOverhaulFinished
+        let bat_config = BatConfig::get_config().change_context(TemplateError)?;
+        let program_names: Vec<Option<String>> = if bat_config.is_multi_program() {
+            bat_config
+                .get_program_names()
+                .into_iter()
+                .map(Some)
+                .collect()
+        } else {
+            vec![None]
+        };
+        for program_name in program_names {
+            let finished_co_path = BatFolder::CodeOverhaulFinished {
+                program_name: program_name.clone(),
+            }
             .get_path(false)
             .change_context(TemplateError)?;
-        let started_co_path = BatFolder::CodeOverhaulStarted
+            let started_co_path = BatFolder::CodeOverhaulStarted {
+                program_name: program_name.clone(),
+            }
             .get_path(false)
             .change_context(TemplateError)?;
-        let to_review_co_path = BatFolder::CodeOverhaulToReview
+            let to_review_co_path = BatFolder::CodeOverhaulToReview {
+                program_name: program_name.clone(),
+            }
             .get_path(false)
             .change_context(TemplateError)?;
-        let deprecated_co_path = BatFolder::CodeOverhaulDeprecated
+            let deprecated_co_path = BatFolder::CodeOverhaulDeprecated {
+                program_name: program_name.clone(),
+            }
             .get_path(false)
             .change_context(TemplateError)?;
-        self.create_dir(&finished_co_path, true)?;
-        self.create_dir(&started_co_path, true)?;
-        self.create_dir(&to_review_co_path, false)?;
-        self.create_dir(&deprecated_co_path, false)?;
+            self.create_dir(&finished_co_path, true)?;
+            self.create_dir(&started_co_path, true)?;
+            self.create_dir(&to_review_co_path, false)?;
+            self.create_dir(&deprecated_co_path, false)?;
+        }
         Ok(())
     }
 

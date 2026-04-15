@@ -421,10 +421,34 @@ impl<'a> CallResolver<'a> {
         // Try to resolve Type through FileScope first to get the canonical path.
         let _full_type_path = self.file_scope.resolve_name(type_name);
 
+        // First, check if type_name is actually a module name (e.g. `initialize::handler`
+        // where `initialize` is a module re-exported via `pub use instructions::*`).
+        // In that case, look for a function named `method` whose file path contains
+        // the module name as a directory segment (e.g. `instructions/initialize`).
+        let module_path_fragment = format!("/{}/", type_name);
+        let module_matches: Vec<_> = self
+            .function_metadata
+            .iter()
+            .filter(|f| f.name == method && f.path.contains(&module_path_fragment))
+            .collect();
+        if module_matches.len() == 1 {
+            return Resolution::Internal(module_matches[0].metadata_id.clone());
+        }
+        // Also try matching with the module name as the last directory before src
+        // (e.g. path ending in `type_name.rs`)
+        if module_matches.is_empty() {
+            let module_file_fragment = format!("/{}.rs", type_name);
+            let file_matches: Vec<_> = self
+                .function_metadata
+                .iter()
+                .filter(|f| f.name == method && f.path.contains(&module_file_fragment))
+                .collect();
+            if file_matches.len() == 1 {
+                return Resolution::Internal(file_matches[0].metadata_id.clone());
+            }
+        }
+
         // Find trait_metadata entries where impl_to matches the type name.
-        // If full_type_path is available, we could filter further, but trait_metadata
-        // doesn't currently store the path of the impl block directly. The name match
-        // is usually sufficient when combined with method name.
         let trait_signature = format!("{}::{}", type_name, method);
 
         let matching_impls: Vec<_> = self

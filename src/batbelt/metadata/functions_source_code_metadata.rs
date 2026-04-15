@@ -144,7 +144,13 @@ impl FunctionSourceCodeMetadata {
     ) -> MetadataResult<bool> {
         let entrypoints_names =
             EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
-        if entry_path == BatConfig::get_config().unwrap().program_lib_path {
+        let config = BatConfig::get_config().unwrap();
+        let lib_paths = if config.program_lib_paths.is_empty() {
+            vec![config.program_lib_path.clone()]
+        } else {
+            config.program_lib_paths.clone()
+        };
+        if lib_paths.iter().any(|p| p == entry_path) {
             if entrypoints_names
                 .into_iter()
                 .any(|ep_name| ep_name == sonar_result.name)
