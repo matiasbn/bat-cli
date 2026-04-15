@@ -165,11 +165,19 @@ impl ProjectCommands {
         .change_context(CommandError)?;
 
         if use_miro {
-            let miro_board_url_input: String =
-                bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
-            let miro_board_url =
-                BatConfig::normalize_miro_board_url(&miro_board_url_input)
-                    .change_context(CommandError)?;
+            let miro_board_url = loop {
+                let miro_board_url_input: String =
+                    bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
+                match BatConfig::normalize_miro_board_url(&miro_board_url_input) {
+                    Ok(url) => break url,
+                    Err(_) => {
+                        println!(
+                            "{} Invalid Miro board url, please try again",
+                            "Error:".red()
+                        );
+                    }
+                }
+            };
 
             let miro_oauth_token: String =
                 bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?;

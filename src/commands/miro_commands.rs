@@ -1681,8 +1681,8 @@ pub mod miro_command_functions {
         miro_frame.deploy().await.change_context(CommandError)?;
         let x_modifier = entry_point_index as i64 % MIRO_BOARD_COLUMNS;
         let y_modifier = entry_point_index as i64 / MIRO_BOARD_COLUMNS;
-        let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 100) * x_modifier;
-        let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 100) * y_modifier;
+        let x_position = MIRO_INITIAL_X + (MIRO_FRAME_WIDTH as i64 + 200) * x_modifier;
+        let y_position = MIRO_INITIAL_Y + (MIRO_FRAME_HEIGHT as i64 + 400) * y_modifier;
         miro_frame
             .update_position(x_position, y_position)
             .await
