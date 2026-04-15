@@ -7,7 +7,6 @@ use inflector::Inflector;
 use regex::Regex;
 use strum::IntoEnumIterator;
 
-use crate::config::BatConfig;
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::EnumMetadataType;
@@ -38,6 +37,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
+use crate::config::BatConfig;
 use crate::{batbelt, Suggestion};
 
 use super::CommandError;
@@ -119,12 +119,9 @@ impl MiroCommand {
 
         // prompt the user to select an entrypoint
         let prompt_text = "Select the entry points to deploy";
-        let selected_entrypoints_index = batbelt::bat_dialoguer::multiselect(
-            prompt_text,
-            entrypoints_names.clone(),
-            None,
-        )
-        .unwrap();
+        let selected_entrypoints_index =
+            batbelt::bat_dialoguer::multiselect(prompt_text, entrypoints_names.clone(), None)
+                .unwrap();
 
         let entrypoint_sc_options = SourceCodeScreenshotOptions {
             include_path: false,
@@ -252,8 +249,7 @@ impl MiroCommand {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
-        miro_command_functions::prompt_deploy_source_code(selected_miro_frame, false)
-        .await?;
+        miro_command_functions::prompt_deploy_source_code(selected_miro_frame, false).await?;
         Ok(())
     }
 
@@ -721,8 +717,8 @@ impl MiroCommand {
                 program_name: selected_program_name.clone(),
             })
             .get_all_files_names(true, None, None)
-                .unwrap_or_default()
-                .contains(&co_file_name)
+            .unwrap_or_default()
+            .contains(&co_file_name)
             {
                 BatFile::CodeOverhaulStarted {
                     file_name: co_file_name,
@@ -1048,7 +1044,8 @@ impl MiroCommand {
                 }
 
                 // Pick a unique color for all arrows of this caller's deps
-                let (arrow_hex, arrow_name) = DEP_ARROW_COLORS[color_index % DEP_ARROW_COLORS.len()];
+                let (arrow_hex, arrow_name) =
+                    DEP_ARROW_COLORS[color_index % DEP_ARROW_COLORS.len()];
                 color_index += 1;
 
                 let prompt = format!(
@@ -1640,20 +1637,20 @@ pub mod miro_command_functions {
             };
 
             for mut sc_metadata in sourcecode_metadata_vec {
-                    sc_metadata.name = miro_command_functions::parse_screenshot_name(
-                        &sc_metadata.name,
-                        &selected_miro_frame.title,
-                    );
-                    sc_metadata
-                        .deploy_screenshot_to_miro_frame(
-                            selected_miro_frame.clone(),
-                            0,
-                            selected_miro_frame.height as i64,
-                            screenshot_options.clone(),
-                        )
-                        .await
-                        .change_context(CommandError)?;
-                }
+                sc_metadata.name = miro_command_functions::parse_screenshot_name(
+                    &sc_metadata.name,
+                    &selected_miro_frame.title,
+                );
+                sc_metadata
+                    .deploy_screenshot_to_miro_frame(
+                        selected_miro_frame.clone(),
+                        0,
+                        selected_miro_frame.height as i64,
+                        screenshot_options.clone(),
+                    )
+                    .await
+                    .change_context(CommandError)?;
+            }
             // prompt if continue
             let prompt_text = format!(
                 "Do you want to {} in the {} frame?",

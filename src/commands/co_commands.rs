@@ -2,12 +2,12 @@ use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::execute_command;
 use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::path::{BatFile, BatFolder};
-use crate::config::BatConfig;
 use crate::batbelt::templates::code_overhaul_template::{
     CodeOverhaulSection, CodeOverhaulTemplate, CoderOverhaulTemplatePlaceholders,
 };
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
+use crate::config::BatConfig;
 
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
@@ -192,7 +192,7 @@ impl CodeOverhaulCommand {
             program_name: program_name.clone(),
         }
         .get_all_files_dir_entries(true, None, None)
-            .change_context(CommandError)?;
+        .change_context(CommandError)?;
         let started_entrypoint_names = started_entrypoint_direntry_vec
             .into_iter()
             .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
@@ -224,7 +224,7 @@ impl CodeOverhaulCommand {
             program_name: program_name.clone(),
         }
         .get_path(true)
-            .change_context(CommandError)?;
+        .change_context(CommandError)?;
         let started_co_bat_file = BatFile::CodeOverhaulStarted {
             file_name: finished_endpoint.clone(),
             program_name: program_name.clone(),
@@ -288,7 +288,7 @@ impl CodeOverhaulCommand {
             program_name: program_name.clone(),
         }
         .get_all_files_names(true, None, None)
-            .change_context(CommandError)?;
+        .change_context(CommandError)?;
 
         if review_files.is_empty() {
             return Err(Report::new(CommandError).attach_printable(format!(

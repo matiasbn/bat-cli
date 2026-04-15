@@ -111,8 +111,8 @@ impl ProjectCommands {
             "{}-{}",
             bat_auditor_config.auditor_name, bat_config.project_name
         );
-        let branch_exists = batbelt::git::check_if_branch_exists(&auditor_branch)
-            .change_context(CommandError)?;
+        let branch_exists =
+            batbelt::git::check_if_branch_exists(&auditor_branch).change_context(CommandError)?;
         if branch_exists {
             return Err(Report::new(CommandError).attach_printable(format!(
                 "Branch '{}' already exists. Rename it with 'git branch -m {} <new-name>' or delete it with 'git branch -D {}' before running bat-cli init",
@@ -168,10 +168,9 @@ impl ProjectCommands {
             .change_context(CommandError)?;
 
         // Miro integration — ask at the end of the flow
-        let use_miro = BatDialoguer::select_yes_or_no(
-            "Do you want to use the Miro integration?".to_string(),
-        )
-        .change_context(CommandError)?;
+        let use_miro =
+            BatDialoguer::select_yes_or_no("Do you want to use the Miro integration?".to_string())
+                .change_context(CommandError)?;
 
         if use_miro {
             let miro_board_url = loop {
@@ -207,9 +206,7 @@ impl ProjectCommands {
             bat_auditor_config.save().change_context(CommandError)?;
 
             // Deploy CO frames automatically
-            MiroCommand::CodeOverhaulFrames
-                .execute_command()
-                .await?;
+            MiroCommand::CodeOverhaulFrames.execute_command().await?;
         }
 
         BatFile::ProgramLib

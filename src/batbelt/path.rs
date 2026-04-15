@@ -58,10 +58,18 @@ pub enum BatFile {
         file_name: String,
         program_name: Option<String>,
     },
-    FindingToReview { file_name: String },
-    FindingAccepted { file_name: String },
-    FindingRejected { file_name: String },
-    Generic { file_path: String },
+    FindingToReview {
+        file_name: String,
+    },
+    FindingAccepted {
+        file_name: String,
+    },
+    FindingRejected {
+        file_name: String,
+    },
+    Generic {
+        file_path: String,
+    },
 }
 
 impl BatEnumerator for BatFile {}
@@ -315,21 +323,11 @@ pub enum BatFolder {
     FindingsToReview,
     FindingsAccepted,
     FindingsRejected,
-    CodeOverhaulFolderPath {
-        program_name: Option<String>,
-    },
-    CodeOverhaulToReview {
-        program_name: Option<String>,
-    },
-    CodeOverhaulStarted {
-        program_name: Option<String>,
-    },
-    CodeOverhaulFinished {
-        program_name: Option<String>,
-    },
-    CodeOverhaulDeprecated {
-        program_name: Option<String>,
-    },
+    CodeOverhaulFolderPath { program_name: Option<String> },
+    CodeOverhaulToReview { program_name: Option<String> },
+    CodeOverhaulStarted { program_name: Option<String> },
+    CodeOverhaulFinished { program_name: Option<String> },
+    CodeOverhaulDeprecated { program_name: Option<String> },
     AuditorNotes,
     AuditorFigures,
     Notes,
