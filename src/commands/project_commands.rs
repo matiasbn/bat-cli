@@ -113,14 +113,7 @@ impl ProjectCommands {
             "BatMetadata.json!".bright_green()
         );
 
-        SonarCommand::Run {
-            skip_source_code: false,
-            only_context_accounts: false,
-            only_entry_points: false,
-            only_traits: false,
-            only_function_dependencies: false,
-        }
-        .execute_command()?;
+        SonarCommand::Run.execute_command()?;
 
         // create auditors branches from develop
         for auditor_name in bat_config.auditor_names {
