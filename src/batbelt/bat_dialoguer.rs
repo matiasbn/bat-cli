@@ -1,5 +1,5 @@
 use colored::Colorize;
-use dialoguer::{console::Term, theme::ColorfulTheme, Input, MultiSelect, Select};
+use dialoguer::{console::Term, theme::ColorfulTheme, FuzzySelect, Input, MultiSelect, Select};
 use error_stack::{IntoReport, Result, ResultExt};
 
 use crate::commands::CommandError;
@@ -65,6 +65,25 @@ impl BatDialoguer {
         }
 
         dialog
+            .interact_on_opt(&Term::stderr())
+            .into_report()
+            .change_context(CommandError)?
+            .ok_or(CommandError)
+            .into_report()
+    }
+
+    pub fn fuzzy_select<T>(
+        prompt_text: String,
+        items: Vec<T>,
+    ) -> Result<usize, CommandError>
+    where
+        T: ToString + Clone,
+    {
+        let colorful_theme = &ColorfulTheme::default();
+        FuzzySelect::with_theme(colorful_theme)
+            .with_prompt(&prompt_text)
+            .items(&items)
+            .default(0)
             .interact_on_opt(&Term::stderr())
             .into_report()
             .change_context(CommandError)?
