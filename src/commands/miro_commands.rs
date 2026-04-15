@@ -56,37 +56,18 @@ pub enum MiroCommand {
         entry_point_name: Option<String>,
     },
     /// Deploys the entry point function, context accounts and handler function screenshots to a Miro frame
-    EntrypointScreenshots {
-        /// if true, deploy screenshots for al entry points
-        #[arg(short, long)]
-        select_all_entry_points: bool,
-        /// shows the list of entrypoints sorted by name
-        #[arg(long)]
-        sorted: bool,
-    },
+    EntrypointScreenshots,
     /// Creates an screenshot in a determined frame from source code
     SourceCodeScreenshots {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
-        /// use external BetMetadata.json files
-        #[arg(long)]
-        use_external: bool,
     },
     /// Creates screenshot for a function and it dependencies
     FunctionDependencies {
         /// select all options as true
         #[arg(short, long)]
         select_all: bool,
-        /// use external BetMetadata.json files
-        #[arg(long)]
-        use_external: bool,
-    },
-    /// Creates sticky notes sequentially, that can be connected
-    StickyNotes {
-        /// connect the sticky notes
-        #[arg(long)]
-        connected: bool,
     },
 }
 
@@ -114,58 +95,17 @@ impl MiroCommand {
             MiroCommand::CodeOverhaulScreenshots { entry_point_name } => {
                 self.deploy_co_screenshots(entry_point_name.clone()).await
             }
-            MiroCommand::EntrypointScreenshots {
-                select_all_entry_points,
-                sorted,
-            } => {
-                self.entrypoint_screenshots(*select_all_entry_points, *sorted)
-                    .await
-            }
-            MiroCommand::SourceCodeScreenshots {
-                select_all,
-                use_external,
-            } => {
-                if *use_external {
-                    BatMetadataEnvVariables::set_use_external_metadata_to_true()
-                        .change_context(CommandError)?;
-                }
-
+            MiroCommand::EntrypointScreenshots => self.entrypoint_screenshots().await,
+            MiroCommand::SourceCodeScreenshots { select_all } => {
                 self.source_code_screenshots(*select_all).await
             }
-            MiroCommand::FunctionDependencies {
-                select_all,
-                use_external,
-            } => {
-                if *use_external {
-                    BatMetadataEnvVariables::set_use_external_metadata_to_true()
-                        .change_context(CommandError)?;
-                }
-
+            MiroCommand::FunctionDependencies { select_all } => {
                 self.function_dependencies(*select_all).await
             }
-            MiroCommand::StickyNotes { connected } => self.sticky_notes(*connected).await,
         }
     }
 
-    async fn sticky_notes(&self, connected: bool) -> CommandResult<()> {
-        let selected_miro_frame = MiroFrame::prompt_select_frame(None)
-            .await
-            .change_context(CommandError)?;
-        miro_command_functions::prompt_deploy_source_code(
-            selected_miro_frame,
-            false,
-            true,
-            connected,
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn entrypoint_screenshots(
-        &self,
-        select_all: bool,
-        sorted: bool,
-    ) -> Result<(), CommandError> {
+    async fn entrypoint_screenshots(&self) -> Result<(), CommandError> {
         let code_overhaul_frame_title_regex = Regex::new(r"co: [A-Za-z0-9_]+")
             .into_report()
             .change_context(CommandError)?;
@@ -182,10 +122,10 @@ impl MiroCommand {
             let lib_path = bat_config
                 .get_program_lib_path_by_name(&program_name)
                 .unwrap();
-            EntrypointParser::get_entrypoint_names_filtered(sorted, Some(&lib_path))
+            EntrypointParser::get_entrypoint_names_filtered(true, Some(&lib_path))
                 .change_context(CommandError)?
         } else {
-            EntrypointParser::get_entrypoint_names_from_program_lib(sorted)
+            EntrypointParser::get_entrypoint_names_from_program_lib(true)
                 .change_context(CommandError)?
         };
 
@@ -194,7 +134,7 @@ impl MiroCommand {
         let selected_entrypoints_index = batbelt::bat_dialoguer::multiselect(
             prompt_text,
             entrypoints_names.clone(),
-            Some(&vec![select_all; entrypoints_names.clone().len()]),
+            None,
         )
         .unwrap();
 
@@ -324,12 +264,7 @@ impl MiroCommand {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
-        miro_command_functions::prompt_deploy_source_code(
-            selected_miro_frame,
-            select_all,
-            false,
-            false,
-        )
+        miro_command_functions::prompt_deploy_source_code(selected_miro_frame, select_all)
         .await?;
         Ok(())
     }
@@ -1394,14 +1329,11 @@ impl MiroCommand {
 
 pub mod miro_command_functions {
     use super::*;
-    use crate::batbelt::miro::MiroColor;
     use crate::batbelt::path::prettify_source_code_path;
 
     pub async fn prompt_deploy_source_code(
         selected_miro_frame: MiroFrame,
         select_all: bool,
-        sticky_notes: bool,
-        connected: bool,
     ) -> CommandResult<()> {
         let metadata_types_vec = BatMetadataType::get_type_vec();
         let metadata_types_colorized_vec = BatMetadataType::get_colorized_type_vec(true);
@@ -1680,82 +1612,7 @@ pub mod miro_command_functions {
                 }
             };
 
-            if sticky_notes {
-                let mut counting_index = 0;
-                let mut selected_sc_metadata_names: Vec<String> = vec![];
-                loop {
-                    let sc_metadata_names = sourcecode_metadata_vec
-                        .clone()
-                        .into_iter()
-                        .filter_map(|meta| {
-                            if !selected_sc_metadata_names.contains(&meta.name) {
-                                Some(meta.name)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    let prompt_text =
-                        format!("Select the {} sticky note to deploy", counting_index + 1);
-                    let sc_metadata_selected_index =
-                        BatDialoguer::select(prompt_text, sc_metadata_names.clone(), None)?;
-                    selected_sc_metadata_names
-                        .push(sc_metadata_names[sc_metadata_selected_index].clone());
-                    counting_index += 1;
-                    if counting_index == sourcecode_metadata_vec.len() {
-                        break;
-                    }
-                }
-
-                let mut deployed_sticky_notes: Vec<MiroStickyNote> = vec![];
-
-                let deploy_space = selected_miro_frame.width * 9 / 10;
-                let sticky_notes_space = deploy_space * 8 / 10;
-                let sticky_note_width = sticky_notes_space / counting_index as u64;
-                let frame_grid = selected_miro_frame.width / (counting_index as u64 + 1);
-                let y_position = selected_miro_frame.height / 2;
-
-                for (sc_metadata_name_index, sc_metadata_name) in
-                    selected_sc_metadata_names.clone().into_iter().enumerate()
-                {
-                    let mut sticky_note = MiroStickyNote::new(
-                        &sc_metadata_name,
-                        MiroColor::LightYellow,
-                        &selected_miro_frame.item_id,
-                        frame_grid as i64 * (sc_metadata_name_index as i64 + 1),
-                        y_position as i64,
-                        sticky_note_width,
-                        100,
-                    );
-                    println!("Deploying {}", sticky_note.content.bright_green());
-                    sticky_note.deploy().await.change_context(CommandError)?;
-                    deployed_sticky_notes.push(sticky_note.clone());
-                }
-
-                if connected && deployed_sticky_notes.len() > 1 {
-                    for (deployed_sticky_note_index, deployed_sticky_note) in
-                        deployed_sticky_notes.clone().into_iter().enumerate()
-                    {
-                        if deployed_sticky_note_index < deployed_sticky_notes.clone().len() - 1 {
-                            println!(
-                                "Connecting {} to {}",
-                                deployed_sticky_note.content.bright_green(),
-                                &deployed_sticky_notes[deployed_sticky_note_index + 1]
-                                    .content
-                                    .bright_green()
-                            );
-                            batbelt::miro::connector::create_connector(
-                                &deployed_sticky_note.item_id,
-                                &deployed_sticky_notes[deployed_sticky_note_index + 1].item_id,
-                                None,
-                            )
-                            .await
-                            .change_context(CommandError)?;
-                        }
-                    }
-                }
-            } else {
-                for mut sc_metadata in sourcecode_metadata_vec {
+            for mut sc_metadata in sourcecode_metadata_vec {
                     sc_metadata.name = miro_command_functions::parse_screenshot_name(
                         &sc_metadata.name,
                         &selected_miro_frame.title,
@@ -1770,7 +1627,6 @@ pub mod miro_command_functions {
                         .await
                         .change_context(CommandError)?;
                 }
-            }
             // prompt if continue
             let prompt_text = format!(
                 "Do you want to {} in the {} frame?",
