@@ -5,7 +5,7 @@ use crate::batbelt::BatEnumerator;
 use crate::config::{BatAuditorConfig, BatConfig};
 use colored::Colorize;
 use error_stack::Result;
-use error_stack::{FutureExt, Report, ResultExt};
+use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 
 use crate::batbelt;
 use crate::batbelt::bat_dialoguer;
@@ -99,19 +99,14 @@ impl ProjectCommands {
     }
 
     pub async fn init_bat_project(&self) -> Result<(), CommandError> {
+        // Collect all config via prompts first (Bat.toml is in cwd at this point)
         let bat_config = BatConfig::new_with_prompt().change_context(CommandError)?;
-        println!("Creating {:#?} project", bat_config);
-        TemplateGenerator
-            .create_new_project_folders()
-            .change_context(CommandError)?;
 
-        let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
-
-        // Prompt for auditor config (name + code editor)
+        // Prompt for auditor config (name + code editor) — needs auditor_names from Bat.toml
         BatAuditorConfig::new_with_prompt().change_context(CommandError)?;
         let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
 
-        // Create auditor branch from HEAD — all work happens here
+        // Create auditor branch BEFORE creating project folders
         let auditor_branch = format!(
             "{}-{}",
             bat_auditor_config.auditor_name, bat_config.project_name
@@ -119,20 +114,34 @@ impl ProjectCommands {
         let branch_exists = batbelt::git::check_if_branch_exists(&auditor_branch)
             .change_context(CommandError)?;
         if branch_exists {
-            println!("Checking out {:?} branch", auditor_branch);
-            Command::new("git")
-                .args(["checkout", &auditor_branch])
-                .output()
-                .unwrap();
-        } else {
-            println!("Creating branch {:?}", auditor_branch);
-            Command::new("git")
-                .args(["checkout", "-b", &auditor_branch])
-                .output()
-                .unwrap();
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "Branch '{}' already exists. Rename it with 'git branch -m {} <new-name>' or delete it with 'git branch -D {}' before running bat-cli init",
+                auditor_branch, auditor_branch, auditor_branch
+            )));
+        }
+        println!("Creating branch {:?}", auditor_branch);
+        Command::new("git")
+            .args(["checkout", "-b", &auditor_branch])
+            .output()
+            .unwrap();
+
+        // Now create project folders (moves Bat.toml into bat-audit/, cd's into it)
+        println!("Creating {:#?} project", bat_config);
+        TemplateGenerator
+            .create_new_project_folders()
+            .change_context(CommandError)?;
+
+        // Move BatAuditor.toml into bat-audit/ (it was created in the parent dir before cd)
+        let auditor_toml_parent = format!("../{}", "BatAuditor.toml");
+        if Path::new(&auditor_toml_parent).exists() {
+            std::fs::rename(&auditor_toml_parent, "BatAuditor.toml")
+                .into_report()
+                .change_context(CommandError)?;
         }
 
-        // Initial commit with project files
+        let bat_config: BatConfig = BatConfig::get_config().change_context(CommandError)?;
+
+        // Initial commit with project files (on auditor branch)
         GitAction::AddAll
             .execute_action()
             .change_context(CommandError)?;
