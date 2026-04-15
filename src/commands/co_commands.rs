@@ -16,6 +16,7 @@ use error_stack::{FutureExt, IntoReport, Report, ResultExt};
 use lazy_regex::regex;
 use regex::Regex;
 
+#[allow(unused_imports)]
 use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
 use crate::batbelt::metadata::{BatMetadataParser, MiroMetadata};
 use crate::batbelt::miro::frame::MiroFrame;
@@ -28,23 +29,16 @@ use crate::commands::miro_commands::MiroCommand;
 )]
 pub enum CodeOverhaulCommand {
     /// Starts a code-overhaul file audit
-    Start {
-        /// Skips miro deployment
-        #[arg(long)]
-        skip_miro: bool,
-        /// Starts a guided process to start a co file
-        #[arg(long)]
-        interactive: bool,
-    },
+    Start,
     /// Moves the code-overhaul file from to-review to finished
     #[default]
     Finish,
-    /// creates a code-overhaul summary from the code-overhaul finished notes
-    Summary,
-    /// creates program accounts metadata
-    CreateProgramAccountsMetadata,
-    /// calculates state changes from the program accounts metadata
-    UpdateProgramAccountsMetadata,
+    // /// creates a code-overhaul summary from the code-overhaul finished notes
+    // Summary,
+    // /// creates program accounts metadata
+    // CreateProgramAccountsMetadata,
+    // /// calculates state changes from the program accounts metadata
+    // UpdateProgramAccountsMetadata,
 }
 
 impl BatEnumerator for CodeOverhaulCommand {}
@@ -66,19 +60,17 @@ impl BatCommandEnumerator for CodeOverhaulCommand {
 impl CodeOverhaulCommand {
     pub async fn execute_command(&self) -> CommandResult<()> {
         match self {
-            CodeOverhaulCommand::Start {
-                skip_miro,
-                interactive,
-            } => self.execute_start(*skip_miro, *interactive).await,
+            CodeOverhaulCommand::Start => self.execute_start().await,
             CodeOverhaulCommand::Finish => self.execute_finish(),
-            CodeOverhaulCommand::Summary => self.execute_summary(),
-            CodeOverhaulCommand::CreateProgramAccountsMetadata => {
-                self.execute_program_accounts_metadata()
-            }
-            CodeOverhaulCommand::UpdateProgramAccountsMetadata => self.execute_calculate_sc(),
+            // CodeOverhaulCommand::Summary => self.execute_summary(),
+            // CodeOverhaulCommand::CreateProgramAccountsMetadata => {
+            //     self.execute_program_accounts_metadata()
+            // }
+            // CodeOverhaulCommand::UpdateProgramAccountsMetadata => self.execute_calculate_sc(),
         }
     }
 
+    #[allow(dead_code)]
     fn execute_calculate_sc(&self) -> CommandResult<()> {
         ProgramAccountMetadata::update_program_accounts_metadata_file()
             .change_context(CommandError)?;
@@ -86,6 +78,7 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn execute_program_accounts_metadata(&self) -> CommandResult<()> {
         ProgramAccountMetadata::create_program_accounts_metadata_file()
             .change_context(CommandError)?;
@@ -93,6 +86,7 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn execute_summary(&self) -> CommandResult<()> {
         let mut co_summary_content = String::new();
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
@@ -278,11 +272,7 @@ impl CodeOverhaulCommand {
         Ok(())
     }
 
-    async fn execute_start(
-        &self,
-        skip_miro: bool,
-        _interactive: bool,
-    ) -> error_stack::Result<(), CommandError> {
+    async fn execute_start(&self) -> error_stack::Result<(), CommandError> {
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
         let program_name = if bat_config.is_multi_program() {
             Some(
@@ -359,20 +349,18 @@ impl CodeOverhaulCommand {
                 .open_in_editor(true, Some(ep_parser.entry_point_function.start_line_index))
                 .change_context(CommandError)?;
         }
-        if !skip_miro {
-            let deployed = co_commands_functions::prompt_deploy_miro(
-                entrypoint_name.to_string(),
-                program_name.clone(),
-            )
-            .await?;
-            if deployed {
-                GitCommit::UpdateCO {
-                    entrypoint_name: to_start_file_name.clone(),
-                    program_name: program_name.clone(),
-                }
-                .create_commit(true)
-                .change_context(CommandError)?;
+        let deployed = co_commands_functions::prompt_deploy_miro(
+            entrypoint_name.to_string(),
+            program_name.clone(),
+        )
+        .await?;
+        if deployed {
+            GitCommit::UpdateCO {
+                entrypoint_name: to_start_file_name.clone(),
+                program_name: program_name.clone(),
             }
+            .create_commit(true)
+            .change_context(CommandError)?;
         }
         Ok(())
     }

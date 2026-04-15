@@ -58,17 +58,9 @@ pub enum MiroCommand {
     /// Deploys the entry point function, context accounts and handler function screenshots to a Miro frame
     EntrypointScreenshots,
     /// Creates an screenshot in a determined frame from source code
-    SourceCodeScreenshots {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-    },
+    SourceCodeScreenshots,
     /// Creates screenshot for a function and it dependencies
-    FunctionDependencies {
-        /// select all options as true
-        #[arg(short, long)]
-        select_all: bool,
-    },
+    FunctionDependencies,
 }
 
 impl BatEnumerator for MiroCommand {}
@@ -96,12 +88,8 @@ impl MiroCommand {
                 self.deploy_co_screenshots(entry_point_name.clone()).await
             }
             MiroCommand::EntrypointScreenshots => self.entrypoint_screenshots().await,
-            MiroCommand::SourceCodeScreenshots { select_all } => {
-                self.source_code_screenshots(*select_all).await
-            }
-            MiroCommand::FunctionDependencies { select_all } => {
-                self.function_dependencies(*select_all).await
-            }
+            MiroCommand::SourceCodeScreenshots => self.source_code_screenshots().await,
+            MiroCommand::FunctionDependencies => self.function_dependencies().await,
         }
     }
 
@@ -260,16 +248,16 @@ impl MiroCommand {
         Ok(())
     }
 
-    async fn source_code_screenshots(&self, select_all: bool) -> Result<(), CommandError> {
+    async fn source_code_screenshots(&self) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;
-        miro_command_functions::prompt_deploy_source_code(selected_miro_frame, select_all)
+        miro_command_functions::prompt_deploy_source_code(selected_miro_frame, false)
         .await?;
         Ok(())
     }
 
-    async fn function_dependencies(&self, _select_all: bool) -> Result<(), CommandError> {
+    async fn function_dependencies(&self) -> Result<(), CommandError> {
         let selected_miro_frame = MiroFrame::prompt_select_frame(None)
             .await
             .change_context(CommandError)?;

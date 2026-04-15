@@ -1,3 +1,4 @@
+#[allow(dead_code, unused_imports)]
 pub mod analytics_commands;
 pub mod co_commands;
 #[allow(dead_code, unused_imports)]
