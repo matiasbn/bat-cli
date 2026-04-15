@@ -604,7 +604,7 @@ impl BatConfig {
                 .trim_end_matches("/src/lib.rs")
                 .trim_end_matches("/src/main.rs")
                 .split('/')
-                .last()
+                .next_back()
                 .unwrap_or("");
             name == program_name
         })
@@ -622,7 +622,7 @@ impl BatConfig {
                 p.trim_end_matches("/src/lib.rs")
                     .trim_end_matches("/src/main.rs")
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap()
                     .to_string()
             })

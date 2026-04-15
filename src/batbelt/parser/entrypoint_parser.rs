@@ -199,11 +199,8 @@ impl EntrypointParser {
 
         let mut entrypoints_names: Vec<String> = Vec::new();
         for lib_path in &lib_paths {
-            let bat_sonar = BatSonar::new_from_path(
-                lib_path,
-                Some("#[program"),
-                SonarResultType::Function,
-            );
+            let bat_sonar =
+                BatSonar::new_from_path(lib_path, Some("#[program"), SonarResultType::Function);
             entrypoints_names.extend(bat_sonar.results.iter().map(|ep| ep.name.clone()));
         }
         if sorted {

@@ -89,9 +89,7 @@ impl BatCommandEnumerator for ToolCommand {
 
 impl ToolCommand {
     fn execute_list_co(&self) -> CommandResult<()> {
-        let co_bat_folder = BatFolder::CodeOverhaulFolderPath {
-            program_name: None,
-        };
+        let co_bat_folder = BatFolder::CodeOverhaulFolderPath { program_name: None };
         let co_dir_entries = co_bat_folder
             .get_all_files_dir_entries(true, None, None)
             .change_context(CommandError)?;

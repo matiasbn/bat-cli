@@ -72,10 +72,7 @@ impl BatDialoguer {
             .into_report()
     }
 
-    pub fn fuzzy_select<T>(
-        prompt_text: String,
-        items: Vec<T>,
-    ) -> Result<usize, CommandError>
+    pub fn fuzzy_select<T>(prompt_text: String, items: Vec<T>) -> Result<usize, CommandError>
     where
         T: ToString + Clone,
     {

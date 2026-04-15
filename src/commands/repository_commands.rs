@@ -244,7 +244,7 @@ impl RepositoryCommand {
             program_name: selected_program_name.clone(),
         }
         .get_all_files_names(true, None, None)
-            .change_context(CommandError)?;
+        .change_context(CommandError)?;
 
         if finished_files_names.is_empty() {
             return Err(Report::new(CommandError).attach_printable(format!(

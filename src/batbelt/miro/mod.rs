@@ -128,17 +128,17 @@ impl MiroConfig {
                     Report::new(MiroError).attach_printable("Failed to fetch boards from Miro")
                 })?;
 
-            let body = response
-                .text()
-                .await
-                .map_err(|_| Report::new(MiroError).attach_printable("Failed to read Miro response body"))?;
+            let body = response.text().await.map_err(|_| {
+                Report::new(MiroError).attach_printable("Failed to read Miro response body")
+            })?;
 
-            let json: Value = serde_json::from_str(&body)
-                .map_err(|_| Report::new(MiroError).attach_printable("Failed to parse Miro response JSON"))?;
+            let json: Value = serde_json::from_str(&body).map_err(|_| {
+                Report::new(MiroError).attach_printable("Failed to parse Miro response JSON")
+            })?;
 
-            let data = json["data"]
-                .as_array()
-                .ok_or_else(|| Report::new(MiroError).attach_printable("No 'data' array in Miro response"))?;
+            let data = json["data"].as_array().ok_or_else(|| {
+                Report::new(MiroError).attach_printable("No 'data' array in Miro response")
+            })?;
 
             if data.is_empty() {
                 break;
