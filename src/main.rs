@@ -93,7 +93,7 @@ impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         self.validate_command()?;
         match self {
-            BatCommands::New => ProjectCommands::New.execute_command(),
+            BatCommands::New => ProjectCommands::New.new_bat_project().await,
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
             // BatCommands::Analytics(command) => command.execute_command(),

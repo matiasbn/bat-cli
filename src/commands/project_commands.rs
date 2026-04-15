@@ -8,6 +8,8 @@ use error_stack::Result;
 use error_stack::{FutureExt, Report, ResultExt};
 
 use crate::batbelt;
+use crate::batbelt::bat_dialoguer;
+use crate::batbelt::bat_dialoguer::BatDialoguer;
 
 use crate::batbelt::git::git_commit::GitCommit;
 
@@ -15,6 +17,7 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::path::BatFile::GitIgnore;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
+use crate::commands::miro_commands::MiroCommand;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use clap::Subcommand;
 
@@ -36,7 +39,9 @@ impl BatEnumerator for ProjectCommands {}
 impl BatCommandEnumerator for ProjectCommands {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
-            ProjectCommands::New => self.new_bat_project(),
+            ProjectCommands::New => {
+                panic!("Use new_bat_project() directly for async Miro support")
+            }
             ProjectCommands::Reload => self.reload_bat_project(),
         }
     }
@@ -93,7 +98,7 @@ impl ProjectCommands {
         Ok(())
     }
 
-    fn new_bat_project(&self) -> Result<(), CommandError> {
+    pub async fn new_bat_project(&self) -> Result<(), CommandError> {
         let bat_config = BatConfig::new_with_prompt().change_context(CommandError)?;
         println!("Creating {:#?} project", bat_config);
         TemplateGenerator
@@ -137,6 +142,38 @@ impl ProjectCommands {
         }
 
         BatAuditorConfig::new_with_prompt().change_context(CommandError)?;
+
+        // Miro integration — ask at the end of the flow
+        let use_miro = BatDialoguer::select_yes_or_no("Do you want to use the Miro integration?".to_string())
+            .change_context(CommandError)?;
+
+        if use_miro {
+            // Get board URL
+            let miro_board_url_input: String =
+                bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
+            let miro_board_url =
+                BatConfig::normalize_miro_board_url(&miro_board_url_input).change_context(CommandError)?;
+
+            // Update Bat.toml with the board URL
+            let mut bat_config = BatConfig::get_config().change_context(CommandError)?;
+            bat_config.miro_board_url = miro_board_url;
+            bat_config.save().change_context(CommandError)?;
+
+            // Get OAuth token
+            let miro_oauth_token: String =
+                bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?;
+
+            // Update BatAuditor.toml with the token
+            let mut bat_auditor_config =
+                BatAuditorConfig::get_config().change_context(CommandError)?;
+            bat_auditor_config.miro_oauth_access_token = miro_oauth_token;
+            bat_auditor_config.save().change_context(CommandError)?;
+
+            // Deploy CO frames automatically
+            MiroCommand::CodeOverhaulFrames
+                .execute_command()
+                .await?;
+        }
 
         BatFile::ProgramLib
             .open_in_editor(false, None)
