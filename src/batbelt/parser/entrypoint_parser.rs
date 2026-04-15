@@ -177,20 +177,23 @@ impl EntrypointParser {
     }
 
     pub fn get_entrypoint_names_from_program_lib(sorted: bool) -> Result<Vec<String>, ParserError> {
-        let BatConfig {
-            program_lib_path, ..
-        } = BatConfig::get_config().change_context(ParserError)?;
+        let config = BatConfig::get_config().change_context(ParserError)?;
 
-        let bat_sonar = BatSonar::new_from_path(
-            &program_lib_path,
-            Some("#[program"),
-            SonarResultType::Function,
-        );
-        let mut entrypoints_names: Vec<String> = bat_sonar
-            .results
-            .iter()
-            .map(|entrypoint| entrypoint.name.clone())
-            .collect();
+        let lib_paths = if config.program_lib_paths.is_empty() {
+            vec![config.program_lib_path.clone()]
+        } else {
+            config.program_lib_paths.clone()
+        };
+
+        let mut entrypoints_names: Vec<String> = Vec::new();
+        for lib_path in &lib_paths {
+            let bat_sonar = BatSonar::new_from_path(
+                lib_path,
+                Some("#[program"),
+                SonarResultType::Function,
+            );
+            entrypoints_names.extend(bat_sonar.results.iter().map(|ep| ep.name.clone()));
+        }
         if sorted {
             entrypoints_names.sort();
         }
