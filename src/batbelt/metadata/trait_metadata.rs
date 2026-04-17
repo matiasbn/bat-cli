@@ -20,6 +20,8 @@ pub struct TraitMetadata {
     pub external_trait: bool,
     pub trait_source_code_metadata_id: MetadataId,
     pub impl_functions: Vec<TraitMetadataFunction>,
+    #[serde(default)]
+    pub program_name: String,
 }
 
 impl TraitMetadata {
@@ -32,6 +34,7 @@ impl TraitMetadata {
         external_trait: bool,
         impl_from: String,
         impl_to: String,
+        program_name: String,
     ) -> Self {
         Self {
             metadata_id,
@@ -42,6 +45,7 @@ impl TraitMetadata {
             impl_from,
             impl_to,
             external_trait,
+            program_name,
         }
     }
 

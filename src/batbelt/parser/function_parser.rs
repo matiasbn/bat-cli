@@ -111,6 +111,7 @@ impl FunctionParser {
                         })
                         .collect::<Vec<_>>(),
                     new_function_parser.external_dependencies.clone(),
+                    new_function_parser.function_metadata.program_name.clone(),
                 );
                 function_dependencies_metadata
                     .update_metadata_file()

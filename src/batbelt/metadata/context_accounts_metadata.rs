@@ -12,6 +12,8 @@ pub struct ContextAccountsMetadata {
     pub metadata_id: MetadataId,
     pub struct_source_code_metadata_id: MetadataId,
     #[serde(default)]
+    pub program_name: String,
+    #[serde(default)]
     pub init_program_account: Vec<CAAccountParser>,
     #[serde(default)]
     pub mut_program_account: Vec<CAAccountParser>,
@@ -34,6 +36,7 @@ impl ContextAccountsMetadata {
         metadata_id: MetadataId,
         struct_source_code_metadata_id: MetadataId,
         context_accounts_info: Vec<CAAccountParser>,
+        program_name: String,
     ) -> Self {
         let mut init_program_account = vec![];
         let mut mut_program_account = vec![];
@@ -76,6 +79,7 @@ impl ContextAccountsMetadata {
             name,
             metadata_id,
             struct_source_code_metadata_id,
+            program_name,
             init_program_account,
             mut_program_account,
             close_program_account,
