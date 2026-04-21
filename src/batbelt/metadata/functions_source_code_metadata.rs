@@ -1,17 +1,15 @@
 use super::*;
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::config::BatConfig;
 use strum::IntoEnumIterator;
 
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataResult};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::function_parser::FunctionParser;
-use crate::batbelt::parser::source_code_parser::SourceCodeParser;
+use crate::batbelt::parser::syn_struct_classifier;
 
 use crate::batbelt::BatEnumerator;
-use error_stack::{FutureExt, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
 
 use std::{fs, vec};
@@ -82,14 +80,15 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
         let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
+        let classification = syn_struct_classifier::classify_file(&file_content);
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
         for result in bat_sonar.results {
-            let function_type = if Self::assert_function_is_entrypoint(&entry_path, result.clone())?
-            {
-                FunctionMetadataType::EntryPoint
-            } else {
-                FunctionMetadataType::Other
-            };
+            let function_type =
+                if classification.entrypoint_function_names.contains(&result.name) {
+                    FunctionMetadataType::EntryPoint
+                } else {
+                    FunctionMetadataType::Other
+                };
             let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
@@ -100,10 +99,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
             );
             metadata_result.push(function_metadata);
         }
-        // let bat_metadata = BatMetadata::read_metadata()?;
-        // bat_metadata
-        //     .source_code
-        //     .update_functions(metadata_result.clone())?;
         Ok(metadata_result)
     }
 }
@@ -114,14 +109,15 @@ impl FunctionSourceCodeMetadata {
         file_content: &str,
     ) -> Result<Vec<Self>, MetadataError> {
         let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
+        let classification = syn_struct_classifier::classify_file(file_content);
         let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Function);
         for result in bat_sonar.results {
-            let function_type = if Self::assert_function_is_entrypoint(entry_path, result.clone())?
-            {
-                FunctionMetadataType::EntryPoint
-            } else {
-                FunctionMetadataType::Other
-            };
+            let function_type =
+                if classification.entrypoint_function_names.contains(&result.name) {
+                    FunctionMetadataType::EntryPoint
+                } else {
+                    FunctionMetadataType::Other
+                };
             let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.to_string(),
                 result.name.to_string(),
@@ -137,32 +133,6 @@ impl FunctionSourceCodeMetadata {
 
     pub fn to_function_parser(&self) -> Result<FunctionParser, MetadataError> {
         FunctionParser::new_from_metadata(self.clone()).change_context(MetadataError)
-    }
-
-    fn assert_function_is_entrypoint(
-        entry_path: &str,
-        sonar_result: SonarResult,
-    ) -> MetadataResult<bool> {
-        let entrypoints_names =
-            EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
-        let config = BatConfig::get_config().unwrap();
-        let lib_paths = if config.program_lib_paths.is_empty() {
-            vec![config.program_lib_path.clone()]
-        } else {
-            config.program_lib_paths.clone()
-        };
-        if lib_paths.iter().any(|p| p == entry_path) {
-            if entrypoints_names
-                .into_iter()
-                .any(|ep_name| ep_name == sonar_result.name)
-            {
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        } else {
-            Ok(false)
-        }
     }
 
     pub fn prompt_selection() -> Result<Self, MetadataError> {
