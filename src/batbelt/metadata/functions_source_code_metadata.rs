@@ -87,8 +87,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
             let function_type = if Self::assert_function_is_entrypoint(&entry_path, result.clone())?
             {
                 FunctionMetadataType::EntryPoint
-            } else if Self::assert_function_is_handler(entry_path.clone(), result.clone())? {
-                FunctionMetadataType::Handler
             } else {
                 FunctionMetadataType::Other
             };
@@ -121,8 +119,6 @@ impl FunctionSourceCodeMetadata {
             let function_type = if Self::assert_function_is_entrypoint(entry_path, result.clone())?
             {
                 FunctionMetadataType::EntryPoint
-            } else if Self::assert_function_is_handler(entry_path.to_string(), result.clone())? {
-                FunctionMetadataType::Handler
             } else {
                 FunctionMetadataType::Other
             };
@@ -159,35 +155,6 @@ impl FunctionSourceCodeMetadata {
             if entrypoints_names
                 .into_iter()
                 .any(|ep_name| ep_name == sonar_result.name)
-            {
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        } else {
-            Ok(false)
-        }
-    }
-
-    fn assert_function_is_handler(
-        entry_path: String,
-        sonar_result: SonarResult,
-    ) -> MetadataResult<bool> {
-        let context_names = EntrypointParser::get_all_contexts_names();
-        let result_source_code = SourceCodeParser::new(
-            sonar_result.name.clone(),
-            entry_path,
-            sonar_result.start_line_index + 1,
-            sonar_result.end_line_index + 1,
-        );
-        let result_content = result_source_code.get_source_code_content();
-        let result_parameters = get_function_parameters(result_content);
-        if !result_parameters.is_empty() {
-            let first_parameter = result_parameters[0].clone();
-            if first_parameter.contains("Context")
-                && context_names
-                    .into_iter()
-                    .any(|cx_name| first_parameter.contains(&cx_name))
             {
                 Ok(true)
             } else {
@@ -282,6 +249,9 @@ pub struct FunctionMetadataCache {
 )]
 pub enum FunctionMetadataType {
     EntryPoint,
+    /// Legacy variant kept for backwards compatibility with existing
+    /// `BatMetadata.json` files that contain `"Handler"`.
+    /// New scans no longer classify functions as Handler.
     Handler,
     Other,
 }

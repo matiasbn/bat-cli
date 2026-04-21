@@ -44,7 +44,7 @@ impl CodeOverhaulTemplate {
             .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
         let signers_content = CodeOverhaulSection::Signers
             .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
-        let function_parameters_content = CodeOverhaulSection::HandlerFunctionParameters
+        let function_parameters_content = CodeOverhaulSection::DependencyFunctionParameters
             .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
         let context_accounts_content = CodeOverhaulSection::ContextAccounts
             .get_section_content_for_start_co_file(self.entrypoint_parser.clone())?;
@@ -94,7 +94,7 @@ pub enum CodeOverhaulSection {
     StateChanges,
     Notes,
     Signers,
-    HandlerFunctionParameters,
+    DependencyFunctionParameters,
     ContextAccounts,
     Validations,
     MiroFrameUrl,
@@ -123,8 +123,8 @@ impl CodeOverhaulSection {
                 }
                 CodeOverhaulSection::Notes => self.get_notes_content(entrypoint_parser)?,
                 CodeOverhaulSection::Signers => self.get_signers_section_content(entrypoint_parser),
-                CodeOverhaulSection::HandlerFunctionParameters => {
-                    self.get_handler_function_parameters_section_content(entrypoint_parser)?
+                CodeOverhaulSection::DependencyFunctionParameters => {
+                    self.get_dependency_function_parameters_section_content(entrypoint_parser)?
                 }
                 CodeOverhaulSection::ContextAccounts => {
                     self.get_context_account_section_content(entrypoint_parser)
@@ -711,13 +711,13 @@ impl CodeOverhaulSection {
         format!("{}\n{}\n{}", "```rust", formatted, "```")
     }
 
-    fn get_handler_function_parameters_section_content(
+    fn get_dependency_function_parameters_section_content(
         &self,
         entrypoint_parser: EntrypointParser,
     ) -> TemplateResult<String> {
         if entrypoint_parser.dependencies.is_empty() {
             return Ok(
-                CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
+                CoderOverhaulTemplatePlaceholders::NoDependencyFunctionParametersDetected
                     .to_placeholder()
                     .to_string(),
             );
@@ -767,7 +767,7 @@ impl CodeOverhaulSection {
         }
 
         let function_parameters_content = if all_parameters.is_empty() {
-            CoderOverhaulTemplatePlaceholders::NoHandlerFunctionParametersDetected
+            CoderOverhaulTemplatePlaceholders::NoDependencyFunctionParametersDetected
                 .to_placeholder()
                 .to_string()
         } else {
@@ -781,7 +781,7 @@ impl CodeOverhaulSection {
 pub enum CoderOverhaulTemplatePlaceholders {
     PermissionlessFunction,
     NoValidationsDetected,
-    NoHandlerFunctionParametersDetected,
+    NoDependencyFunctionParametersDetected,
     CompleteWithTheRestOfStateChanges,
     CompleteWithNotes,
     CompleteWithSignerDescription,

@@ -39,7 +39,7 @@ pub struct CodeOverhaulSectionsContent {
     pub state_changes: String,
     pub notes: String,
     pub signers: String,
-    pub handler_function_parameters: String,
+    pub dependency_function_parameters: String,
     pub context_accounts: String,
     pub validations: String,
     pub miro_frame_url: String,
@@ -94,7 +94,7 @@ impl CodeOverhaulParser {
                 state_changes: "".to_string(),
                 notes: "".to_string(),
                 signers: "".to_string(),
-                handler_function_parameters: "".to_string(),
+                dependency_function_parameters: "".to_string(),
                 context_accounts: "".to_string(),
                 validations: "".to_string(),
                 miro_frame_url: "".to_string(),
@@ -112,8 +112,8 @@ impl CodeOverhaulParser {
                 .extract_section_content_from_co_file(CodeOverhaulSection::StateChanges)?,
             notes: self.extract_section_content_from_co_file(CodeOverhaulSection::Notes)?,
             signers: self.extract_section_content_from_co_file(CodeOverhaulSection::Signers)?,
-            handler_function_parameters: self.extract_section_content_from_co_file(
-                CodeOverhaulSection::HandlerFunctionParameters,
+            dependency_function_parameters: self.extract_section_content_from_co_file(
+                CodeOverhaulSection::DependencyFunctionParameters,
             )?,
             context_accounts: self
                 .extract_section_content_from_co_file(CodeOverhaulSection::ContextAccounts)?,
