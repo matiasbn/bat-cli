@@ -2,7 +2,7 @@ use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
 use std::fmt::Debug;
 
-use crate::batbelt::path::BatFile;
+use crate::config::BatConfig;
 
 use crate::batbelt::metadata::{
     BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
@@ -29,6 +29,8 @@ pub struct StructSourceCodeMetadata {
     pub metadata_id: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
+    #[serde(default)]
+    pub program_name: String,
 }
 
 impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
@@ -64,6 +66,8 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
         end_line_index: usize,
         metadata_id: MetadataId,
     ) -> Self {
+        use crate::batbelt::metadata::derive_program_name_from_path;
+        let program_name = derive_program_name_from_path(&path);
         StructSourceCodeMetadata {
             path,
             name,
@@ -71,6 +75,7 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
             struct_type: metadata_sub_type,
             start_line_index,
             end_line_index,
+            program_name,
         }
     }
 
@@ -164,20 +169,25 @@ impl StructSourceCodeMetadata {
         {
             return Ok(true);
         }
-        let lib_file_path = BatFile::ProgramLib
-            .get_path(false)
-            .change_context(MetadataError)?;
-        let entrypoints = BatSonar::new_from_path(
-            &lib_file_path,
-            Some("#[program]"),
-            SonarResultType::Function,
-        );
-        let mut entrypoints_context_accounts_names = entrypoints
-            .results
-            .iter()
-            .map(|result| EntrypointParser::get_context_name(&result.name).unwrap());
-        if entrypoints_context_accounts_names.any(|name| name == sonar_result.name) {
-            return Ok(true);
+        let config = BatConfig::get_config().change_context(MetadataError)?;
+        let lib_paths = if config.program_lib_paths.is_empty() {
+            vec![config.program_lib_path.clone()]
+        } else {
+            config.program_lib_paths.clone()
+        };
+        for lib_file_path in &lib_paths {
+            let entrypoints = BatSonar::new_from_path(
+                lib_file_path,
+                Some("#[program]"),
+                SonarResultType::Function,
+            );
+            let mut entrypoints_context_accounts_names = entrypoints
+                .results
+                .iter()
+                .map(|result| EntrypointParser::get_context_name(&result.name).unwrap());
+            if entrypoints_context_accounts_names.any(|name| name == sonar_result.name) {
+                return Ok(true);
+            }
         }
         Ok(false)
     }

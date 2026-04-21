@@ -14,6 +14,8 @@ pub struct FunctionDependenciesMetadata {
     pub function_metadata_id: String,
     pub dependencies: Vec<FunctionDependencyInfo>,
     pub external_dependencies: Vec<MetadataId>,
+    #[serde(default)]
+    pub program_name: String,
 }
 
 impl FunctionDependenciesMetadata {
@@ -23,6 +25,7 @@ impl FunctionDependenciesMetadata {
         function_metadata_id: String,
         dependencies: Vec<FunctionDependencyInfo>,
         external_dependencies: Vec<MetadataId>,
+        program_name: String,
     ) -> Self {
         Self {
             function_name,
@@ -30,6 +33,7 @@ impl FunctionDependenciesMetadata {
             function_metadata_id,
             dependencies,
             external_dependencies,
+            program_name,
         }
     }
 

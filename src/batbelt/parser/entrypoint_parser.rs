@@ -22,6 +22,7 @@ use crate::batbelt::parser::ParserError;
 #[derive(Clone, Debug)]
 pub struct EntrypointParser {
     pub name: String,
+    pub program_name: String,
     pub dependencies: Vec<FunctionSourceCodeMetadata>,
     pub context_accounts: StructSourceCodeMetadata,
     pub entry_point_function: FunctionSourceCodeMetadata,
@@ -30,12 +31,14 @@ pub struct EntrypointParser {
 impl EntrypointParser {
     pub fn new(
         name: String,
+        program_name: String,
         dependencies: Vec<FunctionSourceCodeMetadata>,
         context_accounts: StructSourceCodeMetadata,
         entry_point_function: FunctionSourceCodeMetadata,
     ) -> Self {
         Self {
             name,
+            program_name,
             dependencies,
             context_accounts,
             entry_point_function,
@@ -43,6 +46,13 @@ impl EntrypointParser {
     }
 
     pub fn new_from_name(entrypoint_name: &str) -> Result<Self, ParserError> {
+        Self::new_from_name_and_program(entrypoint_name, None)
+    }
+
+    pub fn new_from_name_and_program(
+        entrypoint_name: &str,
+        program_name: Option<&str>,
+    ) -> Result<Self, ParserError> {
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         if let Ok(ep_metadata) =
             bat_metadata.get_entrypoint_metadata_by_name(entrypoint_name.to_string())
@@ -65,6 +75,7 @@ impl EntrypointParser {
 
             return Ok(Self {
                 name: ep_metadata.name,
+                program_name: ep_metadata.program_name,
                 dependencies,
                 context_accounts,
                 entry_point_function,
@@ -79,6 +90,9 @@ impl EntrypointParser {
             .filter(|func_meta| {
                 func_meta.name == entrypoint_name
                     && func_meta.function_type == FunctionMetadataType::EntryPoint
+                    && program_name.map_or(true, |pn| {
+                        func_meta.program_name.is_empty() || func_meta.program_name == pn
+                    })
             })
             .collect::<Vec<_>>();
 
@@ -93,12 +107,22 @@ impl EntrypointParser {
         }
 
         let entrypoint_function = entrypoint_section.first().unwrap().clone();
+        let resolved_program_name = if let Some(pn) = program_name {
+            pn.to_string()
+        } else {
+            entrypoint_function.program_name.clone()
+        };
 
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
 
-        let structs_metadata = SourceCodeMetadata::get_filtered_structs(
+        let structs_metadata = SourceCodeMetadata::get_filtered_structs_by_program(
             Some(context_name.clone()),
             Some(StructMetadataType::ContextAccounts),
+            if resolved_program_name.is_empty() {
+                None
+            } else {
+                Some(&resolved_program_name)
+            },
         )
         .change_context(ParserError)?;
         let context_accounts = structs_metadata
@@ -111,13 +135,13 @@ impl EntrypointParser {
                 context_name, entrypoint_name
             ))?;
 
-        let ep_metadata = EntrypointMetadata {
-            name: entrypoint_name.to_string(),
-            metadata_id: BatMetadata::create_metadata_id(),
-            handler_id: None,
-            context_accounts_id: context_accounts.metadata_id.clone(),
-            entrypoint_function_id: entrypoint_function.metadata_id.clone(),
-        };
+        let ep_metadata = EntrypointMetadata::new(
+            entrypoint_name.to_string(),
+            context_accounts.metadata_id.clone(),
+            entrypoint_function.metadata_id.clone(),
+            BatMetadata::create_metadata_id(),
+            resolved_program_name.clone(),
+        );
 
         ep_metadata
             .update_metadata_file()
@@ -131,6 +155,7 @@ impl EntrypointParser {
 
         Ok(Self {
             name: entrypoint_name.to_string(),
+            program_name: resolved_program_name,
             dependencies,
             context_accounts: context_accounts.clone(),
             entry_point_function: entrypoint_function,

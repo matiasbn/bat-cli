@@ -58,6 +58,35 @@ use serde_json::{json, Value};
 use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
+/// Derives the program name from a file path by matching against
+/// the configured program lib paths. For example, given
+/// `../programs/hook-true/src/instructions/foo.rs` and a lib path
+/// `../programs/hook-true/src/lib.rs`, returns `"hook-true"`.
+pub fn derive_program_name_from_path(file_path: &str) -> String {
+    let config = BatConfig::get_config().unwrap();
+    let lib_paths = if config.program_lib_paths.is_empty() {
+        vec![config.program_lib_path.clone()]
+    } else {
+        config.program_lib_paths.clone()
+    };
+
+    for lib_path in &lib_paths {
+        let program_dir = lib_path
+            .trim_end_matches("/src/lib.rs")
+            .trim_end_matches("/src/main.rs");
+        if file_path.starts_with(program_dir) {
+            return program_dir
+                .split('/')
+                .next_back()
+                .unwrap_or("")
+                .to_string();
+        }
+    }
+
+    // Fallback: use the config's program_name
+    config.program_name
+}
+
 #[derive(Debug)]
 pub struct MetadataError;
 
@@ -663,11 +692,26 @@ impl SourceCodeMetadata {
         struct_name: Option<String>,
         struct_type: Option<StructMetadataType>,
     ) -> MetadataResult<Vec<StructSourceCodeMetadata>> {
+        Self::get_filtered_structs_by_program(struct_name, struct_type, None)
+    }
+
+    pub fn get_filtered_structs_by_program(
+        struct_name: Option<String>,
+        struct_type: Option<StructMetadataType>,
+        program_name: Option<&str>,
+    ) -> MetadataResult<Vec<StructSourceCodeMetadata>> {
         Ok(BatMetadata::read_metadata()?
             .source_code
             .structs_source_code
             .into_iter()
             .filter(|struct_metadata| {
+                if let Some(ref pn) = program_name {
+                    if !struct_metadata.program_name.is_empty()
+                        && struct_metadata.program_name != *pn
+                    {
+                        return false;
+                    }
+                }
                 if struct_name.is_some() && struct_name.clone().unwrap() != struct_metadata.name {
                     return false;
                 };
@@ -702,11 +746,26 @@ impl SourceCodeMetadata {
         function_name: Option<String>,
         function_type: Option<FunctionMetadataType>,
     ) -> MetadataResult<Vec<FunctionSourceCodeMetadata>> {
+        Self::get_filtered_functions_by_program(function_name, function_type, None)
+    }
+
+    pub fn get_filtered_functions_by_program(
+        function_name: Option<String>,
+        function_type: Option<FunctionMetadataType>,
+        program_name: Option<&str>,
+    ) -> MetadataResult<Vec<FunctionSourceCodeMetadata>> {
         Ok(BatMetadata::read_metadata()?
             .source_code
             .functions_source_code
             .into_iter()
             .filter(|function_metadata| {
+                if let Some(ref pn) = program_name {
+                    if !function_metadata.program_name.is_empty()
+                        && function_metadata.program_name != *pn
+                    {
+                        return false;
+                    }
+                }
                 if function_name.is_some()
                     && function_name.clone().unwrap() != function_metadata.name
                 {
@@ -725,11 +784,26 @@ impl SourceCodeMetadata {
         trait_name: Option<String>,
         trait_type: Option<TraitMetadataType>,
     ) -> MetadataResult<Vec<TraitSourceCodeMetadata>> {
+        Self::get_filtered_traits_by_program(trait_name, trait_type, None)
+    }
+
+    pub fn get_filtered_traits_by_program(
+        trait_name: Option<String>,
+        trait_type: Option<TraitMetadataType>,
+        program_name: Option<&str>,
+    ) -> MetadataResult<Vec<TraitSourceCodeMetadata>> {
         Ok(BatMetadata::read_metadata()?
             .source_code
             .traits_source_code
             .into_iter()
             .filter(|trait_metadata| {
+                if let Some(ref pn) = program_name {
+                    if !trait_metadata.program_name.is_empty()
+                        && trait_metadata.program_name != *pn
+                    {
+                        return false;
+                    }
+                }
                 if trait_name.is_some() && trait_name.clone().unwrap() != trait_metadata.name {
                     return false;
                 };
@@ -741,18 +815,33 @@ impl SourceCodeMetadata {
             .collect::<Vec<_>>())
     }
     pub fn get_filtered_enums(
-        trait_name: Option<String>,
-        trait_type: Option<EnumMetadataType>,
+        enum_name: Option<String>,
+        enum_type: Option<EnumMetadataType>,
+    ) -> MetadataResult<Vec<EnumSourceCodeMetadata>> {
+        Self::get_filtered_enums_by_program(enum_name, enum_type, None)
+    }
+
+    pub fn get_filtered_enums_by_program(
+        enum_name: Option<String>,
+        enum_type: Option<EnumMetadataType>,
+        program_name: Option<&str>,
     ) -> MetadataResult<Vec<EnumSourceCodeMetadata>> {
         Ok(BatMetadata::read_metadata()?
             .source_code
             .enums_source_code
             .into_iter()
             .filter(|enum_metadata| {
-                if trait_name.is_some() && trait_name.clone().unwrap() != enum_metadata.name {
+                if let Some(ref pn) = program_name {
+                    if !enum_metadata.program_name.is_empty()
+                        && enum_metadata.program_name != *pn
+                    {
+                        return false;
+                    }
+                }
+                if enum_name.is_some() && enum_name.clone().unwrap() != enum_metadata.name {
                     return false;
                 };
-                if trait_type.is_some() && trait_type.unwrap() != enum_metadata.enum_type {
+                if enum_type.is_some() && enum_type.unwrap() != enum_metadata.enum_type {
                     return false;
                 };
                 true

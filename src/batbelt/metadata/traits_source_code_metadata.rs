@@ -24,6 +24,8 @@ pub struct TraitSourceCodeMetadata {
     pub metadata_id: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
+    #[serde(default)]
+    pub program_name: String,
 }
 
 impl BatMetadataParser<TraitMetadataType> for TraitSourceCodeMetadata {
@@ -60,6 +62,8 @@ impl BatMetadataParser<TraitMetadataType> for TraitSourceCodeMetadata {
         end_line_index: usize,
         metadata_id: MetadataId,
     ) -> Self {
+        use crate::batbelt::metadata::derive_program_name_from_path;
+        let program_name = derive_program_name_from_path(&path);
         Self {
             path,
             name,
@@ -67,6 +71,7 @@ impl BatMetadataParser<TraitMetadataType> for TraitSourceCodeMetadata {
             trait_type: metadata_sub_type,
             start_line_index,
             end_line_index,
+            program_name,
         }
     }
 

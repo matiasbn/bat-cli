@@ -78,6 +78,10 @@ impl TraitParser {
                 new_parser.clone().external_trait,
                 new_parser.clone().impl_from,
                 new_parser.clone().impl_to,
+                new_parser
+                    .clone()
+                    .trait_source_code_metadata
+                    .program_name,
             );
             new_trait_metadata
                 .update_metadata_file()
