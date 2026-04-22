@@ -1,18 +1,15 @@
 use super::*;
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 
-use crate::config::BatConfig;
-use strum::IntoEnumIterator;
+use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
-
-use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType, MetadataResult};
+use crate::batbelt::metadata::{BatMetadataParser, BatMetadataType};
 use crate::batbelt::parser::function_parser::FunctionParser;
-use crate::batbelt::parser::source_code_parser::SourceCodeParser;
+use crate::batbelt::parser::syn_struct_classifier;
 
 use crate::batbelt::BatEnumerator;
-use error_stack::{FutureExt, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator;
 
 use std::{fs, vec};
 use walkdir::DirEntry;
@@ -82,14 +79,15 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
         let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
+        let classification = syn_struct_classifier::classify_file(&file_content);
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
         for result in bat_sonar.results {
-            let function_type = if Self::assert_function_is_entrypoint(&entry_path, result.clone())?
-            {
-                FunctionMetadataType::EntryPoint
-            } else {
-                FunctionMetadataType::Other
-            };
+            let function_type =
+                if classification.entrypoint_function_names.contains(&result.name) {
+                    FunctionMetadataType::EntryPoint
+                } else {
+                    FunctionMetadataType::Other
+                };
             let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
@@ -100,10 +98,6 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
             );
             metadata_result.push(function_metadata);
         }
-        // let bat_metadata = BatMetadata::read_metadata()?;
-        // bat_metadata
-        //     .source_code
-        //     .update_functions(metadata_result.clone())?;
         Ok(metadata_result)
     }
 }
@@ -114,14 +108,15 @@ impl FunctionSourceCodeMetadata {
         file_content: &str,
     ) -> Result<Vec<Self>, MetadataError> {
         let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
+        let classification = syn_struct_classifier::classify_file(file_content);
         let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Function);
         for result in bat_sonar.results {
-            let function_type = if Self::assert_function_is_entrypoint(entry_path, result.clone())?
-            {
-                FunctionMetadataType::EntryPoint
-            } else {
-                FunctionMetadataType::Other
-            };
+            let function_type =
+                if classification.entrypoint_function_names.contains(&result.name) {
+                    FunctionMetadataType::EntryPoint
+                } else {
+                    FunctionMetadataType::Other
+                };
             let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.to_string(),
                 result.name.to_string(),
@@ -137,32 +132,6 @@ impl FunctionSourceCodeMetadata {
 
     pub fn to_function_parser(&self) -> Result<FunctionParser, MetadataError> {
         FunctionParser::new_from_metadata(self.clone()).change_context(MetadataError)
-    }
-
-    fn assert_function_is_entrypoint(
-        entry_path: &str,
-        sonar_result: SonarResult,
-    ) -> MetadataResult<bool> {
-        let entrypoints_names =
-            EntrypointParser::get_entrypoint_names_from_program_lib(false).unwrap();
-        let config = BatConfig::get_config().unwrap();
-        let lib_paths = if config.program_lib_paths.is_empty() {
-            vec![config.program_lib_path.clone()]
-        } else {
-            config.program_lib_paths.clone()
-        };
-        if lib_paths.iter().any(|p| p == entry_path) {
-            if entrypoints_names
-                .into_iter()
-                .any(|ep_name| ep_name == sonar_result.name)
-            {
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        } else {
-            Ok(false)
-        }
     }
 
     pub fn prompt_selection() -> Result<Self, MetadataError> {
@@ -256,7 +225,13 @@ pub enum FunctionMetadataType {
     Other,
 }
 
-impl BatEnumerator for FunctionMetadataType {}
+impl BatEnumerator for FunctionMetadataType {
+    fn get_type_vec() -> Vec<Self> {
+        Self::iter()
+            .filter(|v| !matches!(v, FunctionMetadataType::Handler))
+            .collect()
+    }
+}
 
 pub fn get_function_parameters(function_content: String) -> Vec<String> {
     use quote::ToTokens;
@@ -349,97 +324,3 @@ pub fn get_function_body(function_content: &str) -> String {
     let body = body.collect::<Vec<_>>().join("{");
     body.trim_end_matches('}').trim().to_string()
 }
-
-// #[cfg(debug_assertions)]
-//
-// mod test_function_metadata {
-//
-//     #[test]
-//     fn test_function_parse() {
-//         let test_function = "pub(crate) fn get_function_metadata_from_file_info() -> Result<Vec<FunctionMetadata>, String> {
-//     let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
-//     let file_info_content = function_file_info.read_content().unwrap();
-//     let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
-//     let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
-//     for result in bat_sonar.results {
-//         let selection =
-//             batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
-//         let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
-//         let function_metadata = FunctionMetadata::new(
-//             function_file_info.path.clone(),
-//             result.name.to_string(),
-//             function_type,
-//             result.start_line_index + 1,
-//             result.end_line_index + 1,
-//         );
-//         function_metadata_vec.push(function_metadata);
-//     }
-//     Ok(function_metadata_vec)
-// }";
-//         let expected_function_signature = "pub(crate) fn get_function_metadata_from_file_info(
-//     function_file_info: FileInfo,
-//     function_file_info2: FileInfo2,
-// )";
-//         let expected_function_parameters = vec![
-//             "function_file_info: FileInfo".to_string(),
-//             "function_file_info2: FileInfo2".to_string(),
-//         ];
-//         let expected_function_body =
-//             "let mut function_metadata_vec: Vec<FunctionMetadata> = vec![];
-//     let file_info_content = function_file_info.read_content().unwrap();
-//     let function_types_colored = FunctionMetadataType::get_colorized_functions_type_vec();
-//     let bat_sonar = BatSonar::new_scanned(&file_info_content, SonarResultType::Function);
-//     for result in bat_sonar.results {
-//         let selection =
-//             batbelt::cli_inputs::select(prompt_text, function_types_colored.clone(), None)?;
-//         let function_type = FunctionMetadataType::get_functions_type_vec()[selection];
-//         let function_metadata = FunctionMetadata::new(
-//             function_file_info.path.clone(),
-//             result.name.to_string(),
-//             function_type,
-//             result.start_line_index + 1,
-//             result.end_line_index + 1,
-//         );
-//         function_metadata_vec.push(function_metadata);
-//     }
-//     Ok(function_metadata_vec)";
-//         let function_parameters = get_function_parameters(test_function.to_string());
-//         assert_eq!(
-//             expected_function_parameters, function_parameters,
-//             "wrong parameters"
-//         );
-//         let function_body = get_function_body(test_function);
-//         assert_eq!(expected_function_body, function_body, "wrong body");
-//         let function_signature = get_function_signature(test_function);
-//         assert_eq!(
-//             expected_function_signature, function_signature,
-//             "wrong signature"
-//         );
-//     }
-//
-//     #[test]
-//     fn test_handle_cache() {
-//         let test_path = "./test.json";
-//         let metadata_id = "1234";
-//         let dependencies = vec!["asdasd".to_string()];
-//         let external_dependencies = vec!["asdasdasidhasjd".to_string()];
-//         let function_metadata_cache = FunctionMetadataCache {
-//             dependencies,
-//             external_dependencies,
-//         };
-//         let json = json!({ metadata_id: function_metadata_cache });
-//         println!("{}", json);
-//         let pretty = serde_json::to_string_pretty(&json).unwrap();
-//         assert_fs::NamedTempFile::new(test_path).unwrap();
-//         fs::write(test_path, pretty).unwrap();
-//
-//         let read_value = fs::read_to_string(test_path).unwrap();
-//         let value: Value = serde_json::from_str(&read_value).unwrap();
-//         let f_val: FunctionMetadataCache =
-//             serde_json::from_value(value[metadata_id].clone()).unwrap();
-//
-//         let _test = value["bad_key"].clone();
-//
-//         println!("fval: {:#?}", f_val);
-//     }
-// }

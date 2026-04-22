@@ -87,26 +87,4 @@ impl EntryPointFlowAnalytics {
         bat_analytics.save_analytics()?;
         Ok(())
     }
-
-    // pub fn update_analytics_data() -> AnalyticsResult<()> {
-    //     let mut bat_cache = BatAnalytics::read_analytics().change_context(AnalyticsError)?;
-    //     let co_bat_folder = BatFolder::CodeOverhaulToReview;
-    //     let co_all_file_names = co_bat_folder
-    //         .get_all_files_names(false, None, None)
-    //         .change_context(AnalyticsError)?
-    //         .into_iter()
-    //         .map(|file_name| file_name.trim_end_matches(".md").to_string())
-    //         .collect::<Vec<_>>();
-    //     bat_cache
-    //         .entry_points_flow
-    //         .iter_mut()
-    //         .map(|co_cache| {
-    //             co_cache.started = !co_all_file_names.contains(&co_cache.entry_point_name.clone());
-    //             co_cache
-    //         })
-    //         .collect::<Vec<_>>();
-    //     bat_cache.save_analytics()?;
-    //     bat_cache.commit_file()?;
-    //     Ok(())
-    // }
 }

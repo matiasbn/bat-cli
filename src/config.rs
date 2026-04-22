@@ -15,7 +15,7 @@ use crate::batbelt::{bat_dialoguer, BatEnumerator};
 
 use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
-use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use normalize_url::normalizer;
 use walkdir::WalkDir;
 
@@ -116,20 +116,6 @@ impl BatAuditorConfig {
             .change_context(BatConfigError)?;
         let auditor_name = auditor_names.get(selection).unwrap().clone();
         self.auditor_name = auditor_name;
-        Ok(())
-    }
-
-    fn prompt_miro_integration(&mut self) -> BatConfigResult<()> {
-        let prompt_text = "Do you want to use the Miro integration?";
-        let include_miro = BatDialoguer::select_yes_or_no(prompt_text.to_string())
-            .change_context(BatConfigError)?;
-        let moat = if include_miro {
-            let prompt_text = "Miro OAuth access token";
-            BatDialoguer::input(prompt_text.to_string()).change_context(BatConfigError)?
-        } else {
-            "".to_string()
-        };
-        self.miro_oauth_access_token = moat;
         Ok(())
     }
 

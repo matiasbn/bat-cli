@@ -15,7 +15,7 @@ use lazy_regex::regex;
 use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCodeMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::StructSourceCodeMetadata;
 use crate::batbelt::metadata::traits_source_code_metadata::TraitSourceCodeMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, BatMetadataType};
+use crate::batbelt::metadata::{BatMetadata, BatMetadataType};
 
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 

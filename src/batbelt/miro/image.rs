@@ -1,7 +1,7 @@
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
 
-use error_stack::{FutureExt, IntoReport, Result, ResultExt};
+use error_stack::{IntoReport, Result, ResultExt};
 use reqwest;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{
@@ -309,39 +309,4 @@ mod api {
     //     Ok(id)
     // }
 
-    pub async fn update_image_position(
-        item_id: &str,
-        parent_id: &str,
-        x_position: i64,
-        y_position: i64,
-    ) -> MiroApiResult {
-        let MiroConfig {
-            access_token,
-            board_id,
-            ..
-        } = MiroConfig::new()?;
-        let client = reqwest::Client::new();
-        let response = client
-            .patch(format!(
-                "https://api.miro.com/v2/boards/{board_id}/images/{item_id}",
-            ))
-            .body(
-                json!({
-                    "parent": {
-                        "id": parent_id
-                    },
-                    "position": {
-                        "x": x_position,
-                        "y": y_position,
-                        "origin": "center",
-                    },
-                })
-                .to_string(),
-            )
-            .header(CONTENT_TYPE, "application/json")
-            .header(AUTHORIZATION, format!("Bearer {access_token}"))
-            .send()
-            .await;
-        MiroConfig::parse_response_from_miro(response)
-    }
 }

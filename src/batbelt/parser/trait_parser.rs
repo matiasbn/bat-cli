@@ -5,9 +5,8 @@ use crate::batbelt::metadata::traits_source_code_metadata::{
 use crate::batbelt::parser::{ParserError, ParserResult};
 
 use crate::batbelt::metadata::trait_metadata::{TraitMetadata, TraitMetadataFunction};
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
+use crate::batbelt::metadata::BatMetadata;
 use error_stack::{IntoReport, Result, ResultExt};
-use regex::Regex;
 
 #[derive(Clone, Debug)]
 pub struct TraitParser {
@@ -110,11 +109,35 @@ impl TraitParser {
     }
 
     fn get_from_to(&mut self) -> Result<(), ParserError> {
+        // Try to read full content and parse with syn
+        if let Ok(content) = std::fs::read_to_string(&self.trait_source_code_metadata.path) {
+            let lines: Vec<&str> = content.lines().collect();
+            let start = if self.trait_source_code_metadata.start_line_index > 0 {
+                self.trait_source_code_metadata.start_line_index - 1
+            } else {
+                0
+            };
+            let end = self
+                .trait_source_code_metadata
+                .end_line_index
+                .min(lines.len());
+            let impl_content = lines[start..end].join("\n");
+            if let Ok(item_impl) = syn::parse_str::<syn::ItemImpl>(&impl_content) {
+                use quote::ToTokens;
+                use crate::batbelt::parser::function_parser::normalize_generic_type;
+                if let Some((_, trait_path, _)) = &item_impl.trait_ {
+                    self.impl_from =
+                        normalize_generic_type(&trait_path.to_token_stream().to_string());
+                }
+                self.impl_to =
+                    normalize_generic_type(&item_impl.self_ty.to_token_stream().to_string());
+                return Ok(());
+            }
+        }
+
+        // Fallback: string matching on name
         let name = self.name.clone();
-        let impl_for = Regex::new(r"[\w<>$:()_ ]+ for [\w<>$:()_ ]+")
-            .into_report()
-            .change_context(ParserError)?;
-        if impl_for.is_match(&name) {
+        if name.contains(" for ") {
             let mut splitted = name.split(" for ");
             self.impl_from = splitted
                 .next()

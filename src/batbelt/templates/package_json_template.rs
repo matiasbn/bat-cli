@@ -1,4 +1,4 @@
-use error_stack::{FutureExt, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 use log::Level;
 
 use serde_json::Map;
