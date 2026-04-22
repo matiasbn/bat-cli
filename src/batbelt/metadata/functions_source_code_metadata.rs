@@ -9,6 +9,7 @@ use crate::batbelt::parser::syn_struct_classifier;
 use crate::batbelt::BatEnumerator;
 use error_stack::{Result, ResultExt};
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator;
 
 use std::{fs, vec};
 use walkdir::DirEntry;
@@ -224,7 +225,13 @@ pub enum FunctionMetadataType {
     Other,
 }
 
-impl BatEnumerator for FunctionMetadataType {}
+impl BatEnumerator for FunctionMetadataType {
+    fn get_type_vec() -> Vec<Self> {
+        Self::iter()
+            .filter(|v| !matches!(v, FunctionMetadataType::Handler))
+            .collect()
+    }
+}
 
 pub fn get_function_parameters(function_content: String) -> Vec<String> {
     use quote::ToTokens;
