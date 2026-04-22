@@ -96,7 +96,9 @@ impl BatCommands {
                 package::release().change_context(CommandError)
             }
             #[cfg(not(debug_assertions))]
-            BatCommands::Package(_) => unimplemented!("Command only implemented for dev operations"),
+            BatCommands::Package(_) => {
+                unimplemented!("Command only implemented for dev operations")
+            }
         }
     }
 

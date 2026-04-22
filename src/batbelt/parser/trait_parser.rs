@@ -77,10 +77,7 @@ impl TraitParser {
                 new_parser.clone().external_trait,
                 new_parser.clone().impl_from,
                 new_parser.clone().impl_to,
-                new_parser
-                    .clone()
-                    .trait_source_code_metadata
-                    .program_name,
+                new_parser.clone().trait_source_code_metadata.program_name,
             );
             new_trait_metadata
                 .update_metadata_file()
@@ -123,8 +120,8 @@ impl TraitParser {
                 .min(lines.len());
             let impl_content = lines[start..end].join("\n");
             if let Ok(item_impl) = syn::parse_str::<syn::ItemImpl>(&impl_content) {
-                use quote::ToTokens;
                 use crate::batbelt::parser::function_parser::normalize_generic_type;
+                use quote::ToTokens;
                 if let Some((_, trait_path, _)) = &item_impl.trait_ {
                     self.impl_from =
                         normalize_generic_type(&trait_path.to_token_stream().to_string());

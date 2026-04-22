@@ -54,8 +54,7 @@ impl SolanaAccountType {
                     // Also check inner type args for known account types
                     if let Some(inner) = Self::extract_inner_type_via_syn(last_line) {
                         if solana_accounts_metadata.iter().any(|sa| {
-                            sa.struct_type == StructMetadataType::SolanaAccount
-                                && sa.name == inner
+                            sa.struct_type == StructMetadataType::SolanaAccount && sa.name == inner
                         }) {
                             return Ok(Self::ProgramStateAccount);
                         }
@@ -199,8 +198,7 @@ impl SolanaAccountParser {
                     .get_source_code_content();
 
                 // Try syn first: parse as ItemStruct and extract fields
-                if let Ok(item_struct) =
-                    syn::parse_str::<syn::ItemStruct>(&struct_metadata_content)
+                if let Ok(item_struct) = syn::parse_str::<syn::ItemStruct>(&struct_metadata_content)
                 {
                     use quote::ToTokens;
                     let account_vec: Vec<SolanaAccountParserAccount> = item_struct

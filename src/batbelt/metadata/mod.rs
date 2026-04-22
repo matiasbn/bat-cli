@@ -74,11 +74,7 @@ pub fn derive_program_name_from_path(file_path: &str) -> String {
             .trim_end_matches("/src/lib.rs")
             .trim_end_matches("/src/main.rs");
         if file_path.starts_with(program_dir) {
-            return program_dir
-                .split('/')
-                .next_back()
-                .unwrap_or("")
-                .to_string();
+            return program_dir.split('/').next_back().unwrap_or("").to_string();
         }
     }
 
@@ -704,9 +700,9 @@ impl SourceCodeMetadata {
             .structs_source_code
             .into_iter()
             .filter(|struct_metadata| {
-                if let Some(ref pn) = program_name {
+                if let Some(pn) = program_name {
                     if !struct_metadata.program_name.is_empty()
-                        && struct_metadata.program_name != *pn
+                        && struct_metadata.program_name != pn
                     {
                         return false;
                     }
@@ -758,9 +754,9 @@ impl SourceCodeMetadata {
             .functions_source_code
             .into_iter()
             .filter(|function_metadata| {
-                if let Some(ref pn) = program_name {
+                if let Some(pn) = program_name {
                     if !function_metadata.program_name.is_empty()
-                        && function_metadata.program_name != *pn
+                        && function_metadata.program_name != pn
                     {
                         return false;
                     }
@@ -796,9 +792,8 @@ impl SourceCodeMetadata {
             .traits_source_code
             .into_iter()
             .filter(|trait_metadata| {
-                if let Some(ref pn) = program_name {
-                    if !trait_metadata.program_name.is_empty()
-                        && trait_metadata.program_name != *pn
+                if let Some(pn) = program_name {
+                    if !trait_metadata.program_name.is_empty() && trait_metadata.program_name != pn
                     {
                         return false;
                     }
@@ -830,10 +825,8 @@ impl SourceCodeMetadata {
             .enums_source_code
             .into_iter()
             .filter(|enum_metadata| {
-                if let Some(ref pn) = program_name {
-                    if !enum_metadata.program_name.is_empty()
-                        && enum_metadata.program_name != *pn
-                    {
+                if let Some(pn) = program_name {
+                    if !enum_metadata.program_name.is_empty() && enum_metadata.program_name != pn {
                         return false;
                     }
                 }

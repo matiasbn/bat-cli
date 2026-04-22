@@ -82,12 +82,14 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
         let classification = syn_struct_classifier::classify_file(&file_content);
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
         for result in bat_sonar.results {
-            let function_type =
-                if classification.entrypoint_function_names.contains(&result.name) {
-                    FunctionMetadataType::EntryPoint
-                } else {
-                    FunctionMetadataType::Other
-                };
+            let function_type = if classification
+                .entrypoint_function_names
+                .contains(&result.name)
+            {
+                FunctionMetadataType::EntryPoint
+            } else {
+                FunctionMetadataType::Other
+            };
             let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
@@ -111,12 +113,14 @@ impl FunctionSourceCodeMetadata {
         let classification = syn_struct_classifier::classify_file(file_content);
         let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Function);
         for result in bat_sonar.results {
-            let function_type =
-                if classification.entrypoint_function_names.contains(&result.name) {
-                    FunctionMetadataType::EntryPoint
-                } else {
-                    FunctionMetadataType::Other
-                };
+            let function_type = if classification
+                .entrypoint_function_names
+                .contains(&result.name)
+            {
+                FunctionMetadataType::EntryPoint
+            } else {
+                FunctionMetadataType::Other
+            };
             let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.to_string(),
                 result.name.to_string(),

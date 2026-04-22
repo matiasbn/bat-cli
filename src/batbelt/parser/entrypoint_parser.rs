@@ -91,7 +91,7 @@ impl EntrypointParser {
             .filter(|func_meta| {
                 func_meta.name == entrypoint_name
                     && func_meta.function_type == FunctionMetadataType::EntryPoint
-                    && program_name.map_or(true, |pn| {
+                    && program_name.is_none_or(|pn| {
                         func_meta.program_name.is_empty() || func_meta.program_name == pn
                     })
             })

@@ -50,7 +50,10 @@ pub fn classify_file(file_content: &str) -> FileClassification {
 
 /// Finds the `Context<T>` type parameter for a given entrypoint function name
 /// by parsing the `#[program]` module with syn. Returns `Some(T)` if found.
-pub fn get_context_type_for_entrypoint(file_content: &str, entrypoint_name: &str) -> Option<String> {
+pub fn get_context_type_for_entrypoint(
+    file_content: &str,
+    entrypoint_name: &str,
+) -> Option<String> {
     let file = syn::parse_file(file_content).ok()?;
     for item in &file.items {
         if let syn::Item::Mod(item_mod) = item {
@@ -93,7 +96,9 @@ fn extract_context_type(ty: &syn::Type) -> Option<String> {
             for arg in args.args.iter().rev() {
                 if let syn::GenericArgument::Type(inner_ty) = arg {
                     let ty_str = inner_ty.to_token_stream().to_string();
-                    return Some(crate::batbelt::parser::function_parser::normalize_generic_type(&ty_str));
+                    return Some(
+                        crate::batbelt::parser::function_parser::normalize_generic_type(&ty_str),
+                    );
                 }
             }
         }
@@ -106,9 +111,9 @@ fn has_derive_accounts(item: &syn::ItemStruct) -> bool {
         if !attr.path().is_ident("derive") {
             return false;
         }
-        let Ok(nested) =
-            attr.parse_args_with(syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated)
-        else {
+        let Ok(nested) = attr.parse_args_with(
+            syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+        ) else {
             return false;
         };
         nested.iter().any(|path| path.is_ident("Accounts"))
@@ -116,17 +121,18 @@ fn has_derive_accounts(item: &syn::ItemStruct) -> bool {
 }
 
 fn has_account_attribute(item: &syn::ItemStruct) -> bool {
-    item.attrs.iter().any(|attr| attr.path().is_ident("account"))
+    item.attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("account"))
 }
 
 fn has_program_attribute(item: &syn::ItemMod) -> bool {
-    item.attrs.iter().any(|attr| attr.path().is_ident("program"))
+    item.attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("program"))
 }
 
-fn extract_entrypoint_functions(
-    item_mod: &syn::ItemMod,
-    classification: &mut FileClassification,
-) {
+fn extract_entrypoint_functions(item_mod: &syn::ItemMod, classification: &mut FileClassification) {
     let Some((_, items)) = &item_mod.content else {
         return;
     };

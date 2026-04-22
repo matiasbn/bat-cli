@@ -370,8 +370,14 @@ impl SonarResult {
                     let self_ty = item_impl.self_ty.to_token_stream().to_string();
                     let name = if let Some((_, trait_path, _)) = &item_impl.trait_ {
                         let trait_name = trait_path.to_token_stream().to_string();
-                        let normalized_trait = crate::batbelt::parser::function_parser::normalize_generic_type(&trait_name);
-                        let normalized_self = crate::batbelt::parser::function_parser::normalize_generic_type(&self_ty);
+                        let normalized_trait =
+                            crate::batbelt::parser::function_parser::normalize_generic_type(
+                                &trait_name,
+                            );
+                        let normalized_self =
+                            crate::batbelt::parser::function_parser::normalize_generic_type(
+                                &self_ty,
+                            );
                         format!("{} for {}", normalized_trait, normalized_self)
                     } else {
                         crate::batbelt::parser::function_parser::normalize_generic_type(&self_ty)
