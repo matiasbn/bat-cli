@@ -5,6 +5,7 @@ use crate::batbelt::metadata::functions_source_code_metadata::{
 use crate::batbelt::metadata::structs_source_code_metadata::{
     StructMetadataType, StructSourceCodeMetadata,
 };
+use crate::batbelt::parser::syn_struct_classifier;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::config::BatConfig;
@@ -224,9 +225,15 @@ impl EntrypointParser {
 
         let mut entrypoints_names: Vec<String> = Vec::new();
         for lib_path in &lib_paths {
-            let bat_sonar =
-                BatSonar::new_from_path(lib_path, Some("#[program"), SonarResultType::Function);
-            entrypoints_names.extend(bat_sonar.results.iter().map(|ep| ep.name.clone()));
+            let classification = syn_struct_classifier::classify_file_from_path(lib_path);
+            if !classification.entrypoint_function_names.is_empty() {
+                entrypoints_names.extend(classification.entrypoint_function_names);
+            } else {
+                // Fallback to BatSonar if syn parsing fails
+                let bat_sonar =
+                    BatSonar::new_from_path(lib_path, Some("#[program"), SonarResultType::Function);
+                entrypoints_names.extend(bat_sonar.results.iter().map(|ep| ep.name.clone()));
+            }
         }
         if sorted {
             entrypoints_names.sort();
@@ -250,7 +257,19 @@ impl EntrypointParser {
         } else {
             config.program_lib_paths.clone()
         };
-        // Find the lib file that contains this entrypoint
+        let clean_name = entrypoint_name.replace(".md", "");
+
+        // Try syn-based extraction first
+        for lib_path in &lib_paths {
+            let content = fs::read_to_string(lib_path).unwrap_or_default();
+            if let Some(ctx_type) =
+                syn_struct_classifier::get_context_type_for_entrypoint(&content, &clean_name)
+            {
+                return Ok(ctx_type);
+            }
+        }
+
+        // Fallback: string matching
         let mut lib_file = String::new();
         for lib_path in &lib_paths {
             let content = fs::read_to_string(lib_path).unwrap_or_default();
@@ -266,7 +285,7 @@ impl EntrypointParser {
                         .split_whitespace()
                         .last()
                         .unwrap();
-                    function_name == entrypoint_name.replace(".md", "")
+                    function_name == clean_name
                 } else {
                     false
                 }
@@ -293,7 +312,7 @@ impl EntrypointParser {
                         .split_whitespace()
                         .last()
                         .unwrap();
-                    function_name == entrypoint_name.replace(".md", "")
+                    function_name == clean_name
                 } else {
                     false
                 }
@@ -303,15 +322,11 @@ impl EntrypointParser {
             lib_file_lines[entrypoint_index],
             lib_file_lines[entrypoint_index + 1],
         ];
-
-        // if is not in the same line as the entrypoint name, is in the next line
         let context_line = if canditate_lines[0].contains("Context<") {
             canditate_lines[0]
         } else {
             canditate_lines[1]
         };
-
-        // replace all the extra strings to get the Context name
         let parsed_context_name = context_line
             .replace("'_, ", "")
             .replace("'info, ", "")

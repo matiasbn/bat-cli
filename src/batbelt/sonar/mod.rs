@@ -308,6 +308,13 @@ impl SonarResult {
             | SonarResultType::Struct
             | SonarResultType::Module
             | SonarResultType::Enum => {
+                // Try syn first
+                if let Some((name, is_public)) = self.try_syn_get_name() {
+                    self.name = name;
+                    self.is_public = is_public;
+                    return;
+                }
+                // Fallback to string splitting
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
                 let mut first_line_tokenized = first_line.trim().split(' ');
@@ -327,6 +334,12 @@ impl SonarResult {
                 self.is_public = is_public;
             }
             SonarResultType::Trait => {
+                if let Some((name, is_public)) = self.try_syn_get_name() {
+                    self.name = name;
+                    self.is_public = is_public;
+                    return;
+                }
+                // Fallback
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
                 let mut first_line_tokenized = first_line.trim().split(' ');
@@ -351,6 +364,23 @@ impl SonarResult {
                 log::debug!("is_public: {}", is_public);
             }
             SonarResultType::TraitImpl => {
+                // Try syn first
+                if let Ok(item_impl) = syn::parse_str::<syn::ItemImpl>(&self.content) {
+                    use quote::ToTokens;
+                    let self_ty = item_impl.self_ty.to_token_stream().to_string();
+                    let name = if let Some((_, trait_path, _)) = &item_impl.trait_ {
+                        let trait_name = trait_path.to_token_stream().to_string();
+                        let normalized_trait = crate::batbelt::parser::function_parser::normalize_generic_type(&trait_name);
+                        let normalized_self = crate::batbelt::parser::function_parser::normalize_generic_type(&self_ty);
+                        format!("{} for {}", normalized_trait, normalized_self)
+                    } else {
+                        crate::batbelt::parser::function_parser::normalize_generic_type(&self_ty)
+                    };
+                    self.name = name.clone();
+                    log::debug!("name (syn): {}", name);
+                    return;
+                }
+                // Fallback
                 let first_line = self.content.clone();
                 let first_line = first_line.lines().next().unwrap();
                 let lifetime_regex = Regex::new(r"&*'+[A-Za-z0-9:]+[, ]*").unwrap();
@@ -368,6 +398,46 @@ impl SonarResult {
             }
             _ => {}
         }
+    }
+
+    /// Tries to extract name and visibility using syn.
+    /// Works for Function, Struct, Module, Enum, Trait.
+    fn try_syn_get_name(&self) -> Option<(String, bool)> {
+        // Try parsing as different syn items based on result_type
+        match self.result_type {
+            SonarResultType::Function => {
+                if let Ok(item_fn) = syn::parse_str::<syn::ItemFn>(&self.content) {
+                    let is_public = matches!(item_fn.vis, syn::Visibility::Public(_));
+                    return Some((item_fn.sig.ident.to_string(), is_public));
+                }
+            }
+            SonarResultType::Struct => {
+                if let Ok(item_struct) = syn::parse_str::<syn::ItemStruct>(&self.content) {
+                    let is_public = matches!(item_struct.vis, syn::Visibility::Public(_));
+                    return Some((item_struct.ident.to_string(), is_public));
+                }
+            }
+            SonarResultType::Enum => {
+                if let Ok(item_enum) = syn::parse_str::<syn::ItemEnum>(&self.content) {
+                    let is_public = matches!(item_enum.vis, syn::Visibility::Public(_));
+                    return Some((item_enum.ident.to_string(), is_public));
+                }
+            }
+            SonarResultType::Module => {
+                if let Ok(item_mod) = syn::parse_str::<syn::ItemMod>(&self.content) {
+                    let is_public = matches!(item_mod.vis, syn::Visibility::Public(_));
+                    return Some((item_mod.ident.to_string(), is_public));
+                }
+            }
+            SonarResultType::Trait => {
+                if let Ok(item_trait) = syn::parse_str::<syn::ItemTrait>(&self.content) {
+                    let is_public = matches!(item_trait.vis, syn::Visibility::Public(_));
+                    return Some((item_trait.ident.to_string(), is_public));
+                }
+            }
+            _ => {}
+        }
+        None
     }
 
     fn format_ca_only_validations(&mut self) {

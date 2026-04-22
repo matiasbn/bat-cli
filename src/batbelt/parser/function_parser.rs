@@ -250,6 +250,32 @@ impl FunctionParser {
     }
 
     fn get_function_signature(&mut self) {
+        // Try syn first
+        if let Ok(item_fn) = syn::parse_str::<syn::ItemFn>(&self.content) {
+            use quote::ToTokens;
+            // Build signature from sig, stripping the return type
+            let sig = &item_fn.sig;
+            let vis = &item_fn.vis;
+            let fn_token = &sig.fn_token;
+            let ident = &sig.ident;
+            let generics = &sig.generics;
+            let inputs = &sig.inputs;
+            // Reconstruct just the signature up to closing paren (no return type)
+            let sig_str = format!(
+                "{} {} {}{}({})",
+                vis.to_token_stream(),
+                fn_token.to_token_stream(),
+                ident,
+                generics.to_token_stream(),
+                inputs.to_token_stream()
+            );
+            self.signature = normalize_generic_type(&sig_str)
+                .replace("  ", " ")
+                .trim()
+                .to_string();
+            return;
+        }
+        // Fallback: string splitting
         let function_signature = self.content.clone();
         let function_signature = function_signature
             .split('{')
@@ -364,6 +390,12 @@ impl FunctionParser {
     }
 
     pub fn get_function_name_from_signature(function_signature: &str) -> String {
+        // Try syn: parse as a function with dummy body
+        let parseable = format!("{} {{}}", function_signature);
+        if let Ok(item_fn) = syn::parse_str::<syn::ItemFn>(&parseable) {
+            return item_fn.sig.ident.to_string();
+        }
+        // Fallback: string splitting
         function_signature
             .trim_start_matches("pub ")
             .trim_start_matches("(crate) ")

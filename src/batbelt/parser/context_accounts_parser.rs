@@ -121,6 +121,12 @@ impl CAAccountParser {
             .trim_end_matches(',')
             .to_string();
 
+        // Try syn-based extraction
+        if let Some(type_info) = Self::try_syn_account_type_info(context_account_content, &last_line)? {
+            return Ok(type_info);
+        }
+
+        // Fallback: string matching
         let account_name = last_line
             .trim()
             .trim_start_matches("pub ")
@@ -172,7 +178,6 @@ impl CAAccountParser {
                 .collect::<Vec<_>>();
             (results[0].clone(), results[1].clone())
         } else {
-            // is is not comma separated, then the only content is the lifetime
             (
                 wrapper_content.to_string(),
                 account_type_info.account_wrapper_name.clone(),
@@ -181,6 +186,105 @@ impl CAAccountParser {
         account_type_info.lifetime_name = lifetime_name;
         account_type_info.account_struct_name = account_struct_name;
         Ok(account_type_info)
+    }
+
+    /// Tries to extract account type info by parsing the field line with syn.
+    fn try_syn_account_type_info(
+        context_account_content: &str,
+        last_line: &str,
+    ) -> Result<Option<CAAccountTypeInfo>, ParserError> {
+        // Wrap in a dummy struct so syn can parse it
+        let field_str = format!("struct __Tmp {{ {} }}", last_line);
+        let Ok(item_struct) = syn::parse_str::<syn::ItemStruct>(&field_str) else {
+            return Ok(None);
+        };
+        let Some(field) = item_struct.fields.iter().next() else {
+            return Ok(None);
+        };
+        let account_name = field
+            .ident
+            .as_ref()
+            .map(|i| i.to_string())
+            .unwrap_or_default();
+
+        let solana_account_type =
+            SolanaAccountType::from_context_account_content(context_account_content)?;
+
+        // Navigate the type tree to extract wrapper, lifetime, and struct name
+        let (wrapper_name, lifetime_name, struct_name) =
+            Self::extract_type_parts(&field.ty, &account_name);
+
+        let Some(wrapper_name) = wrapper_name else {
+            return Ok(None);
+        };
+
+        Ok(Some(CAAccountTypeInfo {
+            content: context_account_content.to_string(),
+            solana_account_type,
+            account_struct_name: struct_name.unwrap_or_else(|| wrapper_name.clone()),
+            account_wrapper_name: wrapper_name,
+            lifetime_name: lifetime_name.unwrap_or_default(),
+            account_name,
+        }))
+    }
+
+    /// Extracts (wrapper_name, lifetime, struct_name) from a syn::Type.
+    /// E.g. `Account<'info, MyStruct>` → ("Account", "'info", "MyStruct")
+    /// E.g. `Box<Account<'info, MyStruct>>` → ("Account", "'info", "MyStruct") (unwraps Box)
+    /// E.g. `Signer<'info>` → ("Signer", "'info", None)
+    fn extract_type_parts(
+        ty: &syn::Type,
+        _account_name: &str,
+    ) -> (Option<String>, Option<String>, Option<String>) {
+        use quote::ToTokens;
+        if let syn::Type::Path(type_path) = ty {
+            let segment = match type_path.path.segments.last() {
+                Some(s) => s,
+                None => return (None, None, None),
+            };
+            let ident = segment.ident.to_string();
+
+            // If it's Box<...>, unwrap and recurse on inner type
+            if ident == "Box" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    for arg in &args.args {
+                        if let syn::GenericArgument::Type(inner_ty) = arg {
+                            return Self::extract_type_parts(inner_ty, _account_name);
+                        }
+                    }
+                }
+            }
+
+            if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                let mut lifetime: Option<String> = None;
+                let mut last_type: Option<String> = None;
+
+                for arg in &args.args {
+                    match arg {
+                        syn::GenericArgument::Lifetime(lt) => {
+                            let lt_str = lt.to_token_stream().to_string();
+                            if lt_str != "'_" && lifetime.is_none() {
+                                lifetime = Some(lt_str);
+                            }
+                        }
+                        syn::GenericArgument::Type(inner_ty) => {
+                            last_type = Some(
+                                crate::batbelt::parser::function_parser::normalize_generic_type(
+                                    &inner_ty.to_token_stream().to_string(),
+                                ),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+
+                return (Some(ident), lifetime, last_type);
+            }
+
+            // No angle brackets — simple type like a bare ident
+            return (Some(ident), None, None);
+        }
+        (None, None, None)
     }
 
     pub fn get_account_attribute_info(
