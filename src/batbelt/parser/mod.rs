@@ -14,6 +14,7 @@ pub mod solana_account_parser;
 pub mod source_code_parser;
 pub mod syn_context_accounts_parser;
 pub mod syn_function_dependency_parser;
+pub mod syn_struct_classifier;
 pub mod trait_parser;
 pub mod type_resolver;
 

@@ -14,14 +14,12 @@ use crate::commands::sonar_commands::SonarCommand;
 use crate::commands::{BatCommandEnumerator, BatPackageJsonCommand, CommandResult};
 
 use crate::batbelt::BatEnumerator;
-// use crate::commands::repository_commands::RepositoryCommand;
 use batbelt::git::git_action::GitAction;
 
 use commands::co_commands::CodeOverhaulCommand;
-// use commands::finding_commands::FindingCommand;
 use commands::CommandError;
 use error_stack::fmt::{Charset, ColorMode};
-use error_stack::{FutureExt, IntoReport, Result};
+use error_stack::{IntoReport, Result};
 use error_stack::{Report, ResultExt};
 
 use crate::commands::project_commands::ProjectCommands;
@@ -63,25 +61,14 @@ enum BatCommands {
     /// code-overhaul files management
     #[command(subcommand)]
     CodeOverhaul(CodeOverhaulCommand),
-    // #[command(subcommand)]
-    // Analytics(AnalyticsCommand),
     /// Execute the BatSonar to create metadata files for all Sonar result types
     Sonar,
-    // /// Execute specific BatSonar commands
-    // #[command(subcommand)]
-    // SonarSpecific(SonarSpecificCommand),
-    // /// findings files management
-    // #[command(subcommand)]
-    // Finding(FindingCommand),
     /// utils tools
     #[command(subcommand)]
     Tool(ToolCommand),
     /// Miro integration
     #[command(subcommand)]
     Miro(MiroCommand),
-    // /// Git actions to manage repository
-    // #[command(subcommand)]
-    // Repository(RepositoryCommand),
     /// Cargo publish operations, available only for dev
     #[command(subcommand)]
     Package(PackageCommand),
@@ -96,28 +83,9 @@ impl BatCommands {
             BatCommands::Init => ProjectCommands::Init.init_bat_project().await,
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
-            // BatCommands::Analytics(command) => command.execute_command(),
-            // BatCommands::Finding(FindingCommand::Create) => {
-            //     commands::finding_commands::start_finding()
-            // }
-            // BatCommands::Finding(FindingCommand::Finish) => {
-            //     commands::finding_commands::finish_finding()
-            // }
-            // BatCommands::Finding(FindingCommand::Update) => {
-            //     commands::finding_commands::update_finding()
-            // }
-            // BatCommands::Finding(FindingCommand::AcceptAll) => {
-            //     commands::finding_commands::accept_all()
-            // }
-            // BatCommands::Finding(FindingCommand::CreateEvidence) => {
-            //     commands::finding_commands::create_evidence()
-            // }
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
-            // BatCommands::SonarSpecific(command) => command.execute_command(),
-            // BatCommands::Finding(FindingCommand::Reject) => commands::finding_commands::reject(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tool(command) => command.execute_command(),
-            // BatCommands::Repository(command) => command.execute_command(),
             // only for dev
             #[cfg(debug_assertions)]
             BatCommands::Package(PackageCommand::Format) => {
@@ -127,7 +95,10 @@ impl BatCommands {
             BatCommands::Package(PackageCommand::Release) => {
                 package::release().change_context(CommandError)
             }
-            _ => unimplemented!("Command only implemented for dev operations"),
+            #[cfg(not(debug_assertions))]
+            BatCommands::Package(_) => {
+                unimplemented!("Command only implemented for dev operations")
+            }
         }
     }
 

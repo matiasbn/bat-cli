@@ -308,13 +308,28 @@ impl BatSonarInteractive {
     }
 
     fn run_entry_points_with_pb(pb: &ProgressBar) -> Result<(), BatSonarError> {
-        let entrypoint_names = EntrypointParser::get_entrypoint_names_from_program_lib(false)
-            .change_context(BatSonarError)?;
-        let total = entrypoint_names.len();
+        let config = BatConfig::get_config().change_context(BatSonarError)?;
+        let lib_paths = if config.program_lib_paths.is_empty() {
+            vec![config.program_lib_path.clone()]
+        } else {
+            config.program_lib_paths.clone()
+        };
+        let program_names = config.get_program_names();
+
+        let mut all_entries: Vec<(String, String)> = Vec::new();
+        for (lib_path, program_name) in lib_paths.iter().zip(program_names.iter()) {
+            let ep_names = EntrypointParser::get_entrypoint_names_filtered(false, Some(lib_path))
+                .change_context(BatSonarError)?;
+            for name in ep_names {
+                all_entries.push((name, program_name.clone()));
+            }
+        }
+
+        let total = all_entries.len();
         pb.set_message(format!("Entry points [0/{}]", total));
-        for (idx, entry) in entrypoint_names.iter().enumerate() {
-            pb.set_message(format!("Entry points [{}/{}]: {}", idx + 1, total, entry,));
-            EntrypointParser::new_from_name(entry).unwrap();
+        for (idx, (entry, program_name)) in all_entries.iter().enumerate() {
+            pb.set_message(format!("Entry points [{}/{}]: {}", idx + 1, total, entry));
+            EntrypointParser::new_from_name_and_program(entry, Some(program_name)).unwrap();
         }
         pb.finish_with_message(format!("{} Entry points: {} processed", SPARKLE, total));
         Ok(())
@@ -419,6 +434,7 @@ impl BatSonarInteractive {
                                 BatMetadata::create_metadata_id(),
                                 ca_sc.metadata_id.clone(),
                                 ca_info,
+                                ca_sc.program_name.clone(),
                             );
                             context_accounts_metadata.update_metadata_file().unwrap();
                         }
@@ -469,6 +485,7 @@ impl BatSonarInteractive {
                     BatMetadata::create_metadata_id(),
                     ca_sc.metadata_id.clone(),
                     ca_info,
+                    ca_sc.program_name.clone(),
                 );
                 context_accounts_metadata.update_metadata_file().unwrap();
             }

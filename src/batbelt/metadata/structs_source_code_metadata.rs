@@ -1,14 +1,11 @@
-use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
-
 use std::fmt::Debug;
-
-use crate::batbelt::path::BatFile;
 
 use crate::batbelt::metadata::{
     BatMetadataParser, BatMetadataType, MetadataId, SourceCodeMetadata,
 };
 
-use crate::batbelt::sonar::{BatSonar, SonarResult, SonarResultType};
+use crate::batbelt::parser::syn_struct_classifier;
+use crate::batbelt::sonar::{BatSonar, SonarResultType};
 use crate::batbelt::BatEnumerator;
 use error_stack::{Result, ResultExt};
 
@@ -18,7 +15,6 @@ use crate::batbelt::parser::parse_formatted_path;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::{fs, vec};
-use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +25,8 @@ pub struct StructSourceCodeMetadata {
     pub metadata_id: String,
     pub start_line_index: usize,
     pub end_line_index: usize,
+    #[serde(default)]
+    pub program_name: String,
 }
 
 impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
@@ -64,6 +62,8 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
         end_line_index: usize,
         metadata_id: MetadataId,
     ) -> Self {
+        use crate::batbelt::metadata::derive_program_name_from_path;
+        let program_name = derive_program_name_from_path(&path);
         StructSourceCodeMetadata {
             path,
             name,
@@ -71,23 +71,24 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
             struct_type: metadata_sub_type,
             start_line_index,
             end_line_index,
+            program_name,
         }
     }
 
     fn create_metadata_from_dir_entry(entry: DirEntry) -> Result<Vec<Self>, MetadataError> {
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
+        let classification = syn_struct_classifier::classify_file(&file_content);
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Struct);
         let mut metadata_result = vec![];
         for result in bat_sonar.results {
-            let struct_type =
-                if Self::assert_struct_is_solana_account(&file_content, result.clone()) {
-                    StructMetadataType::SolanaAccount
-                } else if Self::assert_struct_is_context_accounts(&file_content, result.clone())? {
-                    StructMetadataType::ContextAccounts
-                } else {
-                    StructMetadataType::Other
-                };
+            let struct_type = if classification.solana_account_names.contains(&result.name) {
+                StructMetadataType::SolanaAccount
+            } else if classification.context_accounts_names.contains(&result.name) {
+                StructMetadataType::ContextAccounts
+            } else {
+                StructMetadataType::Other
+            };
             let struct_metadata = StructSourceCodeMetadata::new(
                 entry_path.clone(),
                 result.name.to_string(),
@@ -98,11 +99,6 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
             );
             metadata_result.push(struct_metadata);
         }
-        // let bat_metadata = BatMetadata::read_metadata()?;
-        // bat_metadata
-        //     .source_code
-        //     .update_structs(metadata_result.clone())?;
-
         Ok(metadata_result)
     }
 }
@@ -112,13 +108,13 @@ impl StructSourceCodeMetadata {
         entry_path: &str,
         file_content: &str,
     ) -> Result<Vec<Self>, MetadataError> {
+        let classification = syn_struct_classifier::classify_file(file_content);
         let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Struct);
         let mut metadata_result = vec![];
         for result in bat_sonar.results {
-            let struct_type = if Self::assert_struct_is_solana_account(file_content, result.clone())
-            {
+            let struct_type = if classification.solana_account_names.contains(&result.name) {
                 StructMetadataType::SolanaAccount
-            } else if Self::assert_struct_is_context_accounts(file_content, result.clone())? {
+            } else if classification.context_accounts_names.contains(&result.name) {
                 StructMetadataType::ContextAccounts
             } else {
                 StructMetadataType::Other
@@ -134,71 +130,6 @@ impl StructSourceCodeMetadata {
             metadata_result.push(struct_metadata);
         }
         Ok(metadata_result)
-    }
-
-    fn assert_struct_is_context_accounts(
-        file_info_content: &str,
-        sonar_result: SonarResult,
-    ) -> Result<bool, MetadataError> {
-        if sonar_result.start_line_index > 0 {
-            let previous_line =
-                file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 1];
-            let filtered_previous_line = previous_line
-                .trim()
-                .trim_end_matches(")]")
-                .trim_start_matches("#[derive(");
-            let mut tokenized = filtered_previous_line.split(", ");
-            if tokenized.any(|token| token == "Acccounts") {
-                return Ok(true);
-            }
-        }
-        let context_accounts_content = [
-            "Signer<",
-            "AccountLoader<",
-            "UncheckedAccount<",
-            "#[account(",
-        ];
-        if context_accounts_content
-            .iter()
-            .any(|content| sonar_result.content.contains(content))
-        {
-            return Ok(true);
-        }
-        let lib_file_path = BatFile::ProgramLib
-            .get_path(false)
-            .change_context(MetadataError)?;
-        let entrypoints = BatSonar::new_from_path(
-            &lib_file_path,
-            Some("#[program]"),
-            SonarResultType::Function,
-        );
-        let mut entrypoints_context_accounts_names = entrypoints
-            .results
-            .iter()
-            .map(|result| EntrypointParser::get_context_name(&result.name).unwrap());
-        if entrypoints_context_accounts_names.any(|name| name == sonar_result.name) {
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    fn assert_struct_is_solana_account(file_info_content: &str, sonar_result: SonarResult) -> bool {
-        if sonar_result.start_line_index > 3 {
-            let previous_line_1 =
-                file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 1];
-            let previous_line_2 =
-                file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 2];
-            let previous_line_3 =
-                file_info_content.lines().collect::<Vec<_>>()[sonar_result.start_line_index - 3];
-            if previous_line_1.contains("#[account")
-                || previous_line_2.contains("#[account")
-                || previous_line_3.contains("#[account")
-            {
-                return true;
-            }
-        }
-
-        false
     }
 
     pub fn prompt_selection() -> Result<Self, MetadataError> {

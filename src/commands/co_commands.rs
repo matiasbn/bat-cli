@@ -12,13 +12,12 @@ use crate::config::BatConfig;
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
-use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use error_stack::{Report, ResultExt};
 use lazy_regex::regex;
-use regex::Regex;
 
 #[allow(unused_imports)]
 use crate::batbelt::metadata::program_accounts_metadata::ProgramAccountMetadata;
-use crate::batbelt::metadata::{BatMetadataParser, MiroMetadata};
+use crate::batbelt::metadata::MiroMetadata;
 use crate::batbelt::miro::frame::MiroFrame;
 
 use crate::batbelt::parser::code_overhaul_parser::CodeOverhaulParser;
@@ -364,104 +363,10 @@ impl CodeOverhaulCommand {
         }
         Ok(())
     }
-
-    // fn execute_start_interactive(&self) -> CommandResult<String> {
-    //     let suggested_entry_point_cache =
-    //         EntryPointFlow::get_suggested_next_entry_point()
-    //             .change_context(CommandError)?;
-    //     let entry_point_name = suggested_entry_point_cache.entry_point_name;
-    //     let ep_parser =
-    //         EntrypointParser::new_from_name(&entry_point_name).change_context(CommandError)?;
-    //     let handler_sc_metadata = ep_parser.handler.unwrap();
-    //     let handler_sc_parser = handler_sc_metadata.to_source_code_parser(None);
-    //
-    //     CodeEditor::open_file_in_editor(
-    //         &handler_sc_parser.path,
-    //         Some(handler_sc_parser.start_line_index),
-    //     )?;
-    //
-    //     let handler_content = handler_sc_parser.get_source_code_content();
-    //
-    //     let handler_content_lines = handler_content.lines().collect::<Vec<_>>();
-    //     if !suggested_entry_point_cache.init_program_accounts.is_empty() {
-    //         for init_program_account in suggested_entry_point_cache.init_program_accounts {
-    //             println!("Initializing: {}", init_program_account.bright_green());
-    //             let solana_account_parser =
-    //                 SolanaAccountParser::new_from_struct_name_and_solana_account_type(
-    //                     init_program_account,
-    //                     SolanaAccountType::ProgramStateAccount,
-    //                 )
-    //                 .change_context(CommandError)?;
-    //             for account in solana_account_parser.accounts {
-    //                 let prompt_text = format!(
-    //                     "Is the {}[{}] value assigned on this handler?:",
-    //                     account.account_name, account.account_type
-    //                 );
-    //                 let is_assigned = BatDialoguer::select_yes_or_no(prompt_text)?;
-    //                 if !is_assigned {
-    //                     continue;
-    //                 }
-    //                 let prompt_text = format!(
-    //                     "Select the lines with the value for {}[{}] with the space bar",
-    //                     account.account_name.bright_green(),
-    //                     account.account_type.bright_yellow()
-    //                 );
-    //                 let selection = BatDialoguer::multiselect(
-    //                     prompt_text,
-    //                     handler_content_lines.clone(),
-    //                     None,
-    //                     true,
-    //                 )?;
-    //                 let parsed_value = if selection.len() == 1 {
-    //                     co_commands_functions::get_value_single_line(
-    //                         handler_content_lines[selection[0]],
-    //                     )
-    //                 } else {
-    //                     co_commands_functions::get_value_single_line(
-    //                         handler_content_lines[selection[0]],
-    //                     )
-    //                 };
-    //                 // let parse_value = println!(
-    //                 //     "handler_content_lines[selection]: {}",
-    //                 //     handler_content_lines[selection]
-    //                 // );
-    //             }
-    //         }
-    //     }
-    //     // println!(
-    //     //     "init_program_ca_metadata: {:#?}",
-    //     //     suggested_entry_point_cache
-    //     // );
-    //     Ok("".to_string())
-    // }
 }
 
 mod co_commands_functions {
     use super::*;
-    use lazy_regex::regex;
-
-    pub fn get_value_single_line(line: &str) -> CommandResult<String> {
-        let inline_assignment_regex = regex!(r#"[\w_.()? ]+= "#);
-        match inline_assignment_regex.find(line.trim()) {
-            None => {}
-            Some(_line_match) => {}
-        }
-        let _struct_assignment_regex = regex!(r#"[\w_ ]+: ]"#);
-        Ok("".to_string())
-    }
-
-    pub fn get_value_multi_line(
-        _lines_vec: Vec<&str>,
-        _selection_vec: Vec<usize>,
-    ) -> CommandResult<String> {
-        // let inline_assignment_regex = regex!(r#"[\w_.()? ]+= "#);
-        // match inline_assignment_regex.find(line.trim()) {
-        //     None => {}
-        //     Some(line_match) => {}
-        // }
-        // let struct_assignment_regex = regex!(r#"[\w_ ]+: ]"#);
-        Ok("".to_string())
-    }
 
     pub async fn prompt_deploy_miro(
         entry_point_name: String,
@@ -565,32 +470,5 @@ mod co_commands_functions {
             }
         }
         Ok(())
-    }
-
-    pub fn extract_section_content(
-        co_file_content: &str,
-        section_header: &str,
-        next_section_header: &str,
-    ) -> CommandResult<String> {
-        let section_content_regex = Regex::new(&format!(
-            r#"({})[\s\S]+({})"#,
-            section_header, next_section_header
-        ))
-        .into_report()
-        .change_context(CommandError)?;
-        log::debug!("{co_file_content}");
-        log::debug!("{section_header}");
-        log::debug!("{next_section_header}");
-        let section_content = section_content_regex
-            .find(co_file_content)
-            .ok_or(CommandError)
-            .into_report()?
-            .as_str()
-            .to_string()
-            .replace(section_header, &section_header.replace("#", "##"))
-            .trim_end_matches(next_section_header)
-            .trim()
-            .to_string();
-        Ok(section_content)
     }
 }

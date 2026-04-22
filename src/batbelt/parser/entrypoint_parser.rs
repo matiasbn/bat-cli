@@ -5,6 +5,7 @@ use crate::batbelt::metadata::functions_source_code_metadata::{
 use crate::batbelt::metadata::structs_source_code_metadata::{
     StructMetadataType, StructSourceCodeMetadata,
 };
+use crate::batbelt::parser::syn_struct_classifier;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
 use crate::config::BatConfig;
@@ -14,7 +15,7 @@ use std::collections::HashSet;
 use std::fs;
 
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
+use crate::batbelt::metadata::{BatMetadata, SourceCodeMetadata};
 use crate::batbelt::parser::function_parser::FunctionParser;
 
 use crate::batbelt::parser::ParserError;
@@ -22,6 +23,7 @@ use crate::batbelt::parser::ParserError;
 #[derive(Clone, Debug)]
 pub struct EntrypointParser {
     pub name: String,
+    pub program_name: String,
     pub dependencies: Vec<FunctionSourceCodeMetadata>,
     pub context_accounts: StructSourceCodeMetadata,
     pub entry_point_function: FunctionSourceCodeMetadata,
@@ -30,12 +32,14 @@ pub struct EntrypointParser {
 impl EntrypointParser {
     pub fn new(
         name: String,
+        program_name: String,
         dependencies: Vec<FunctionSourceCodeMetadata>,
         context_accounts: StructSourceCodeMetadata,
         entry_point_function: FunctionSourceCodeMetadata,
     ) -> Self {
         Self {
             name,
+            program_name,
             dependencies,
             context_accounts,
             entry_point_function,
@@ -43,6 +47,13 @@ impl EntrypointParser {
     }
 
     pub fn new_from_name(entrypoint_name: &str) -> Result<Self, ParserError> {
+        Self::new_from_name_and_program(entrypoint_name, None)
+    }
+
+    pub fn new_from_name_and_program(
+        entrypoint_name: &str,
+        program_name: Option<&str>,
+    ) -> Result<Self, ParserError> {
         let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
         if let Ok(ep_metadata) =
             bat_metadata.get_entrypoint_metadata_by_name(entrypoint_name.to_string())
@@ -65,6 +76,7 @@ impl EntrypointParser {
 
             return Ok(Self {
                 name: ep_metadata.name,
+                program_name: ep_metadata.program_name,
                 dependencies,
                 context_accounts,
                 entry_point_function,
@@ -79,6 +91,9 @@ impl EntrypointParser {
             .filter(|func_meta| {
                 func_meta.name == entrypoint_name
                     && func_meta.function_type == FunctionMetadataType::EntryPoint
+                    && program_name.is_none_or(|pn| {
+                        func_meta.program_name.is_empty() || func_meta.program_name == pn
+                    })
             })
             .collect::<Vec<_>>();
 
@@ -93,12 +108,22 @@ impl EntrypointParser {
         }
 
         let entrypoint_function = entrypoint_section.first().unwrap().clone();
+        let resolved_program_name = if let Some(pn) = program_name {
+            pn.to_string()
+        } else {
+            entrypoint_function.program_name.clone()
+        };
 
         let context_name = Self::get_context_name(entrypoint_name).unwrap();
 
-        let structs_metadata = SourceCodeMetadata::get_filtered_structs(
+        let structs_metadata = SourceCodeMetadata::get_filtered_structs_by_program(
             Some(context_name.clone()),
             Some(StructMetadataType::ContextAccounts),
+            if resolved_program_name.is_empty() {
+                None
+            } else {
+                Some(&resolved_program_name)
+            },
         )
         .change_context(ParserError)?;
         let context_accounts = structs_metadata
@@ -111,13 +136,13 @@ impl EntrypointParser {
                 context_name, entrypoint_name
             ))?;
 
-        let ep_metadata = EntrypointMetadata {
-            name: entrypoint_name.to_string(),
-            metadata_id: BatMetadata::create_metadata_id(),
-            handler_id: None,
-            context_accounts_id: context_accounts.metadata_id.clone(),
-            entrypoint_function_id: entrypoint_function.metadata_id.clone(),
-        };
+        let ep_metadata = EntrypointMetadata::new(
+            entrypoint_name.to_string(),
+            context_accounts.metadata_id.clone(),
+            entrypoint_function.metadata_id.clone(),
+            BatMetadata::create_metadata_id(),
+            resolved_program_name.clone(),
+        );
 
         ep_metadata
             .update_metadata_file()
@@ -131,6 +156,7 @@ impl EntrypointParser {
 
         Ok(Self {
             name: entrypoint_name.to_string(),
+            program_name: resolved_program_name,
             dependencies,
             context_accounts: context_accounts.clone(),
             entry_point_function: entrypoint_function,
@@ -199,9 +225,15 @@ impl EntrypointParser {
 
         let mut entrypoints_names: Vec<String> = Vec::new();
         for lib_path in &lib_paths {
-            let bat_sonar =
-                BatSonar::new_from_path(lib_path, Some("#[program"), SonarResultType::Function);
-            entrypoints_names.extend(bat_sonar.results.iter().map(|ep| ep.name.clone()));
+            let classification = syn_struct_classifier::classify_file_from_path(lib_path);
+            if !classification.entrypoint_function_names.is_empty() {
+                entrypoints_names.extend(classification.entrypoint_function_names);
+            } else {
+                // Fallback to BatSonar if syn parsing fails
+                let bat_sonar =
+                    BatSonar::new_from_path(lib_path, Some("#[program"), SonarResultType::Function);
+                entrypoints_names.extend(bat_sonar.results.iter().map(|ep| ep.name.clone()));
+            }
         }
         if sorted {
             entrypoints_names.sort();
@@ -225,7 +257,19 @@ impl EntrypointParser {
         } else {
             config.program_lib_paths.clone()
         };
-        // Find the lib file that contains this entrypoint
+        let clean_name = entrypoint_name.replace(".md", "");
+
+        // Try syn-based extraction first
+        for lib_path in &lib_paths {
+            let content = fs::read_to_string(lib_path).unwrap_or_default();
+            if let Some(ctx_type) =
+                syn_struct_classifier::get_context_type_for_entrypoint(&content, &clean_name)
+            {
+                return Ok(ctx_type);
+            }
+        }
+
+        // Fallback: string matching
         let mut lib_file = String::new();
         for lib_path in &lib_paths {
             let content = fs::read_to_string(lib_path).unwrap_or_default();
@@ -241,7 +285,7 @@ impl EntrypointParser {
                         .split_whitespace()
                         .last()
                         .unwrap();
-                    function_name == entrypoint_name.replace(".md", "")
+                    function_name == clean_name
                 } else {
                     false
                 }
@@ -268,7 +312,7 @@ impl EntrypointParser {
                         .split_whitespace()
                         .last()
                         .unwrap();
-                    function_name == entrypoint_name.replace(".md", "")
+                    function_name == clean_name
                 } else {
                     false
                 }
@@ -278,15 +322,11 @@ impl EntrypointParser {
             lib_file_lines[entrypoint_index],
             lib_file_lines[entrypoint_index + 1],
         ];
-
-        // if is not in the same line as the entrypoint name, is in the next line
         let context_line = if canditate_lines[0].contains("Context<") {
             canditate_lines[0]
         } else {
             canditate_lines[1]
         };
-
-        // replace all the extra strings to get the Context name
         let parsed_context_name = context_line
             .replace("'_, ", "")
             .replace("'info, ", "")

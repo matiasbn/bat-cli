@@ -1,12 +1,5 @@
 use std::fs;
 
-use clap::Subcommand;
-use colored::Colorize;
-use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
-use inflector::Inflector;
-use regex::Regex;
-use strum::IntoEnumIterator;
-
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::EnumMetadataType;
@@ -39,6 +32,11 @@ use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
 use crate::config::BatConfig;
 use crate::{batbelt, Suggestion};
+use clap::Subcommand;
+use colored::Colorize;
+use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
+use inflector::Inflector;
+use regex::Regex;
 
 use super::CommandError;
 
