@@ -12,7 +12,7 @@ use crate::config::BatConfig;
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
-use error_stack::{IntoReport, Report, ResultExt};
+use error_stack::{Report, ResultExt};
 use lazy_regex::regex;
 
 #[allow(unused_imports)]
@@ -471,5 +471,4 @@ mod co_commands_functions {
         }
         Ok(())
     }
-
 }

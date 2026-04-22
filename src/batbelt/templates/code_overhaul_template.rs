@@ -636,13 +636,7 @@ impl CodeOverhaulSection {
             content.pop().unwrap();
             let signer_comments = content
                 .iter()
-                .filter(|line| {
-                    line.trim()
-                        .split(' ')
-                        .next()
-                        .unwrap()
-                        .contains("//")
-                })
+                .filter(|line| line.trim().split(' ').next().unwrap().contains("//"))
                 .collect::<Vec<_>>();
             if signer_comments.is_empty() {
                 let signer_description = format!(

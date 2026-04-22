@@ -318,9 +318,8 @@ impl BatSonarInteractive {
 
         let mut all_entries: Vec<(String, String)> = Vec::new();
         for (lib_path, program_name) in lib_paths.iter().zip(program_names.iter()) {
-            let ep_names =
-                EntrypointParser::get_entrypoint_names_filtered(false, Some(lib_path))
-                    .change_context(BatSonarError)?;
+            let ep_names = EntrypointParser::get_entrypoint_names_filtered(false, Some(lib_path))
+                .change_context(BatSonarError)?;
             for name in ep_names {
                 all_entries.push((name, program_name.clone()));
             }

@@ -122,7 +122,9 @@ impl CAAccountParser {
             .to_string();
 
         // Try syn-based extraction
-        if let Some(type_info) = Self::try_syn_account_type_info(context_account_content, &last_line)? {
+        if let Some(type_info) =
+            Self::try_syn_account_type_info(context_account_content, &last_line)?
+        {
             return Ok(type_info);
         }
 
