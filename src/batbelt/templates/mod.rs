@@ -9,7 +9,6 @@ use crate::batbelt::command_line::{execute_command, execute_command_with_child_p
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::notes_template::NoteTemplate;
-use crate::batbelt::BatEnumerator;
 use crate::config::BatConfig;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use inflector::Inflector;
@@ -331,12 +330,3 @@ impl TemplatePlaceholder {
         self.to_string().to_screaming_snake_case()
     }
 }
-
-// #[cfg(debug_assertions)]
-// mod template_test {
-//
-//     #[test]
-//     fn test_get_gitignore_content() {
-//         println!("{}", TemplateGenerator::get_git_ignore_content());
-//     }
-// }

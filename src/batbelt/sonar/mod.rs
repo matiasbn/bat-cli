@@ -788,38 +788,6 @@ fn test_get_validation() {
     println!("sonar \n{:#?}", bat_sonar);
 }
 #[test]
-// fn test_get_context_accounts() {
-//     let test_text = "
-//     #[derive(Accounts, Debug)]
-//     pub struct thing<'info> {
-//         pub acc_1: Signer<'info>,
-//
-//         pub acc_2: AccountLoader<'info, Pf>,
-//
-//         #[account(mut)]
-//         pub acc_3: Signer<'info>,
-//
-//         #[account(
-//             mut,
-//             has_one = thing,
-//         )]
-//         pub acc_4: AccountLoader<'info, Rc>,
-//
-//         #[account(
-//             has_one = thing,
-//         )]
-//         pub acc_5: AccountLoader<'info, A>,
-//
-//         pub acc_6: Account<'info, Mint>,
-//
-//         pub acc_7: Program<'info, B>,
-//     }
-//     ";
-//     let bat_sonar = BatSonar::new_scanned(test_text, SonarResultType::ContextAccountsAll);
-//     assert_eq!(bat_sonar.results.len(), 7, "incorrect results length");
-//     println!("sonar \n{:#?}", bat_sonar);
-// }
-#[test]
 fn test_get_context_accounts_no_validations() {
     let test_text = "
     #[derive(Accounts, Debug)]

@@ -15,7 +15,6 @@ use crate::batbelt::parser::parse_formatted_path;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::{fs, vec};
-use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -44,7 +44,7 @@ use crate::batbelt::parser::parse_formatted_path;
 use crate::batbelt::parser::source_code_parser::SourceCodeParser;
 use crate::batbelt::BatEnumerator;
 use crate::Suggestion;
-use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -55,7 +55,6 @@ use crate::batbelt::metadata::enums_source_code_metadata::{
 };
 use crate::config::{BatAuditorConfig, BatConfig};
 use serde_json::{json, Value};
-use strum::IntoEnumIterator;
 use walkdir::DirEntry;
 
 /// Derives the program name from a file path by matching against

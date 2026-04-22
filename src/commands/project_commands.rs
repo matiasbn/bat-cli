@@ -5,7 +5,7 @@ use crate::batbelt::BatEnumerator;
 use crate::config::{BatAuditorConfig, BatConfig};
 use colored::Colorize;
 use error_stack::Result;
-use error_stack::{FutureExt, IntoReport, Report, ResultExt};
+use error_stack::{IntoReport, Report, ResultExt};
 
 use crate::batbelt;
 use crate::batbelt::bat_dialoguer;

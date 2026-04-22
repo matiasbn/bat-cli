@@ -637,8 +637,7 @@ impl CodeOverhaulSection {
             let signer_comments = content
                 .iter()
                 .filter(|line| {
-                    line.clone()
-                        .trim()
+                    line.trim()
                         .split(' ')
                         .next()
                         .unwrap()

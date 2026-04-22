@@ -15,7 +15,7 @@ use crate::batbelt::{bat_dialoguer, BatEnumerator};
 
 use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
-use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 use normalize_url::normalizer;
 use walkdir::WalkDir;
 

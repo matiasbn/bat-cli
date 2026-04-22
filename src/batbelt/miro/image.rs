@@ -1,7 +1,7 @@
 use crate::batbelt::miro::item::MiroItem;
 use crate::batbelt::miro::{MiroConfig, MiroItemType};
 
-use error_stack::{FutureExt, IntoReport, Result, ResultExt};
+use error_stack::{IntoReport, Result, ResultExt};
 use reqwest;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{

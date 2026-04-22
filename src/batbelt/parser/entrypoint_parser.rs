@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::fs;
 
 use crate::batbelt::metadata::entrypoint_metadata::EntrypointMetadata;
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
+use crate::batbelt::metadata::{BatMetadata, SourceCodeMetadata};
 use crate::batbelt::parser::function_parser::FunctionParser;
 
 use crate::batbelt::parser::ParserError;

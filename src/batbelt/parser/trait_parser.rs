@@ -5,7 +5,7 @@ use crate::batbelt::metadata::traits_source_code_metadata::{
 use crate::batbelt::parser::{ParserError, ParserResult};
 
 use crate::batbelt::metadata::trait_metadata::{TraitMetadata, TraitMetadataFunction};
-use crate::batbelt::metadata::{BatMetadata, BatMetadataParser};
+use crate::batbelt::metadata::BatMetadata;
 use error_stack::{IntoReport, Result, ResultExt};
 
 #[derive(Clone, Debug)]

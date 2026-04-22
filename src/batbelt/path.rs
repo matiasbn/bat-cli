@@ -3,7 +3,7 @@ use crate::batbelt::command_line::{execute_command, CodeEditor};
 use crate::config::{BatAuditorConfig, BatConfig};
 
 use crate::batbelt::BatEnumerator;
-use error_stack::{FutureExt, IntoReport, Report, Result, ResultExt};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 
 use crate::batbelt::git::git_commit::GitCommit;
 use serde::{Deserialize, Serialize};

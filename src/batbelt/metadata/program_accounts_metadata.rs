@@ -311,23 +311,6 @@ impl ProgramAccountMetadata {
             .collect::<Vec<_>>();
         Ok(())
     }
-
-    // pub fn find_program_account_metadata_by_program_account_name(
-    //     program_account_name: String,
-    // ) -> MetadataResult<Self> {
-    //     let bat_metadata = BatMetadata::read_metadata()?;
-    //     match bat_metadata
-    //         .program_accounts
-    //         .into_iter()
-    //         .find(|pa_metadata| pa_metadata.program_account_name == program_account_name)
-    //     {
-    //         None => Err(Report::new(MetadataError).attach_printable(format!(
-    //             "Program account metadata not found for {}",
-    //             program_account_name.bright_red()
-    //         ))),
-    //         Some(pa_metadata) => Ok(pa_metadata),
-    //     }
-    // }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
