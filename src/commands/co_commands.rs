@@ -440,29 +440,6 @@ mod co_commands_functions {
     use super::*;
     use lazy_regex::regex;
 
-    pub fn get_value_single_line(line: &str) -> CommandResult<String> {
-        let inline_assignment_regex = regex!(r#"[\w_.()? ]+= "#);
-        match inline_assignment_regex.find(line.trim()) {
-            None => {}
-            Some(_line_match) => {}
-        }
-        let _struct_assignment_regex = regex!(r#"[\w_ ]+: ]"#);
-        Ok("".to_string())
-    }
-
-    pub fn get_value_multi_line(
-        _lines_vec: Vec<&str>,
-        _selection_vec: Vec<usize>,
-    ) -> CommandResult<String> {
-        // let inline_assignment_regex = regex!(r#"[\w_.()? ]+= "#);
-        // match inline_assignment_regex.find(line.trim()) {
-        //     None => {}
-        //     Some(line_match) => {}
-        // }
-        // let struct_assignment_regex = regex!(r#"[\w_ ]+: ]"#);
-        Ok("".to_string())
-    }
-
     pub async fn prompt_deploy_miro(
         entry_point_name: String,
         program_name: Option<String>,
@@ -567,30 +544,4 @@ mod co_commands_functions {
         Ok(())
     }
 
-    pub fn extract_section_content(
-        co_file_content: &str,
-        section_header: &str,
-        next_section_header: &str,
-    ) -> CommandResult<String> {
-        let section_content_regex = Regex::new(&format!(
-            r#"({})[\s\S]+({})"#,
-            section_header, next_section_header
-        ))
-        .into_report()
-        .change_context(CommandError)?;
-        log::debug!("{co_file_content}");
-        log::debug!("{section_header}");
-        log::debug!("{next_section_header}");
-        let section_content = section_content_regex
-            .find(co_file_content)
-            .ok_or(CommandError)
-            .into_report()?
-            .as_str()
-            .to_string()
-            .replace(section_header, &section_header.replace("#", "##"))
-            .trim_end_matches(next_section_header)
-            .trim()
-            .to_string();
-        Ok(section_content)
-    }
 }

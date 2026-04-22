@@ -119,20 +119,6 @@ impl BatAuditorConfig {
         Ok(())
     }
 
-    fn prompt_miro_integration(&mut self) -> BatConfigResult<()> {
-        let prompt_text = "Do you want to use the Miro integration?";
-        let include_miro = BatDialoguer::select_yes_or_no(prompt_text.to_string())
-            .change_context(BatConfigError)?;
-        let moat = if include_miro {
-            let prompt_text = "Miro OAuth access token";
-            BatDialoguer::input(prompt_text.to_string()).change_context(BatConfigError)?
-        } else {
-            "".to_string()
-        };
-        self.miro_oauth_access_token = moat;
-        Ok(())
-    }
-
     fn prompt_code_editor_integration(&mut self) -> BatConfigResult<()> {
         let prompt_text = format!(
             "Select a code editor, choose {} to disable:",

@@ -440,65 +440,6 @@ impl SonarResult {
         None
     }
 
-    fn format_ca_only_validations(&mut self) {
-        let content = self.content.clone();
-        // single line, only filter the first line
-        if content.lines().count() == 2 {
-            let first_line = content.lines().next().unwrap();
-            let first_line_formatted = first_line
-                .trim_start()
-                .trim_start_matches("#[account(")
-                .trim_end_matches(")]");
-            let first_line_tokenized = first_line_formatted.split(',');
-            let first_line_filtered = first_line_tokenized
-                .filter(|token| {
-                    self.result_type
-                        .get_context_accounts_only_validations_filters()
-                        .iter()
-                        .any(|filter| token.contains(filter))
-                })
-                .fold("".to_string(), |result, token| {
-                    if result.is_empty() {
-                        token.to_string()
-                    } else {
-                        format!("{},{}", result, token)
-                    }
-                });
-            let last_line = content.lines().last().unwrap();
-            self.content = format!(
-                "{}#[account({})]\n{}",
-                " ".repeat(self.trailing_whitespaces),
-                first_line_filtered,
-                last_line
-            )
-        } else {
-            // multiline account
-            let ca_filters = self
-                .result_type
-                .get_context_accounts_only_validations_filters();
-            let lines_count = content.lines().count();
-            // remove first and last line
-            let filtered_lines = content.lines().collect::<Vec<_>>()[1..lines_count - 1]
-                .to_vec()
-                .join("\n")
-                .split(",\n")
-                .filter(|line| ca_filters.iter().any(|filter| line.contains(filter)))
-                .map(|line| line.trim_end_matches(")]").to_string())
-                .collect::<Vec<String>>()
-                .join("\n");
-            let first_line = content.lines().next().unwrap();
-            let last_line = content.lines().last().unwrap();
-            let formatted_content = format!(
-                "{}\n{}\n{})]\n{}",
-                first_line,
-                filtered_lines,
-                " ".repeat(self.trailing_whitespaces),
-                last_line
-            );
-            self.content = formatted_content
-        }
-    }
-
     fn format_ca_no_validations(&mut self) {
         let content = self.content.clone();
         if !content.contains("#[account(") {
@@ -574,13 +515,6 @@ impl SonarResult {
                 self.content = formatted_content
             }
         }
-    }
-
-    fn is_valid_ca_only_validation(&self) -> bool {
-        self.result_type
-            .get_context_accounts_only_validations_filters()
-            .iter()
-            .any(|filter| self.content.contains(filter))
     }
 
     fn is_valid_if_validation(&self) -> bool {

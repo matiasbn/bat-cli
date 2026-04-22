@@ -450,23 +450,4 @@ mod project_commands_functions {
         Ok(())
     }
 
-    pub fn initialize_audit_branch() -> Result<(), CommandError> {
-        // We're inside the target repo, create a develop branch for audit work
-        println!("Creating develop branch");
-        GitAction::CreateBranch {
-            branch_name: "develop".to_string(),
-        }
-        .execute_action()
-        .change_context(CommandError)?;
-
-        println!("Committing audit files");
-        GitAction::AddAll
-            .execute_action()
-            .change_context(CommandError)?;
-        GitCommit::Init
-            .create_commit(true)
-            .change_context(CommandError)?;
-
-        Ok(())
-    }
 }
