@@ -17,6 +17,7 @@ use crate::batbelt::metadata::context_accounts_metadata::ContextAccountsMetadata
 use crate::batbelt::parser::context_accounts_parser::CAAccountParser;
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
+use crate::batbelt::parser::pinocchio_context_accounts_parser;
 use crate::batbelt::parser::syn_context_accounts_parser;
 use crate::batbelt::parser::trait_parser::TraitParser;
 
@@ -308,9 +309,15 @@ impl BatSonarInteractive {
                 pb_ep.enable_steady_tick(Duration::from_millis(100));
                 pb_ep.set_message("Entry points: starting...");
 
-                // Pinocchio: function deps + entry points (no Anchor context accounts parsing)
+                let pb_ca = m.add(ProgressBar::new_spinner());
+                pb_ca.set_style(spinner_style.clone());
+                pb_ca.enable_steady_tick(Duration::from_millis(100));
+                pb_ca.set_message("Context accounts: starting...");
+
+                // Pinocchio: function deps + entry points + context accounts
                 Self::run_function_deps_with_pb(&pb_fd)?;
                 Self::run_entry_points_with_pb(&pb_ep)?;
+                Self::run_pinocchio_context_accounts_with_pb(&pb_ca)?;
             }
             _ => {
                 // Generic Rust project: only resolve function dependencies.
@@ -515,6 +522,94 @@ impl BatSonarInteractive {
             }
         }
         pb.finish_with_message(format!("{} Context accounts: {} processed", SPARKLE, total));
+        Ok(())
+    }
+
+    /// Parse context accounts for Pinocchio programs.
+    /// Finds structs classified as ContextAccounts and uses the Pinocchio-specific
+    /// parser to extract account checks from TryFrom implementations.
+    fn run_pinocchio_context_accounts_with_pb(pb: &ProgressBar) -> Result<(), BatSonarError> {
+        let ca_sc_metadata = SourceCodeMetadata::get_filtered_structs(
+            None,
+            Some(StructMetadataType::ContextAccounts),
+        )
+        .change_context(BatSonarError)?;
+        let total = ca_sc_metadata.len();
+        pb.set_message(format!("Context accounts [0/{}]", total));
+
+        let mut structs_by_file: std::collections::HashMap<String, Vec<_>> =
+            std::collections::HashMap::new();
+        for ca_sc in &ca_sc_metadata {
+            structs_by_file
+                .entry(ca_sc.path.clone())
+                .or_default()
+                .push(ca_sc.clone());
+        }
+
+        let mut count = 0usize;
+        for (file_path, ca_structs) in &structs_by_file {
+            let parsed_structs = match pinocchio_context_accounts_parser::parse_pinocchio_context_accounts_from_file(file_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("Failed to parse Pinocchio CA from {}: {:?}", file_path, e);
+                    for ca_sc in ca_structs {
+                        count += 1;
+                        pb.set_message(format!(
+                            "Context accounts [{}/{}]: {} (skipped)",
+                            count, total, ca_sc.name,
+                        ));
+                        // Create empty CA metadata as fallback
+                        let context_accounts_metadata = ContextAccountsMetadata::new(
+                            ca_sc.name.clone(),
+                            BatMetadata::create_metadata_id(),
+                            ca_sc.metadata_id.clone(),
+                            vec![],
+                            ca_sc.program_name.clone(),
+                        );
+                        context_accounts_metadata.update_metadata_file().unwrap();
+                    }
+                    continue;
+                }
+            };
+
+            for ca_sc in ca_structs {
+                count += 1;
+                pb.set_message(format!(
+                    "Context accounts [{}/{}]: {}",
+                    count, total, ca_sc.name,
+                ));
+
+                let ca_info = if let Some(parsed) =
+                    parsed_structs.iter().find(|p| p.name == ca_sc.name)
+                {
+                    parsed
+                        .accounts
+                        .iter()
+                        .map(|acc| {
+                            let solana_type = acc.determine_pinocchio_solana_account_type();
+                            acc.to_pinocchio_ca_account_parser(solana_type)
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    log::warn!(
+                        "Struct {} not found in pinocchio parse of {}",
+                        ca_sc.name,
+                        file_path
+                    );
+                    vec![]
+                };
+
+                let context_accounts_metadata = ContextAccountsMetadata::new(
+                    ca_sc.name.clone(),
+                    BatMetadata::create_metadata_id(),
+                    ca_sc.metadata_id.clone(),
+                    ca_info,
+                    ca_sc.program_name.clone(),
+                );
+                context_accounts_metadata.update_metadata_file().unwrap();
+            }
+        }
+        pb.finish_with_message(format!("{} Context accounts: {} processed (Pinocchio)", SPARKLE, total));
         Ok(())
     }
 }

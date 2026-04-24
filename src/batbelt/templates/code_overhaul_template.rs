@@ -148,8 +148,11 @@ impl CodeOverhaulSection {
     }
 
     fn get_notes_content(&self, entry_point_parser: EntrypointParser) -> TemplateResult<String> {
-        let context_accounts_struct_source_code_metadata_id =
-            entry_point_parser.context_accounts.metadata_id;
+        let context_accounts = match entry_point_parser.context_accounts {
+            Some(ca) => ca,
+            None => return Ok(format!("- {}", CompleteWithNotes.to_placeholder())),
+        };
+        let context_accounts_struct_source_code_metadata_id = context_accounts.metadata_id;
         let context_accounts_metadata =
             ContextAccountsMetadata::find_context_accounts_metadata_by_struct_metadata_id(
                 context_accounts_struct_source_code_metadata_id,
@@ -215,11 +218,20 @@ impl CodeOverhaulSection {
         &self,
         entry_point_parser: EntrypointParser,
     ) -> TemplateResult<String> {
+        let context_accounts = match entry_point_parser.context_accounts {
+            Some(ca) => ca,
+            None => {
+                return Ok(format!(
+                    "- `{}`",
+                    CompleteWithTheRestOfStateChanges.to_placeholder()
+                ))
+            }
+        };
         let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
         let mut state_changes_content_vec = vec![];
         let context_accounts_metadata = bat_metadata
             .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                entry_point_parser.context_accounts.metadata_id,
+                context_accounts.metadata_id,
             )
             .change_context(TemplateError)?;
 
@@ -518,21 +530,23 @@ impl CodeOverhaulSection {
             }
         }
 
-        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-        let context_accounts_metadata = bat_metadata
-            .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                entrypoint_parser.context_accounts.metadata_id,
-            )
-            .change_context(TemplateError)?;
+        let mut ca_accounts_results: Vec<String> = Vec::new();
+        if let Some(ref ca) = entrypoint_parser.context_accounts {
+            let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+            let context_accounts_metadata = bat_metadata
+                .get_context_accounts_metadata_by_struct_source_code_metadata_id(
+                    ca.metadata_id.clone(),
+                )
+                .change_context(TemplateError)?;
 
-        log::debug!(
-            "context_accounts_metadata:\n{:#?}",
-            context_accounts_metadata
-        );
+            log::debug!(
+                "context_accounts_metadata:\n{:#?}",
+                context_accounts_metadata
+            );
 
-        let mut ca_accounts_results = context_accounts_metadata
-            .context_accounts_info
-            .into_iter()
+            ca_accounts_results = context_accounts_metadata
+                .context_accounts_info
+                .into_iter()
             .filter_map(|ca_metadata| {
                 if !ca_metadata.validations.is_empty() {
                     let trailing_str = "  ".to_string();
@@ -584,7 +598,8 @@ impl CodeOverhaulSection {
                 }
             })
             .collect::<Vec<_>>();
-        log::debug!("ca_accounts_results:\n{:#?}", ca_accounts_results.clone());
+            log::debug!("ca_accounts_results:\n{:#?}", ca_accounts_results.clone());
+        }
 
         let mut validations_vec: Vec<String> = vec![];
         validations_vec.append(&mut ca_accounts_results);
@@ -606,9 +621,15 @@ impl CodeOverhaulSection {
     }
 
     fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_source_code = entrypoint_parser
-            .context_accounts
-            .to_source_code_parser(None);
+        let context_accounts = match entrypoint_parser.context_accounts {
+            Some(ca) => ca,
+            None => {
+                return CoderOverhaulTemplatePlaceholders::PermissionlessFunction
+                    .to_placeholder()
+                    .to_string()
+            }
+        };
+        let context_source_code = context_accounts.to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
         // signer names is only the name of the signer
         let mut signers: Vec<String> = vec![];
@@ -672,9 +693,11 @@ impl CodeOverhaulSection {
     }
 
     fn get_context_account_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_accounts_source_code = entrypoint_parser
-            .context_accounts
-            .to_source_code_parser(None);
+        let context_accounts = match entrypoint_parser.context_accounts {
+            Some(ca) => ca,
+            None => return "No context accounts struct".to_string(),
+        };
+        let context_accounts_source_code = context_accounts.to_source_code_parser(None);
         let context_accounts_content = context_accounts_source_code.get_source_code_content();
         let accounts = BatSonar::new_scanned(
             &context_accounts_content,

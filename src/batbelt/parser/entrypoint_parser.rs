@@ -25,7 +25,7 @@ pub struct EntrypointParser {
     pub name: String,
     pub program_name: String,
     pub dependencies: Vec<FunctionSourceCodeMetadata>,
-    pub context_accounts: StructSourceCodeMetadata,
+    pub context_accounts: Option<StructSourceCodeMetadata>,
     pub entry_point_function: FunctionSourceCodeMetadata,
 }
 
@@ -34,7 +34,7 @@ impl EntrypointParser {
         name: String,
         program_name: String,
         dependencies: Vec<FunctionSourceCodeMetadata>,
-        context_accounts: StructSourceCodeMetadata,
+        context_accounts: Option<StructSourceCodeMetadata>,
         entry_point_function: FunctionSourceCodeMetadata,
     ) -> Self {
         Self {
@@ -62,10 +62,14 @@ impl EntrypointParser {
                 .source_code
                 .get_function_by_id(ep_metadata.entrypoint_function_id.clone())
                 .change_context(ParserError)?;
-            let context_accounts = bat_metadata
-                .source_code
-                .get_struct_by_id(ep_metadata.context_accounts_id.clone())
-                .change_context(ParserError)?;
+            let context_accounts = if ep_metadata.context_accounts_id.is_empty() {
+                None
+            } else {
+                bat_metadata
+                    .source_code
+                    .get_struct_by_id(ep_metadata.context_accounts_id.clone())
+                    .ok()
+            };
 
             // Resolve dependencies recursively from the entrypoint function
             // First ensure the entrypoint function's dependencies are computed
@@ -116,8 +120,9 @@ impl EntrypointParser {
 
         let config = BatConfig::get_config().change_context(ParserError)?;
         let context_accounts = if config.project_type == ProjectType::Pinocchio {
-            // For Pinocchio: find ContextAccounts struct in the same file as the entry point
-            Self::find_pinocchio_context_accounts(&entrypoint_function)?
+            // For Pinocchio: find ContextAccounts struct in the same file as the entry point.
+            // Returns None if the entry point has no associated context struct (e.g. emit_event).
+            Self::find_pinocchio_context_accounts(&entrypoint_function).ok()
         } else {
             let context_name = Self::get_context_name(entrypoint_name).unwrap();
             let structs_metadata = SourceCodeMetadata::get_filtered_structs_by_program(
@@ -130,21 +135,26 @@ impl EntrypointParser {
                 },
             )
             .change_context(ParserError)?;
-            structs_metadata
-                .iter()
-                .find(|struct_metadata| struct_metadata.name == context_name)
-                .ok_or(ParserError)
-                .into_report()
-                .attach_printable(format!(
-                    "Error context_accounts struct by name {} for entrypoint_name: {}",
-                    context_name, entrypoint_name
-                ))?
-                .clone()
+            Some(
+                structs_metadata
+                    .iter()
+                    .find(|struct_metadata| struct_metadata.name == context_name)
+                    .ok_or(ParserError)
+                    .into_report()
+                    .attach_printable(format!(
+                        "Error context_accounts struct by name {} for entrypoint_name: {}",
+                        context_name, entrypoint_name
+                    ))?
+                    .clone(),
+            )
         };
 
         let ep_metadata = EntrypointMetadata::new(
             entrypoint_name.to_string(),
-            context_accounts.metadata_id.clone(),
+            context_accounts
+                .as_ref()
+                .map(|ca| ca.metadata_id.clone())
+                .unwrap_or_default(),
             entrypoint_function.metadata_id.clone(),
             BatMetadata::create_metadata_id(),
             resolved_program_name.clone(),
@@ -164,7 +174,7 @@ impl EntrypointParser {
             name: entrypoint_name.to_string(),
             program_name: resolved_program_name,
             dependencies,
-            context_accounts: context_accounts.clone(),
+            context_accounts,
             entry_point_function: entrypoint_function,
         })
     }
