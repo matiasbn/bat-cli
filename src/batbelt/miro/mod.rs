@@ -105,6 +105,45 @@ impl MiroConfig {
         Ok(miro_board_id)
     }
 
+    /// Validates that a board exists and is accessible with the given token.
+    /// Makes a GET request to `https://api.miro.com/v2/boards/{board_id}`.
+    /// Returns `Ok(board_name)` if valid, `Err` otherwise.
+    pub async fn validate_board(access_token: &str, board_url: &str) -> Result<String, MiroError> {
+        let board_id = Self::get_miro_board_id(board_url.to_string())?;
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("https://api.miro.com/v2/boards/{}", board_id))
+            .header(AUTHORIZATION, format!("Bearer {}", access_token))
+            .header(CONTENT_TYPE, "application/json")
+            .send()
+            .await
+            .map_err(|e| {
+                log::error!("Miro validate board error: {:#?}", e);
+                Report::new(MiroError).attach_printable("Failed to connect to Miro API")
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            log::error!("Miro board validation failed: {} - {}", status, body);
+            return Err(Report::new(MiroError).attach_printable(format!(
+                "Board not found or not accessible (HTTP {}). Check the URL and token.",
+                status
+            )));
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|_| Report::new(MiroError).attach_printable("Failed to read Miro response"))?;
+        let json: Value = serde_json::from_str(&body).map_err(|_| {
+            Report::new(MiroError).attach_printable("Failed to parse Miro response")
+        })?;
+        let board_name = json["name"].as_str().unwrap_or("(unnamed)").to_string();
+
+        Ok(board_name)
+    }
+
     /// Fetches the user's boards from the Miro API using the given OAuth token.
     /// Returns a list of (board_name, board_url) tuples.
     pub async fn list_boards(access_token: &str) -> Result<Vec<(String, String)>, MiroError> {

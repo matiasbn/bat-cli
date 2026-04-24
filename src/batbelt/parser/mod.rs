@@ -10,6 +10,7 @@ pub mod context_accounts_parser;
 pub mod entrypoint_parser;
 pub mod file_scope;
 pub mod function_parser;
+pub mod pinocchio_context_accounts_parser;
 pub mod solana_account_parser;
 pub mod source_code_parser;
 pub mod syn_context_accounts_parser;

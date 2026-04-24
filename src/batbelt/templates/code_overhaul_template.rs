@@ -8,6 +8,7 @@ use crate::batbelt::metadata::structs_source_code_metadata::StructMetadataType;
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, SourceCodeMetadata};
 use crate::batbelt::parser::entrypoint_parser::EntrypointParser;
 use crate::batbelt::parser::function_parser::FunctionParser;
+use crate::batbelt::parser::pinocchio_context_accounts_parser;
 use crate::batbelt::parser::solana_account_parser::{SolanaAccountParser, SolanaAccountType};
 use crate::batbelt::path::BatFile;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
@@ -148,8 +149,11 @@ impl CodeOverhaulSection {
     }
 
     fn get_notes_content(&self, entry_point_parser: EntrypointParser) -> TemplateResult<String> {
-        let context_accounts_struct_source_code_metadata_id =
-            entry_point_parser.context_accounts.metadata_id;
+        let context_accounts = match entry_point_parser.context_accounts {
+            Some(ca) => ca,
+            None => return Ok(format!("- {}", CompleteWithNotes.to_placeholder())),
+        };
+        let context_accounts_struct_source_code_metadata_id = context_accounts.metadata_id;
         let context_accounts_metadata =
             ContextAccountsMetadata::find_context_accounts_metadata_by_struct_metadata_id(
                 context_accounts_struct_source_code_metadata_id,
@@ -215,11 +219,20 @@ impl CodeOverhaulSection {
         &self,
         entry_point_parser: EntrypointParser,
     ) -> TemplateResult<String> {
+        let context_accounts = match entry_point_parser.context_accounts {
+            Some(ca) => ca,
+            None => {
+                return Ok(format!(
+                    "- `{}`",
+                    CompleteWithTheRestOfStateChanges.to_placeholder()
+                ))
+            }
+        };
         let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
         let mut state_changes_content_vec = vec![];
         let context_accounts_metadata = bat_metadata
             .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                entry_point_parser.context_accounts.metadata_id,
+                context_accounts.metadata_id,
             )
             .change_context(TemplateError)?;
 
@@ -261,29 +274,38 @@ impl CodeOverhaulSection {
             });
 
         for mut_program_state_acc in mut_program_state_accounts {
-            let solana_acc_parser =
-                SolanaAccountParser::new_from_struct_name_and_solana_account_type(
-                    mut_program_state_acc.clone().account_struct_name,
-                    mut_program_state_acc.clone().solana_account_type,
-                )
-                .change_context(TemplateError)?;
-            state_changes_content_vec.push(format!(
-                "- Updates `{}`[{}]:\n{}",
-                mut_program_state_acc.clone().account_name,
+            match SolanaAccountParser::new_from_struct_name_and_solana_account_type(
                 mut_program_state_acc.clone().account_struct_name,
-                solana_acc_parser
-                    .accounts
-                    .clone()
-                    .into_iter()
-                    .map(|acc_parser| format!(
-                        "  - `{}.{}`[{}]",
+                mut_program_state_acc.clone().solana_account_type,
+            ) {
+                Ok(solana_acc_parser) => {
+                    state_changes_content_vec.push(format!(
+                        "- Updates `{}`[{}]:\n{}",
                         mut_program_state_acc.clone().account_name,
-                        acc_parser.account_name,
-                        acc_parser.account_type
-                    ))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ));
+                        mut_program_state_acc.clone().account_struct_name,
+                        solana_acc_parser
+                            .accounts
+                            .clone()
+                            .into_iter()
+                            .map(|acc_parser| format!(
+                                "  - `{}.{}`[{}]",
+                                mut_program_state_acc.clone().account_name,
+                                acc_parser.account_name,
+                                acc_parser.account_type
+                            ))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ));
+                }
+                Err(_) => {
+                    // Pinocchio: account struct not in Solana metadata, list without fields
+                    state_changes_content_vec.push(format!(
+                        "- Updates `{}`[{}]",
+                        mut_program_state_acc.account_name,
+                        mut_program_state_acc.account_struct_name,
+                    ));
+                }
+            }
         }
 
         let mut_unknown_accounts = context_accounts_metadata
@@ -518,73 +540,80 @@ impl CodeOverhaulSection {
             }
         }
 
-        let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
-        let context_accounts_metadata = bat_metadata
-            .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                entrypoint_parser.context_accounts.metadata_id,
-            )
-            .change_context(TemplateError)?;
+        let mut ca_accounts_results: Vec<String> = Vec::new();
+        if let Some(ref ca) = entrypoint_parser.context_accounts {
+            let bat_metadata = BatMetadata::read_metadata().change_context(TemplateError)?;
+            let context_accounts_metadata = bat_metadata
+                .get_context_accounts_metadata_by_struct_source_code_metadata_id(
+                    ca.metadata_id.clone(),
+                )
+                .change_context(TemplateError)?;
 
-        log::debug!(
-            "context_accounts_metadata:\n{:#?}",
-            context_accounts_metadata
-        );
+            log::debug!(
+                "context_accounts_metadata:\n{:#?}",
+                context_accounts_metadata
+            );
 
-        let mut ca_accounts_results = context_accounts_metadata
-            .context_accounts_info
-            .into_iter()
-            .filter_map(|ca_metadata| {
-                if !ca_metadata.validations.is_empty() {
-                    let trailing_str = "  ".to_string();
-                    // Build the account type line from metadata fields
-                    let account_line = if ca_metadata.lifetime_name.is_empty() {
-                        format!(
-                            "{}pub {}: {},",
-                            trailing_str, ca_metadata.account_name, ca_metadata.account_struct_name
-                        )
-                    } else if ca_metadata.account_wrapper_name == ca_metadata.account_struct_name {
-                        format!(
-                            "{}pub {}: {}<{}>,",
+            ca_accounts_results = context_accounts_metadata
+                .context_accounts_info
+                .into_iter()
+                .filter_map(|ca_metadata| {
+                    if !ca_metadata.validations.is_empty() {
+                        let trailing_str = "  ".to_string();
+                        // Build the account type line from metadata fields
+                        let account_line = if ca_metadata.lifetime_name.is_empty() {
+                            format!(
+                                "{}pub {}: {},",
+                                trailing_str,
+                                ca_metadata.account_name,
+                                ca_metadata.account_struct_name
+                            )
+                        } else if ca_metadata.account_wrapper_name
+                            == ca_metadata.account_struct_name
+                        {
+                            format!(
+                                "{}pub {}: {}<{}>,",
+                                trailing_str,
+                                ca_metadata.account_name,
+                                ca_metadata.account_struct_name,
+                                ca_metadata.lifetime_name
+                            )
+                        } else {
+                            format!(
+                                "{}pub {}: {}<{}, {}>,",
+                                trailing_str,
+                                ca_metadata.account_name,
+                                ca_metadata.account_wrapper_name,
+                                ca_metadata.lifetime_name,
+                                ca_metadata.account_struct_name
+                            )
+                        };
+                        let result = format!(
+                            "{}#[account(\n{}\n{})]\n{}",
                             trailing_str,
-                            ca_metadata.account_name,
-                            ca_metadata.account_struct_name,
-                            ca_metadata.lifetime_name
-                        )
+                            ca_metadata
+                                .validations
+                                .into_iter()
+                                .map(|validation| {
+                                    format!(
+                                        "{}\t{},",
+                                        trailing_str.clone(),
+                                        validation.trim_end_matches(',')
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                            trailing_str,
+                            account_line
+                        );
+                        Some(result)
                     } else {
-                        format!(
-                            "{}pub {}: {}<{}, {}>,",
-                            trailing_str,
-                            ca_metadata.account_name,
-                            ca_metadata.account_wrapper_name,
-                            ca_metadata.lifetime_name,
-                            ca_metadata.account_struct_name
-                        )
-                    };
-                    let result = format!(
-                        "{}#[account(\n{}\n{})]\n{}",
-                        trailing_str,
-                        ca_metadata
-                            .validations
-                            .into_iter()
-                            .map(|validation| {
-                                format!(
-                                    "{}\t{},",
-                                    trailing_str.clone(),
-                                    validation.trim_end_matches(',')
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n"),
-                        trailing_str,
-                        account_line
-                    );
-                    Some(result)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        log::debug!("ca_accounts_results:\n{:#?}", ca_accounts_results.clone());
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            log::debug!("ca_accounts_results:\n{:#?}", ca_accounts_results.clone());
+        }
 
         let mut validations_vec: Vec<String> = vec![];
         validations_vec.append(&mut ca_accounts_results);
@@ -606,11 +635,134 @@ impl CodeOverhaulSection {
     }
 
     fn get_signers_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_source_code = entrypoint_parser
-            .context_accounts
-            .to_source_code_parser(None);
+        let context_accounts = match entrypoint_parser.context_accounts {
+            Some(ref ca) => ca,
+            None => {
+                return CoderOverhaulTemplatePlaceholders::PermissionlessFunction
+                    .to_placeholder()
+                    .to_string()
+            }
+        };
+
+        // Try metadata-based signer detection first (works for both Anchor and Pinocchio).
+        // Falls back to source-code parsing for Anchor if metadata is unavailable.
+        eprintln!(
+            "[DEBUG signers] CA name={}, path={}, metadata_id={}",
+            context_accounts.name, context_accounts.path, context_accounts.metadata_id
+        );
+        if let Ok(bat_metadata) = BatMetadata::read_metadata() {
+            eprintln!("[DEBUG signers] metadata loaded OK");
+            match bat_metadata.get_context_accounts_metadata_by_struct_source_code_metadata_id(
+                context_accounts.metadata_id.clone(),
+            ) {
+                Ok(ca_metadata) => {
+                    eprintln!(
+                        "[DEBUG signers] CA metadata found, accounts: {:?}",
+                        ca_metadata
+                            .context_accounts_info
+                            .iter()
+                            .map(|i| format!(
+                                "{}:{:?}/{}",
+                                i.account_name, i.solana_account_type, i.account_wrapper_name
+                            ))
+                            .collect::<Vec<_>>()
+                    );
+                    let signer_accounts: Vec<_> = ca_metadata
+                        .context_accounts_info
+                        .iter()
+                        .filter(|info| {
+                            info.solana_account_type == SolanaAccountType::Signer
+                                || info.account_wrapper_name == "Signer"
+                        })
+                        .collect();
+
+                    if !signer_accounts.is_empty() {
+                        let signers: Vec<String> = signer_accounts
+                            .iter()
+                            .map(|info| {
+                                format!(
+                                    "- {}: {}",
+                                    info.account_name,
+                                    CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                                        .to_placeholder()
+                                )
+                            })
+                            .collect();
+                        return signers.join("\n");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[DEBUG signers] CA metadata NOT found: {:?}", e);
+                }
+            }
+        } else {
+            eprintln!("[DEBUG signers] metadata load FAILED");
+        }
+
+        // Fallback: parse source code directly
+        let context_source_code = context_accounts.to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
-        // signer names is only the name of the signer
+        eprintln!(
+            "[DEBUG signers] context_lines contains AccountView={}, len={}",
+            context_lines.contains("AccountView"),
+            context_lines.len()
+        );
+        eprintln!(
+            "[DEBUG signers] context_lines: {}",
+            &context_lines[..context_lines.len().min(300)]
+        );
+
+        // Pinocchio fallback: parse TryFrom impl for signer checks
+        if context_lines.contains("AccountView") || context_lines.contains("AccountInfo") {
+            eprintln!(
+                "[DEBUG signers] Pinocchio path, reading file: {}",
+                context_accounts.path
+            );
+            if let Ok(file_content) = std::fs::read_to_string(&context_accounts.path) {
+                eprintln!("[DEBUG signers] file read OK, len={}", file_content.len());
+                match pinocchio_context_accounts_parser::parse_pinocchio_context_accounts_from_source(
+                        &file_content,
+                    )
+                {
+                    Ok(parsed_structs) => {
+                        eprintln!("[DEBUG signers] parsed {} structs: {:?}", parsed_structs.len(), parsed_structs.iter().map(|s| &s.name).collect::<Vec<_>>());
+                        if let Some(parsed) = parsed_structs
+                            .iter()
+                            .find(|s| s.name == context_accounts.name)
+                        {
+                            eprintln!("[DEBUG signers] found struct {}, accounts: {:?}", parsed.name, parsed.accounts.iter().map(|a| format!("{}:{}", a.field_name, a.account_wrapper_name)).collect::<Vec<_>>());
+                            let signer_accounts: Vec<_> = parsed
+                                .accounts
+                                .iter()
+                                .filter(|acc| acc.account_wrapper_name == "Signer")
+                                .collect();
+                            if !signer_accounts.is_empty() {
+                                let signers: Vec<String> = signer_accounts
+                                    .iter()
+                                    .map(|acc| {
+                                        format!(
+                                            "- {}: {}",
+                                            acc.field_name,
+                                            CoderOverhaulTemplatePlaceholders::CompleteWithSignerDescription
+                                                .to_placeholder()
+                                        )
+                                    })
+                                    .collect();
+                                return signers.join("\n");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[DEBUG signers] parse error: {:?}", e);
+                    }
+                }
+            }
+            return CoderOverhaulTemplatePlaceholders::PermissionlessFunction
+                .to_placeholder()
+                .to_string();
+        }
+
+        // Anchor fallback: parse source code for `Signer<` pattern
         let mut signers: Vec<String> = vec![];
         for (line_index, line) in context_lines.lines().enumerate() {
             if !line.contains("pub") {
@@ -632,7 +784,6 @@ impl CodeOverhaulSection {
             }
             let signer_name = content.clone().last().unwrap().trim().replace("pub ", "");
             let signer_name = signer_name.split(':').next().unwrap();
-            // delete last line
             content.pop().unwrap();
             let signer_comments = content
                 .iter()
@@ -647,12 +798,10 @@ impl CodeOverhaulSection {
                 );
                 signers.push(signer_description)
             } else if signer_comments.len() == 1 {
-                // prompt the user to state if the comment is correct
                 let signer_description_comment = signer_comments[0].split("// ").last().unwrap();
                 let signer_description =
                     format!("- {}: {}", signer_name, signer_description_comment);
                 signers.push(signer_description);
-                // multiple line description
             } else {
                 let signer_formatted = signer_comments
                     .iter()
@@ -672,30 +821,46 @@ impl CodeOverhaulSection {
     }
 
     fn get_context_account_section_content(&self, entrypoint_parser: EntrypointParser) -> String {
-        let context_accounts_source_code = entrypoint_parser
-            .context_accounts
-            .to_source_code_parser(None);
+        let context_accounts = match entrypoint_parser.context_accounts {
+            Some(ca) => ca,
+            None => return "No context accounts struct".to_string(),
+        };
+        let context_accounts_source_code = context_accounts.to_source_code_parser(None);
         let context_accounts_content = context_accounts_source_code.get_source_code_content();
-        let accounts = BatSonar::new_scanned(
-            &context_accounts_content,
-            SonarResultType::ContextAccountsNoValidation,
-        );
 
-        let accounts_string = accounts
-            .results
-            .iter()
-            .fold("".to_string(), |result, next| {
-                format!("{}\n\n{}", result, next.content)
-            });
-        let first_line = context_accounts_content.lines().next().unwrap();
-        let last_line = context_accounts_content.lines().last().unwrap();
-        let context_filtered = format!(
-            "{}\n{}\n{}",
-            first_line,
-            accounts_string.trim_start_matches('\n'),
-            last_line,
-        );
-        let formatted = context_filtered
+        // Check if this is a Pinocchio struct (fields are &'a AccountView / &'a AccountInfo).
+        // BatSonar's ContextAccountsNoValidation filter only works for Anchor-style structs,
+        // so for Pinocchio we show the full struct source code without filtering.
+        let is_pinocchio = context_accounts_content.contains("AccountView")
+            || (context_accounts_content.contains("AccountInfo")
+                && !context_accounts_content.contains("Account<"));
+
+        let display_content = if is_pinocchio {
+            // Show full struct source for Pinocchio — no BatSonar filtering
+            context_accounts_content.clone()
+        } else {
+            // Anchor: filter validations, keep only field declarations
+            let accounts = BatSonar::new_scanned(
+                &context_accounts_content,
+                SonarResultType::ContextAccountsNoValidation,
+            );
+            let accounts_string = accounts
+                .results
+                .iter()
+                .fold("".to_string(), |result, next| {
+                    format!("{}\n\n{}", result, next.content)
+                });
+            let first_line = context_accounts_content.lines().next().unwrap();
+            let last_line = context_accounts_content.lines().last().unwrap();
+            format!(
+                "{}\n{}\n{}",
+                first_line,
+                accounts_string.trim_start_matches('\n'),
+                last_line,
+            )
+        };
+
+        let formatted = display_content
             .lines()
             .map(|line| format!("  {}", line))
             .collect::<Vec<_>>()
