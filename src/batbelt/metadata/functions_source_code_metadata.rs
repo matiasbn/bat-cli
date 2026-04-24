@@ -80,6 +80,9 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
         let entry_path = entry.path().to_str().unwrap().to_string();
         let file_content = fs::read_to_string(entry.path()).unwrap();
         let classification = syn_struct_classifier::classify_file(&file_content);
+        let is_pinocchio_entrypoint_file =
+            !classification.pinocchio_context_accounts_names.is_empty()
+                || classification.entrypoint_function_names.contains("process");
         let bat_sonar = BatSonar::new_scanned(&file_content, SonarResultType::Function);
         for result in bat_sonar.results {
             let function_type = if classification
@@ -90,9 +93,18 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
             } else {
                 FunctionMetadataType::Other
             };
+            // For Pinocchio entry points (all named "process"), use the parent module name
+            let name = if function_type == FunctionMetadataType::EntryPoint
+                && result.name == "process"
+                && is_pinocchio_entrypoint_file
+            {
+                derive_module_name_from_path(&entry_path)
+            } else {
+                result.name.to_string()
+            };
             let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.clone(),
-                result.name.to_string(),
+                name,
                 function_type,
                 result.start_line_index + 1,
                 result.end_line_index + 1,
@@ -104,6 +116,17 @@ impl BatMetadataParser<FunctionMetadataType> for FunctionSourceCodeMetadata {
     }
 }
 
+/// Derives a human-readable name from the file path by extracting the file stem.
+/// e.g. `../programs/multi_delegator/src/instructions/initialize_multidelegate.rs`
+/// → `initialize_multidelegate`
+fn derive_module_name_from_path(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("process")
+        .to_string()
+}
+
 impl FunctionSourceCodeMetadata {
     pub fn create_metadata_from_content(
         entry_path: &str,
@@ -111,6 +134,9 @@ impl FunctionSourceCodeMetadata {
     ) -> Result<Vec<Self>, MetadataError> {
         let mut metadata_result: Vec<FunctionSourceCodeMetadata> = vec![];
         let classification = syn_struct_classifier::classify_file(file_content);
+        let is_pinocchio_entrypoint_file =
+            !classification.pinocchio_context_accounts_names.is_empty()
+                || classification.entrypoint_function_names.contains("process");
         let bat_sonar = BatSonar::new_scanned(file_content, SonarResultType::Function);
         for result in bat_sonar.results {
             let function_type = if classification
@@ -121,9 +147,17 @@ impl FunctionSourceCodeMetadata {
             } else {
                 FunctionMetadataType::Other
             };
+            let name = if function_type == FunctionMetadataType::EntryPoint
+                && result.name == "process"
+                && is_pinocchio_entrypoint_file
+            {
+                derive_module_name_from_path(entry_path)
+            } else {
+                result.name.to_string()
+            };
             let function_metadata = FunctionSourceCodeMetadata::new(
                 entry_path.to_string(),
-                result.name.to_string(),
+                name,
                 function_type,
                 result.start_line_index + 1,
                 result.end_line_index + 1,

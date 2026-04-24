@@ -193,23 +193,11 @@ impl BatConfig {
     }
 
     fn create_bat_config_file() -> Result<BatConfig, BatConfigError> {
-        // Auto-detect project type
-        let project_type = if Path::new("Anchor.toml").is_file() {
+        // Auto-detect project type (initial guess; refined after Cargo.toml discovery)
+        let mut project_type = if Path::new("Anchor.toml").is_file() {
             println!("Detected {} project (Anchor.toml found)", "Anchor".green());
             ProjectType::Anchor
         } else {
-            println!(
-                "{} Anchor.toml not found — this does not appear to be an Anchor program.",
-                "Warning:".yellow()
-            );
-            println!(
-                "bat-cli will run in generic Rust mode (no entry points or context accounts)."
-            );
-            let continue_anyway = bat_dialoguer::select_yes_or_no("Do you want to continue?")
-                .change_context(BatConfigError)?;
-            if !continue_anyway {
-                return Err(Report::new(BatConfigError).attach_printable("Aborted by user"));
-            }
             ProjectType::GenericRust
         };
 
@@ -294,6 +282,42 @@ impl BatConfig {
         if cargo_programs_paths.is_empty() {
             return Err(Report::new(BatConfigError)
                 .attach_printable("No programs with Cargo.toml found in selected folders"));
+        }
+
+        // Refine project type: if not Anchor, check if any Cargo.toml has pinocchio dependency
+        if project_type == ProjectType::GenericRust {
+            let has_pinocchio = cargo_programs_paths.iter().any(|prog_path| {
+                let cargo_toml_path = format!("{}/Cargo.toml", prog_path);
+                fs::read_to_string(&cargo_toml_path)
+                    .map(|content| content.contains("pinocchio"))
+                    .unwrap_or(false)
+            });
+            if has_pinocchio {
+                println!(
+                    "Detected {} project (pinocchio dependency found)",
+                    "Pinocchio".green()
+                );
+                project_type = ProjectType::Pinocchio;
+            } else {
+                println!(
+                    "{} No {} or {} dependency detected.",
+                    "Warning:".yellow(),
+                    "Anchor.toml".green(),
+                    "pinocchio".green(),
+                );
+                println!(
+                    "bat-cli will run in {} mode (no entry points or context accounts).",
+                    "generic Rust".yellow()
+                );
+                let continue_anyway =
+                    bat_dialoguer::select_yes_or_no("Do you want to continue?")
+                        .change_context(BatConfigError)?;
+                if !continue_anyway {
+                    return Err(
+                        Report::new(BatConfigError).attach_printable("Aborted by user")
+                    );
+                }
+            }
         }
 
         // Step 3: Let the user select which programs to analyze

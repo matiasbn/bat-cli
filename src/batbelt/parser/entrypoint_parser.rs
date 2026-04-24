@@ -8,7 +8,7 @@ use crate::batbelt::metadata::structs_source_code_metadata::{
 use crate::batbelt::parser::syn_struct_classifier;
 use crate::batbelt::sonar::{BatSonar, SonarResultType};
 
-use crate::config::BatConfig;
+use crate::config::{BatConfig, ProjectType};
 
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use std::collections::HashSet;
@@ -114,27 +114,33 @@ impl EntrypointParser {
             entrypoint_function.program_name.clone()
         };
 
-        let context_name = Self::get_context_name(entrypoint_name).unwrap();
-
-        let structs_metadata = SourceCodeMetadata::get_filtered_structs_by_program(
-            Some(context_name.clone()),
-            Some(StructMetadataType::ContextAccounts),
-            if resolved_program_name.is_empty() {
-                None
-            } else {
-                Some(&resolved_program_name)
-            },
-        )
-        .change_context(ParserError)?;
-        let context_accounts = structs_metadata
-            .iter()
-            .find(|struct_metadata| struct_metadata.name == context_name)
-            .ok_or(ParserError)
-            .into_report()
-            .attach_printable(format!(
-                "Error context_accounts struct by name {} for entrypoint_name: {}",
-                context_name, entrypoint_name
-            ))?;
+        let config = BatConfig::get_config().change_context(ParserError)?;
+        let context_accounts = if config.project_type == ProjectType::Pinocchio {
+            // For Pinocchio: find ContextAccounts struct in the same file as the entry point
+            Self::find_pinocchio_context_accounts(&entrypoint_function)?
+        } else {
+            let context_name = Self::get_context_name(entrypoint_name).unwrap();
+            let structs_metadata = SourceCodeMetadata::get_filtered_structs_by_program(
+                Some(context_name.clone()),
+                Some(StructMetadataType::ContextAccounts),
+                if resolved_program_name.is_empty() {
+                    None
+                } else {
+                    Some(&resolved_program_name)
+                },
+            )
+            .change_context(ParserError)?;
+            structs_metadata
+                .iter()
+                .find(|struct_metadata| struct_metadata.name == context_name)
+                .ok_or(ParserError)
+                .into_report()
+                .attach_printable(format!(
+                    "Error context_accounts struct by name {} for entrypoint_name: {}",
+                    context_name, entrypoint_name
+                ))?
+                .clone()
+        };
 
         let ep_metadata = EntrypointMetadata::new(
             entrypoint_name.to_string(),
@@ -212,6 +218,35 @@ impl EntrypointParser {
     ) -> Result<Vec<String>, ParserError> {
         let config = BatConfig::get_config().change_context(ParserError)?;
 
+        // For Pinocchio (and other non-Anchor), entry points are already classified
+        // per-file by syn_struct_classifier. Read them from BatMetadata.
+        if config.project_type == ProjectType::Pinocchio {
+            let bat_metadata = BatMetadata::read_metadata().change_context(ParserError)?;
+            let mut entrypoints_names: Vec<String> = bat_metadata
+                .source_code
+                .functions_source_code
+                .iter()
+                .filter(|f| {
+                    f.function_type == FunctionMetadataType::EntryPoint
+                        && program_lib_path.is_none_or(|lib_path| {
+                            // Match by program: derive program name from lib_path
+                            let pn = lib_path
+                                .trim_end_matches("/src/lib.rs")
+                                .trim_end_matches("/src/main.rs")
+                                .split('/')
+                                .next_back()
+                                .unwrap_or("");
+                            f.program_name.is_empty() || f.program_name == pn
+                        })
+                })
+                .map(|f| f.name.clone())
+                .collect();
+            if sorted {
+                entrypoints_names.sort();
+            }
+            return Ok(entrypoints_names);
+        }
+
         let lib_paths = match program_lib_path {
             Some(path) => vec![path.to_string()],
             None => {
@@ -239,6 +274,64 @@ impl EntrypointParser {
             entrypoints_names.sort();
         }
         Ok(entrypoints_names)
+    }
+
+    /// For Pinocchio entry points: find the ContextAccounts struct used by the process function.
+    /// Strategy:
+    /// 1. Look for a ContextAccounts struct in the same file
+    /// 2. If not found, parse the process function body for `SomeStruct::try_from(accounts)`
+    ///    and find that struct in all ContextAccounts metadata
+    fn find_pinocchio_context_accounts(
+        entrypoint_function: &FunctionSourceCodeMetadata,
+    ) -> Result<StructSourceCodeMetadata, ParserError> {
+        let ep_path = &entrypoint_function.path;
+        let all_ca = SourceCodeMetadata::get_filtered_structs(
+            None,
+            Some(StructMetadataType::ContextAccounts),
+        )
+        .change_context(ParserError)?;
+
+        // Strategy 1: same file
+        let same_file_ca: Vec<_> = all_ca.iter().filter(|s| s.path == *ep_path).collect();
+        if let Some(ca) = same_file_ca.into_iter().next() {
+            return Ok(ca.clone());
+        }
+
+        // Strategy 2: parse function body for `SomeStruct::try_from`
+        let file_content = fs::read_to_string(ep_path).unwrap_or_default();
+        if let Some(ca_name) = Self::extract_try_from_struct_name(&file_content) {
+            if let Some(ca) = all_ca.into_iter().find(|s| s.name == ca_name) {
+                return Ok(ca);
+            }
+        }
+
+        Err(Report::new(ParserError).attach_printable(format!(
+            "No ContextAccounts struct found for Pinocchio entry point {}",
+            entrypoint_function.name
+        )))
+    }
+
+    /// Extracts the struct name from `SomeStruct::try_from(accounts)` in a file.
+    fn extract_try_from_struct_name(file_content: &str) -> Option<String> {
+        // Look for pattern: SomeIdentifier::try_from(accounts
+        // This is simpler and more reliable than full syn parsing of function bodies
+        for line in file_content.lines() {
+            let trimmed = line.trim();
+            if let Some(pos) = trimmed.find("::try_from(accounts") {
+                // Extract the identifier before ::try_from
+                let before = &trimmed[..pos];
+                // Get the last token (could be preceded by `let accounts =` etc.)
+                let name = before
+                    .split_whitespace()
+                    .last()
+                    .unwrap_or("")
+                    .trim_start_matches('(');
+                if !name.is_empty() && name.chars().next().unwrap().is_uppercase() {
+                    return Some(name.to_string());
+                }
+            }
+        }
+        None
     }
 
     pub fn get_all_contexts_names() -> Vec<String> {

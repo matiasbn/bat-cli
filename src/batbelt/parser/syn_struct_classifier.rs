@@ -5,6 +5,7 @@ pub struct FileClassification {
     pub context_accounts_names: HashSet<String>,
     pub solana_account_names: HashSet<String>,
     pub entrypoint_function_names: HashSet<String>,
+    pub pinocchio_context_accounts_names: HashSet<String>,
 }
 
 pub fn classify_file_from_path(path: &str) -> FileClassification {
@@ -17,6 +18,7 @@ pub fn classify_file(file_content: &str) -> FileClassification {
         context_accounts_names: HashSet::new(),
         solana_account_names: HashSet::new(),
         entrypoint_function_names: HashSet::new(),
+        pinocchio_context_accounts_names: HashSet::new(),
     };
 
     let Ok(file) = syn::parse_file(file_content) else {
@@ -30,6 +32,10 @@ pub fn classify_file(file_content: &str) -> FileClassification {
                     classification
                         .context_accounts_names
                         .insert(item_struct.ident.to_string());
+                } else if has_derive_codama_account(item_struct) {
+                    classification
+                        .solana_account_names
+                        .insert(item_struct.ident.to_string());
                 } else if has_account_attribute(item_struct) {
                     classification
                         .solana_account_names
@@ -39,6 +45,22 @@ pub fn classify_file(file_content: &str) -> FileClassification {
             syn::Item::Mod(item_mod) => {
                 if has_program_attribute(item_mod) {
                     extract_entrypoint_functions(item_mod, &mut classification);
+                }
+            }
+            syn::Item::Impl(item_impl) => {
+                // Detect `impl TryFrom<&[AccountView]> for SomeStruct`
+                if let Some(name) = extract_pinocchio_context_accounts(item_impl) {
+                    classification
+                        .pinocchio_context_accounts_names
+                        .insert(name);
+                }
+            }
+            syn::Item::Fn(item_fn) => {
+                // Detect `pub fn process(accounts: &[AccountView], ...)` as Pinocchio entry point
+                if is_pinocchio_entrypoint(item_fn) {
+                    classification
+                        .entrypoint_function_names
+                        .insert(item_fn.sig.ident.to_string());
                 }
             }
             _ => {}
@@ -104,6 +126,71 @@ fn extract_context_type(ty: &syn::Type) -> Option<String> {
         }
     }
     None
+}
+
+fn has_derive_codama_account(item: &syn::ItemStruct) -> bool {
+    item.attrs.iter().any(|attr| {
+        if !attr.path().is_ident("derive") {
+            return false;
+        }
+        let Ok(nested) = attr.parse_args_with(
+            syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+        ) else {
+            return false;
+        };
+        nested.iter().any(|path| path.is_ident("CodamaAccount"))
+    })
+}
+
+/// Extracts the self type name from `impl TryFrom<&[AccountView]> for T`.
+fn extract_pinocchio_context_accounts(item_impl: &syn::ItemImpl) -> Option<String> {
+    use quote::ToTokens;
+    // Must be a trait impl
+    let (_, trait_path, _) = item_impl.trait_.as_ref()?;
+    let last_seg = trait_path.segments.last()?;
+    if last_seg.ident != "TryFrom" {
+        return None;
+    }
+    // Check that the generic argument contains AccountView slice
+    if let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments {
+        let has_account_view = args.args.iter().any(|arg| {
+            let s = arg.to_token_stream().to_string();
+            s.contains("AccountView")
+        });
+        if !has_account_view {
+            return None;
+        }
+    } else {
+        return None;
+    }
+    // Extract self type name
+    if let syn::Type::Path(type_path) = &*item_impl.self_ty {
+        let name = type_path.path.segments.last()?.ident.to_string();
+        return Some(name);
+    }
+    None
+}
+
+/// Detects `pub fn process(accounts: &[AccountView], ...)` as a Pinocchio entry point.
+fn is_pinocchio_entrypoint(item_fn: &syn::ItemFn) -> bool {
+    use quote::ToTokens;
+    if item_fn.sig.ident != "process" {
+        return false;
+    }
+    // Must be pub
+    if !matches!(item_fn.vis, syn::Visibility::Public(_)) {
+        return false;
+    }
+    // Check if first non-self param contains &[AccountView]
+    for arg in &item_fn.sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = arg {
+            let ty_str = pat_type.ty.to_token_stream().to_string();
+            if ty_str.contains("AccountView") {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn has_derive_accounts(item: &syn::ItemStruct) -> bool {

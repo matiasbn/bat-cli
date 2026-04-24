@@ -246,10 +246,12 @@ impl BatSonarInteractive {
         Ok(())
     }
     pub fn run_post_scan_parallel() -> Result<(), BatSonarError> {
+        use crate::config::ProjectType;
+
         let started = Instant::now();
-        let is_anchor = BatConfig::get_config()
-            .map(|c| c.project_type == crate::config::ProjectType::Anchor)
-            .unwrap_or(false);
+        let project_type = BatConfig::get_config()
+            .map(|c| c.project_type)
+            .unwrap_or(ProjectType::GenericRust);
         let m = MultiProgress::new();
         let spinner_style = ProgressStyle::with_template("{spinner:.blue} {wide_msg}")
             .unwrap()
@@ -272,35 +274,48 @@ impl BatSonarInteractive {
         // the trait metadata may not yet be populated when function parsing runs.
         Self::run_traits_with_pb(&pb_tr)?;
 
-        if is_anchor {
-            let pb_ep = m.add(ProgressBar::new_spinner());
-            pb_ep.set_style(spinner_style.clone());
-            pb_ep.enable_steady_tick(Duration::from_millis(100));
-            pb_ep.set_message("Entry points: starting...");
+        match project_type {
+            ProjectType::Anchor => {
+                let pb_ep = m.add(ProgressBar::new_spinner());
+                pb_ep.set_style(spinner_style.clone());
+                pb_ep.enable_steady_tick(Duration::from_millis(100));
+                pb_ep.set_message("Entry points: starting...");
 
-            let pb_ca = m.add(ProgressBar::new_spinner());
-            pb_ca.set_style(spinner_style.clone());
-            pb_ca.enable_steady_tick(Duration::from_millis(100));
-            pb_ca.set_message("Context accounts: starting...");
+                let pb_ca = m.add(ProgressBar::new_spinner());
+                pb_ca.set_style(spinner_style.clone());
+                pb_ca.enable_steady_tick(Duration::from_millis(100));
+                pb_ca.set_message("Context accounts: starting...");
 
-            // Context accounts are independent; run it in parallel with the
-            // trait-dependent work below.
-            let ca_handle = {
-                let pb = pb_ca.clone();
-                thread::spawn(move || Self::run_context_accounts_with_pb(&pb))
-            };
+                // Context accounts are independent; run it in parallel with the
+                // trait-dependent work below.
+                let ca_handle = {
+                    let pb = pb_ca.clone();
+                    thread::spawn(move || Self::run_context_accounts_with_pb(&pb))
+                };
 
-            // Entry points and function dependencies both call FunctionParser,
-            // which reads+writes BatMetadata.json and calls get_function_dependencies.
-            // They can race with each other on the metadata file, so run them
-            // sequentially after traits are built.
-            Self::run_function_deps_with_pb(&pb_fd)?;
-            Self::run_entry_points_with_pb(&pb_ep)?;
+                // Entry points and function dependencies both call FunctionParser,
+                // which reads+writes BatMetadata.json and calls get_function_dependencies.
+                // They can race with each other on the metadata file, so run them
+                // sequentially after traits are built.
+                Self::run_function_deps_with_pb(&pb_fd)?;
+                Self::run_entry_points_with_pb(&pb_ep)?;
 
-            ca_handle.join().expect("Thread panicked")?;
-        } else {
-            // Generic Rust project: only resolve function dependencies.
-            Self::run_function_deps_with_pb(&pb_fd)?;
+                ca_handle.join().expect("Thread panicked")?;
+            }
+            ProjectType::Pinocchio => {
+                let pb_ep = m.add(ProgressBar::new_spinner());
+                pb_ep.set_style(spinner_style.clone());
+                pb_ep.enable_steady_tick(Duration::from_millis(100));
+                pb_ep.set_message("Entry points: starting...");
+
+                // Pinocchio: function deps + entry points (no Anchor context accounts parsing)
+                Self::run_function_deps_with_pb(&pb_fd)?;
+                Self::run_entry_points_with_pb(&pb_ep)?;
+            }
+            _ => {
+                // Generic Rust project: only resolve function dependencies.
+                Self::run_function_deps_with_pb(&pb_fd)?;
+            }
         }
 
         println!("{} Done in {}", SPARKLE, HumanDuration(started.elapsed()));
@@ -326,12 +341,21 @@ impl BatSonarInteractive {
         }
 
         let total = all_entries.len();
+        let mut processed = 0usize;
         pb.set_message(format!("Entry points [0/{}]", total));
         for (idx, (entry, program_name)) in all_entries.iter().enumerate() {
             pb.set_message(format!("Entry points [{}/{}]: {}", idx + 1, total, entry));
-            EntrypointParser::new_from_name_and_program(entry, Some(program_name)).unwrap();
+            match EntrypointParser::new_from_name_and_program(entry, Some(program_name)) {
+                Ok(_) => processed += 1,
+                Err(e) => {
+                    log::warn!("Skipping entry point {}: {:?}", entry, e);
+                }
+            }
         }
-        pb.finish_with_message(format!("{} Entry points: {} processed", SPARKLE, total));
+        pb.finish_with_message(format!(
+            "{} Entry points: {}/{} processed",
+            SPARKLE, processed, total
+        ));
         Ok(())
     }
 

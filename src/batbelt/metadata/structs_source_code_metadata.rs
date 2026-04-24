@@ -86,6 +86,11 @@ impl BatMetadataParser<StructMetadataType> for StructSourceCodeMetadata {
                 StructMetadataType::SolanaAccount
             } else if classification.context_accounts_names.contains(&result.name) {
                 StructMetadataType::ContextAccounts
+            } else if classification
+                .pinocchio_context_accounts_names
+                .contains(&result.name)
+            {
+                StructMetadataType::ContextAccounts
             } else {
                 StructMetadataType::Other
             };
@@ -115,6 +120,11 @@ impl StructSourceCodeMetadata {
             let struct_type = if classification.solana_account_names.contains(&result.name) {
                 StructMetadataType::SolanaAccount
             } else if classification.context_accounts_names.contains(&result.name) {
+                StructMetadataType::ContextAccounts
+            } else if classification
+                .pinocchio_context_accounts_names
+                .contains(&result.name)
+            {
                 StructMetadataType::ContextAccounts
             } else {
                 StructMetadataType::Other
