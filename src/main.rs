@@ -166,8 +166,11 @@ impl BatCommands {
         BatCommands::get_type_vec()
             .into_iter()
             .filter_map(|command| match command {
-                // Anchor-only commands
-                BatCommands::CodeOverhaul(_) if is_anchor => {
+                // Anchor and Pinocchio commands
+                BatCommands::CodeOverhaul(_)
+                    if *project_type == ProjectType::Anchor
+                        || *project_type == ProjectType::Pinocchio =>
+                {
                     Some(CodeOverhaulCommand::get_bat_package_json_commands(
                         command.to_string().to_kebab_case(),
                     ))

@@ -173,22 +173,47 @@ impl ProjectCommands {
                 .change_context(CommandError)?;
 
         if use_miro {
+            // Ask for OAuth token first so we can validate the board URL against the API
+            let miro_oauth_token: String =
+                bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?;
+
             let miro_board_url = loop {
                 let miro_board_url_input: String =
                     bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
                 match BatConfig::normalize_miro_board_url(&miro_board_url_input) {
-                    Ok(url) => break url,
+                    Ok(url) => {
+                        // Validate the board exists and is accessible via the Miro API
+                        match crate::batbelt::miro::MiroConfig::validate_board(
+                            &miro_oauth_token,
+                            &url,
+                        )
+                        .await
+                        {
+                            Ok(board_name) => {
+                                println!(
+                                    "{} Board validated: \"{}\"",
+                                    "OK".green(),
+                                    board_name
+                                );
+                                break url;
+                            }
+                            Err(e) => {
+                                println!(
+                                    "{} Board not found or not accessible. Please check the URL and try again.\n  Details: {}",
+                                    "Error:".red(),
+                                    e
+                                );
+                            }
+                        }
+                    }
                     Err(_) => {
                         println!(
-                            "{} Invalid Miro board url, please try again",
+                            "{} Invalid Miro board url format, please try again",
                             "Error:".red()
                         );
                     }
                 }
             };
-
-            let miro_oauth_token: String =
-                bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?;
 
             // Update Bat.toml with the board URL
             let mut bat_config = BatConfig::get_config().change_context(CommandError)?;

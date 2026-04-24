@@ -519,7 +519,7 @@ impl BatConfig {
     }
 
     pub fn normalize_miro_board_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
-        let url = normalizer::UrlNormalizer::new(url_to_normalize)
+        let _normalized = normalizer::UrlNormalizer::new(url_to_normalize)
             .into_report()
             .attach_printable(format!(
                 "Error normalizing Miro board url, got {}",
@@ -533,7 +533,13 @@ impl BatConfig {
                 url_to_normalize
             ))
             .change_context(BatConfigError)?;
-        Ok(url)
+
+        // Extract board ID and reconstruct canonical URL to discard any trailing garbage
+        let board_id = crate::batbelt::miro::MiroConfig::get_miro_board_id(
+            url_to_normalize.to_string(),
+        )
+        .change_context(BatConfigError)?;
+        Ok(format!("https://miro.com/app/board/{}/", board_id))
     }
 
     fn normalize_commit_hash_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
