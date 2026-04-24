@@ -189,12 +189,6 @@ impl MiroCommand {
                     &selected_miro_frame.title,
                 ),
             ));
-            let ca_source_code = entrypoint.context_accounts.to_source_code_parser(Some(
-                miro_command_functions::parse_screenshot_name(
-                    &entrypoint.context_accounts.name,
-                    &selected_miro_frame.title,
-                ),
-            ));
             let ep_image = ep_source_code
                 .deploy_screenshot_to_miro_frame(
                     selected_miro_frame.clone(),
@@ -204,19 +198,28 @@ impl MiroCommand {
                 )
                 .await
                 .change_context(CommandError)?;
-            let ca_image = ca_source_code
-                .deploy_screenshot_to_miro_frame(
-                    selected_miro_frame.clone(),
-                    x_position,
-                    ca_y_position,
-                    context_accounts_sc_options.clone(),
-                )
-                .await
-                .change_context(CommandError)?;
-            create_connector(&ep_image.item_id, &ca_image.item_id, None)
-                .await
-                .change_context(CommandError)?;
-            let mut prev_image_id = ca_image.item_id.clone();
+            let mut prev_image_id = ep_image.item_id.clone();
+            if let Some(ref ca) = entrypoint.context_accounts {
+                let ca_source_code = ca.to_source_code_parser(Some(
+                    miro_command_functions::parse_screenshot_name(
+                        &ca.name,
+                        &selected_miro_frame.title,
+                    ),
+                ));
+                let ca_image = ca_source_code
+                    .deploy_screenshot_to_miro_frame(
+                        selected_miro_frame.clone(),
+                        x_position,
+                        ca_y_position,
+                        context_accounts_sc_options.clone(),
+                    )
+                    .await
+                    .change_context(CommandError)?;
+                create_connector(&ep_image.item_id, &ca_image.item_id, None)
+                    .await
+                    .change_context(CommandError)?;
+                prev_image_id = ca_image.item_id.clone();
+            }
             for (dep_idx, dep_function) in entrypoint.dependencies.iter().enumerate() {
                 let dep_source_code = dep_function.to_source_code_parser(Some(
                     miro_command_functions::parse_screenshot_name(
@@ -857,13 +860,16 @@ impl MiroCommand {
                 .await
                 .change_context(CommandError)?;
 
-            let ca_miro_image = co_parser
-                .deploy_new_context_accounts_image_for_miro_co_frame(co_miro_frame.clone())
-                .await
-                .change_context(CommandError)?;
+            // Deploy context accounts image only if context_accounts exists
+            if let Some(ref _ca) = entrypoint_parser.context_accounts {
+                let ca_miro_image = co_parser
+                    .deploy_new_context_accounts_image_for_miro_co_frame(co_miro_frame.clone())
+                    .await
+                    .change_context(CommandError)?;
+                miro_co_metadata.context_accounts_image_id = ca_miro_image.item_id.clone();
+            }
 
             miro_co_metadata.validations_image_id = validations_miro_image.item_id.clone();
-            miro_co_metadata.context_accounts_image_id = ca_miro_image.item_id.clone();
             miro_co_metadata.images_deployed = true;
 
             miro_co_metadata
@@ -899,23 +905,35 @@ impl MiroCommand {
                 .change_context(CommandError)?;
             }
 
-            println!("Connecting entrypoint screenshot to context accounts screenshot in Miro");
-            batbelt::miro::connector::create_connector(
-                &miro_co_metadata.entry_point_image_id,
-                &miro_co_metadata.context_accounts_image_id,
-                None,
-            )
-            .await
-            .change_context(CommandError)?;
+            // Connect screenshots: if CA exists, chain ep→ca→validations; else ep→validations
+            if !miro_co_metadata.context_accounts_image_id.is_empty() {
+                println!("Connecting entrypoint screenshot to context accounts screenshot in Miro");
+                batbelt::miro::connector::create_connector(
+                    &miro_co_metadata.entry_point_image_id,
+                    &miro_co_metadata.context_accounts_image_id,
+                    None,
+                )
+                .await
+                .change_context(CommandError)?;
 
-            println!("Connecting context accounts screenshot to validations screenshot in Miro");
-            batbelt::miro::connector::create_connector(
-                &miro_co_metadata.context_accounts_image_id,
-                &miro_co_metadata.validations_image_id,
-                None,
-            )
-            .await
-            .change_context(CommandError)?;
+                println!("Connecting context accounts screenshot to validations screenshot in Miro");
+                batbelt::miro::connector::create_connector(
+                    &miro_co_metadata.context_accounts_image_id,
+                    &miro_co_metadata.validations_image_id,
+                    None,
+                )
+                .await
+                .change_context(CommandError)?;
+            } else {
+                println!("Connecting entrypoint screenshot directly to validations screenshot in Miro");
+                batbelt::miro::connector::create_connector(
+                    &miro_co_metadata.entry_point_image_id,
+                    &miro_co_metadata.validations_image_id,
+                    None,
+                )
+                .await
+                .change_context(CommandError)?;
+            }
 
             // Interactive BFS deployment of dependency screenshots.
             //
@@ -1124,11 +1142,12 @@ impl MiroCommand {
             .create_commit(true)
             .change_context(CommandError)?;
 
-            // Deploy mut_accounts
+            // Deploy mut_accounts (only when context_accounts exists)
+            if let Some(ref ca) = entrypoint_parser.context_accounts {
             let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
             let context_accounts_metadata = bat_metadata
                 .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                    entrypoint_parser.context_accounts.metadata_id,
+                    ca.metadata_id.clone(),
                 )
                 .change_context(CommandError)?;
             let mut_program_owned_accounts = context_accounts_metadata
@@ -1140,16 +1159,19 @@ impl MiroCommand {
                 });
             for mut_account in mut_program_owned_accounts {
                 let struct_metadata_vec = SourceCodeMetadata::get_filtered_structs(
-                    Some(mut_account.account_struct_name),
+                    Some(mut_account.account_struct_name.clone()),
                     Some(StructMetadataType::SolanaAccount),
                 )
                 .change_context(CommandError)?;
 
                 if struct_metadata_vec.len() != 1 {
-                    return Err(Report::new(CommandError).attach_printable(format!(
-                        "Error looking for Solana Accounts, expected 1 result, got:\n{:#?}",
-                        struct_metadata_vec
-                    )));
+                    // Pinocchio: account struct may not be registered as SolanaAccount
+                    log::warn!(
+                        "Solana Account struct '{}' not found (expected 1, got {}), skipping screenshot",
+                        mut_account.account_struct_name,
+                        struct_metadata_vec.len()
+                    );
+                    continue;
                 }
 
                 let struct_metadata = struct_metadata_vec[0].clone();
@@ -1174,6 +1196,7 @@ impl MiroCommand {
                     .await
                     .change_context(CommandError)?;
             }
+            } // end if let Some(ca)
 
             // Deploy dependency function parameters
             for dep_function in &entrypoint_parser.dependencies {
