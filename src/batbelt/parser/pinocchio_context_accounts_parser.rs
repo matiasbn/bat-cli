@@ -240,10 +240,7 @@ fn extract_generic_static_check(line: &str) -> Option<RawCheck> {
     let after_paren = after_colons[args_start..].trim();
 
     // Get the first argument (field name)
-    let field = after_paren
-        .split(|c: char| c == ')' || c == ',')
-        .next()?
-        .trim();
+    let field = after_paren.split([')', ',']).next()?.trim();
 
     // Must be a simple identifier
     if field.is_empty() || !field.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -320,11 +317,7 @@ fn extract_inline_method_check(line: &str) -> Option<RawCheck> {
         if let Some(pos) = line.find(method) {
             let before = line[..pos].trim();
             // Also handle `! field . is_signer`
-            let field = before
-                .trim_start_matches('!')
-                .trim()
-                .split_whitespace()
-                .last()?;
+            let field = before.trim_start_matches('!').split_whitespace().last()?;
             if !field.is_empty() && field.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 return Some(RawCheck {
                     full_check_name: check_name.to_string(),
@@ -638,7 +631,11 @@ mod tests {
         // "CustomValidation" doesn't match any known keyword → Unknown, stays AccountView
         assert_eq!(vault.account_wrapper_name, "AccountView");
         // But the validation is still captured
-        assert!(vault.attributes.constraints.iter().any(|v| v.contains("CustomValidation")));
+        assert!(vault
+            .attributes
+            .constraints
+            .iter()
+            .any(|v| v.contains("CustomValidation")));
     }
 
     #[test]

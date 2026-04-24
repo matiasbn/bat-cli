@@ -557,57 +557,61 @@ impl CodeOverhaulSection {
             ca_accounts_results = context_accounts_metadata
                 .context_accounts_info
                 .into_iter()
-            .filter_map(|ca_metadata| {
-                if !ca_metadata.validations.is_empty() {
-                    let trailing_str = "  ".to_string();
-                    // Build the account type line from metadata fields
-                    let account_line = if ca_metadata.lifetime_name.is_empty() {
-                        format!(
-                            "{}pub {}: {},",
-                            trailing_str, ca_metadata.account_name, ca_metadata.account_struct_name
-                        )
-                    } else if ca_metadata.account_wrapper_name == ca_metadata.account_struct_name {
-                        format!(
-                            "{}pub {}: {}<{}>,",
+                .filter_map(|ca_metadata| {
+                    if !ca_metadata.validations.is_empty() {
+                        let trailing_str = "  ".to_string();
+                        // Build the account type line from metadata fields
+                        let account_line = if ca_metadata.lifetime_name.is_empty() {
+                            format!(
+                                "{}pub {}: {},",
+                                trailing_str,
+                                ca_metadata.account_name,
+                                ca_metadata.account_struct_name
+                            )
+                        } else if ca_metadata.account_wrapper_name
+                            == ca_metadata.account_struct_name
+                        {
+                            format!(
+                                "{}pub {}: {}<{}>,",
+                                trailing_str,
+                                ca_metadata.account_name,
+                                ca_metadata.account_struct_name,
+                                ca_metadata.lifetime_name
+                            )
+                        } else {
+                            format!(
+                                "{}pub {}: {}<{}, {}>,",
+                                trailing_str,
+                                ca_metadata.account_name,
+                                ca_metadata.account_wrapper_name,
+                                ca_metadata.lifetime_name,
+                                ca_metadata.account_struct_name
+                            )
+                        };
+                        let result = format!(
+                            "{}#[account(\n{}\n{})]\n{}",
                             trailing_str,
-                            ca_metadata.account_name,
-                            ca_metadata.account_struct_name,
-                            ca_metadata.lifetime_name
-                        )
+                            ca_metadata
+                                .validations
+                                .into_iter()
+                                .map(|validation| {
+                                    format!(
+                                        "{}\t{},",
+                                        trailing_str.clone(),
+                                        validation.trim_end_matches(',')
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                            trailing_str,
+                            account_line
+                        );
+                        Some(result)
                     } else {
-                        format!(
-                            "{}pub {}: {}<{}, {}>,",
-                            trailing_str,
-                            ca_metadata.account_name,
-                            ca_metadata.account_wrapper_name,
-                            ca_metadata.lifetime_name,
-                            ca_metadata.account_struct_name
-                        )
-                    };
-                    let result = format!(
-                        "{}#[account(\n{}\n{})]\n{}",
-                        trailing_str,
-                        ca_metadata
-                            .validations
-                            .into_iter()
-                            .map(|validation| {
-                                format!(
-                                    "{}\t{},",
-                                    trailing_str.clone(),
-                                    validation.trim_end_matches(',')
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n"),
-                        trailing_str,
-                        account_line
-                    );
-                    Some(result)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
             log::debug!("ca_accounts_results:\n{:#?}", ca_accounts_results.clone());
         }
 
@@ -642,16 +646,27 @@ impl CodeOverhaulSection {
 
         // Try metadata-based signer detection first (works for both Anchor and Pinocchio).
         // Falls back to source-code parsing for Anchor if metadata is unavailable.
-        eprintln!("[DEBUG signers] CA name={}, path={}, metadata_id={}", context_accounts.name, context_accounts.path, context_accounts.metadata_id);
+        eprintln!(
+            "[DEBUG signers] CA name={}, path={}, metadata_id={}",
+            context_accounts.name, context_accounts.path, context_accounts.metadata_id
+        );
         if let Ok(bat_metadata) = BatMetadata::read_metadata() {
             eprintln!("[DEBUG signers] metadata loaded OK");
-            match bat_metadata
-                .get_context_accounts_metadata_by_struct_source_code_metadata_id(
-                    context_accounts.metadata_id.clone(),
-                )
-            {
+            match bat_metadata.get_context_accounts_metadata_by_struct_source_code_metadata_id(
+                context_accounts.metadata_id.clone(),
+            ) {
                 Ok(ca_metadata) => {
-                    eprintln!("[DEBUG signers] CA metadata found, accounts: {:?}", ca_metadata.context_accounts_info.iter().map(|i| format!("{}:{:?}/{}", i.account_name, i.solana_account_type, i.account_wrapper_name)).collect::<Vec<_>>());
+                    eprintln!(
+                        "[DEBUG signers] CA metadata found, accounts: {:?}",
+                        ca_metadata
+                            .context_accounts_info
+                            .iter()
+                            .map(|i| format!(
+                                "{}:{:?}/{}",
+                                i.account_name, i.solana_account_type, i.account_wrapper_name
+                            ))
+                            .collect::<Vec<_>>()
+                    );
                     let signer_accounts: Vec<_> = ca_metadata
                         .context_accounts_info
                         .iter()
@@ -687,12 +702,22 @@ impl CodeOverhaulSection {
         // Fallback: parse source code directly
         let context_source_code = context_accounts.to_source_code_parser(None);
         let context_lines = context_source_code.get_source_code_content();
-        eprintln!("[DEBUG signers] context_lines contains AccountView={}, len={}", context_lines.contains("AccountView"), context_lines.len());
-        eprintln!("[DEBUG signers] context_lines: {}", &context_lines[..context_lines.len().min(300)]);
+        eprintln!(
+            "[DEBUG signers] context_lines contains AccountView={}, len={}",
+            context_lines.contains("AccountView"),
+            context_lines.len()
+        );
+        eprintln!(
+            "[DEBUG signers] context_lines: {}",
+            &context_lines[..context_lines.len().min(300)]
+        );
 
         // Pinocchio fallback: parse TryFrom impl for signer checks
         if context_lines.contains("AccountView") || context_lines.contains("AccountInfo") {
-            eprintln!("[DEBUG signers] Pinocchio path, reading file: {}", context_accounts.path);
+            eprintln!(
+                "[DEBUG signers] Pinocchio path, reading file: {}",
+                context_accounts.path
+            );
             if let Ok(file_content) = std::fs::read_to_string(&context_accounts.path) {
                 eprintln!("[DEBUG signers] file read OK, len={}", file_content.len());
                 match pinocchio_context_accounts_parser::parse_pinocchio_context_accounts_from_source(

@@ -190,11 +190,7 @@ impl ProjectCommands {
                         .await
                         {
                             Ok(board_name) => {
-                                println!(
-                                    "{} Board validated: \"{}\"",
-                                    "OK".green(),
-                                    board_name
-                                );
+                                println!("{} Board validated: \"{}\"", "OK".green(), board_name);
                                 break url;
                             }
                             Err(e) => {

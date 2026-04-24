@@ -161,7 +161,7 @@ impl BatCommands {
         project_type: &crate::config::ProjectType,
     ) -> Vec<BatPackageJsonCommand> {
         use crate::config::ProjectType;
-        let is_anchor = *project_type == ProjectType::Anchor;
+        let _is_anchor = *project_type == ProjectType::Anchor;
 
         BatCommands::get_type_vec()
             .into_iter()
