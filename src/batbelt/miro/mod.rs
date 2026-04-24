@@ -108,10 +108,7 @@ impl MiroConfig {
     /// Validates that a board exists and is accessible with the given token.
     /// Makes a GET request to `https://api.miro.com/v2/boards/{board_id}`.
     /// Returns `Ok(board_name)` if valid, `Err` otherwise.
-    pub async fn validate_board(
-        access_token: &str,
-        board_url: &str,
-    ) -> Result<String, MiroError> {
+    pub async fn validate_board(access_token: &str, board_url: &str) -> Result<String, MiroError> {
         let board_id = Self::get_miro_board_id(board_url.to_string())?;
         let client = reqwest::Client::new();
         let response = client
@@ -122,8 +119,7 @@ impl MiroConfig {
             .await
             .map_err(|e| {
                 log::error!("Miro validate board error: {:#?}", e);
-                Report::new(MiroError)
-                    .attach_printable("Failed to connect to Miro API")
+                Report::new(MiroError).attach_printable("Failed to connect to Miro API")
             })?;
 
         if !response.status().is_success() {
@@ -136,16 +132,14 @@ impl MiroConfig {
             )));
         }
 
-        let body = response.text().await.map_err(|_| {
-            Report::new(MiroError).attach_printable("Failed to read Miro response")
-        })?;
+        let body = response
+            .text()
+            .await
+            .map_err(|_| Report::new(MiroError).attach_printable("Failed to read Miro response"))?;
         let json: Value = serde_json::from_str(&body).map_err(|_| {
             Report::new(MiroError).attach_printable("Failed to parse Miro response")
         })?;
-        let board_name = json["name"]
-            .as_str()
-            .unwrap_or("(unnamed)")
-            .to_string();
+        let board_name = json["name"].as_str().unwrap_or("(unnamed)").to_string();
 
         Ok(board_name)
     }

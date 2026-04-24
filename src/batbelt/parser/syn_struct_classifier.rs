@@ -50,9 +50,7 @@ pub fn classify_file(file_content: &str) -> FileClassification {
             syn::Item::Impl(item_impl) => {
                 // Detect `impl TryFrom<&[AccountView]> for SomeStruct`
                 if let Some(name) = extract_pinocchio_context_accounts(item_impl) {
-                    classification
-                        .pinocchio_context_accounts_names
-                        .insert(name);
+                    classification.pinocchio_context_accounts_names.insert(name);
                 }
             }
             syn::Item::Fn(item_fn) => {

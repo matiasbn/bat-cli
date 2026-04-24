@@ -309,13 +309,10 @@ impl BatConfig {
                     "bat-cli will run in {} mode (no entry points or context accounts).",
                     "generic Rust".yellow()
                 );
-                let continue_anyway =
-                    bat_dialoguer::select_yes_or_no("Do you want to continue?")
-                        .change_context(BatConfigError)?;
+                let continue_anyway = bat_dialoguer::select_yes_or_no("Do you want to continue?")
+                    .change_context(BatConfigError)?;
                 if !continue_anyway {
-                    return Err(
-                        Report::new(BatConfigError).attach_printable("Aborted by user")
-                    );
+                    return Err(Report::new(BatConfigError).attach_printable("Aborted by user"));
                 }
             }
         }
@@ -535,10 +532,9 @@ impl BatConfig {
             .change_context(BatConfigError)?;
 
         // Extract board ID and reconstruct canonical URL to discard any trailing garbage
-        let board_id = crate::batbelt::miro::MiroConfig::get_miro_board_id(
-            url_to_normalize.to_string(),
-        )
-        .change_context(BatConfigError)?;
+        let board_id =
+            crate::batbelt::miro::MiroConfig::get_miro_board_id(url_to_normalize.to_string())
+                .change_context(BatConfigError)?;
         Ok(format!("https://miro.com/app/board/{}/", board_id))
     }
 

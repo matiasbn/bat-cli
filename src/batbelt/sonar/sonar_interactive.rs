@@ -548,29 +548,32 @@ impl BatSonarInteractive {
 
         let mut count = 0usize;
         for (file_path, ca_structs) in &structs_by_file {
-            let parsed_structs = match pinocchio_context_accounts_parser::parse_pinocchio_context_accounts_from_file(file_path) {
-                Ok(s) => s,
-                Err(e) => {
-                    log::warn!("Failed to parse Pinocchio CA from {}: {:?}", file_path, e);
-                    for ca_sc in ca_structs {
-                        count += 1;
-                        pb.set_message(format!(
-                            "Context accounts [{}/{}]: {} (skipped)",
-                            count, total, ca_sc.name,
-                        ));
-                        // Create empty CA metadata as fallback
-                        let context_accounts_metadata = ContextAccountsMetadata::new(
-                            ca_sc.name.clone(),
-                            BatMetadata::create_metadata_id(),
-                            ca_sc.metadata_id.clone(),
-                            vec![],
-                            ca_sc.program_name.clone(),
-                        );
-                        context_accounts_metadata.update_metadata_file().unwrap();
+            let parsed_structs =
+                match pinocchio_context_accounts_parser::parse_pinocchio_context_accounts_from_file(
+                    file_path,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("Failed to parse Pinocchio CA from {}: {:?}", file_path, e);
+                        for ca_sc in ca_structs {
+                            count += 1;
+                            pb.set_message(format!(
+                                "Context accounts [{}/{}]: {} (skipped)",
+                                count, total, ca_sc.name,
+                            ));
+                            // Create empty CA metadata as fallback
+                            let context_accounts_metadata = ContextAccountsMetadata::new(
+                                ca_sc.name.clone(),
+                                BatMetadata::create_metadata_id(),
+                                ca_sc.metadata_id.clone(),
+                                vec![],
+                                ca_sc.program_name.clone(),
+                            );
+                            context_accounts_metadata.update_metadata_file().unwrap();
+                        }
+                        continue;
                     }
-                    continue;
-                }
-            };
+                };
 
             for ca_sc in ca_structs {
                 count += 1;
@@ -579,25 +582,24 @@ impl BatSonarInteractive {
                     count, total, ca_sc.name,
                 ));
 
-                let ca_info = if let Some(parsed) =
-                    parsed_structs.iter().find(|p| p.name == ca_sc.name)
-                {
-                    parsed
-                        .accounts
-                        .iter()
-                        .map(|acc| {
-                            let solana_type = acc.determine_pinocchio_solana_account_type();
-                            acc.to_pinocchio_ca_account_parser(solana_type)
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    log::warn!(
-                        "Struct {} not found in pinocchio parse of {}",
-                        ca_sc.name,
-                        file_path
-                    );
-                    vec![]
-                };
+                let ca_info =
+                    if let Some(parsed) = parsed_structs.iter().find(|p| p.name == ca_sc.name) {
+                        parsed
+                            .accounts
+                            .iter()
+                            .map(|acc| {
+                                let solana_type = acc.determine_pinocchio_solana_account_type();
+                                acc.to_pinocchio_ca_account_parser(solana_type)
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        log::warn!(
+                            "Struct {} not found in pinocchio parse of {}",
+                            ca_sc.name,
+                            file_path
+                        );
+                        vec![]
+                    };
 
                 let context_accounts_metadata = ContextAccountsMetadata::new(
                     ca_sc.name.clone(),
@@ -609,7 +611,10 @@ impl BatSonarInteractive {
                 context_accounts_metadata.update_metadata_file().unwrap();
             }
         }
-        pb.finish_with_message(format!("{} Context accounts: {} processed (Pinocchio)", SPARKLE, total));
+        pb.finish_with_message(format!(
+            "{} Context accounts: {} processed (Pinocchio)",
+            SPARKLE, total
+        ));
         Ok(())
     }
 }
