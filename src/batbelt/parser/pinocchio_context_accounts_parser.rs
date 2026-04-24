@@ -191,23 +191,21 @@ fn parse_generic_checks_from_impl(item_impl: &syn::ItemImpl) -> Vec<RawCheck> {
 
     let mut raw_checks: Vec<RawCheck> = Vec::new();
 
-    for line in impl_text.lines() {
-        let trimmed = line.trim();
+    // to_token_stream produces a single line; split by `;` to get statements
+    for statement in impl_text.split(';') {
+        let trimmed = statement.trim();
 
         // Pattern 1: `TypeName :: method_name ( field_name )` or `TypeName :: method_name ( field_name , ...)`
-        // This covers: SignerAccount::check(f), MintInterface::check_with_program(f, tp), etc.
         if let Some(check) = extract_generic_static_check(trimmed) {
             raw_checks.push(check);
         }
 
         // Pattern 2: `TypeName :: method_name ( tp , & [ f1 , f2 ] )`
-        // Covers batch checks like TokenAccountInterface::check_accounts_with_program
         if let Some(checks) = extract_batch_check(trimmed) {
             raw_checks.extend(checks);
         }
 
         // Pattern 3: inline method calls `field . is_signer ( )`, `field . is_writable ( )`
-        // These are direct pinocchio AccountView methods
         if let Some(check) = extract_inline_method_check(trimmed) {
             raw_checks.push(check);
         }

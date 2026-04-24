@@ -1159,16 +1159,19 @@ impl MiroCommand {
                 });
             for mut_account in mut_program_owned_accounts {
                 let struct_metadata_vec = SourceCodeMetadata::get_filtered_structs(
-                    Some(mut_account.account_struct_name),
+                    Some(mut_account.account_struct_name.clone()),
                     Some(StructMetadataType::SolanaAccount),
                 )
                 .change_context(CommandError)?;
 
                 if struct_metadata_vec.len() != 1 {
-                    return Err(Report::new(CommandError).attach_printable(format!(
-                        "Error looking for Solana Accounts, expected 1 result, got:\n{:#?}",
-                        struct_metadata_vec
-                    )));
+                    // Pinocchio: account struct may not be registered as SolanaAccount
+                    log::warn!(
+                        "Solana Account struct '{}' not found (expected 1, got {}), skipping screenshot",
+                        mut_account.account_struct_name,
+                        struct_metadata_vec.len()
+                    );
+                    continue;
                 }
 
                 let struct_metadata = struct_metadata_vec[0].clone();
