@@ -189,11 +189,22 @@ impl CodeOverhaulSection {
         result.push("- [ ] check constraints:".to_string());
         for ca_info_validations_vec in ca_info_with_validation.clone() {
             for ca_info_validation in ca_info_validations_vec.clone() {
+                // Use the first meaningful token of the validation to find its line,
+                // since multiline constraints won't match as a single line.
+                let search_token = ca_info_validation
+                    .split('@')
+                    .next()
+                    .unwrap_or(&ca_info_validation)
+                    .trim();
+                let search_token = if search_token.is_empty() {
+                    ca_info_validation.as_str()
+                } else {
+                    search_token
+                };
                 let validation_line = ca_sc_file_content_lines
                     .clone()
-                    .position(|line| line.contains(&ca_info_validation))
-                    .ok_or(TemplateError)
-                    .into_report()?;
+                    .position(|line| line.contains(search_token))
+                    .unwrap_or(0);
                 let shared_permalink = ShareableData::new(String::new());
                 GitAction::GetRepositoryPermalink {
                     file_path: context_accounts_sc_metadata.path.clone(),
