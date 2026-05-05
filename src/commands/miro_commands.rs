@@ -30,7 +30,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
-use crate::config::BatConfig;
+use crate::config::{BatConfig, ProjectType};
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
@@ -101,7 +101,10 @@ impl MiroCommand {
                 .change_context(CommandError)?;
         // get entrypoints name
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
-        let entrypoints_names = if bat_config.is_multi_program() {
+        let entrypoints_names = if bat_config.project_type == ProjectType::Foundry {
+            crate::batbelt::evm::miro::get_entry_point_names()
+                .change_context(CommandError)?
+        } else if bat_config.is_multi_program() {
             let program_name = bat_config
                 .prompt_select_program()
                 .change_context(CommandError)?;
@@ -475,6 +478,19 @@ impl MiroCommand {
         println!("Deploying code-overhaul frames to the Miro board");
 
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
+
+        if bat_config.project_type == ProjectType::Foundry {
+            crate::batbelt::evm::miro::deploy_co_frames()
+                .await
+                .change_context(CommandError)?;
+            GitCommit::UpdateMetadataJson {
+                bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
+            }
+            .create_commit(true)
+            .change_context(CommandError)?;
+            return Ok(());
+        }
+
         let is_multi = bat_config.is_multi_program();
 
         // Collect (program_name, entrypoint_names) for all programs
@@ -587,6 +603,7 @@ impl MiroCommand {
         .change_context(CommandError)?;
         Ok(())
     }
+
 
     async fn deploy_co_screenshots(&self, entry_point_name: Option<String>) -> CommandResult<()> {
         Self::deploy_co_screenshots_with_program(entry_point_name, None).await

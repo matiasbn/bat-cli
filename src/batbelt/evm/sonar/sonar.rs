@@ -2,6 +2,8 @@ use colored::Colorize;
 use dialoguer::console::Emoji;
 use error_stack::{Report, ResultExt};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::time::Duration;
 use walkdir::WalkDir;
 
@@ -21,6 +23,7 @@ static WAVE: Emoji<'_, '_> = Emoji("〰", "-");
 pub struct EvmSonar {
     project_root: String,
     contracts: Vec<EvmContract>,
+    error_count: usize,
 }
 
 impl EvmSonar {
@@ -28,6 +31,7 @@ impl EvmSonar {
         Self {
             project_root: project_root.to_string(),
             contracts: Vec::new(),
+            error_count: 0,
         }
     }
 
@@ -39,6 +43,15 @@ impl EvmSonar {
         pb.enable_steady_tick(Duration::from_millis(100));
         pb.set_style(spinner_style);
         pb
+    }
+
+    /// Append an error line to Batlog.log immediately.
+    fn log_error(&mut self, msg: &str) {
+        self.error_count += 1;
+        let log_path = "Batlog.log";
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+            let _ = writeln!(file, "[EvmSonar] {}", msg);
+        }
     }
 
     fn sonar_start_animation(&self) {
@@ -75,6 +88,15 @@ impl EvmSonar {
         self.phase_4_function_dependencies()?;
         let metadata = self.phase_5_entry_points()?;
 
+        if self.error_count > 0 {
+            println!(
+                "  {} {} parse errors written to {}",
+                "⚠".bright_yellow(),
+                self.error_count,
+                "Batlog.log".bright_cyan()
+            );
+        }
+
         Ok(metadata)
     }
 
@@ -104,7 +126,6 @@ impl EvmSonar {
         pb.set_message(format!("Source scan [0/{}]", total));
 
         let mut count = 0usize;
-        let mut errors = 0usize;
 
         // Parse src/ contracts
         for file_path in &src_files {
@@ -117,7 +138,9 @@ impl EvmSonar {
                         self.contracts.push(contract);
                     }
                 }
-                Err(_) => errors += 1,
+                Err(e) => {
+                    self.log_error(&format!("Failed to parse [SRC] {}: {:?}", file_path, e));
+                }
             }
         }
 
@@ -132,14 +155,16 @@ impl EvmSonar {
                         self.contracts.push(contract);
                     }
                 }
-                Err(_) => errors += 1,
+                Err(e) => {
+                    self.log_error(&format!("Failed to parse [EXT] {}: {:?}", file_path, e));
+                }
             }
         }
 
         let src_contracts = self.contracts.iter().filter(|c| !c.external).count();
         let ext_contracts = self.contracts.iter().filter(|c| c.external).count();
-        let error_msg = if errors > 0 {
-            format!(", {} errors", errors)
+        let error_msg = if self.error_count > 0 {
+            format!(", {} errors", self.error_count)
         } else {
             String::new()
         };
@@ -157,7 +182,8 @@ impl EvmSonar {
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.path().extension().map(|ext| ext == "sol").unwrap_or(false)
+                e.file_type().is_file()
+                    && e.path().extension().map(|ext| ext == "sol").unwrap_or(false)
                     && !e.path().to_str().unwrap_or("").contains("/test/")
                     && !e.path().to_str().unwrap_or("").contains("/tests/")
                     && !e.path().to_str().unwrap_or("").contains("/script/")

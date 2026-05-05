@@ -134,6 +134,21 @@ impl EvmBatMetadata {
         metadata.save_metadata()
     }
 
+    /// Atomically read, modify, and save EVM metadata.
+    pub fn update_metadata<F>(f: F) -> EvmMetadataResult<()>
+    where
+        F: FnOnce(&mut EvmBatMetadata),
+    {
+        let mut metadata = Self::read_metadata()?;
+        f(&mut metadata);
+        metadata.save_metadata()
+    }
+
+    /// Get miro frame ref by entry point name.
+    pub fn get_miro_frame_by_ep_name(&self, ep_name: &str) -> Option<&MiroFrameRef> {
+        self.miro.frames.iter().find(|f| f.entry_point_name == ep_name)
+    }
+
     pub fn get_contract_by_name(&self, name: &str) -> Option<&ContractMetadata> {
         self.contracts.iter().find(|c| c.name == name)
     }
@@ -201,25 +216,51 @@ impl EvmBatMetadata {
             if matches!(contract.contract_type, EvmContractType::Interface | EvmContractType::Library) {
                 continue;
             }
-            for func in &contract.functions {
-                if matches!(func.visibility, EvmVisibility::External | EvmVisibility::Public)
-                    && !func.is_constructor
-                {
-                    let ep = EntryPointMetadata {
-                        metadata_id: format!("ep_{}", func.metadata_id),
-                        name: format!("{}.{}", contract.name, func.name),
-                        contract_name: contract.name.clone(),
-                        function_metadata_id: func.metadata_id.clone(),
-                        access_control: detect_access_control(&func.modifiers),
-                        storage_reads: vec![],
-                        storage_writes: vec![],
-                        external_calls: vec![],
-                        events_emitted: vec![],
-                        modifiers: func.modifiers.clone(),
-                        dependencies: vec![],
-                    };
-                    metadata.entry_points.push(ep);
-                }
+
+            // Detect overloaded function names within this contract
+            let ep_functions: Vec<_> = contract
+                .functions
+                .iter()
+                .filter(|f| {
+                    matches!(f.visibility, EvmVisibility::External | EvmVisibility::Public)
+                        && !f.is_constructor
+                })
+                .collect();
+
+            let mut name_counts: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
+            for func in &ep_functions {
+                *name_counts.entry(func.name.clone()).or_insert(0) += 1;
+            }
+
+            for func in &ep_functions {
+                // If overloaded, append param types to disambiguate
+                let ep_name = if name_counts.get(&func.name).copied().unwrap_or(0) > 1 {
+                    let param_types = func
+                        .params
+                        .iter()
+                        .map(|p| p.type_name.clone())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!("{}.{}({})", contract.name, func.name, param_types)
+                } else {
+                    format!("{}.{}", contract.name, func.name)
+                };
+
+                let ep = EntryPointMetadata {
+                    metadata_id: format!("ep_{}", func.metadata_id),
+                    name: ep_name,
+                    contract_name: contract.name.clone(),
+                    function_metadata_id: func.metadata_id.clone(),
+                    access_control: detect_access_control(&func.modifiers),
+                    storage_reads: vec![],
+                    storage_writes: vec![],
+                    external_calls: vec![],
+                    events_emitted: vec![],
+                    modifiers: func.modifiers.clone(),
+                    dependencies: vec![],
+                };
+                metadata.entry_points.push(ep);
             }
         }
 
