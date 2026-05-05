@@ -19,6 +19,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::miro_commands::MiroCommand;
 use crate::commands::{BatCommandEnumerator, CommandResult};
+use crate::config::ProjectType;
 use clap::Subcommand;
 
 use crate::batbelt::git::git_action::GitAction;
@@ -156,13 +157,29 @@ impl ProjectCommands {
             "BatMetadata.json!".bright_green()
         );
 
-        SonarCommand::Run.execute_command()?;
+        if bat_config.project_type == ProjectType::Foundry {
+            // Foundry/Solidity: run EVM sonar
+            let mut sol_sonar =
+                crate::batbelt::evm::sonar::sonar::EvmSonar::new("..");
+            let metadata = sol_sonar.run().change_context(CommandError)?;
 
-        // Create auditor folders and code overhaul files
-        TemplateGenerator
-            .create_folders_for_current_auditor()
-            .change_context(CommandError)?;
-        project_commands_functions::initialize_code_overhaul_files()?;
+            // Create auditor folders
+            TemplateGenerator
+                .create_folders_for_current_auditor()
+                .change_context(CommandError)?;
+
+            // Create code-overhaul files from EVM entry points
+            project_commands_functions::initialize_evm_code_overhaul_files(&metadata)?;
+        } else {
+            SonarCommand::Run.execute_command()?;
+
+            // Create auditor folders and code overhaul files
+            TemplateGenerator
+                .create_folders_for_current_auditor()
+                .change_context(CommandError)?;
+            project_commands_functions::initialize_code_overhaul_files()?;
+        }
+
         GitCommit::InitAuditor
             .create_commit(true)
             .change_context(CommandError)?;
@@ -241,6 +258,7 @@ impl ProjectCommands {
 
 mod project_commands_functions {
     use super::*;
+    use crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata;
     use lazy_regex::regex;
 
     pub fn init_auditor_configuration(auditor_name: String) -> CommandResult<()> {
@@ -412,6 +430,16 @@ mod project_commands_functions {
         GitIgnore
             .write_content(true, &TemplateGenerator.get_git_ignore_content())
             .change_context(CommandError)
+    }
+
+    pub fn initialize_evm_code_overhaul_files(
+        metadata: &EvmBatMetadata,
+    ) -> Result<(), CommandError> {
+        for ep in &metadata.entry_points {
+            // Use "ContractName.functionName" as the file name
+            create_overhaul_file(ep.name.clone(), None)?;
+        }
+        Ok(())
     }
 
     pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {

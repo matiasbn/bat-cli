@@ -34,9 +34,19 @@ pub fn create_figure(
     let theme = &ts.themes["Dracula"];
 
     // Syntax-highlight every line.
+    // Detect language from file_name extension, default to Rust.
+    let ext = file_name
+        .rsplit('.')
+        .next()
+        .unwrap_or("rs");
+    let lang_ext = match ext {
+        "sol" => "sol",
+        _ => "rs",
+    };
     let syntax = ps
-        .find_syntax_by_extension("rs")
-        .expect("Rust syntax not found in syntect");
+        .find_syntax_by_extension(lang_ext)
+        .or_else(|| ps.find_syntax_by_extension("rs"))
+        .expect("Syntax not found in syntect");
     let mut highlighter = HighlightLines::new(syntax, theme);
     let highlight: Vec<Vec<(syntect::highlighting::Style, &str)>> = LinesWithEndings::from(content)
         .map(|line| highlighter.highlight_line(line, &ps).unwrap())
