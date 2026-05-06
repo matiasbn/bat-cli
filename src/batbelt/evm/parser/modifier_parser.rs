@@ -39,7 +39,7 @@ pub fn parse_modifier_definition(
         })
         .unwrap_or_default();
 
-    let line = span_to_line(sess, func.body_span);
+    let line = span_to_line(sess, func.header.span.to(func.body_span));
 
     EvmModifierDef {
         name,

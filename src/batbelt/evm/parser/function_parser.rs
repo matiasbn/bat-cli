@@ -83,8 +83,10 @@ pub fn parse_function_definition(
         })
         .unwrap_or_default();
 
-    let line = span_to_line(sess, func.body_span);
-    let end_line = span_to_end_line(sess, func.body_span);
+    // Use full function span: from header start to body end
+    let full_span = func.header.span.to(func.body_span);
+    let line = span_to_line(sess, full_span);
+    let end_line = span_to_end_line(sess, full_span);
 
     EvmFunction {
         name,
