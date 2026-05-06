@@ -190,43 +190,70 @@ impl ProjectCommands {
                 .change_context(CommandError)?;
 
         if use_miro {
-            // Ask for OAuth token first so we can validate the board URL against the API
-            let miro_oauth_token: String =
-                bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?;
+            // Try reading defaults from .env (dev convenience)
+            let _ = dotenvy::dotenv();
+            let env_token = std::env::var("MIRO_OAUTH_TOKEN").ok().filter(|s| !s.is_empty());
+            let env_board = std::env::var("MIRO_BOARD_URL").ok().filter(|s| !s.is_empty());
 
-            let miro_board_url = loop {
-                let miro_board_url_input: String =
-                    bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
-                match BatConfig::normalize_miro_board_url(&miro_board_url_input) {
-                    Ok(url) => {
-                        // Validate the board exists and is accessible via the Miro API
-                        match crate::batbelt::miro::MiroConfig::validate_board(
-                            &miro_oauth_token,
-                            &url,
-                        )
-                        .await
-                        {
-                            Ok(board_name) => {
-                                println!("{} Board validated: \"{}\"", "OK".green(), board_name);
-                                break url;
-                            }
-                            Err(e) => {
-                                println!(
-                                    "{} Board not found or not accessible. Please check the URL and try again.\n  Details: {}",
-                                    "Error:".red(),
-                                    e
-                                );
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        println!(
-                            "{} Invalid Miro board url format, please try again",
-                            "Error:".red()
-                        );
+            let miro_oauth_token: String = match env_token {
+                Some(token) => {
+                    let masked = format!("{}...{}", &token[..6], &token[token.len()-4..]);
+                    let use_env = BatDialoguer::select_yes_or_no(
+                        format!("Use .env MIRO_OAUTH_TOKEN? ({})", masked),
+                    )
+                    .change_context(CommandError)?;
+                    if use_env {
+                        token
+                    } else {
+                        bat_dialoguer::input("Miro OAuth access token:")
+                            .change_context(CommandError)?
                     }
                 }
+                None => {
+                    bat_dialoguer::input("Miro OAuth access token:")
+                        .change_context(CommandError)?
+                }
             };
+
+            let miro_board_url: String = match env_board {
+                Some(url) => {
+                    let use_env = BatDialoguer::select_yes_or_no(
+                        format!("Use .env MIRO_BOARD_URL? ({})", url),
+                    )
+                    .change_context(CommandError)?;
+                    if use_env {
+                        match BatConfig::normalize_miro_board_url(&url) {
+                            Ok(normalized) => normalized,
+                            Err(_) => {
+                                println!("{} .env URL is invalid, please enter manually", "Error:".red());
+                                Self::prompt_miro_board_url(&miro_oauth_token).await?
+                            }
+                        }
+                    } else {
+                        Self::prompt_miro_board_url(&miro_oauth_token).await?
+                    }
+                }
+                None => Self::prompt_miro_board_url(&miro_oauth_token).await?,
+            };
+
+            // Validate the board
+            match crate::batbelt::miro::MiroConfig::validate_board(
+                &miro_oauth_token,
+                &miro_board_url,
+            )
+            .await
+            {
+                Ok(board_name) => {
+                    println!("{} Board validated: \"{}\"", "OK".green(), board_name);
+                }
+                Err(e) => {
+                    println!(
+                        "{} Board validation failed: {}",
+                        "Warning:".bright_yellow(),
+                        e
+                    );
+                }
+            }
 
             // Update Bat.toml with the board URL
             let mut bat_config = BatConfig::get_config().change_context(CommandError)?;
@@ -253,6 +280,41 @@ impl ProjectCommands {
 
         println!("Project {} successfully created", bat_config.project_name);
         Ok(())
+    }
+
+    async fn prompt_miro_board_url(miro_oauth_token: &str) -> Result<String, CommandError> {
+        loop {
+            let miro_board_url_input: String =
+                bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
+            match BatConfig::normalize_miro_board_url(&miro_board_url_input) {
+                Ok(url) => {
+                    match crate::batbelt::miro::MiroConfig::validate_board(
+                        miro_oauth_token,
+                        &url,
+                    )
+                    .await
+                    {
+                        Ok(board_name) => {
+                            println!("{} Board validated: \"{}\"", "OK".green(), board_name);
+                            return Ok(url);
+                        }
+                        Err(e) => {
+                            println!(
+                                "{} Board not found or not accessible: {}",
+                                "Error:".red(),
+                                e
+                            );
+                        }
+                    }
+                }
+                Err(_) => {
+                    println!(
+                        "{} Invalid Miro board url format, please try again",
+                        "Error:".red()
+                    );
+                }
+            }
+        }
     }
 }
 

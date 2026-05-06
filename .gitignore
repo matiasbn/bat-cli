@@ -6,3 +6,4 @@ assets/.DS_Store
 .DS_Store
 .vscode
 PACKAGE.md
+.env
