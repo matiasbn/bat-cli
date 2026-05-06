@@ -497,9 +497,7 @@ fn find_doc_start_line(file_path: &str, func_start_line: usize) -> usize {
 /// Deploy source code screenshots for EVM projects with contract-based selection.
 ///
 /// Flow: lib/src → contract → items (functions, vars, events, modifiers) → screenshot deploy.
-pub async fn deploy_source_code_screenshots(
-    selected_miro_frame: MiroFrame,
-) -> EvmMiroResult<()> {
+pub async fn deploy_source_code_screenshots(selected_miro_frame: MiroFrame) -> EvmMiroResult<()> {
     let evm_metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
 
     let mut continue_selection = true;
@@ -638,7 +636,11 @@ pub async fn deploy_source_code_screenshots(
                     } else {
                         find_function_end_line(&selected_contract.file_path, f.line)
                     };
-                    (format!("{}.{}.js", selected_contract.name, f.name), f.line, end)
+                    (
+                        format!("{}.{}.js", selected_contract.name, f.name),
+                        f.line,
+                        end,
+                    )
                 }
                 ContractItem::StorageVar(i) => {
                     let v = &selected_contract.state_variables[*i];
@@ -663,7 +665,11 @@ pub async fn deploy_source_code_screenshots(
                     } else {
                         m.line + m.body_source.lines().count()
                     };
-                    (format!("{}.{}.js", selected_contract.name, m.name), m.line, end)
+                    (
+                        format!("{}.{}.js", selected_contract.name, m.name),
+                        m.line,
+                        end,
+                    )
                 }
             };
 
@@ -702,8 +708,7 @@ pub async fn deploy_source_code_screenshots(
             "continue creating screenshots".yellow(),
             selected_miro_frame.title.yellow()
         );
-        continue_selection =
-            crate::batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
+        continue_selection = crate::batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
     }
 
     Ok(())
