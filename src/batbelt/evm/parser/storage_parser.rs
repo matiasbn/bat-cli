@@ -1,53 +1,48 @@
-use quote::ToTokens;
-use syn_solidity::Spanned;
+use solar_parse::{
+    ast,
+    interface::Session,
+};
 
 use crate::batbelt::evm::types::{EvmVisibility, StorageVariable};
 
-use super::evm_file_parser::span_to_line;
+use super::evm_file_parser::{span_to_line, type_to_string};
 
 /// Parse a VariableDefinition into a StorageVariable.
 pub fn parse_variable_definition(
-    var: &syn_solidity::VariableDefinition,
-    _source: &str,
+    sess: &Session,
+    var: &ast::VariableDefinition<'_>,
 ) -> Option<StorageVariable> {
-    let name = var.name.to_string();
+    let name = var.name.map(|n| n.as_str().to_string()).unwrap_or_default();
     if name.is_empty() {
         return None;
     }
 
-    let type_name = var.ty.to_string();
+    let type_name = type_to_string(sess, &var.ty);
 
     let visibility = var
-        .attributes
-        .0
-        .iter()
-        .find_map(|attr| {
-            if let syn_solidity::VariableAttribute::Visibility(vis) = attr {
-                Some(match vis {
-                    syn_solidity::Visibility::External(_) => EvmVisibility::External,
-                    syn_solidity::Visibility::Public(_) => EvmVisibility::Public,
-                    syn_solidity::Visibility::Internal(_) => EvmVisibility::Internal,
-                    syn_solidity::Visibility::Private(_) => EvmVisibility::Private,
-                })
-            } else {
-                None
-            }
+        .visibility
+        .map(|vis| match vis {
+            ast::Visibility::External => EvmVisibility::External,
+            ast::Visibility::Public => EvmVisibility::Public,
+            ast::Visibility::Internal => EvmVisibility::Internal,
+            ast::Visibility::Private => EvmVisibility::Private,
         })
         .unwrap_or(EvmVisibility::Internal);
 
     let is_constant = var
-        .attributes
-        .0
-        .iter()
-        .any(|attr| matches!(attr, syn_solidity::VariableAttribute::Constant(_)));
+        .mutability
+        .map(|m| m == ast::VarMut::Constant)
+        .unwrap_or(false);
 
     let is_immutable = var
-        .attributes
-        .0
-        .iter()
-        .any(|attr| matches!(attr, syn_solidity::VariableAttribute::Immutable(_)));
+        .mutability
+        .map(|m| m == ast::VarMut::Immutable)
+        .unwrap_or(false);
 
-    let line = span_to_line(var.name.span());
+    let line = var
+        .name
+        .map(|n| span_to_line(sess, n.span))
+        .unwrap_or(0);
 
     Some(StorageVariable {
         name,

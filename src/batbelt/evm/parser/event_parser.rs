@@ -1,13 +1,15 @@
-use quote::ToTokens;
-use syn_solidity::Spanned;
+use solar_parse::{
+    ast,
+    interface::Session,
+};
 
 use crate::batbelt::evm::types::{EvmEvent, EvmParam};
 
-use super::evm_file_parser::span_to_line;
+use super::evm_file_parser::{span_to_line, type_to_string};
 
 /// Parse an ItemEvent into an EvmEvent.
-pub fn parse_event_definition(event: &syn_solidity::ItemEvent, _source: &str) -> EvmEvent {
-    let name = event.name.to_string();
+pub fn parse_event_definition(sess: &Session, event: &ast::ItemEvent<'_>) -> EvmEvent {
+    let name = event.name.as_str().to_string();
 
     let params: Vec<EvmParam> = event
         .parameters
@@ -15,10 +17,9 @@ pub fn parse_event_definition(event: &syn_solidity::ItemEvent, _source: &str) ->
         .map(|field| {
             let param_name = field
                 .name
-                .as_ref()
-                .map(|n| n.to_string())
+                .map(|n| n.as_str().to_string())
                 .unwrap_or_default();
-            let type_name = field.ty.to_string();
+            let type_name = type_to_string(sess, &field.ty);
             EvmParam {
                 name: param_name,
                 type_name,
@@ -27,12 +28,12 @@ pub fn parse_event_definition(event: &syn_solidity::ItemEvent, _source: &str) ->
         })
         .collect();
 
-    let line = span_to_line(event.name.span());
+    let line = span_to_line(sess, event.name.span);
 
     EvmEvent {
         name,
         params,
-        is_anonymous: event.anonymous.is_some(),
+        is_anonymous: event.anonymous,
         line,
     }
 }

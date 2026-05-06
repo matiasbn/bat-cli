@@ -1,5 +1,11 @@
 use std::collections::HashMap;
 
+use solar_parse::{
+    ast,
+    interface::{Session, source_map::FileName},
+    Parser,
+};
+
 use crate::batbelt::evm::types::{EvmContract, EvmFunction};
 
 /// Represents a resolved function call.
@@ -132,140 +138,135 @@ pub fn extract_calls_from_source(source: &str) -> Vec<String> {
     // Wrap in a dummy function so it parses as a valid Solidity file
     let wrapped = format!("contract _C {{ function _f() {{ {} }} }}", source);
 
-    if let Ok(tokens) = wrapped.parse::<proc_macro2::TokenStream>() {
-        if let Ok(file) = syn_solidity::parse2(tokens) {
-            let mut calls = Vec::new();
-            // Navigate: file > contract > function > body > stmts
-            for item in &file.items {
-                if let syn_solidity::Item::Contract(c) = item {
-                    for body_item in &c.body {
-                        if let syn_solidity::Item::Function(f) = body_item {
-                            if let syn_solidity::FunctionBody::Block(block) = &f.body {
-                                for stmt in &block.stmts {
-                                    extract_calls_from_stmt(stmt, &mut calls);
-                                }
+    let sess = Session::builder()
+        .with_silent_emitter(None)
+        .build();
+
+    let result = sess.enter(|| -> Option<Vec<String>> {
+        let arena = ast::Arena::new();
+        let mut parser = Parser::from_source_code(
+            &sess,
+            &arena,
+            FileName::Custom("call_resolver".into()),
+            wrapped.clone(),
+        ).ok()?;
+
+        let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
+
+        let mut calls = Vec::new();
+        // Navigate: file > contract > function > body > stmts
+        for item in file.items.iter() {
+            if let ast::ItemKind::Contract(c) = &item.kind {
+                for body_item in c.body.iter() {
+                    if let ast::ItemKind::Function(f) = &body_item.kind {
+                        if let Some(block) = &f.body {
+                            for stmt in block.stmts.iter() {
+                                extract_calls_from_stmt(&stmt.kind, &mut calls);
                             }
                         }
                     }
                 }
             }
-            calls.sort();
-            calls.dedup();
-            return calls;
         }
-    }
+        calls.sort();
+        calls.dedup();
+        Some(calls)
+    });
 
-    // Fallback: regex-based extraction
-    extract_calls_regex(source)
+    result.unwrap_or_else(|| extract_calls_regex(source))
 }
 
-/// AST walk: extract call names from a statement.
-fn extract_calls_from_stmt(stmt: &syn_solidity::Stmt, calls: &mut Vec<String>) {
-    match stmt {
-        syn_solidity::Stmt::Expr(expr_stmt) => {
-            extract_calls_from_expr(&expr_stmt.expr, calls);
+/// AST walk: extract call names from a statement kind.
+fn extract_calls_from_stmt(kind: &ast::StmtKind<'_>, calls: &mut Vec<String>) {
+    match kind {
+        ast::StmtKind::Expr(expr) => {
+            extract_calls_from_expr(&expr.kind, calls);
         }
-        syn_solidity::Stmt::Return(ret) => {
-            if let Some(expr) = &ret.expr {
-                extract_calls_from_expr(expr, calls);
+        ast::StmtKind::Return(opt_expr) => {
+            if let Some(expr) = opt_expr {
+                extract_calls_from_expr(&expr.kind, calls);
             }
         }
-        syn_solidity::Stmt::Block(block) => {
-            for s in &block.stmts {
-                extract_calls_from_stmt(s, calls);
+        ast::StmtKind::Block(block) => {
+            for s in block.stmts.iter() {
+                extract_calls_from_stmt(&s.kind, calls);
             }
         }
-        syn_solidity::Stmt::UncheckedBlock(block) => {
-            for s in &block.block.stmts {
-                extract_calls_from_stmt(s, calls);
+        ast::StmtKind::UncheckedBlock(block) => {
+            for s in block.stmts.iter() {
+                extract_calls_from_stmt(&s.kind, calls);
             }
         }
-        syn_solidity::Stmt::If(if_stmt) => {
-            extract_calls_from_expr(&if_stmt.cond, calls);
-            extract_calls_from_stmt(&if_stmt.then_branch, calls);
-            if let Some((_, else_branch)) = &if_stmt.else_branch {
-                extract_calls_from_stmt(else_branch, calls);
+        ast::StmtKind::If(cond, then_branch, else_branch) => {
+            extract_calls_from_expr(&cond.kind, calls);
+            extract_calls_from_stmt(&then_branch.kind, calls);
+            if let Some(else_stmt) = else_branch {
+                extract_calls_from_stmt(&else_stmt.kind, calls);
             }
         }
-        syn_solidity::Stmt::For(for_stmt) => {
-            // init is ForInitStmt (not Option)
-            extract_calls_from_for_init(&for_stmt.init, calls);
-            if let Some(cond) = &for_stmt.cond {
-                extract_calls_from_expr(cond, calls);
+        ast::StmtKind::For { init, cond, next, body } => {
+            if let Some(init_stmt) = init {
+                extract_calls_from_stmt(&init_stmt.kind, calls);
             }
-            if let Some(post) = &for_stmt.post {
-                extract_calls_from_expr(post, calls);
+            if let Some(cond_expr) = cond {
+                extract_calls_from_expr(&cond_expr.kind, calls);
             }
-            extract_calls_from_stmt(&for_stmt.body, calls);
+            if let Some(next_expr) = next {
+                extract_calls_from_expr(&next_expr.kind, calls);
+            }
+            extract_calls_from_stmt(&body.kind, calls);
         }
-        syn_solidity::Stmt::While(while_stmt) => {
-            extract_calls_from_expr(&while_stmt.cond, calls);
-            extract_calls_from_stmt(&while_stmt.body, calls);
+        ast::StmtKind::While(cond, body) => {
+            extract_calls_from_expr(&cond.kind, calls);
+            extract_calls_from_stmt(&body.kind, calls);
         }
-        syn_solidity::Stmt::DoWhile(do_while) => {
-            extract_calls_from_stmt(&do_while.body, calls);
-            extract_calls_from_expr(&do_while.cond, calls);
+        ast::StmtKind::DoWhile(body, cond) => {
+            extract_calls_from_stmt(&body.kind, calls);
+            extract_calls_from_expr(&cond.kind, calls);
         }
-        syn_solidity::Stmt::VarDecl(var_decl) => {
-            if let Some((_, expr)) = &var_decl.assignment {
-                extract_calls_from_expr(expr, calls);
+        ast::StmtKind::DeclSingle(var) => {
+            if let Some(init) = &var.initializer {
+                extract_calls_from_expr(&init.kind, calls);
             }
         }
-        syn_solidity::Stmt::Emit(emit) => {
-            // emit EventName(...) — skip, not a function call
+        ast::StmtKind::DeclMulti(_, expr) => {
+            extract_calls_from_expr(&expr.kind, calls);
         }
-        syn_solidity::Stmt::Revert(revert) => {
-            // revert ErrorName(...) — skip builtin
-        }
-        syn_solidity::Stmt::Try(try_stmt) => {
-            extract_calls_from_expr(&try_stmt.expr, calls);
-            for s in &try_stmt.block.stmts {
-                extract_calls_from_stmt(s, calls);
-            }
-            for catch in &try_stmt.catch {
-                for s in &catch.block.stmts {
-                    extract_calls_from_stmt(s, calls);
+        ast::StmtKind::Try(try_stmt) => {
+            extract_calls_from_expr(&try_stmt.expr.kind, calls);
+            for clause in try_stmt.clauses.iter() {
+                for s in clause.block.stmts.iter() {
+                    extract_calls_from_stmt(&s.kind, calls);
                 }
             }
         }
-        _ => {}
-    }
-}
-
-/// Handle ForInitStmt (variable decl or expression).
-fn extract_calls_from_for_init(init: &syn_solidity::ForInitStmt, calls: &mut Vec<String>) {
-    match init {
-        syn_solidity::ForInitStmt::VarDecl(var_decl) => {
-            if let Some((_, expr)) = &var_decl.assignment {
-                extract_calls_from_expr(expr, calls);
-            }
+        ast::StmtKind::Emit(_, _) => {
+            // emit EventName(...) — skip, not a function call
         }
-        syn_solidity::ForInitStmt::Expr(expr_stmt) => {
-            extract_calls_from_expr(&expr_stmt.expr, calls);
+        ast::StmtKind::Revert(_, _) => {
+            // revert ErrorName(...) — skip builtin
         }
         _ => {}
     }
 }
 
-/// AST walk: extract call names from an expression.
-fn extract_calls_from_expr(expr: &syn_solidity::Expr, calls: &mut Vec<String>) {
-    match expr {
-        syn_solidity::Expr::Call(call) => {
+/// AST walk: extract call names from an expression kind.
+fn extract_calls_from_expr(kind: &ast::ExprKind<'_>, calls: &mut Vec<String>) {
+    match kind {
+        ast::ExprKind::Call(callee, args) => {
             // Extract the callee name
-            match &*call.expr {
-                syn_solidity::Expr::Ident(ident) => {
-                    let name = ident.to_string();
+            match &callee.kind {
+                ast::ExprKind::Ident(ident) => {
+                    let name = ident.as_str().to_string();
                     if !is_builtin(&name) {
                         calls.push(name);
                     }
                 }
-                syn_solidity::Expr::Member(member) => {
+                ast::ExprKind::Member(obj_expr, method_ident) => {
                     // obj.method() — extract as "obj.method"
-                    if let (syn_solidity::Expr::Ident(obj), syn_solidity::Expr::Ident(method)) =
-                        (&*member.expr, &*member.member)
-                    {
-                        let obj_name = obj.to_string();
-                        let method_name = method.to_string();
+                    if let ast::ExprKind::Ident(obj_ident) = &obj_expr.kind {
+                        let obj_name = obj_ident.as_str().to_string();
+                        let method_name = method_ident.as_str().to_string();
                         if !is_builtin(&obj_name) {
                             calls.push(format!("{}.{}", obj_name, method_name));
                         }
@@ -273,47 +274,42 @@ fn extract_calls_from_expr(expr: &syn_solidity::Expr, calls: &mut Vec<String>) {
                 }
                 _ => {
                     // Complex callee (e.g. chained calls) — recurse into it
-                    extract_calls_from_expr(&call.expr, calls);
+                    extract_calls_from_expr(&callee.kind, calls);
                 }
             }
             // Also walk arguments for nested calls like foo(bar(x))
-            if let syn_solidity::ArgListImpl::Unnamed(args) = &call.args.list {
-                for arg in args.iter() {
-                    extract_calls_from_expr(arg, calls);
+            for arg in args.exprs() {
+                extract_calls_from_expr(&arg.kind, calls);
+            }
+        }
+        ast::ExprKind::Binary(left, _op, right) => {
+            extract_calls_from_expr(&left.kind, calls);
+            extract_calls_from_expr(&right.kind, calls);
+        }
+        ast::ExprKind::Unary(_op, expr) => {
+            extract_calls_from_expr(&expr.kind, calls);
+        }
+        ast::ExprKind::Ternary(cond, if_true, if_false) => {
+            extract_calls_from_expr(&cond.kind, calls);
+            extract_calls_from_expr(&if_true.kind, calls);
+            extract_calls_from_expr(&if_false.kind, calls);
+        }
+        ast::ExprKind::Assign(left, _op, right) => {
+            extract_calls_from_expr(&left.kind, calls);
+            extract_calls_from_expr(&right.kind, calls);
+        }
+        ast::ExprKind::Index(expr, _index_kind) => {
+            extract_calls_from_expr(&expr.kind, calls);
+        }
+        ast::ExprKind::Tuple(elems) => {
+            for elem in elems.iter() {
+                if let solar_parse::interface::SpannedOption::Some(e) = elem {
+                    extract_calls_from_expr(&e.kind, calls);
                 }
             }
         }
-        syn_solidity::Expr::Binary(bin) => {
-            extract_calls_from_expr(&bin.left, calls);
-            extract_calls_from_expr(&bin.right, calls);
-        }
-        syn_solidity::Expr::Unary(un) => {
-            extract_calls_from_expr(&un.expr, calls);
-        }
-        syn_solidity::Expr::Postfix(post) => {
-            extract_calls_from_expr(&post.expr, calls);
-        }
-        syn_solidity::Expr::Ternary(tern) => {
-            extract_calls_from_expr(&tern.cond, calls);
-            extract_calls_from_expr(&tern.if_true, calls);
-            extract_calls_from_expr(&tern.if_false, calls);
-        }
-        syn_solidity::Expr::Index(idx) => {
-            extract_calls_from_expr(&idx.expr, calls);
-            if let Some(start) = &idx.start {
-                extract_calls_from_expr(start, calls);
-            }
-            if let Some(end) = &idx.end {
-                extract_calls_from_expr(end, calls);
-            }
-        }
-        syn_solidity::Expr::Tuple(tuple) => {
-            for elem in &tuple.elems {
-                extract_calls_from_expr(elem, calls);
-            }
-        }
-        syn_solidity::Expr::Member(member) => {
-            extract_calls_from_expr(&member.expr, calls);
+        ast::ExprKind::Member(expr, _ident) => {
+            extract_calls_from_expr(&expr.kind, calls);
         }
         _ => {}
     }

@@ -1,8 +1,13 @@
 use error_stack::Report;
 use std::fs;
 use std::io;
+use std::path::Path;
 
-use syn_solidity::{self, Item};
+use solar_parse::{
+    ast,
+    interface::{Session, Span},
+    Parser,
+};
 
 use super::{EvmParserError, EvmParserResult};
 use crate::batbelt::evm::types::{EvmFile, EvmImport, ImportSymbol};
@@ -21,101 +26,123 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
             .attach_printable(format!("File is empty or unreadable: {}", file_path)));
     }
 
-    // Preprocess Solidity source to make it compatible with proc_macro2's Rust tokenizer.
-    // Solidity has syntax that Rust's lexer cannot handle (single-quoted strings,
-    // hex"..." literals, unicode"..." literals).
-    let preprocessed = preprocess_solidity_source(&source);
+    let sess = Session::builder()
+        .with_buffer_emitter(solar_parse::interface::ColorChoice::Auto)
+        .build();
 
-    let tokens: proc_macro2::TokenStream = preprocessed.parse().map_err(|e: proc_macro2::LexError| {
-        Report::new(EvmParserError)
-            .attach_printable(format!("Lex error in {}: {}", file_path, e))
-    })?;
+    let result = sess.enter(|| -> Result<EvmFile, Report<EvmParserError>> {
+        let arena = ast::Arena::new();
+        let mut parser = Parser::from_file(&sess, &arena, Path::new(file_path)).map_err(|_| {
+            Report::new(EvmParserError)
+                .attach_printable(format!("Cannot open {}", file_path))
+        })?;
 
-    let sol_file_ast: syn_solidity::File = syn_solidity::parse2(tokens).map_err(|e| {
-        Report::new(EvmParserError)
-            .attach_printable(format!("Parse error in {}: {}", file_path, e))
-    })?;
+        let ast = parser.parse_file().map_err(|e| {
+            e.emit();
+            Report::new(EvmParserError)
+                .attach_printable(format!("Parse error in {}", file_path))
+        })?;
 
-    let mut sol_file = EvmFile {
-        path: file_path.to_string(),
-        imports: Vec::new(),
-        contracts: Vec::new(),
-        pragma: None,
-    };
+        let mut sol_file = EvmFile {
+            path: file_path.to_string(),
+            imports: Vec::new(),
+            contracts: Vec::new(),
+            pragma: None,
+        };
 
-    for item in &sol_file_ast.items {
-        match item {
-            Item::Pragma(pragma) => {
-                // Extract pragma tokens as string (e.g. "solidity ^0.8.23")
-                sol_file.pragma = Some(pragma.tokens.to_string());
+        for item in ast.items.iter() {
+            match &item.kind {
+                ast::ItemKind::Pragma(pragma) => {
+                    sol_file.pragma = Some(match &pragma.tokens {
+                        ast::PragmaTokens::Version(name, req) => {
+                            format!("{} {}", name.as_str(), req)
+                        }
+                        ast::PragmaTokens::Custom(name, value) => {
+                            if let Some(val) = value {
+                                format!("{} {}", name.as_str(), val.as_str())
+                            } else {
+                                name.as_str().to_string()
+                            }
+                        }
+                        other => format!("{:?}", other),
+                    });
+                }
+                ast::ItemKind::Import(import_dir) => {
+                    let sol_import = parse_import(&sess, import_dir, item.span);
+                    sol_file.imports.push(sol_import);
+                }
+                ast::ItemKind::Contract(contract_def) => {
+                    let contract = parse_contract_definition(&sess, contract_def, file_path, &source);
+                    sol_file.contracts.push(contract);
+                }
+                _ => {}
             }
-            Item::Import(import_dir) => {
-                let sol_import = parse_import(import_dir);
-                sol_file.imports.push(sol_import);
-            }
-            Item::Contract(contract_def) => {
-                let contract = parse_contract_definition(contract_def, file_path, &source);
-                sol_file.contracts.push(contract);
-            }
-            _ => {}
         }
-    }
 
-    Ok(sol_file)
+        Ok(sol_file)
+    });
+
+    result
 }
 
 /// Parse an import directive into our EvmImport type.
-fn parse_import(import: &syn_solidity::ImportDirective) -> EvmImport {
-    use syn_solidity::{ImportPath, Spanned};
+fn parse_import(sess: &Session, import: &ast::ImportDirective<'_>, item_span: Span) -> EvmImport {
+    let path = import.path.value.as_str().to_string();
+    let line = span_to_line(sess, item_span);
 
-    match &import.path {
-        ImportPath::Plain(plain) => EvmImport {
-            path: plain.path.value(),
-            symbols: if let Some(alias) = &plain.alias {
+    match &import.items {
+        ast::ImportItems::Plain(alias) => EvmImport {
+            path,
+            symbols: if let Some(alias_ident) = alias {
                 vec![ImportSymbol {
                     name: "*".to_string(),
-                    alias: Some(alias.alias.to_string()),
+                    alias: Some(alias_ident.as_str().to_string()),
                 }]
             } else {
                 vec![]
             },
-            line: span_to_line(import.span()),
+            line,
         },
-        ImportPath::Aliases(aliases) => {
+        ast::ImportItems::Aliases(aliases) => {
             let symbols = aliases
-                .imports
                 .iter()
                 .map(|(ident, alias)| ImportSymbol {
-                    name: ident.to_string(),
-                    alias: alias.as_ref().map(|a| a.alias.to_string()),
+                    name: ident.as_str().to_string(),
+                    alias: alias.as_ref().map(|a| a.as_str().to_string()),
                 })
                 .collect();
             EvmImport {
-                path: aliases.path.value(),
+                path,
                 symbols,
-                line: span_to_line(import.span()),
+                line,
             }
         }
-        ImportPath::Glob(glob) => EvmImport {
-            path: glob.path.value(),
+        ast::ImportItems::Glob(alias_ident) => EvmImport {
+            path,
             symbols: vec![ImportSymbol {
                 name: "*".to_string(),
-                alias: glob.alias.as_ref().map(|a| a.alias.to_string()),
+                alias: Some(alias_ident.as_str().to_string()),
             }],
-            line: span_to_line(import.span()),
+            line,
         },
     }
 }
 
-/// Get 1-based line number from span start.
-/// Requires proc-macro2 "span_locations" feature.
-pub fn span_to_line(span: proc_macro2::Span) -> usize {
-    span.start().line
+/// Get 1-based line number from span start using solar-parse source map.
+pub fn span_to_line(sess: &Session, span: Span) -> usize {
+    sess.source_map().lookup_char_pos(span.lo()).line
 }
 
-/// Get 1-based line number from span end.
-pub fn span_to_end_line(span: proc_macro2::Span) -> usize {
-    span.end().line
+/// Get 1-based line number from span end using solar-parse source map.
+pub fn span_to_end_line(sess: &Session, span: Span) -> usize {
+    sess.source_map().lookup_char_pos(span.hi()).line
+}
+
+/// Convert a solar-parse Type to a human-readable string using source map span text.
+pub fn type_to_string(sess: &Session, ty: &ast::Type<'_>) -> String {
+    sess.source_map()
+        .span_to_snippet(ty.span)
+        .unwrap_or_else(|_| format!("{:?}", ty.kind))
 }
 
 /// Extract source text between two 1-based line numbers (inclusive).
@@ -124,129 +151,4 @@ pub fn extract_source_by_lines(source: &str, start_line: usize, end_line: usize)
     let start = if start_line > 0 { start_line - 1 } else { 0 };
     let end = end_line.min(lines.len());
     lines[start..end].join("\n")
-}
-
-/// Preprocess Solidity source to make it compatible with proc_macro2's Rust tokenizer.
-/// Handles:
-/// - Single-quoted strings: 'text' → "text" (Solidity allows both, Rust only double quotes)
-/// - hex"..." literals: hex"aa" → "aa" (strip the hex/unicode prefix)
-/// - unicode"..." literals: unicode"text" → "text"
-fn preprocess_solidity_source(source: &str) -> String {
-    let mut result = String::with_capacity(source.len());
-    let chars: Vec<char> = source.chars().collect();
-    let len = chars.len();
-    let mut i = 0;
-
-    while i < len {
-        // Skip line comments
-        if i + 1 < len && chars[i] == '/' && chars[i + 1] == '/' {
-            while i < len && chars[i] != '\n' {
-                result.push(chars[i]);
-                i += 1;
-            }
-            continue;
-        }
-
-        // Skip block comments
-        if i + 1 < len && chars[i] == '/' && chars[i + 1] == '*' {
-            result.push(chars[i]);
-            result.push(chars[i + 1]);
-            i += 2;
-            while i + 1 < len && !(chars[i] == '*' && chars[i + 1] == '/') {
-                result.push(chars[i]);
-                i += 1;
-            }
-            if i + 1 < len {
-                result.push(chars[i]);
-                result.push(chars[i + 1]);
-                i += 2;
-            }
-            continue;
-        }
-
-        // Skip double-quoted strings (don't modify them)
-        if chars[i] == '"' {
-            result.push(chars[i]);
-            i += 1;
-            while i < len && chars[i] != '"' {
-                if chars[i] == '\\' && i + 1 < len {
-                    result.push(chars[i]);
-                    result.push(chars[i + 1]);
-                    i += 2;
-                } else {
-                    result.push(chars[i]);
-                    i += 1;
-                }
-            }
-            if i < len {
-                result.push(chars[i]);
-                i += 1;
-            }
-            continue;
-        }
-
-        // Handle hex"..." and unicode"..." prefixed string literals.
-        // Strip the prefix so proc_macro2 sees just a regular string literal.
-        if i + 3 < len && chars[i] == 'h' && chars[i + 1] == 'e' && chars[i + 2] == 'x' && chars[i + 3] == '"' {
-            // hex"..." → "..."
-            i += 3; // skip "hex", the " will be handled next iteration
-            continue;
-        }
-        if i + 7 < len && chars[i] == 'u' && chars[i + 1] == 'n' && chars[i + 2] == 'i'
-            && chars[i + 3] == 'c' && chars[i + 4] == 'o' && chars[i + 5] == 'd'
-            && chars[i + 6] == 'e' && chars[i + 7] == '"'
-        {
-            // unicode"..." → "..."
-            i += 7; // skip "unicode", the " will be handled next iteration
-            continue;
-        }
-
-        // Handle single-quoted strings: 'text' → "text"
-        // In Solidity, single quotes delimit string literals.
-        // In Rust, single quotes are for char literals (single char only).
-        if chars[i] == '\'' {
-            // Look ahead to find the closing single quote
-            let mut j = i + 1;
-            let mut is_string = false;
-            while j < len && chars[j] != '\'' && chars[j] != '\n' {
-                if chars[j] == '\\' && j + 1 < len {
-                    j += 2;
-                } else {
-                    j += 1;
-                }
-            }
-            // If we found a closing quote and content length > 1, it's a string
-            if j < len && chars[j] == '\'' && (j - i - 1) > 1 {
-                is_string = true;
-            }
-
-            if is_string {
-                result.push('"');
-                i += 1;
-                while i < len && chars[i] != '\'' {
-                    if chars[i] == '"' {
-                        result.push('\\');
-                        result.push('"');
-                    } else if chars[i] == '\\' && i + 1 < len {
-                        result.push(chars[i]);
-                        result.push(chars[i + 1]);
-                        i += 1;
-                    } else {
-                        result.push(chars[i]);
-                    }
-                    i += 1;
-                }
-                result.push('"');
-                if i < len {
-                    i += 1; // skip closing '
-                }
-                continue;
-            }
-        }
-
-        result.push(chars[i]);
-        i += 1;
-    }
-
-    result
 }

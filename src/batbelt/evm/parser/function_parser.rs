@@ -1,65 +1,90 @@
-use quote::ToTokens;
-use syn_solidity::Spanned;
+use solar_parse::{
+    ast,
+    interface::Session,
+};
 
 use crate::batbelt::evm::types::{EvmFunction, EvmMutability, EvmParam, EvmVisibility};
 
-use super::evm_file_parser::{extract_source_by_lines, span_to_end_line, span_to_line};
+use super::evm_file_parser::{extract_source_by_lines, span_to_end_line, span_to_line, type_to_string};
 
 /// Parse an ItemFunction AST node into our EvmFunction type.
 pub fn parse_function_definition(
-    func: &syn_solidity::ItemFunction,
+    sess: &Session,
+    func: &ast::ItemFunction<'_>,
     contract_name: &str,
     source: &str,
 ) -> EvmFunction {
     let name = func
+        .header
         .name
-        .as_ref()
-        .map(|n| n.to_string())
-        .unwrap_or_else(|| match &func.kind {
-            syn_solidity::FunctionKind::Constructor(_) => "constructor".to_string(),
-            syn_solidity::FunctionKind::Fallback(_) => "fallback".to_string(),
-            syn_solidity::FunctionKind::Receive(_) => "receive".to_string(),
-            syn_solidity::FunctionKind::Modifier(_) => "modifier".to_string(),
-            syn_solidity::FunctionKind::Function(_) => "unnamed".to_string(),
+        .map(|n| n.as_str().to_string())
+        .unwrap_or_else(|| match func.kind {
+            ast::FunctionKind::Constructor => "constructor".to_string(),
+            ast::FunctionKind::Fallback => "fallback".to_string(),
+            ast::FunctionKind::Receive => "receive".to_string(),
+            ast::FunctionKind::Modifier => "modifier".to_string(),
+            ast::FunctionKind::Function => "unnamed".to_string(),
         });
 
-    let visibility = extract_visibility(&func.attributes);
-    let mutability = extract_mutability(&func.attributes);
+    let visibility = func
+        .header
+        .visibility
+        .as_ref()
+        .map(|v| match v.data {
+            ast::Visibility::External => EvmVisibility::External,
+            ast::Visibility::Public => EvmVisibility::Public,
+            ast::Visibility::Internal => EvmVisibility::Internal,
+            ast::Visibility::Private => EvmVisibility::Private,
+        })
+        .unwrap_or(EvmVisibility::Internal);
+
+    let mutability = func
+        .header
+        .state_mutability
+        .as_ref()
+        .map(|m| match m.data {
+            ast::StateMutability::Pure => EvmMutability::Pure,
+            ast::StateMutability::View => EvmMutability::View,
+            ast::StateMutability::Payable => EvmMutability::Payable,
+            ast::StateMutability::NonPayable => EvmMutability::NonPayable,
+        })
+        .unwrap_or(EvmMutability::NonPayable);
 
     let modifiers: Vec<String> = func
-        .attributes
+        .header
+        .modifiers
         .iter()
-        .filter_map(|attr| {
-            if let syn_solidity::FunctionAttribute::Modifier(m) = attr {
-                Some(m.name.to_string())
-            } else {
-                None
-            }
-        })
+        .map(|m| m.name.last().as_str().to_string())
         .collect();
 
     let params: Vec<EvmParam> = func
+        .header
         .parameters
         .iter()
-        .map(parse_parameter)
+        .map(|p| parse_parameter(sess, p))
         .collect();
 
     let returns: Vec<EvmParam> = func
+        .header
         .returns
         .as_ref()
-        .map(|r| r.returns.iter().map(parse_parameter).collect())
+        .map(|r| r.iter().map(|p| parse_parameter(sess, p)).collect())
         .unwrap_or_default();
 
-    let body_source = match &func.body {
-        syn_solidity::FunctionBody::Block(block) => {
-            // Extract body from original source using span lines
-            extract_source_by_lines(source, span_to_line(block.brace_token.span.open()), span_to_end_line(block.brace_token.span.close()))
-        }
-        _ => String::new(),
-    };
+    let body_source = func
+        .body
+        .as_ref()
+        .map(|block| {
+            extract_source_by_lines(
+                source,
+                span_to_line(sess, block.span),
+                span_to_end_line(sess, block.span),
+            )
+        })
+        .unwrap_or_default();
 
-    let line = span_to_line(func.span());
-    let end_line = span_to_end_line(func.span());
+    let line = span_to_line(sess, func.body_span);
+    let end_line = span_to_end_line(sess, func.body_span);
 
     EvmFunction {
         name,
@@ -72,48 +97,19 @@ pub fn parse_function_definition(
         body_source,
         line,
         end_line,
-        is_constructor: matches!(func.kind, syn_solidity::FunctionKind::Constructor(_)),
-        is_fallback: matches!(func.kind, syn_solidity::FunctionKind::Fallback(_)),
-        is_receive: matches!(func.kind, syn_solidity::FunctionKind::Receive(_)),
+        is_constructor: func.kind == ast::FunctionKind::Constructor,
+        is_fallback: func.kind == ast::FunctionKind::Fallback,
+        is_receive: func.kind == ast::FunctionKind::Receive,
     }
 }
 
-fn extract_visibility(attrs: &syn_solidity::FunctionAttributes) -> EvmVisibility {
-    for attr in attrs.iter() {
-        if let syn_solidity::FunctionAttribute::Visibility(vis) = attr {
-            return match vis {
-                syn_solidity::Visibility::External(_) => EvmVisibility::External,
-                syn_solidity::Visibility::Public(_) => EvmVisibility::Public,
-                syn_solidity::Visibility::Internal(_) => EvmVisibility::Internal,
-                syn_solidity::Visibility::Private(_) => EvmVisibility::Private,
-            };
-        }
-    }
-    EvmVisibility::Internal
-}
-
-fn extract_mutability(attrs: &syn_solidity::FunctionAttributes) -> EvmMutability {
-    for attr in attrs.iter() {
-        if let syn_solidity::FunctionAttribute::Mutability(m) = attr {
-            return match m {
-                syn_solidity::Mutability::Pure(_) => EvmMutability::Pure,
-                syn_solidity::Mutability::View(_) => EvmMutability::View,
-                syn_solidity::Mutability::Payable(_) => EvmMutability::Payable,
-                syn_solidity::Mutability::Constant(_) => EvmMutability::View,
-            };
-        }
-    }
-    EvmMutability::NonPayable
-}
-
-fn parse_parameter(p: &syn_solidity::VariableDeclaration) -> EvmParam {
+fn parse_parameter(sess: &Session, p: &ast::VariableDefinition<'_>) -> EvmParam {
     let name = p
         .name
-        .as_ref()
-        .map(|n| n.to_string())
+        .map(|n| n.as_str().to_string())
         .unwrap_or_default();
-    let type_name = p.ty.to_string();
-    let storage_location = p.storage.as_ref().map(|s| s.as_str().to_string());
+    let type_name = type_to_string(sess, &p.ty);
+    let storage_location = p.data_location.map(|s| s.to_str().to_string());
 
     EvmParam {
         name,

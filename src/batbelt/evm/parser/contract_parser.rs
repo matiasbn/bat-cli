@@ -1,4 +1,7 @@
-use syn_solidity::{Item, Spanned};
+use solar_parse::{
+    ast,
+    interface::Session,
+};
 
 use crate::batbelt::evm::types::{
     EvmContract, EvmContractType, EvmEvent, EvmFunction, EvmModifierDef, StorageVariable,
@@ -12,60 +15,53 @@ use super::storage_parser::parse_variable_definition;
 
 /// Parse an ItemContract AST node into our EvmContract type.
 pub fn parse_contract_definition(
-    contract: &syn_solidity::ItemContract,
+    sess: &Session,
+    contract: &ast::ItemContract<'_>,
     file_path: &str,
     source: &str,
 ) -> EvmContract {
-    let name = contract.name.to_string();
+    let name = contract.name.as_str().to_string();
 
-    let contract_type = if contract.kind.is_interface() {
-        EvmContractType::Interface
-    } else if contract.kind.is_abstract_contract() {
-        EvmContractType::Abstract
-    } else if contract.kind.is_library() {
-        EvmContractType::Library
-    } else {
-        EvmContractType::Contract
+    let contract_type = match contract.kind {
+        ast::ContractKind::Contract => EvmContractType::Contract,
+        ast::ContractKind::AbstractContract => EvmContractType::Abstract,
+        ast::ContractKind::Interface => EvmContractType::Interface,
+        ast::ContractKind::Library => EvmContractType::Library,
     };
 
     let base_contracts: Vec<String> = contract
-        .inheritance
-        .as_ref()
-        .map(|inh| {
-            inh.inheritance
-                .iter()
-                .map(|base| base.name.to_string())
-                .collect()
-        })
-        .unwrap_or_default();
+        .bases
+        .iter()
+        .map(|base| base.name.last().as_str().to_string())
+        .collect();
 
     let mut functions: Vec<EvmFunction> = Vec::new();
     let mut modifiers: Vec<EvmModifierDef> = Vec::new();
     let mut storage_variables: Vec<StorageVariable> = Vec::new();
     let mut events: Vec<EvmEvent> = Vec::new();
 
-    for item in &contract.body {
-        match item {
-            Item::Function(func) => {
-                if matches!(func.kind, syn_solidity::FunctionKind::Modifier(_)) {
-                    modifiers.push(parse_modifier_definition(func, &name, source));
+    for item in contract.body.iter() {
+        match &item.kind {
+            ast::ItemKind::Function(func) => {
+                if func.kind == ast::FunctionKind::Modifier {
+                    modifiers.push(parse_modifier_definition(sess, func, &name, source));
                 } else {
-                    functions.push(parse_function_definition(func, &name, source));
+                    functions.push(parse_function_definition(sess, func, &name, source));
                 }
             }
-            Item::Variable(var) => {
-                if let Some(sv) = parse_variable_definition(var, source) {
+            ast::ItemKind::Variable(var) => {
+                if let Some(sv) = parse_variable_definition(sess, var) {
                     storage_variables.push(sv);
                 }
             }
-            Item::Event(event) => {
-                events.push(parse_event_definition(event, source));
+            ast::ItemKind::Event(event) => {
+                events.push(parse_event_definition(sess, event));
             }
             _ => {}
         }
     }
 
-    let line = span_to_line(contract.name.span());
+    let line = span_to_line(sess, contract.name.span);
 
     let external = file_path.contains("/lib/");
 
