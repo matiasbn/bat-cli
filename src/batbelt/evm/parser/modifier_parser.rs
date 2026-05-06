@@ -1,52 +1,36 @@
-use solang_parser::helpers::CodeLocation;
-use solang_parser::pt;
+use quote::ToTokens;
+use syn_solidity::Spanned;
 
 use crate::batbelt::evm::types::{EvmModifierDef, EvmParam};
 
-use super::evm_file_parser::offset_to_line;
+use super::evm_file_parser::{extract_source_by_lines, span_to_end_line, span_to_line};
 
-/// Parse a modifier (FunctionDefinition with ty == Modifier) into EvmModifierDef.
+/// Parse a modifier (ItemFunction with kind == Modifier) into EvmModifierDef.
 pub fn parse_modifier_definition(
-    func: &pt::FunctionDefinition,
+    func: &syn_solidity::ItemFunction,
     contract_name: &str,
     source: &str,
 ) -> EvmModifierDef {
     let name = func
         .name
         .as_ref()
-        .map(|n| n.name.clone())
+        .map(|n| n.to_string())
         .unwrap_or_default();
 
     let params: Vec<EvmParam> = func
-        .params
+        .parameters
         .iter()
-        .filter_map(|(_, param)| {
-            param.as_ref().map(|p| {
-                let param_name = p.name.as_ref().map(|n| n.name.clone()).unwrap_or_default();
-                let type_name = extract_source(source, &p.ty.loc());
-                EvmParam {
-                    name: param_name,
-                    type_name,
-                    storage_location: p.storage.as_ref().map(|s| match s {
-                        pt::StorageLocation::Memory(_) => "memory".to_string(),
-                        pt::StorageLocation::Storage(_) => "storage".to_string(),
-                        pt::StorageLocation::Calldata(_) => "calldata".to_string(),
-                    }),
-                }
-            })
-        })
+        .map(|p| parse_parameter(p))
         .collect();
 
-    let body_source = func
-        .body
-        .as_ref()
-        .map(|body| extract_source(source, &body.loc()))
-        .unwrap_or_default();
-
-    let line = match &func.loc {
-        pt::Loc::File(_, start, _) => offset_to_line(source, *start),
-        _ => 0,
+    let body_source = match &func.body {
+        syn_solidity::FunctionBody::Block(block) => {
+            extract_source_by_lines(source, span_to_line(block.brace_token.span.open()), span_to_end_line(block.brace_token.span.close()))
+        }
+        _ => String::new(),
     };
+
+    let line = span_to_line(func.span());
 
     EvmModifierDef {
         name,
@@ -57,13 +41,18 @@ pub fn parse_modifier_definition(
     }
 }
 
-fn extract_source(source: &str, loc: &pt::Loc) -> String {
-    match loc {
-        pt::Loc::File(_, start, end) => {
-            let start = (*start).min(source.len());
-            let end = (*end).min(source.len());
-            source[start..end].to_string()
-        }
-        _ => String::new(),
+fn parse_parameter(p: &syn_solidity::VariableDeclaration) -> EvmParam {
+    let name = p
+        .name
+        .as_ref()
+        .map(|n| n.to_string())
+        .unwrap_or_default();
+    let type_name = p.ty.to_string();
+    let storage_location = p.storage.as_ref().map(|s| s.as_str().to_string());
+
+    EvmParam {
+        name,
+        type_name,
+        storage_location,
     }
 }

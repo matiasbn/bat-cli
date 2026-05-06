@@ -1,29 +1,33 @@
-use solang_parser::helpers::CodeLocation;
-use solang_parser::pt;
+use quote::ToTokens;
+use syn_solidity::Spanned;
 
 use crate::batbelt::evm::types::{EvmVisibility, StorageVariable};
 
-use super::evm_file_parser::offset_to_line;
+use super::evm_file_parser::span_to_line;
 
 /// Parse a VariableDefinition into a StorageVariable.
 pub fn parse_variable_definition(
-    var: &pt::VariableDefinition,
-    source: &str,
+    var: &syn_solidity::VariableDefinition,
+    _source: &str,
 ) -> Option<StorageVariable> {
-    let name = var.name.as_ref().map(|n| n.name.clone())?;
+    let name = var.name.to_string();
+    if name.is_empty() {
+        return None;
+    }
 
-    let type_name = extract_type_source(source, &var.ty.loc());
+    let type_name = var.ty.to_string();
 
     let visibility = var
-        .attrs
+        .attributes
+        .0
         .iter()
         .find_map(|attr| {
-            if let pt::VariableAttribute::Visibility(vis) = attr {
+            if let syn_solidity::VariableAttribute::Visibility(vis) = attr {
                 Some(match vis {
-                    pt::Visibility::External(_) => EvmVisibility::External,
-                    pt::Visibility::Public(_) => EvmVisibility::Public,
-                    pt::Visibility::Internal(_) => EvmVisibility::Internal,
-                    pt::Visibility::Private(_) => EvmVisibility::Private,
+                    syn_solidity::Visibility::External(_) => EvmVisibility::External,
+                    syn_solidity::Visibility::Public(_) => EvmVisibility::Public,
+                    syn_solidity::Visibility::Internal(_) => EvmVisibility::Internal,
+                    syn_solidity::Visibility::Private(_) => EvmVisibility::Private,
                 })
             } else {
                 None
@@ -32,19 +36,18 @@ pub fn parse_variable_definition(
         .unwrap_or(EvmVisibility::Internal);
 
     let is_constant = var
-        .attrs
+        .attributes
+        .0
         .iter()
-        .any(|attr| matches!(attr, pt::VariableAttribute::Constant(_)));
+        .any(|attr| matches!(attr, syn_solidity::VariableAttribute::Constant(_)));
 
     let is_immutable = var
-        .attrs
+        .attributes
+        .0
         .iter()
-        .any(|attr| matches!(attr, pt::VariableAttribute::Immutable(_)));
+        .any(|attr| matches!(attr, syn_solidity::VariableAttribute::Immutable(_)));
 
-    let line = match &var.loc {
-        pt::Loc::File(_, start, _) => offset_to_line(source, *start),
-        _ => 0,
-    };
+    let line = span_to_line(var.name.span());
 
     Some(StorageVariable {
         name,
@@ -54,15 +57,4 @@ pub fn parse_variable_definition(
         is_immutable,
         line,
     })
-}
-
-fn extract_type_source(source: &str, loc: &pt::Loc) -> String {
-    match loc {
-        pt::Loc::File(_, start, end) => {
-            let start = (*start).min(source.len());
-            let end = (*end).min(source.len());
-            source[start..end].to_string()
-        }
-        _ => "unknown".to_string(),
-    }
 }

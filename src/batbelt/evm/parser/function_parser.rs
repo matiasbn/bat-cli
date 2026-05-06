@@ -1,26 +1,26 @@
-use solang_parser::helpers::CodeLocation;
-use solang_parser::pt::{self, FunctionTy, Visibility};
+use quote::ToTokens;
+use syn_solidity::Spanned;
 
 use crate::batbelt::evm::types::{EvmFunction, EvmMutability, EvmParam, EvmVisibility};
 
-use super::evm_file_parser::offset_to_line;
+use super::evm_file_parser::{extract_source_by_lines, span_to_end_line, span_to_line};
 
-/// Parse a FunctionDefinition AST node into our EvmFunction type.
+/// Parse an ItemFunction AST node into our EvmFunction type.
 pub fn parse_function_definition(
-    func: &pt::FunctionDefinition,
+    func: &syn_solidity::ItemFunction,
     contract_name: &str,
     source: &str,
 ) -> EvmFunction {
     let name = func
         .name
         .as_ref()
-        .map(|n| n.name.clone())
-        .unwrap_or_else(|| match func.ty {
-            FunctionTy::Constructor => "constructor".to_string(),
-            FunctionTy::Fallback => "fallback".to_string(),
-            FunctionTy::Receive => "receive".to_string(),
-            FunctionTy::Modifier => "modifier".to_string(),
-            _ => "unnamed".to_string(),
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| match &func.kind {
+            syn_solidity::FunctionKind::Constructor(_) => "constructor".to_string(),
+            syn_solidity::FunctionKind::Fallback(_) => "fallback".to_string(),
+            syn_solidity::FunctionKind::Receive(_) => "receive".to_string(),
+            syn_solidity::FunctionKind::Modifier(_) => "modifier".to_string(),
+            syn_solidity::FunctionKind::Function(_) => "unnamed".to_string(),
         });
 
     let visibility = extract_visibility(&func.attributes);
@@ -30,15 +30,8 @@ pub fn parse_function_definition(
         .attributes
         .iter()
         .filter_map(|attr| {
-            if let pt::FunctionAttribute::BaseOrModifier(_, base) = attr {
-                Some(
-                    base.name
-                        .identifiers
-                        .iter()
-                        .map(|id| id.name.clone())
-                        .collect::<Vec<_>>()
-                        .join("."),
-                )
+            if let syn_solidity::FunctionAttribute::Modifier(m) = attr {
+                Some(m.name.to_string())
             } else {
                 None
             }
@@ -46,27 +39,27 @@ pub fn parse_function_definition(
         .collect();
 
     let params: Vec<EvmParam> = func
-        .params
+        .parameters
         .iter()
-        .filter_map(|(_, param)| param.as_ref().map(|p| parse_parameter(p, source)))
+        .map(parse_parameter)
         .collect();
 
     let returns: Vec<EvmParam> = func
         .returns
-        .iter()
-        .filter_map(|(_, param)| param.as_ref().map(|p| parse_parameter(p, source)))
-        .collect();
-
-    let body_source = func
-        .body
         .as_ref()
-        .map(|body| extract_source_range(source, &body.loc()))
+        .map(|r| r.returns.iter().map(parse_parameter).collect())
         .unwrap_or_default();
 
-    let (line, end_line) = match &func.loc {
-        pt::Loc::File(_, start, end) => (offset_to_line(source, *start), offset_to_line(source, *end)),
-        _ => (0, 0),
+    let body_source = match &func.body {
+        syn_solidity::FunctionBody::Block(block) => {
+            // Extract body from original source using span lines
+            extract_source_by_lines(source, span_to_line(block.brace_token.span.open()), span_to_end_line(block.brace_token.span.close()))
+        }
+        _ => String::new(),
     };
+
+    let line = span_to_line(func.span());
+    let end_line = span_to_end_line(func.span());
 
     EvmFunction {
         name,
@@ -79,71 +72,52 @@ pub fn parse_function_definition(
         body_source,
         line,
         end_line,
-        is_constructor: func.ty == FunctionTy::Constructor,
-        is_fallback: func.ty == FunctionTy::Fallback,
-        is_receive: func.ty == FunctionTy::Receive,
+        is_constructor: matches!(func.kind, syn_solidity::FunctionKind::Constructor(_)),
+        is_fallback: matches!(func.kind, syn_solidity::FunctionKind::Fallback(_)),
+        is_receive: matches!(func.kind, syn_solidity::FunctionKind::Receive(_)),
     }
 }
 
-fn extract_visibility(attrs: &[pt::FunctionAttribute]) -> EvmVisibility {
-    for attr in attrs {
-        if let pt::FunctionAttribute::Visibility(vis) = attr {
+fn extract_visibility(attrs: &syn_solidity::FunctionAttributes) -> EvmVisibility {
+    for attr in attrs.iter() {
+        if let syn_solidity::FunctionAttribute::Visibility(vis) = attr {
             return match vis {
-                Visibility::External(_) => EvmVisibility::External,
-                Visibility::Public(_) => EvmVisibility::Public,
-                Visibility::Internal(_) => EvmVisibility::Internal,
-                Visibility::Private(_) => EvmVisibility::Private,
+                syn_solidity::Visibility::External(_) => EvmVisibility::External,
+                syn_solidity::Visibility::Public(_) => EvmVisibility::Public,
+                syn_solidity::Visibility::Internal(_) => EvmVisibility::Internal,
+                syn_solidity::Visibility::Private(_) => EvmVisibility::Private,
             };
         }
     }
-    // Default visibility for functions is internal
     EvmVisibility::Internal
 }
 
-fn extract_mutability(attrs: &[pt::FunctionAttribute]) -> EvmMutability {
-    for attr in attrs {
-        if let pt::FunctionAttribute::Mutability(m) = attr {
+fn extract_mutability(attrs: &syn_solidity::FunctionAttributes) -> EvmMutability {
+    for attr in attrs.iter() {
+        if let syn_solidity::FunctionAttribute::Mutability(m) = attr {
             return match m {
-                pt::Mutability::Pure(_) => EvmMutability::Pure,
-                pt::Mutability::View(_) => EvmMutability::View,
-                pt::Mutability::Payable(_) => EvmMutability::Payable,
-                pt::Mutability::Constant(_) => EvmMutability::View,
+                syn_solidity::Mutability::Pure(_) => EvmMutability::Pure,
+                syn_solidity::Mutability::View(_) => EvmMutability::View,
+                syn_solidity::Mutability::Payable(_) => EvmMutability::Payable,
+                syn_solidity::Mutability::Constant(_) => EvmMutability::View,
             };
         }
     }
     EvmMutability::NonPayable
 }
 
-fn parse_parameter(param: &pt::Parameter, source: &str) -> EvmParam {
-    let name = param
+fn parse_parameter(p: &syn_solidity::VariableDeclaration) -> EvmParam {
+    let name = p
         .name
         .as_ref()
-        .map(|n| n.name.clone())
+        .map(|n| n.to_string())
         .unwrap_or_default();
-
-    let type_name = extract_source_range(source, &param.ty.loc());
-
-    let storage_location = param.storage.as_ref().map(|s| match s {
-        pt::StorageLocation::Memory(_) => "memory".to_string(),
-        pt::StorageLocation::Storage(_) => "storage".to_string(),
-        pt::StorageLocation::Calldata(_) => "calldata".to_string(),
-    });
+    let type_name = p.ty.to_string();
+    let storage_location = p.storage.as_ref().map(|s| s.as_str().to_string());
 
     EvmParam {
         name,
         type_name,
         storage_location,
-    }
-}
-
-/// Extract source code text for a given location.
-fn extract_source_range(source: &str, loc: &pt::Loc) -> String {
-    match loc {
-        pt::Loc::File(_, start, end) => {
-            let start = (*start).min(source.len());
-            let end = (*end).min(source.len());
-            source[start..end].to_string()
-        }
-        _ => String::new(),
     }
 }

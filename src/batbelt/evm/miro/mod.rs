@@ -360,35 +360,9 @@ fn collect_inheritance_chain<'a>(
     chain
 }
 
-/// Extract only the lines inside the function body (after the opening `{`),
-/// excluding the function signature, modifiers, and closing `}`.
-fn extract_body_only_lines(func_lines: &[String]) -> Vec<String> {
-    let mut body_lines = Vec::new();
-    let mut found_open = false;
-    let mut depth: i32 = 0;
-
-    for line in func_lines {
-        for ch in line.chars() {
-            if ch == '{' {
-                depth += 1;
-                if !found_open {
-                    found_open = true;
-                    continue; // skip the opening brace line for body scanning
-                }
-            } else if ch == '}' {
-                depth -= 1;
-            }
-        }
-        if found_open && depth > 0 {
-            body_lines.push(line.clone());
-        }
-    }
-    body_lines
-}
-
 /// Resolve direct dependencies for a function by scanning its body for internal calls
-/// and modifiers. Searches the full inheritance chain for modifier definitions and
-/// internal functions. Returns (metadata_id, name, file_path, line, end_line).
+/// (via AST) and modifiers. Searches the full inheritance chain for modifier definitions
+/// and internal functions. Returns (metadata_id, name, file_path, line, end_line).
 fn resolve_evm_function_deps(
     evm_metadata: &EvmBatMetadata,
     contract_name: &str,
@@ -397,6 +371,8 @@ fn resolve_evm_function_deps(
     func_lines: &[String],
     _contract_file_path: &str,
 ) -> Vec<(String, String, String, usize, usize)> {
+    use crate::batbelt::evm::parser::call_resolver::extract_calls_from_source;
+
     let mut deps: Vec<(String, String, String, usize, usize)> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
     let mut seen_ids: HashSet<String> = HashSet::new();
@@ -426,10 +402,12 @@ fn resolve_evm_function_deps(
         }
     }
 
-    // 2. Resolve internal function calls from body ONLY (after opening `{`)
-    // This avoids false positives from the function signature, parameter names,
-    // or modifier calls in the signature.
-    let body_only = extract_body_only_lines(func_lines);
+    // 2. Resolve internal function calls from body using AST
+    // extract_calls_from_source parses the body and walks the AST for Expr::Call nodes
+    let body_source = func_lines.join("\n");
+    let called_names: HashSet<String> = extract_calls_from_source(&body_source)
+        .into_iter()
+        .collect();
 
     for c in &chain {
         for func_meta in &c.functions {
@@ -440,11 +418,9 @@ fn resolve_evm_function_deps(
             if seen_names.contains(&func_meta.name) {
                 continue;
             }
-            let call_pattern = format!("{}(", func_meta.name);
-            let is_called = body_only
-                .iter()
-                .any(|line| line.contains(&call_pattern));
-            if is_called && !seen_ids.contains(&func_meta.metadata_id) {
+            if called_names.contains(&func_meta.name)
+                && !seen_ids.contains(&func_meta.metadata_id)
+            {
                 seen_ids.insert(func_meta.metadata_id.clone());
                 seen_names.insert(func_meta.name.clone());
                 let end = if func_meta.end_line > 0 {
