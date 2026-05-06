@@ -362,6 +362,11 @@ mod project_commands_functions {
         println!("Updating code overhaul files");
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
 
+        // For Foundry, use EVM metadata for entry point names
+        if bat_config.project_type == ProjectType::Foundry {
+            return update_co_to_review_evm();
+        }
+
         let program_names: Vec<Option<String>> = if bat_config.is_multi_program() {
             bat_config
                 .get_program_names()
@@ -471,6 +476,108 @@ mod project_commands_functions {
                     );
                     updated_eps.push(ep_file.get_path(false).change_context(CommandError)?);
                 }
+            }
+        }
+
+        if !updated_eps.is_empty() {
+            GitCommit::CodeOverhaulUpdated { updated_eps }
+                .create_commit(true)
+                .change_context(CommandError)?;
+        }
+        Ok(())
+    }
+
+    fn update_co_to_review_evm() -> CommandResult<()> {
+        use crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata;
+
+        let evm_metadata = EvmBatMetadata::read_metadata().change_context(CommandError)?;
+        let entry_points_names: Vec<String> = evm_metadata
+            .entry_points
+            .iter()
+            .map(|ep| ep.name.clone())
+            .collect();
+
+        let co_bat_folder = BatFolder::CodeOverhaulFolderPath {
+            program_name: None,
+        };
+        let co_dir_file_name = co_bat_folder
+            .get_all_bat_files(false, None, None)
+            .change_context(CommandError)?;
+
+        let mut updated_eps = vec![];
+
+        // Create new ep files
+        let new_ep: Vec<String> = entry_points_names
+            .iter()
+            .filter(|ep_name| {
+                !co_dir_file_name.iter().any(|bat_file| {
+                    bat_file.get_file_name().unwrap().trim_end_matches(".md") == ep_name.as_str()
+                })
+            })
+            .cloned()
+            .collect();
+
+        for ep_name in new_ep {
+            println!(
+                "Creating code overhaul file for new entry point: {}{}",
+                ep_name.bright_blue(),
+                ".md".bright_blue()
+            );
+            let bat_file = BatFile::CodeOverhaulToReview {
+                file_name: ep_name,
+                program_name: None,
+            };
+            bat_file.create_empty(false).change_context(CommandError)?;
+            updated_eps.push(bat_file.get_path(false).change_context(CommandError)?);
+        }
+
+        // Move deprecated files
+        let deprecated_ep: Vec<BatFile> = co_dir_file_name
+            .into_iter()
+            .filter(|bat_file| {
+                !entry_points_names.contains(
+                    &bat_file
+                        .get_file_name()
+                        .unwrap()
+                        .trim_end_matches(".md")
+                        .to_string(),
+                )
+            })
+            .collect();
+
+        if !deprecated_ep.is_empty() {
+            let deprecated_co_bat_folder = BatFolder::CodeOverhaulDeprecated {
+                program_name: None,
+            };
+            if !deprecated_co_bat_folder
+                .folder_exists()
+                .change_context(CommandError)?
+            {
+                deprecated_co_bat_folder
+                    .create_folder()
+                    .change_context(CommandError)?;
+            }
+            for ep_file in deprecated_ep {
+                println!(
+                    "Moving code overhaul file to deprecated folder: {}",
+                    ep_file.get_path(false).unwrap().bright_blue()
+                );
+                let file_content = ep_file.read_content(false).change_context(CommandError)?;
+                let file_name = ep_file.get_file_name().change_context(CommandError)?;
+                let deprecated_file = BatFile::CodeOverhaulDeprecated {
+                    file_name,
+                    program_name: None,
+                };
+                deprecated_file
+                    .write_content(false, &file_content)
+                    .change_context(CommandError)?;
+                ep_file.remove_file().change_context(CommandError)?;
+                updated_eps.push(
+                    deprecated_file
+                        .get_path(false)
+                        .change_context(CommandError)?,
+                );
+                updated_eps.push(ep_file.get_path(false).change_context(CommandError)?);
             }
         }
 

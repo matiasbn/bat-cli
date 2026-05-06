@@ -147,8 +147,6 @@ pub async fn deploy_co_frames() -> EvmMiroResult<()> {
 
 /// Read Miro config once (access_token, board_id, board_url).
 fn read_miro_config() -> EvmMiroResult<MiroApiConfig> {
-    let miro_config = MiroConfig::new().change_context(EvmMiroError)?;
-    // MiroConfig fields are private, re-read from source
     let bat_config = BatConfig::get_config().change_context(EvmMiroError)?;
     let bat_auditor_config =
         crate::config::BatAuditorConfig::get_config().change_context(EvmMiroError)?;
