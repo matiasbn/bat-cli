@@ -480,7 +480,7 @@ impl CodeOverhaulCommand {
         .change_context(CommandError)?;
 
         started_bat_file
-            .open_in_editor(true, None)
+            .open_in_editor(false, None)
             .change_context(CommandError)?;
 
         // Open source file at function line
