@@ -494,6 +494,226 @@ fn find_doc_start_line(file_path: &str, func_start_line: usize) -> usize {
     doc_start
 }
 
+/// Deploy source code screenshots for EVM projects with contract-based selection.
+///
+/// Flow: lib/src → contract → items (functions, vars, events, modifiers) → screenshot deploy.
+pub async fn deploy_source_code_screenshots(selected_miro_frame: MiroFrame) -> EvmMiroResult<()> {
+    let evm_metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+
+    let mut continue_selection = true;
+
+    while continue_selection {
+        // Step 1: lib or src
+        let source_options = vec![
+            "src (project contracts)".to_string(),
+            "lib (external dependencies)".to_string(),
+        ];
+        let prompt_text = format!("Select {}", "source location".green());
+        let source_selection =
+            crate::batbelt::bat_dialoguer::select(&prompt_text, source_options, None).unwrap();
+        let is_external = source_selection == 1;
+
+        // Step 2: Filter contracts and select one
+        let mut filtered_contracts: Vec<_> = evm_metadata
+            .contracts
+            .iter()
+            .filter(|c| c.external == is_external)
+            .collect();
+        filtered_contracts.sort_by(|a, b| a.name.cmp(&b.name));
+
+        if filtered_contracts.is_empty() {
+            println!(
+                "  {} No contracts found in {}",
+                "Warning:".bright_yellow(),
+                if is_external { "lib" } else { "src" }
+            );
+            continue_selection = crate::batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                "Do you want to {} in the {} frame?",
+                "continue creating screenshots".yellow(),
+                selected_miro_frame.title.yellow()
+            ))
+            .unwrap();
+            continue;
+        }
+
+        let contract_names: Vec<String> = filtered_contracts
+            .iter()
+            .map(|c| format!("{} ({})", c.name, c.file_path))
+            .collect();
+        let prompt_text = format!("Select {}", "contract".green());
+        let contract_selection =
+            BatDialoguer::fuzzy_select(prompt_text, contract_names).change_context(EvmMiroError)?;
+        let selected_contract = filtered_contracts[contract_selection];
+
+        // Step 3: Build item list from the selected contract
+        let mut item_labels: Vec<String> = Vec::new();
+
+        // Track item type and index for later SourceCodeParser construction
+        enum ContractItem {
+            Function(usize),
+            StorageVar(usize),
+            Event(usize),
+            Modifier(usize),
+        }
+        let mut item_refs: Vec<ContractItem> = Vec::new();
+
+        for (i, func) in selected_contract.functions.iter().enumerate() {
+            if func.is_constructor {
+                continue;
+            }
+            item_labels.push(format!("[fn] {}", func.name));
+            item_refs.push(ContractItem::Function(i));
+        }
+        for (i, var) in selected_contract.state_variables.iter().enumerate() {
+            item_labels.push(format!("[var] {}", var.name));
+            item_refs.push(ContractItem::StorageVar(i));
+        }
+        for (i, event) in selected_contract.events.iter().enumerate() {
+            item_labels.push(format!("[event] {}", event.name));
+            item_refs.push(ContractItem::Event(i));
+        }
+        for (i, modifier) in selected_contract.modifiers.iter().enumerate() {
+            item_labels.push(format!("[mod] {}", modifier.name));
+            item_refs.push(ContractItem::Modifier(i));
+        }
+
+        if item_labels.is_empty() {
+            println!(
+                "  {} No items found in contract {}",
+                "Warning:".bright_yellow(),
+                selected_contract.name
+            );
+            continue_selection = crate::batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                "Do you want to {} in the {} frame?",
+                "continue creating screenshots".yellow(),
+                selected_miro_frame.title.yellow()
+            ))
+            .unwrap();
+            continue;
+        }
+
+        let prompt_text = format!(
+            "Select {} from {}",
+            "items to screenshot".green(),
+            selected_contract.name.green()
+        );
+        let selections = BatDialoguer::multiselect(
+            prompt_text,
+            item_labels.clone(),
+            Some(&vec![false; item_labels.len()]),
+            true,
+        )
+        .unwrap();
+
+        if selections.is_empty() {
+            continue_selection = crate::batbelt::bat_dialoguer::select_yes_or_no(&format!(
+                "Do you want to {} in the {} frame?",
+                "continue creating screenshots".yellow(),
+                selected_miro_frame.title.yellow()
+            ))
+            .unwrap();
+            continue;
+        }
+
+        // Screenshot options (EVM defaults)
+        let screenshot_options = SourceCodeScreenshotOptions {
+            include_path: true,
+            offset_to_start_line: true,
+            filter_comments: false,
+            font_size: None,
+            filters: None,
+            show_line_number: true,
+        };
+
+        // Step 5: Deploy screenshots
+        for &sel_idx in &selections {
+            let item = &item_refs[sel_idx];
+            let (name, start_line, end_line) = match item {
+                ContractItem::Function(i) => {
+                    let f = &selected_contract.functions[*i];
+                    let end = if f.end_line > 0 {
+                        f.end_line
+                    } else {
+                        find_function_end_line(&selected_contract.file_path, f.line)
+                    };
+                    (
+                        format!("{}.{}.js", selected_contract.name, f.name),
+                        f.line,
+                        end,
+                    )
+                }
+                ContractItem::StorageVar(i) => {
+                    let v = &selected_contract.state_variables[*i];
+                    (
+                        format!("{}.{}.js", selected_contract.name, v.name),
+                        v.line,
+                        v.line,
+                    )
+                }
+                ContractItem::Event(i) => {
+                    let e = &selected_contract.events[*i];
+                    (
+                        format!("{}.{}.js", selected_contract.name, e.name),
+                        e.line,
+                        e.line,
+                    )
+                }
+                ContractItem::Modifier(i) => {
+                    let m = &selected_contract.modifiers[*i];
+                    let end = if m.end_line > 0 {
+                        m.end_line
+                    } else {
+                        m.line + m.body_source.lines().count()
+                    };
+                    (
+                        format!("{}.{}.js", selected_contract.name, m.name),
+                        m.line,
+                        end,
+                    )
+                }
+            };
+
+            // Strip .js from name, append frame tag, then add .js at the end
+            // so silicon detects the extension correctly for syntax highlighting
+            let base_name = name.trim_end_matches(".js");
+            let screenshot_name = format!(
+                "{}::frame={}.js",
+                base_name,
+                selected_miro_frame
+                    .title
+                    .replace([' ', '-'], "_")
+                    .to_uppercase()
+            );
+
+            let sc = SourceCodeParser::new(
+                screenshot_name,
+                selected_contract.file_path.clone(),
+                start_line,
+                end_line,
+            );
+
+            sc.deploy_screenshot_to_miro_frame(
+                selected_miro_frame.clone(),
+                0,
+                selected_miro_frame.height as i64,
+                screenshot_options.clone(),
+            )
+            .await
+            .change_context(EvmMiroError)?;
+        }
+
+        // Step 6: Continue?
+        let prompt_text = format!(
+            "Do you want to {} in the {} frame?",
+            "continue creating screenshots".yellow(),
+            selected_miro_frame.title.yellow()
+        );
+        continue_selection = crate::batbelt::bat_dialoguer::select_yes_or_no(&prompt_text).unwrap();
+    }
+
+    Ok(())
+}
+
 /// Deploy code-overhaul screenshots for a single EVM entry point into its Miro frame.
 ///
 /// Deploys: entry point screenshot, validations screenshot (with header),

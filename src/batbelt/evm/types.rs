@@ -77,6 +77,8 @@ pub struct EvmModifierDef {
     pub params: Vec<EvmParam>,
     pub body_source: String,
     pub line: usize,
+    #[serde(default)]
+    pub end_line: usize,
     pub contract_name: String,
 }
 
