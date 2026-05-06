@@ -19,6 +19,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::package_json_template::PackageJsonTemplate;
 use crate::commands::miro_commands::MiroCommand;
 use crate::commands::{BatCommandEnumerator, CommandResult};
+use crate::config::ProjectType;
 use clap::Subcommand;
 
 use crate::batbelt::git::git_action::GitAction;
@@ -156,13 +157,29 @@ impl ProjectCommands {
             "BatMetadata.json!".bright_green()
         );
 
-        SonarCommand::Run.execute_command()?;
+        if bat_config.project_type == ProjectType::Foundry {
+            // Foundry/Solidity: run EVM sonar
+            let mut sol_sonar =
+                crate::batbelt::evm::sonar::sonar::EvmSonar::new("..");
+            let metadata = sol_sonar.run().change_context(CommandError)?;
 
-        // Create auditor folders and code overhaul files
-        TemplateGenerator
-            .create_folders_for_current_auditor()
-            .change_context(CommandError)?;
-        project_commands_functions::initialize_code_overhaul_files()?;
+            // Create auditor folders
+            TemplateGenerator
+                .create_folders_for_current_auditor()
+                .change_context(CommandError)?;
+
+            // Create code-overhaul files from EVM entry points
+            project_commands_functions::initialize_evm_code_overhaul_files(&metadata)?;
+        } else {
+            SonarCommand::Run.execute_command()?;
+
+            // Create auditor folders and code overhaul files
+            TemplateGenerator
+                .create_folders_for_current_auditor()
+                .change_context(CommandError)?;
+            project_commands_functions::initialize_code_overhaul_files()?;
+        }
+
         GitCommit::InitAuditor
             .create_commit(true)
             .change_context(CommandError)?;
@@ -173,43 +190,70 @@ impl ProjectCommands {
                 .change_context(CommandError)?;
 
         if use_miro {
-            // Ask for OAuth token first so we can validate the board URL against the API
-            let miro_oauth_token: String =
-                bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?;
+            // Try reading defaults from .env (dev convenience)
+            let _ = dotenvy::dotenv();
+            let env_token = std::env::var("MIRO_OAUTH_TOKEN").ok().filter(|s| !s.is_empty());
+            let env_board = std::env::var("MIRO_BOARD_URL").ok().filter(|s| !s.is_empty());
 
-            let miro_board_url = loop {
-                let miro_board_url_input: String =
-                    bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
-                match BatConfig::normalize_miro_board_url(&miro_board_url_input) {
-                    Ok(url) => {
-                        // Validate the board exists and is accessible via the Miro API
-                        match crate::batbelt::miro::MiroConfig::validate_board(
-                            &miro_oauth_token,
-                            &url,
-                        )
-                        .await
-                        {
-                            Ok(board_name) => {
-                                println!("{} Board validated: \"{}\"", "OK".green(), board_name);
-                                break url;
-                            }
-                            Err(e) => {
-                                println!(
-                                    "{} Board not found or not accessible. Please check the URL and try again.\n  Details: {}",
-                                    "Error:".red(),
-                                    e
-                                );
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        println!(
-                            "{} Invalid Miro board url format, please try again",
-                            "Error:".red()
-                        );
+            let miro_oauth_token: String = match env_token {
+                Some(token) => {
+                    let masked = format!("{}...{}", &token[..6], &token[token.len()-4..]);
+                    let use_env = BatDialoguer::select_yes_or_no(
+                        format!("Use .env MIRO_OAUTH_TOKEN? ({})", masked),
+                    )
+                    .change_context(CommandError)?;
+                    if use_env {
+                        token
+                    } else {
+                        bat_dialoguer::input("Miro OAuth access token:")
+                            .change_context(CommandError)?
                     }
                 }
+                None => {
+                    bat_dialoguer::input("Miro OAuth access token:")
+                        .change_context(CommandError)?
+                }
             };
+
+            let miro_board_url: String = match env_board {
+                Some(url) => {
+                    let use_env = BatDialoguer::select_yes_or_no(
+                        format!("Use .env MIRO_BOARD_URL? ({})", url),
+                    )
+                    .change_context(CommandError)?;
+                    if use_env {
+                        match BatConfig::normalize_miro_board_url(&url) {
+                            Ok(normalized) => normalized,
+                            Err(_) => {
+                                println!("{} .env URL is invalid, please enter manually", "Error:".red());
+                                Self::prompt_miro_board_url(&miro_oauth_token).await?
+                            }
+                        }
+                    } else {
+                        Self::prompt_miro_board_url(&miro_oauth_token).await?
+                    }
+                }
+                None => Self::prompt_miro_board_url(&miro_oauth_token).await?,
+            };
+
+            // Validate the board
+            match crate::batbelt::miro::MiroConfig::validate_board(
+                &miro_oauth_token,
+                &miro_board_url,
+            )
+            .await
+            {
+                Ok(board_name) => {
+                    println!("{} Board validated: \"{}\"", "OK".green(), board_name);
+                }
+                Err(e) => {
+                    println!(
+                        "{} Board validation failed: {}",
+                        "Warning:".bright_yellow(),
+                        e
+                    );
+                }
+            }
 
             // Update Bat.toml with the board URL
             let mut bat_config = BatConfig::get_config().change_context(CommandError)?;
@@ -237,10 +281,46 @@ impl ProjectCommands {
         println!("Project {} successfully created", bat_config.project_name);
         Ok(())
     }
+
+    async fn prompt_miro_board_url(miro_oauth_token: &str) -> Result<String, CommandError> {
+        loop {
+            let miro_board_url_input: String =
+                bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
+            match BatConfig::normalize_miro_board_url(&miro_board_url_input) {
+                Ok(url) => {
+                    match crate::batbelt::miro::MiroConfig::validate_board(
+                        miro_oauth_token,
+                        &url,
+                    )
+                    .await
+                    {
+                        Ok(board_name) => {
+                            println!("{} Board validated: \"{}\"", "OK".green(), board_name);
+                            return Ok(url);
+                        }
+                        Err(e) => {
+                            println!(
+                                "{} Board not found or not accessible: {}",
+                                "Error:".red(),
+                                e
+                            );
+                        }
+                    }
+                }
+                Err(_) => {
+                    println!(
+                        "{} Invalid Miro board url format, please try again",
+                        "Error:".red()
+                    );
+                }
+            }
+        }
+    }
 }
 
 mod project_commands_functions {
     use super::*;
+    use crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata;
     use lazy_regex::regex;
 
     pub fn init_auditor_configuration(auditor_name: String) -> CommandResult<()> {
@@ -281,6 +361,11 @@ mod project_commands_functions {
     pub fn update_co_to_review() -> CommandResult<()> {
         println!("Updating code overhaul files");
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
+
+        // For Foundry, use EVM metadata for entry point names
+        if bat_config.project_type == ProjectType::Foundry {
+            return update_co_to_review_evm();
+        }
 
         let program_names: Vec<Option<String>> = if bat_config.is_multi_program() {
             bat_config
@@ -402,6 +487,108 @@ mod project_commands_functions {
         Ok(())
     }
 
+    fn update_co_to_review_evm() -> CommandResult<()> {
+        use crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata;
+
+        let evm_metadata = EvmBatMetadata::read_metadata().change_context(CommandError)?;
+        let entry_points_names: Vec<String> = evm_metadata
+            .entry_points
+            .iter()
+            .map(|ep| ep.name.clone())
+            .collect();
+
+        let co_bat_folder = BatFolder::CodeOverhaulFolderPath {
+            program_name: None,
+        };
+        let co_dir_file_name = co_bat_folder
+            .get_all_bat_files(false, None, None)
+            .change_context(CommandError)?;
+
+        let mut updated_eps = vec![];
+
+        // Create new ep files
+        let new_ep: Vec<String> = entry_points_names
+            .iter()
+            .filter(|ep_name| {
+                !co_dir_file_name.iter().any(|bat_file| {
+                    bat_file.get_file_name().unwrap().trim_end_matches(".md") == ep_name.as_str()
+                })
+            })
+            .cloned()
+            .collect();
+
+        for ep_name in new_ep {
+            println!(
+                "Creating code overhaul file for new entry point: {}{}",
+                ep_name.bright_blue(),
+                ".md".bright_blue()
+            );
+            let bat_file = BatFile::CodeOverhaulToReview {
+                file_name: ep_name,
+                program_name: None,
+            };
+            bat_file.create_empty(false).change_context(CommandError)?;
+            updated_eps.push(bat_file.get_path(false).change_context(CommandError)?);
+        }
+
+        // Move deprecated files
+        let deprecated_ep: Vec<BatFile> = co_dir_file_name
+            .into_iter()
+            .filter(|bat_file| {
+                !entry_points_names.contains(
+                    &bat_file
+                        .get_file_name()
+                        .unwrap()
+                        .trim_end_matches(".md")
+                        .to_string(),
+                )
+            })
+            .collect();
+
+        if !deprecated_ep.is_empty() {
+            let deprecated_co_bat_folder = BatFolder::CodeOverhaulDeprecated {
+                program_name: None,
+            };
+            if !deprecated_co_bat_folder
+                .folder_exists()
+                .change_context(CommandError)?
+            {
+                deprecated_co_bat_folder
+                    .create_folder()
+                    .change_context(CommandError)?;
+            }
+            for ep_file in deprecated_ep {
+                println!(
+                    "Moving code overhaul file to deprecated folder: {}",
+                    ep_file.get_path(false).unwrap().bright_blue()
+                );
+                let file_content = ep_file.read_content(false).change_context(CommandError)?;
+                let file_name = ep_file.get_file_name().change_context(CommandError)?;
+                let deprecated_file = BatFile::CodeOverhaulDeprecated {
+                    file_name,
+                    program_name: None,
+                };
+                deprecated_file
+                    .write_content(false, &file_content)
+                    .change_context(CommandError)?;
+                ep_file.remove_file().change_context(CommandError)?;
+                updated_eps.push(
+                    deprecated_file
+                        .get_path(false)
+                        .change_context(CommandError)?,
+                );
+                updated_eps.push(ep_file.get_path(false).change_context(CommandError)?);
+            }
+        }
+
+        if !updated_eps.is_empty() {
+            GitCommit::CodeOverhaulUpdated { updated_eps }
+                .create_commit(true)
+                .change_context(CommandError)?;
+        }
+        Ok(())
+    }
+
     pub fn update_package_json() -> CommandResult<()> {
         println!("Updating package.json");
         PackageJsonTemplate::create_package_json(None).change_context(CommandError)
@@ -412,6 +599,16 @@ mod project_commands_functions {
         GitIgnore
             .write_content(true, &TemplateGenerator.get_git_ignore_content())
             .change_context(CommandError)
+    }
+
+    pub fn initialize_evm_code_overhaul_files(
+        metadata: &EvmBatMetadata,
+    ) -> Result<(), CommandError> {
+        for ep in &metadata.entry_points {
+            // Use "ContractName.functionName" as the file name
+            create_overhaul_file(ep.name.clone(), None)?;
+        }
+        Ok(())
     }
 
     pub fn initialize_code_overhaul_files() -> Result<(), CommandError> {

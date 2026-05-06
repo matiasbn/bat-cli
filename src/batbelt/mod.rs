@@ -9,6 +9,7 @@ use strum::IntoEnumIterator;
 pub mod analytics;
 pub mod bat_dialoguer;
 pub mod command_line;
+pub mod evm;
 pub mod git;
 pub mod metadata;
 pub mod miro;
