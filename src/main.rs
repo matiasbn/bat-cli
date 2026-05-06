@@ -143,10 +143,17 @@ impl BatCommands {
             // ),
         };
         if check_metadata {
-            BatMetadata::read_metadata()
-                .change_context(CommandError)?
-                .check_metadata_is_initialized()
-                .change_context(CommandError)?;
+            let bat_config = crate::config::BatConfig::get_config().change_context(CommandError)?;
+            if bat_config.project_type == crate::config::ProjectType::Foundry {
+                // Foundry uses EvmBatMetadata, not BatMetadata (SVM)
+                crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata::read_metadata()
+                    .change_context(CommandError)?;
+            } else {
+                BatMetadata::read_metadata()
+                    .change_context(CommandError)?
+                    .check_metadata_is_initialized()
+                    .change_context(CommandError)?;
+            }
         }
 
         if check_branch {

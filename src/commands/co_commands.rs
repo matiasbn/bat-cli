@@ -7,7 +7,7 @@ use crate::batbelt::templates::code_overhaul_template::{
 };
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandError, CommandResult};
-use crate::config::BatConfig;
+use crate::config::{BatConfig, ProjectType};
 
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
@@ -273,6 +273,11 @@ impl CodeOverhaulCommand {
 
     async fn execute_start(&self) -> error_stack::Result<(), CommandError> {
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
+
+        if bat_config.project_type == ProjectType::Foundry {
+            return self.execute_start_foundry().await;
+        }
+
         let program_name = if bat_config.is_multi_program() {
             Some(
                 bat_config
@@ -363,6 +368,144 @@ impl CodeOverhaulCommand {
         }
         Ok(())
     }
+
+    async fn execute_start_foundry(&self) -> error_stack::Result<(), CommandError> {
+        use crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata;
+
+        let evm_metadata = EvmBatMetadata::read_metadata().change_context(CommandError)?;
+
+        // List to-review files
+        let review_files = BatFolder::CodeOverhaulToReview {
+            program_name: None,
+        }
+        .get_all_files_names(true, None, None)
+        .change_context(CommandError)?;
+
+        if review_files.is_empty() {
+            return Err(Report::new(CommandError).attach_printable(format!(
+                "{} folder is empty",
+                "code-overhaul/to-review".green()
+            )));
+        }
+
+        let prompt_text = "Select the code-overhaul file to start:";
+        let selection = BatDialoguer::select(prompt_text.to_string(), review_files.clone(), None)
+            .change_context(CommandError)?;
+
+        let to_start_file_name = review_files[selection].clone();
+        let entrypoint_name = to_start_file_name.trim_end_matches(".md").to_string();
+
+        // Look up entry point + contract + function from EVM metadata
+        let ep = evm_metadata
+            .get_entry_point_by_name(&entrypoint_name)
+            .ok_or_else(|| {
+                Report::new(CommandError).attach_printable(format!(
+                    "Entry point '{}' not found in EVM metadata",
+                    entrypoint_name
+                ))
+            })?;
+        let contract = evm_metadata
+            .get_contract_by_name(&ep.contract_name)
+            .ok_or_else(|| {
+                Report::new(CommandError).attach_printable(format!(
+                    "Contract '{}' not found in EVM metadata",
+                    ep.contract_name
+                ))
+            })?;
+        let func = evm_metadata
+            .get_function_by_id(&ep.function_metadata_id)
+            .ok_or_else(|| {
+                Report::new(CommandError).attach_printable(format!(
+                    "Function '{}' not found in EVM metadata",
+                    ep.function_metadata_id
+                ))
+            })?;
+
+        // Generate EVM-specific markdown content
+        let access_control_str = ep
+            .access_control
+            .iter()
+            .map(|ac| format!("{:?}", ac))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let modifiers_str = if ep.modifiers.is_empty() {
+            "None".to_string()
+        } else {
+            ep.modifiers.join(", ")
+        };
+
+        let markdown_content = format!(
+            "# State changes:\n\n\
+            - `COMPLETE_WITH_THE_REST_OF_STATE_CHANGES`\n\n\
+            # Notes:\n\n\
+            - `COMPLETE_WITH_NOTES`\n\n\
+            # Access control:\n\n\
+            - {access_control_str}\n\
+            - Modifiers: {modifiers_str}\n\n\
+            # Contract:\n\n\
+            - {contract_name} ({file_path}:{line})\n\n\
+            # Validations:\n\n\
+            - `COMPLETE_WITH_VALIDATIONS`\n\n\
+            # Miro frame url:\n\n\
+            `COMPLETE_WITH_MIRO_FRAME_URL`\n",
+            contract_name = contract.name,
+            file_path = contract.file_path,
+            line = func.line,
+        );
+
+        // Move file from to-review to started
+        BatFile::CodeOverhaulToReview {
+            file_name: to_start_file_name.clone(),
+            program_name: None,
+        }
+        .remove_file()
+        .change_context(CommandError)?;
+
+        let started_bat_file = BatFile::CodeOverhaulStarted {
+            file_name: to_start_file_name.clone(),
+            program_name: None,
+        };
+
+        started_bat_file
+            .write_content(false, &markdown_content)
+            .change_context(CommandError)?;
+
+        println!("{} file moved to started", to_start_file_name.green());
+
+        GitCommit::StartCO {
+            entrypoint_name: to_start_file_name.clone(),
+            program_name: None,
+        }
+        .create_commit(true)
+        .change_context(CommandError)?;
+
+        started_bat_file
+            .open_in_editor(true, None)
+            .change_context(CommandError)?;
+
+        // Open source file at function line
+        let ep_bat_file = BatFile::Generic {
+            file_path: contract.file_path.clone(),
+        };
+        ep_bat_file
+            .open_in_editor(true, Some(func.line))
+            .change_context(CommandError)?;
+
+        // Prompt Miro deployment
+        let deployed = co_commands_functions::prompt_deploy_miro_evm(
+            entrypoint_name.clone(),
+        )
+        .await?;
+        if deployed {
+            GitCommit::UpdateCO {
+                entrypoint_name: to_start_file_name.clone(),
+                program_name: None,
+            }
+            .create_commit(true)
+            .change_context(CommandError)?;
+        }
+        Ok(())
+    }
 }
 
 mod co_commands_functions {
@@ -383,6 +526,22 @@ mod co_commands_functions {
                 program_name,
             )
             .await?
+        }
+        Ok(deploy_frame)
+    }
+
+    pub async fn prompt_deploy_miro_evm(
+        entry_point_name: String,
+    ) -> CommandResult<bool> {
+        let prompt_text = format!(
+            "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
+            entry_point_name.clone().bright_green()
+        );
+        let deploy_frame = BatDialoguer::select_yes_or_no(prompt_text)?;
+        if deploy_frame {
+            crate::batbelt::evm::miro::deploy_co_screenshots(&entry_point_name)
+                .await
+                .change_context(CommandError)?;
         }
         Ok(deploy_frame)
     }

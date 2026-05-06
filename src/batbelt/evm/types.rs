@@ -92,6 +92,7 @@ pub struct EvmFunction {
     pub returns: Vec<EvmParam>,
     pub body_source: String,
     pub line: usize,
+    pub end_line: usize,
     pub is_constructor: bool,
     pub is_fallback: bool,
     pub is_receive: bool,

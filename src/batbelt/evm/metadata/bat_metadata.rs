@@ -61,6 +61,8 @@ pub struct FunctionMetadata {
     pub params: Vec<EvmParam>,
     pub returns: Vec<EvmParam>,
     pub line: usize,
+    #[serde(default)]
+    pub end_line: usize,
     pub is_constructor: bool,
 }
 
@@ -102,6 +104,14 @@ pub struct MiroFrameRef {
     pub entry_point_name: String,
     pub frame_id: String,
     pub frame_url: String,
+    #[serde(default)]
+    pub images_deployed: bool,
+    #[serde(default)]
+    pub entry_point_image_id: String,
+    #[serde(default)]
+    pub validations_image_id: String,
+    #[serde(default)]
+    pub dependency_image_ids: Vec<String>,
 }
 
 impl EvmBatMetadata {
@@ -186,6 +196,7 @@ impl EvmBatMetadata {
                         params: f.params.clone(),
                         returns: f.returns.clone(),
                         line: f.line,
+                        end_line: f.end_line,
                         is_constructor: f.is_constructor,
                     }
                 })

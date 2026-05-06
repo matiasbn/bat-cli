@@ -63,9 +63,9 @@ pub fn parse_function_definition(
         .map(|body| extract_source_range(source, &body.loc()))
         .unwrap_or_default();
 
-    let line = match &func.loc {
-        pt::Loc::File(_, start, _) => offset_to_line(source, *start),
-        _ => 0,
+    let (line, end_line) = match &func.loc {
+        pt::Loc::File(_, start, end) => (offset_to_line(source, *start), offset_to_line(source, *end)),
+        _ => (0, 0),
     };
 
     EvmFunction {
@@ -78,6 +78,7 @@ pub fn parse_function_definition(
         returns,
         body_source,
         line,
+        end_line,
         is_constructor: func.ty == FunctionTy::Constructor,
         is_fallback: func.ty == FunctionTy::Fallback,
         is_receive: func.ty == FunctionTy::Receive,
