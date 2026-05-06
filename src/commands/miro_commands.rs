@@ -92,15 +92,20 @@ impl MiroCommand {
     }
 
     async fn entrypoint_screenshots(&self) -> Result<(), CommandError> {
-        let code_overhaul_frame_title_regex = Regex::new(r"co: [A-Za-z0-9_]+")
-            .into_report()
-            .change_context(CommandError)?;
-        let selected_miro_frame =
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let selected_miro_frame = if bat_config.project_type == ProjectType::Foundry {
+            MiroFrame::prompt_select_frame_from_metadata()
+                .await
+                .change_context(CommandError)?
+        } else {
+            let code_overhaul_frame_title_regex = Regex::new(r"co: [A-Za-z0-9_]+")
+                .into_report()
+                .change_context(CommandError)?;
             MiroFrame::prompt_select_frame(Some(vec![code_overhaul_frame_title_regex]))
                 .await
-                .change_context(CommandError)?;
+                .change_context(CommandError)?
+        };
         // get entrypoints name
-        let bat_config = BatConfig::get_config().change_context(CommandError)?;
         let entrypoints_names = if bat_config.project_type == ProjectType::Foundry {
             crate::batbelt::evm::miro::get_entry_point_names().change_context(CommandError)?
         } else if bat_config.is_multi_program() {
@@ -248,17 +253,31 @@ impl MiroCommand {
     }
 
     async fn source_code_screenshots(&self) -> Result<(), CommandError> {
-        let selected_miro_frame = MiroFrame::prompt_select_frame(None)
-            .await
-            .change_context(CommandError)?;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let selected_miro_frame = if bat_config.project_type == ProjectType::Foundry {
+            MiroFrame::prompt_select_frame_from_metadata()
+                .await
+                .change_context(CommandError)?
+        } else {
+            MiroFrame::prompt_select_frame(None)
+                .await
+                .change_context(CommandError)?
+        };
         miro_command_functions::prompt_deploy_source_code(selected_miro_frame, false).await?;
         Ok(())
     }
 
     async fn function_dependencies(&self) -> Result<(), CommandError> {
-        let selected_miro_frame = MiroFrame::prompt_select_frame(None)
-            .await
-            .change_context(CommandError)?;
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+        let selected_miro_frame = if bat_config.project_type == ProjectType::Foundry {
+            MiroFrame::prompt_select_frame_from_metadata()
+                .await
+                .change_context(CommandError)?
+        } else {
+            MiroFrame::prompt_select_frame(None)
+                .await
+                .change_context(CommandError)?
+        };
         let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
         let function_metadata_vec = bat_metadata.source_code.functions_source_code.clone();
 

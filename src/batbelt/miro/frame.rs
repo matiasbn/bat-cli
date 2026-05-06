@@ -245,6 +245,36 @@ impl MiroFrame {
         Ok(selected_miro_frame)
     }
 
+    /// Select a frame from EVM metadata (no API pagination needed),
+    /// then fetch its full data with a single API call.
+    pub async fn prompt_select_frame_from_metadata() -> MiroResult<Self> {
+        use crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata;
+
+        let evm_metadata = EvmBatMetadata::read_metadata().change_context(MiroError)?;
+        let frames = &evm_metadata.miro.frames;
+
+        if frames.is_empty() {
+            return Err(error_stack::Report::new(MiroError)
+                .attach_printable("No Miro frames found in EVM metadata. Deploy frames first with 'miro code-overhaul-frames'."));
+        }
+
+        let mut sorted_frames: Vec<_> = frames.iter().collect();
+        sorted_frames.sort_by(|a, b| a.entry_point_name.cmp(&b.entry_point_name));
+
+        let frame_names: Vec<String> = sorted_frames
+            .iter()
+            .map(|f| f.entry_point_name.clone())
+            .collect();
+
+        let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
+        let selection =
+            BatDialoguer::select(prompt_text, frame_names, None).change_context(MiroError)?;
+
+        let selected = sorted_frames[selection];
+        let miro_frame = MiroFrame::new_from_item_id(&selected.frame_id).await?;
+        Ok(miro_frame)
+    }
+
     pub fn get_frame_url_by_frame_id(frame_id: &str) -> MiroResult<String> {
         let bat_config = BatConfig::get_config().change_context(MiroError)?;
         let url = normalizer::UrlNormalizer::new(
