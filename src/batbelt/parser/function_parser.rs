@@ -2,17 +2,49 @@ use crate::batbelt::metadata::functions_source_code_metadata::FunctionSourceCode
 
 use crate::batbelt::metadata::{BatMetadata, BatMetadataParser, MetadataId};
 
-/// Normalizes spaces around angle brackets in generic types.
+/// Normalizes spaces around angle brackets in generic types and strips lifetime params.
 /// syn's `to_token_stream()` produces `Context < Initialize >` but
-/// source code has `Context<Initialize>`. This normalizes to the compact form.
+/// source code has `Context<Initialize>`. Also removes lifetimes like `'info`, `'a`.
 pub fn normalize_generic_type(ty: &str) -> String {
-    ty.replace(" < ", "<")
+    let s = ty
+        .replace(" < ", "<")
         .replace("< ", "<")
         .replace(" <", "<")
         .replace(" > ", ">")
         .replace("> ", ">")
         .replace(" >", ">")
-        .replace(" , ", ", ")
+        .replace(" , ", ", ");
+    strip_lifetimes(&s)
+}
+
+/// Remove lifetime parameters from a type string.
+/// e.g. `CloseAndSelectIntent<'info>` → `CloseAndSelectIntent`
+///      `Foo<'a, Bar>` → `Foo<Bar>`
+fn strip_lifetimes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\'' {
+            // Consume the lifetime identifier
+            while let Some(&nc) = chars.peek() {
+                if nc == ',' || nc == '>' {
+                    break;
+                }
+                chars.next();
+            }
+            // Consume trailing ", " after the lifetime if present
+            if chars.peek() == Some(&',') {
+                chars.next();
+                while chars.peek() == Some(&' ') {
+                    chars.next();
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    // Clean up artifacts from removed lifetimes
+    result.replace("<>", "").replace("<, ", "<")
 }
 use crate::batbelt::parser::ParserError;
 

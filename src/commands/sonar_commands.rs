@@ -11,6 +11,7 @@ use error_stack::{Result, ResultExt};
 use crate::batbelt::sonar::sonar_interactive::BatSonarInteractive;
 use crate::batbelt::templates::TemplateGenerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
+use crate::config::{BatConfig, ProjectType};
 
 use super::CommandError;
 
@@ -42,6 +43,31 @@ impl BatCommandEnumerator for SonarCommand {
 }
 impl SonarCommand {
     fn execute_run(&self) -> CommandResult<()> {
+        let bat_config = BatConfig::get_config().change_context(CommandError)?;
+
+        if bat_config.project_type == ProjectType::Foundry {
+            return self.execute_run_foundry();
+        }
+
+        self.execute_run_svm()
+    }
+
+    fn execute_run_foundry(&self) -> CommandResult<()> {
+        use crate::batbelt::evm::sonar::sonar::EvmSonar;
+
+        let mut evm_sonar = EvmSonar::new("..");
+        evm_sonar.run().change_context(CommandError)?;
+
+        GitCommit::UpdateMetadataJson {
+            bat_metadata_commit: BatMetadataCommit::RunSonarMetadataCommit,
+        }
+        .create_commit(true)
+        .change_context(CommandError)?;
+
+        Ok(())
+    }
+
+    fn execute_run_svm(&self) -> CommandResult<()> {
         let metadata_bat_file = BatFile::BatMetadataFile;
         // in case the file does not exist, so the BatMetadata can be read
         if !metadata_bat_file

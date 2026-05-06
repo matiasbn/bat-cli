@@ -30,7 +30,7 @@ use crate::batbelt::path::{BatFile, BatFolder};
 use crate::batbelt::templates::code_overhaul_template::CoderOverhaulTemplatePlaceholders;
 use crate::batbelt::BatEnumerator;
 use crate::commands::{BatCommandEnumerator, CommandResult};
-use crate::config::BatConfig;
+use crate::config::{BatConfig, ProjectType};
 use crate::{batbelt, Suggestion};
 use clap::Subcommand;
 use colored::Colorize;
@@ -101,7 +101,9 @@ impl MiroCommand {
                 .change_context(CommandError)?;
         // get entrypoints name
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
-        let entrypoints_names = if bat_config.is_multi_program() {
+        let entrypoints_names = if bat_config.project_type == ProjectType::Foundry {
+            crate::batbelt::evm::miro::get_entry_point_names().change_context(CommandError)?
+        } else if bat_config.is_multi_program() {
             let program_name = bat_config
                 .prompt_select_program()
                 .change_context(CommandError)?;
@@ -475,6 +477,19 @@ impl MiroCommand {
         println!("Deploying code-overhaul frames to the Miro board");
 
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
+
+        if bat_config.project_type == ProjectType::Foundry {
+            crate::batbelt::evm::miro::deploy_co_frames()
+                .await
+                .change_context(CommandError)?;
+            GitCommit::UpdateMetadataJson {
+                bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
+            }
+            .create_commit(true)
+            .change_context(CommandError)?;
+            return Ok(());
+        }
+
         let is_multi = bat_config.is_multi_program();
 
         // Collect (program_name, entrypoint_names) for all programs
@@ -1153,13 +1168,15 @@ impl MiroCommand {
                         ca.metadata_id.clone(),
                     )
                     .change_context(CommandError)?;
-                let mut_program_owned_accounts = context_accounts_metadata
-                    .context_accounts_info
-                    .into_iter()
+                let ca_info_list = context_accounts_metadata.context_accounts_info.clone();
+                let mut_program_owned_accounts = ca_info_list
+                    .iter()
                     .filter(|ca_info| {
                         ca_info.is_mut
+                            && !ca_info.is_init
                             && ca_info.solana_account_type == SolanaAccountType::ProgramStateAccount
-                    });
+                    })
+                    .cloned();
                 for mut_account in mut_program_owned_accounts {
                     let struct_metadata_vec = SourceCodeMetadata::get_filtered_structs(
                         Some(mut_account.account_struct_name.clone()),
@@ -1174,6 +1191,50 @@ impl MiroCommand {
                         mut_account.account_struct_name,
                         struct_metadata_vec.len()
                     );
+                        continue;
+                    }
+
+                    let struct_metadata = struct_metadata_vec[0].clone();
+                    struct_metadata
+                        .to_source_code_parser(Some(miro_command_functions::parse_screenshot_name(
+                            &struct_metadata.name,
+                            &co_miro_frame.title,
+                        )))
+                        .deploy_screenshot_to_miro_frame(
+                            co_miro_frame.clone(),
+                            0,
+                            co_miro_frame.height as i64,
+                            SourceCodeScreenshotOptions {
+                                include_path: true,
+                                offset_to_start_line: true,
+                                filter_comments: false,
+                                font_size: None,
+                                filters: None,
+                                show_line_number: true,
+                            },
+                        )
+                        .await
+                        .change_context(CommandError)?;
+                }
+
+                // Deploy init / init_if_needed accounts
+                let init_accounts = ca_info_list.into_iter().filter(|ca_info| {
+                    ca_info.is_init
+                        && ca_info.solana_account_type == SolanaAccountType::ProgramStateAccount
+                });
+                for init_account in init_accounts {
+                    let struct_metadata_vec = SourceCodeMetadata::get_filtered_structs(
+                        Some(init_account.account_struct_name.clone()),
+                        Some(StructMetadataType::SolanaAccount),
+                    )
+                    .change_context(CommandError)?;
+
+                    if struct_metadata_vec.len() != 1 {
+                        log::warn!(
+                            "Solana Account struct '{}' not found (expected 1, got {}), skipping init screenshot",
+                            init_account.account_struct_name,
+                            struct_metadata_vec.len()
+                        );
                         continue;
                     }
 

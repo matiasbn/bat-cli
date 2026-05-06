@@ -161,6 +161,7 @@ pub enum ProjectType {
     Anchor,
     Pinocchio,
     VanillaSolana,
+    Foundry,
     #[default]
     GenericRust,
 }
@@ -197,6 +198,12 @@ impl BatConfig {
         let mut project_type = if Path::new("Anchor.toml").is_file() {
             println!("Detected {} project (Anchor.toml found)", "Anchor".green());
             ProjectType::Anchor
+        } else if Path::new("foundry.toml").is_file() {
+            println!(
+                "Detected {} project (foundry.toml found)",
+                "Foundry".green()
+            );
+            ProjectType::Foundry
         } else {
             ProjectType::GenericRust
         };
@@ -211,6 +218,11 @@ impl BatConfig {
         // Auto-detect git remote info
         let (remote_https_url, owner_name, commit_hash) = Self::detect_remote_info(".")
             .unwrap_or(("".to_string(), "".to_string(), "".to_string()));
+
+        // Foundry projects: scan .sol files instead of Cargo.toml
+        if project_type == ProjectType::Foundry {
+            return Self::create_foundry_config(remote_https_url, owner_name, commit_hash);
+        }
 
         // Step 1: List root-level directories that contain at least one Cargo.toml
         let root_dirs: Vec<String> = std::fs::read_dir(".")
@@ -591,6 +603,144 @@ impl BatConfig {
         confy::store_path(path, self)
             .into_report()
             .change_context(BatConfigError)
+    }
+
+    /// Create BatConfig for a Foundry/Solidity project.
+    fn create_foundry_config(
+        remote_https_url: String,
+        owner_name: String,
+        commit_hash: String,
+    ) -> Result<BatConfig, BatConfigError> {
+        // Detect src directory from foundry.toml
+        let foundry_content = fs::read_to_string("foundry.toml").unwrap_or_default();
+        let src_dir = foundry_content
+            .lines()
+            .find(|l| l.trim().starts_with("src"))
+            .and_then(|l| l.split('=').nth(1))
+            .map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
+            .unwrap_or_else(|| "src".to_string());
+
+        // Verify src directory exists and has .sol files
+        let has_sol_files = WalkDir::new(&src_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .any(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "sol")
+                    .unwrap_or(false)
+                    && !e.path().to_str().unwrap_or("").contains("test")
+                    && !e.path().to_str().unwrap_or("").contains("script")
+            });
+
+        if !has_sol_files {
+            return Err(Report::new(BatConfigError)
+                .attach_printable(format!("No .sol files found in {}/", src_dir)));
+        }
+
+        // For Foundry, program_lib_path points to the src directory.
+        // Sonar will scan all .sol files; contract selection happens post-sonar.
+        let src_path = format!("../{}", src_dir.trim_start_matches("./"));
+        let program_name = "solidity-contracts".to_string();
+        let project_name = "bat-audit".to_string();
+
+        // Auditor names
+        let auditor_names_prompt: String = if !cfg!(debug_assertions) {
+            bat_dialoguer::input("Auditor names (comma separated, example: alice,bob):")
+                .change_context(BatConfigError)?
+        } else {
+            "test_user".to_string()
+        };
+        let auditor_names: Vec<String> = auditor_names_prompt
+            .split(',')
+            .map(|l| l.trim().to_string())
+            .collect();
+
+        // Client name
+        let client_name: String = if !cfg!(debug_assertions) {
+            if owner_name.is_empty() {
+                bat_dialoguer::input("Client name:").change_context(BatConfigError)?
+            } else {
+                bat_dialoguer::input_with_default("Client name:", &owner_name)
+                    .change_context(BatConfigError)?
+            }
+        } else {
+            "test_client".to_string()
+        };
+
+        // Commit hash URL
+        let default_commit_url = if !remote_https_url.is_empty() && !commit_hash.is_empty() {
+            format!("{}/commit/{}", remote_https_url, commit_hash)
+        } else {
+            String::new()
+        };
+
+        let mut commit_hash_url: String = if !cfg!(debug_assertions) {
+            if default_commit_url.is_empty() {
+                bat_dialoguer::input("Commit hash url:").change_context(BatConfigError)?
+            } else {
+                bat_dialoguer::input_with_default("Commit hash url:", &default_commit_url)
+                    .change_context(BatConfigError)?
+            }
+        } else {
+            "https://github.com/test_repo/test_program/commit/abc123".to_string()
+        };
+
+        commit_hash_url = Self::normalize_commit_hash_url(&commit_hash_url)?;
+
+        // Starting date
+        let today = {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let days = now / 86400;
+            let years = (days * 4 + 2) / 1461;
+            let day_of_year = days - (365 * years + years / 4 - years / 100 + years / 400);
+            let month_days: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            let year = 1970 + years;
+            let is_leap =
+                (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
+            let mut remaining = day_of_year;
+            let mut month = 0u64;
+            for (i, &d) in month_days.iter().enumerate() {
+                let d = if i == 1 && is_leap { d + 1 } else { d };
+                if remaining < d {
+                    month = i as u64 + 1;
+                    break;
+                }
+                remaining -= d;
+            }
+            let day = remaining + 1;
+            format!("{:02}/{:02}/{}", day, month, year)
+        };
+
+        let starting_date: String = if !cfg!(debug_assertions) {
+            bat_dialoguer::input_with_default("Starting date:", &today)
+                .change_context(BatConfigError)?
+        } else {
+            today
+        };
+
+        let miro_board_url = "none".to_string();
+        let project_repository_url = remote_https_url;
+
+        let bat_config = BatConfig {
+            initialized: true,
+            program_name,
+            auditor_names,
+            project_name,
+            client_name,
+            miro_board_url,
+            starting_date,
+            commit_hash_url,
+            project_repository_url,
+            program_lib_path: src_path.clone(),
+            program_lib_paths: vec![src_path],
+            project_type: ProjectType::Foundry,
+        };
+        bat_config.save().change_context(BatConfigError)?;
+        Ok(bat_config)
     }
 
     pub fn is_multi_program(&self) -> bool {

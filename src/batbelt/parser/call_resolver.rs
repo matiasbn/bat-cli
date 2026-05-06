@@ -332,18 +332,22 @@ impl<'a> CallResolver<'a> {
         };
         visitor.visit_block(&item_fn.block);
 
-        let current_fn_name = item_fn.sig.ident.to_string();
-
         visitor
             .calls
             .into_iter()
-            .filter(|raw| raw.function_name != current_fn_name)
             .map(|raw| {
                 let resolution = self.resolve_call(&raw, &param_types, &context_accounts_types);
                 ResolvedCall {
                     function_name: raw.function_name,
                     resolution,
                 }
+            })
+            // Exclude calls that resolve to the current function itself (true recursion).
+            // Filtering by name alone is wrong when a same-named function exists in another
+            // module (e.g. entrypoint `open` calling `instructions::open`).
+            .filter(|rc| match &rc.resolution {
+                Resolution::Internal(id) => id != self.current_function_id,
+                _ => true,
             })
             .collect()
     }

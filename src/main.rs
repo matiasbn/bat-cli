@@ -143,10 +143,17 @@ impl BatCommands {
             // ),
         };
         if check_metadata {
-            BatMetadata::read_metadata()
-                .change_context(CommandError)?
-                .check_metadata_is_initialized()
-                .change_context(CommandError)?;
+            let bat_config = crate::config::BatConfig::get_config().change_context(CommandError)?;
+            if bat_config.project_type == crate::config::ProjectType::Foundry {
+                // Foundry uses EvmBatMetadata, not BatMetadata (SVM)
+                crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata::read_metadata()
+                    .change_context(CommandError)?;
+            } else {
+                BatMetadata::read_metadata()
+                    .change_context(CommandError)?
+                    .check_metadata_is_initialized()
+                    .change_context(CommandError)?;
+            }
         }
 
         if check_branch {
@@ -166,10 +173,11 @@ impl BatCommands {
         BatCommands::get_type_vec()
             .into_iter()
             .filter_map(|command| match command {
-                // Anchor and Pinocchio commands
+                // Anchor, Pinocchio, and Foundry commands
                 BatCommands::CodeOverhaul(_)
                     if *project_type == ProjectType::Anchor
-                        || *project_type == ProjectType::Pinocchio =>
+                        || *project_type == ProjectType::Pinocchio
+                        || *project_type == ProjectType::Foundry =>
                 {
                     Some(CodeOverhaulCommand::get_bat_package_json_commands(
                         command.to_string().to_kebab_case(),
