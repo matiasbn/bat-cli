@@ -497,6 +497,13 @@ impl CodeOverhaulCommand {
         )
         .await?;
         if deployed {
+            use crate::batbelt::metadata::BatMetadataCommit;
+            GitCommit::UpdateMetadataJson {
+                bat_metadata_commit: BatMetadataCommit::MiroMetadataCommit,
+            }
+            .create_commit(true)
+            .change_context(CommandError)?;
+
             GitCommit::UpdateCO {
                 entrypoint_name: to_start_file_name.clone(),
                 program_name: None,

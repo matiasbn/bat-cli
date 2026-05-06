@@ -39,14 +39,19 @@ pub fn create_figure(
         .rsplit('.')
         .next()
         .unwrap_or("rs");
-    let lang_ext = match ext {
-        "sol" => "sol",
-        _ => "rs",
+    let syntax = match ext {
+        // Solidity: try native .sol syntax first, fall back to JavaScript
+        // (JS shares function/if/return/braces syntax with Solidity,
+        // unlike Rust which renders .sol code without highlighting)
+        "sol" => ps
+            .find_syntax_by_extension("sol")
+            .or_else(|| ps.find_syntax_by_extension("js"))
+            .or_else(|| ps.find_syntax_by_extension("rs"))
+            .expect("Syntax not found in syntect"),
+        _ => ps
+            .find_syntax_by_extension("rs")
+            .expect("Syntax not found in syntect"),
     };
-    let syntax = ps
-        .find_syntax_by_extension(lang_ext)
-        .or_else(|| ps.find_syntax_by_extension("rs"))
-        .expect("Syntax not found in syntect");
     let mut highlighter = HighlightLines::new(syntax, theme);
     let highlight: Vec<Vec<(syntect::highlighting::Style, &str)>> = LinesWithEndings::from(content)
         .map(|line| highlighter.highlight_line(line, &ps).unwrap())

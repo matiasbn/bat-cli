@@ -13,8 +13,7 @@ use crate::batbelt::miro::frame::{
     MiroFrame, MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X,
     MIRO_INITIAL_Y,
 };
-use crate::batbelt::miro::sticky_note::MiroStickyNote;
-use crate::batbelt::miro::{MiroColor, MiroConfig};
+use crate::batbelt::miro::MiroConfig;
 use crate::batbelt::parser::source_code_parser::{SourceCodeParser, SourceCodeScreenshotOptions};
 use crate::config::BatConfig;
 
@@ -308,10 +307,229 @@ pub fn get_entry_point_names() -> EvmMiroResult<Vec<String>> {
     Ok(names)
 }
 
+/// Find the closing brace of a Solidity function starting at `start_line` (1-based).
+/// Uses brace-depth counting to handle nested blocks.
+fn find_function_end_line(file_path: &str, start_line: usize) -> usize {
+    let content = std::fs::read_to_string(file_path).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().collect();
+    let total = lines.len();
+    let start_idx = if start_line > 0 { start_line - 1 } else { 0 };
+
+    let mut depth: i32 = 0;
+    let mut found_open = false;
+
+    for i in start_idx..total {
+        for ch in lines[i].chars() {
+            if ch == '{' {
+                depth += 1;
+                found_open = true;
+            } else if ch == '}' {
+                depth -= 1;
+                if found_open && depth == 0 {
+                    return i + 1; // 1-based
+                }
+            }
+        }
+    }
+    // fallback: start + 20
+    (start_line + 20).min(total)
+}
+
+/// Collect all contracts in the inheritance chain (self + base_contracts, recursively).
+fn collect_inheritance_chain<'a>(
+    evm_metadata: &'a EvmBatMetadata,
+    contract_name: &str,
+) -> Vec<&'a crate::batbelt::evm::metadata::bat_metadata::ContractMetadata> {
+    let mut chain = Vec::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut queue: VecDeque<String> = VecDeque::new();
+    queue.push_back(contract_name.to_string());
+
+    while let Some(name) = queue.pop_front() {
+        if visited.contains(&name) {
+            continue;
+        }
+        visited.insert(name.clone());
+        if let Some(c) = evm_metadata.get_contract_by_name(&name) {
+            chain.push(c);
+            for base in &c.base_contracts {
+                queue.push_back(base.clone());
+            }
+        }
+    }
+    chain
+}
+
+/// Extract only the lines inside the function body (after the opening `{`),
+/// excluding the function signature, modifiers, and closing `}`.
+fn extract_body_only_lines(func_lines: &[String]) -> Vec<String> {
+    let mut body_lines = Vec::new();
+    let mut found_open = false;
+    let mut depth: i32 = 0;
+
+    for line in func_lines {
+        for ch in line.chars() {
+            if ch == '{' {
+                depth += 1;
+                if !found_open {
+                    found_open = true;
+                    continue; // skip the opening brace line for body scanning
+                }
+            } else if ch == '}' {
+                depth -= 1;
+            }
+        }
+        if found_open && depth > 0 {
+            body_lines.push(line.clone());
+        }
+    }
+    body_lines
+}
+
+/// Resolve direct dependencies for a function by scanning its body for internal calls
+/// and modifiers. Searches the full inheritance chain for modifier definitions and
+/// internal functions. Returns (metadata_id, name, file_path, line, end_line).
+fn resolve_evm_function_deps(
+    evm_metadata: &EvmBatMetadata,
+    contract_name: &str,
+    func_metadata_id: &str,
+    func_modifiers: &[String],
+    func_lines: &[String],
+    _contract_file_path: &str,
+) -> Vec<(String, String, String, usize, usize)> {
+    let mut deps: Vec<(String, String, String, usize, usize)> = Vec::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
+    let mut seen_ids: HashSet<String> = HashSet::new();
+
+    // Collect all contracts in the inheritance chain
+    let chain = collect_inheritance_chain(evm_metadata, contract_name);
+
+    // 1. Resolve modifiers as dependencies (search whole inheritance chain)
+    for mod_name in func_modifiers {
+        for c in &chain {
+            if let Some(mod_def) = c.modifiers.iter().find(|m| m.name == *mod_name) {
+                let mod_id = format!("modifier_{}_{}", c.name, mod_name);
+                if !seen_ids.contains(&mod_id) {
+                    seen_ids.insert(mod_id.clone());
+                    seen_names.insert(mod_name.clone());
+                    let end = find_function_end_line(&c.file_path, mod_def.line);
+                    deps.push((
+                        mod_id,
+                        format!("modifier {}", mod_name),
+                        c.file_path.clone(),
+                        mod_def.line,
+                        end,
+                    ));
+                }
+                break; // found it, stop searching chain
+            }
+        }
+    }
+
+    // 2. Resolve internal function calls from body ONLY (after opening `{`)
+    // This avoids false positives from the function signature, parameter names,
+    // or modifier calls in the signature.
+    let body_only = extract_body_only_lines(func_lines);
+
+    for c in &chain {
+        for func_meta in &c.functions {
+            if func_meta.metadata_id == func_metadata_id {
+                continue; // skip self
+            }
+            // Skip functions that share name with an already-resolved modifier
+            if seen_names.contains(&func_meta.name) {
+                continue;
+            }
+            let call_pattern = format!("{}(", func_meta.name);
+            let is_called = body_only
+                .iter()
+                .any(|line| line.contains(&call_pattern));
+            if is_called && !seen_ids.contains(&func_meta.metadata_id) {
+                seen_ids.insert(func_meta.metadata_id.clone());
+                seen_names.insert(func_meta.name.clone());
+                let end = if func_meta.end_line > 0 {
+                    func_meta.end_line
+                } else {
+                    find_function_end_line(&c.file_path, func_meta.line)
+                };
+                deps.push((
+                    func_meta.metadata_id.clone(),
+                    func_meta.name.clone(),
+                    c.file_path.clone(),
+                    func_meta.line,
+                    end,
+                ));
+            }
+        }
+    }
+
+    deps
+}
+
+/// Find the start of NatSpec/documentation comments above a function definition.
+/// Walks backwards from `func_start_line` (1-based) to include `/** ... */` or `///` blocks.
+fn find_doc_start_line(file_path: &str, func_start_line: usize) -> usize {
+    let content = std::fs::read_to_string(file_path).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().collect();
+    if func_start_line <= 1 {
+        return func_start_line;
+    }
+
+    let mut doc_start = func_start_line; // 1-based
+    let mut i = func_start_line - 2; // 0-based index of line above function
+
+    // Skip blank lines immediately above the function
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        if trimmed.is_empty() {
+            if i == 0 {
+                break;
+            }
+            i -= 1;
+        } else {
+            break;
+        }
+    }
+
+    if i >= lines.len() {
+        return doc_start;
+    }
+
+    let trimmed = lines[i].trim();
+
+    // Check for `*/` ending a block comment
+    if trimmed.ends_with("*/") {
+        // Walk backwards to find the `/**` or `/*`
+        loop {
+            doc_start = i + 1; // 1-based
+            if lines[i].trim().starts_with("/**") || lines[i].trim().starts_with("/*") {
+                break;
+            }
+            if i == 0 {
+                break;
+            }
+            i -= 1;
+        }
+    } else if trimmed.starts_with("///") {
+        // Walk backwards through consecutive `///` lines
+        doc_start = i + 1;
+        while i > 0 {
+            i -= 1;
+            if lines[i].trim().starts_with("///") {
+                doc_start = i + 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    doc_start
+}
+
 /// Deploy code-overhaul screenshots for a single EVM entry point into its Miro frame.
 ///
-/// Deploys: entry point screenshot, access control sticky note, validations screenshot,
-/// and BFS dependency screenshots with connectors.
+/// Deploys: entry point screenshot, validations screenshot (with header),
+/// and BFS dependency screenshots (modifiers + internal calls) with connectors.
 pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> {
     MiroConfig::check_miro_enabled().change_context(EvmMiroError)?;
 
@@ -375,33 +593,31 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
         .clone();
 
     // 1. Deploy entry point function screenshot at (1680, 260)
+    // Include NatSpec documentation above the function
+    let ep_start_line = find_doc_start_line(&contract.file_path, func.line);
     let ep_end_line = if func.end_line > 0 {
         func.end_line
     } else {
-        // Fallback: read file and count from body_source
-        let content = std::fs::read_to_string(&contract.file_path).unwrap_or_default();
-        let total_lines = content.lines().count();
-        // Estimate: start line + body lines
-        (func.line + 30).min(total_lines)
+        find_function_end_line(&contract.file_path, func.line)
     };
 
     let ep_sc = SourceCodeParser::new(
-        format!("ep_{}", func.name),
+        format!("ep_{}.sol", func.name),
         contract.file_path.clone(),
-        func.line,
+        ep_start_line,
         ep_end_line,
     );
 
     let ep_image = ep_sc
         .deploy_screenshot_to_miro_frame(
             co_miro_frame.clone(),
-            1680,
-            260,
+            -(MIRO_FRAME_WIDTH as i64) / 2 + 200,
+            -(MIRO_FRAME_HEIGHT as i64) / 2 + 200,
             SourceCodeScreenshotOptions {
                 include_path: true,
                 offset_to_start_line: true,
                 filter_comments: false,
-                font_size: Some(20),
+                font_size: Some(28),
                 filters: None,
                 show_line_number: true,
             },
@@ -411,50 +627,23 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
 
     let entry_point_image_id = ep_image.item_id.clone();
 
-    // 2. Deploy access control sticky note at (200, 260)
-    let access_control_text = {
-        let ac_str = ep
-            .access_control
-            .iter()
-            .map(|ac| format!("{:?}", ac))
-            .collect::<Vec<_>>()
-            .join("<br>");
-        let mod_str = if ep.modifiers.is_empty() {
-            "None".to_string()
-        } else {
-            ep.modifiers.join(", ")
-        };
-        format!(
-            "<strong>Access Control</strong><br>{}<br><br><strong>Modifiers:</strong> {}",
-            ac_str, mod_str
-        )
-    };
-
-    let mut access_note = MiroStickyNote::new(
-        &access_control_text,
-        MiroColor::LightYellow,
-        &co_miro_frame.item_id,
-        200,
-        260,
-        374,
-        0,
-    );
-    access_note.deploy().await.change_context(EvmMiroError)?;
-
-    // Connect access control to entry point
-    create_connector(&access_note.item_id, &entry_point_image_id, None)
-        .await
-        .change_context(EvmMiroError)?;
-
-    // 3. Deploy validations screenshot at (4200, 650)
-    // Extract require/revert/assert lines from the function body
+    // 2. Deploy validations screenshot at (4200, 650)
+    // Include: modifiers starting with "only" + require/revert/assert from body
     let validations_image_id = {
         let file_content =
             std::fs::read_to_string(&contract.file_path).unwrap_or_default();
         let file_lines: Vec<&str> = file_content.lines().collect();
 
-        // Find validation lines (require, revert, assert) within the function range
-        let mut validation_lines: Vec<(usize, String)> = Vec::new();
+        let mut val_parts: Vec<String> = Vec::new();
+
+        // Add "only" modifiers as validation entries
+        for mod_name in &ep.modifiers {
+            if mod_name.starts_with("only") {
+                val_parts.push(format!("modifier {}()", mod_name));
+            }
+        }
+
+        // Find require/revert/assert lines within the function range
         let start = if func.line > 0 { func.line - 1 } else { 0 };
         let end = ep_end_line.min(file_lines.len());
 
@@ -466,84 +655,85 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
                 || trimmed.starts_with("revert(")
                 || trimmed.starts_with("assert(")
                 || trimmed.starts_with("assert (")
-                || trimmed.contains("revert ")
-                || trimmed.starts_with("if (")
+                || (trimmed.starts_with("if (")
                     && file_lines
                         .get(i + 1)
-                        .map_or(false, |next| next.trim().starts_with("revert"))
+                        .map_or(false, |next| next.trim().starts_with("revert")))
             {
-                validation_lines.push((i + 1, file_lines[i].to_string()));
+                val_parts.push(format!("L{}: {}", i + 1, trimmed));
             }
         }
 
-        if !validation_lines.is_empty() {
-            // Build a validation source code block
-            let val_content = validation_lines
-                .iter()
-                .map(|(line_num, content)| format!("L{}: {}", line_num, content.trim()))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            // Write temp content for screenshot
-            let val_name = format!("validations_{}", func.name);
-            let temp_path = format!("/tmp/{}.sol", val_name);
-            std::fs::write(&temp_path, &val_content).unwrap_or_default();
-
-            let val_sc = SourceCodeParser::new(val_name, temp_path, 1, validation_lines.len());
-            let val_image = val_sc
-                .deploy_screenshot_to_miro_frame(
-                    co_miro_frame.clone(),
-                    4200,
-                    650,
-                    SourceCodeScreenshotOptions {
-                        include_path: false,
-                        offset_to_start_line: false,
-                        filter_comments: false,
-                        font_size: Some(12),
-                        filters: None,
-                        show_line_number: false,
-                    },
-                )
-                .await
-                .change_context(EvmMiroError)?;
-
-            // Connect entry point to validations
-            create_connector(&entry_point_image_id, &val_image.item_id, None)
-                .await
-                .change_context(EvmMiroError)?;
-
-            val_image.item_id
+        // Build the screenshot content with header (like SVM: "/// Validations")
+        let val_content = if val_parts.is_empty() {
+            "/// Validations\n\nNo validations detected".to_string()
         } else {
-            // No validations found, deploy a note instead
-            let mut no_val_note = MiroStickyNote::new(
-                "<strong>Validations</strong><br>No require/revert/assert found",
-                MiroColor::Gray,
-                &co_miro_frame.item_id,
+            format!("/// Validations\n\n{}", val_parts.join("\n"))
+        };
+
+        let val_name = format!("validations_{}.sol", func.name);
+        let temp_path = format!("/tmp/{}", val_name);
+        std::fs::write(&temp_path, &val_content).unwrap_or_default();
+
+        let total_lines = val_content.lines().count();
+        let val_sc = SourceCodeParser::new(val_name, temp_path, 1, total_lines);
+        let val_image = val_sc
+            .deploy_screenshot_to_miro_frame(
+                co_miro_frame.clone(),
                 4200,
                 650,
-                300,
-                0,
-            );
-            no_val_note.deploy().await.change_context(EvmMiroError)?;
+                SourceCodeScreenshotOptions {
+                    include_path: false,
+                    offset_to_start_line: false,
+                    filter_comments: false,
+                    font_size: Some(12),
+                    filters: None,
+                    show_line_number: false,
+                },
+            )
+            .await
+            .change_context(EvmMiroError)?;
 
-            create_connector(&entry_point_image_id, &no_val_note.item_id, None)
-                .await
-                .change_context(EvmMiroError)?;
+        // Arrow: entry point → validations
+        create_connector(&entry_point_image_id, &val_image.item_id, None)
+            .await
+            .change_context(EvmMiroError)?;
 
-            no_val_note.item_id
-        }
+        val_image.item_id
     };
 
-    // 4. BFS deployment of dependency screenshots
+    // 3. BFS deployment of dependency screenshots
+    // Resolve deps from function body + modifiers (not from function_dependencies which may be empty)
+    // Track both IDs and names to prevent deploying virtual parent versions of overridden functions
     let mut deployed_function_ids: HashSet<String> = HashSet::new();
     deployed_function_ids.insert(ep.function_metadata_id.clone());
+    let mut deployed_function_names: HashSet<String> = HashSet::new();
+    deployed_function_names.insert(func.name.clone());
 
     let mut id_to_image: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     id_to_image.insert(ep.function_metadata_id.clone(), entry_point_image_id.clone());
 
-    let mut bfs_queue: VecDeque<(String, String)> = VecDeque::new();
-    bfs_queue.push_back((ep.function_metadata_id.clone(), func.name.clone()));
+    let mut bfs_queue: VecDeque<(String, String, Vec<String>, Vec<String>, String)> =
+        VecDeque::new();
+
+    // Read body lines for the entry point function
+    let ep_body_lines: Vec<String> = {
+        let file_content =
+            std::fs::read_to_string(&contract.file_path).unwrap_or_default();
+        let lines: Vec<&str> = file_content.lines().collect();
+        let start = if func.line > 0 { func.line - 1 } else { 0 };
+        let end = ep_end_line.min(lines.len());
+        lines[start..end].iter().map(|s| s.to_string()).collect()
+    };
+
+    bfs_queue.push_back((
+        ep.function_metadata_id.clone(),
+        func.name.clone(),
+        func.modifiers.clone(),
+        ep_body_lines,
+        contract.file_path.clone(),
+    ));
 
     let mut dependency_image_ids: Vec<String> = Vec::new();
 
@@ -563,58 +753,28 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
     ];
     let mut color_index: usize = 0;
 
-    // Helper: get direct deps from function_dependencies
-    let direct_deps_of = |function_id: &str| -> Vec<String> {
-        evm_metadata
-            .function_dependencies
-            .iter()
-            .find(|fd| fd.function_metadata_id == function_id)
-            .map(|fd| fd.callees.clone())
-            .unwrap_or_default()
-    };
+    while let Some((caller_id, caller_name, caller_modifiers, caller_body, caller_file)) =
+        bfs_queue.pop_front()
+    {
+        // Resolve deps dynamically from body + modifiers
+        let new_dep_functions = resolve_evm_function_deps(
+            &evm_metadata,
+            &ep.contract_name,
+            &caller_id,
+            &caller_modifiers,
+            &caller_body,
+            &caller_file,
+        );
 
-    while let Some((caller_id, caller_name)) = bfs_queue.pop_front() {
-        let direct_deps = direct_deps_of(&caller_id);
-        let new_deps: Vec<String> = direct_deps
+        // Filter already deployed (by ID or by name to prevent virtual/override duplicates)
+        let new_deps: Vec<_> = new_dep_functions
             .into_iter()
-            .filter(|id| !deployed_function_ids.contains(id))
+            .filter(|(id, name, _, _, _)| {
+                !deployed_function_ids.contains(id) && !deployed_function_names.contains(name)
+            })
             .collect();
 
         if new_deps.is_empty() {
-            continue;
-        }
-
-        // Resolve function metadata for each dep
-        let mut new_dep_functions: Vec<(
-            String,
-            String,
-            String,
-            usize,
-            usize,
-        )> = Vec::new(); // (metadata_id, name, file_path, line, end_line)
-
-        for dep_id in &new_deps {
-            if let Some(dep_func) = evm_metadata.get_function_by_id(dep_id) {
-                let dep_contract = evm_metadata
-                    .get_contract_by_name(&dep_func.contract_name)
-                    .map(|c| c.file_path.clone())
-                    .unwrap_or_default();
-                let end = if dep_func.end_line > 0 {
-                    dep_func.end_line
-                } else {
-                    dep_func.line + 20
-                };
-                new_dep_functions.push((
-                    dep_func.metadata_id.clone(),
-                    dep_func.name.clone(),
-                    dep_contract,
-                    dep_func.line,
-                    end,
-                ));
-            }
-        }
-
-        if new_dep_functions.is_empty() {
             continue;
         }
 
@@ -623,7 +783,7 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
 
         let prompt = format!(
             "Press Enter to deploy {} dependencies of `{}` (arrow color: {})",
-            new_dep_functions.len(),
+            new_deps.len(),
             caller_name,
             arrow_name
         );
@@ -631,10 +791,10 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
             .change_context(EvmMiroError)?;
 
         for (idx, (dep_id, dep_name, dep_path, dep_line, dep_end)) in
-            new_dep_functions.iter().enumerate()
+            new_deps.iter().enumerate()
         {
             let dep_sc = SourceCodeParser::new(
-                format!("dep_{}", dep_name),
+                format!("dep_{}.sol", dep_name),
                 dep_path.clone(),
                 *dep_line,
                 *dep_end,
@@ -674,9 +834,25 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
 
             id_to_image.insert(dep_id.clone(), dep_image.item_id.clone());
             deployed_function_ids.insert(dep_id.clone());
+            deployed_function_names.insert(dep_name.clone());
             dependency_image_ids.push(dep_image.item_id.clone());
 
-            bfs_queue.push_back((dep_id.clone(), dep_name.clone()));
+            // Read body of dep for further BFS (only for non-modifier deps)
+            let dep_body: Vec<String> = {
+                let fc = std::fs::read_to_string(dep_path).unwrap_or_default();
+                let lines: Vec<&str> = fc.lines().collect();
+                let s = if *dep_line > 0 { dep_line - 1 } else { 0 };
+                let e = (*dep_end).min(lines.len());
+                lines[s..e].iter().map(|l| l.to_string()).collect()
+            };
+            // Dep functions don't have modifiers in this context (we'd need to look them up)
+            bfs_queue.push_back((
+                dep_id.clone(),
+                dep_name.clone(),
+                vec![],
+                dep_body,
+                dep_path.clone(),
+            ));
         }
     }
 
