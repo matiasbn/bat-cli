@@ -479,10 +479,6 @@ impl CodeOverhaulCommand {
         .create_commit(true)
         .change_context(CommandError)?;
 
-        started_bat_file
-            .open_in_editor(false, None)
-            .change_context(CommandError)?;
-
         // Open source file at function line
         let ep_bat_file = BatFile::Generic {
             file_path: contract.file_path.clone(),
