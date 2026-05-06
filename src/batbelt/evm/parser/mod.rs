@@ -1,7 +1,7 @@
 pub mod call_resolver;
 pub mod contract_parser;
-pub mod evm_file_parser;
 pub mod event_parser;
+pub mod evm_file_parser;
 pub mod function_parser;
 pub mod import_resolver;
 pub mod inheritance_resolver;

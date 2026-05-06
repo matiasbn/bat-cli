@@ -1,7 +1,4 @@
-use solar_parse::{
-    ast,
-    interface::Session,
-};
+use solar_parse::{ast, interface::Session};
 
 use crate::batbelt::evm::types::{EvmEvent, EvmParam};
 

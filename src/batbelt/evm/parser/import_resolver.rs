@@ -79,11 +79,10 @@ impl ImportResolver {
     fn detect_src_dir(root: &Path) -> EvmParserResult<PathBuf> {
         let foundry_toml_path = root.join("foundry.toml");
         if foundry_toml_path.is_file() {
-            let content = fs::read_to_string(&foundry_toml_path)
-                .map_err(|e| {
-                    Report::new(EvmParserError)
-                        .attach_printable(format!("Cannot read foundry.toml: {}", e))
-                })?;
+            let content = fs::read_to_string(&foundry_toml_path).map_err(|e| {
+                Report::new(EvmParserError)
+                    .attach_printable(format!("Cannot read foundry.toml: {}", e))
+            })?;
 
             // Simple TOML parsing for src field
             for line in content.lines() {

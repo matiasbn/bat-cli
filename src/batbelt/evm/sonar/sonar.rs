@@ -7,11 +7,13 @@ use std::io::Write;
 use std::time::Duration;
 use walkdir::WalkDir;
 
-use crate::batbelt::evm::metadata::bat_metadata::{EvmBatMetadata, FunctionDependency, EvmMetadataError, EvmMetadataResult};
-use crate::batbelt::evm::parser::call_resolver::{CallResolver, extract_calls_from_source};
+use crate::batbelt::evm::metadata::bat_metadata::{
+    EvmBatMetadata, EvmMetadataError, EvmMetadataResult, FunctionDependency,
+};
+use crate::batbelt::evm::parser::call_resolver::extract_calls_from_source;
+use crate::batbelt::evm::parser::evm_file_parser::parse_sol_file;
 use crate::batbelt::evm::parser::import_resolver::ImportResolver;
 use crate::batbelt::evm::parser::inheritance_resolver::InheritanceResolver;
-use crate::batbelt::evm::parser::evm_file_parser::parse_sol_file;
 use crate::batbelt::evm::types::EvmContract;
 
 static BAT: Emoji<'_, '_> = Emoji("🦇", "BatSonar");
@@ -104,16 +106,14 @@ impl EvmSonar {
 
     /// Phase 1: Parse all .sol files in src/ and lib/ directories.
     fn phase_1_source_scan(&mut self) -> EvmMetadataResult<()> {
-        let import_resolver = ImportResolver::new(&self.project_root)
-            .change_context(EvmMetadataError)?;
+        let import_resolver =
+            ImportResolver::new(&self.project_root).change_context(EvmMetadataError)?;
         let src_dir = import_resolver.get_src_dir().to_path_buf();
         let lib_dir = import_resolver.get_root_dir().join("lib");
 
         if !src_dir.is_dir() {
-            return Err(Report::new(EvmMetadataError).attach_printable(format!(
-                "Source directory not found: {}",
-                src_dir.display()
-            )));
+            return Err(Report::new(EvmMetadataError)
+                .attach_printable(format!("Source directory not found: {}", src_dir.display())));
         }
 
         let src_files = Self::collect_sol_files(&src_dir);
@@ -150,7 +150,10 @@ impl EvmSonar {
         for file_path in &lib_files {
             count += 1;
             let short = file_path.split("/lib/").last().unwrap_or(file_path);
-            pb.set_message(format!("Source scan [{}/{}]: [EXT] {}", count, total, short));
+            pb.set_message(format!(
+                "Source scan [{}/{}]: [EXT] {}",
+                count, total, short
+            ));
             match parse_sol_file(file_path) {
                 Ok(sol_file) => {
                     for contract in sol_file.contracts {
@@ -173,7 +176,11 @@ impl EvmSonar {
 
         pb.finish_with_message(format!(
             "{} Source scan: {} contracts ({} src, {} lib){}",
-            SPARKLE, self.contracts.len(), src_contracts, ext_contracts, error_msg
+            SPARKLE,
+            self.contracts.len(),
+            src_contracts,
+            ext_contracts,
+            error_msg
         ));
 
         Ok(())
@@ -185,7 +192,10 @@ impl EvmSonar {
             .filter_map(|e| e.ok())
             .filter(|e| {
                 e.file_type().is_file()
-                    && e.path().extension().map(|ext| ext == "sol").unwrap_or(false)
+                    && e.path()
+                        .extension()
+                        .map(|ext| ext == "sol")
+                        .unwrap_or(false)
                     && !e.path().to_str().unwrap_or("").contains("/test/")
                     && !e.path().to_str().unwrap_or("").contains("/tests/")
                     && !e.path().to_str().unwrap_or("").contains("/script/")
@@ -200,7 +210,8 @@ impl EvmSonar {
     /// Phase 2: Resolve imports and build inheritance graph.
     fn phase_2_imports_and_inheritance(&mut self) -> EvmMetadataResult<()> {
         let resolver = InheritanceResolver::new(&self.contracts);
-        let contracts_with_bases: Vec<_> = self.contracts
+        let contracts_with_bases: Vec<_> = self
+            .contracts
             .iter()
             .filter(|c| !c.base_contracts.is_empty())
             .collect();
@@ -213,7 +224,10 @@ impl EvmSonar {
             let linearization = resolver.linearize(&contract.name);
             pb.set_message(format!(
                 "Inheritance [{}/{}]: {} ({} bases)",
-                idx + 1, total, contract.name, linearization.len() - 1
+                idx + 1,
+                total,
+                contract.name,
+                linearization.len() - 1
             ));
         }
 
@@ -289,7 +303,10 @@ impl EvmSonar {
     }
 
     /// Phase 5: Build entry points and generate final metadata.
-    fn phase_5_entry_points(&self, deps: Vec<FunctionDependency>) -> EvmMetadataResult<EvmBatMetadata> {
+    fn phase_5_entry_points(
+        &self,
+        deps: Vec<FunctionDependency>,
+    ) -> EvmMetadataResult<EvmBatMetadata> {
         let pb = Self::create_spinner();
         pb.set_message("Building entry points...");
 

@@ -1,7 +1,4 @@
-use solar_parse::{
-    ast,
-    interface::Session,
-};
+use solar_parse::{ast, interface::Session};
 
 use crate::batbelt::evm::types::{EvmVisibility, StorageVariable};
 
@@ -39,10 +36,7 @@ pub fn parse_variable_definition(
         .map(|m| m == ast::VarMut::Immutable)
         .unwrap_or(false);
 
-    let line = var
-        .name
-        .map(|n| span_to_line(sess, n.span))
-        .unwrap_or(0);
+    let line = var.name.map(|n| span_to_line(sess, n.span)).unwrap_or(0);
 
     Some(StorageVariable {
         name,

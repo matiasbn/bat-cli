@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, fs};
 
 use crate::batbelt::evm::types::{
-    AccessControlType, EvmContract, EvmContractType, EvmEvent, EvmFunction, EvmModifierDef,
-    EvmMutability, EvmParam, EvmVisibility, StorageVariable,
+    AccessControlType, EvmContract, EvmContractType, EvmEvent, EvmModifierDef, EvmMutability,
+    EvmParam, EvmVisibility, StorageVariable,
 };
 
 #[derive(Debug)]
@@ -156,7 +156,10 @@ impl EvmBatMetadata {
 
     /// Get miro frame ref by entry point name.
     pub fn get_miro_frame_by_ep_name(&self, ep_name: &str) -> Option<&MiroFrameRef> {
-        self.miro.frames.iter().find(|f| f.entry_point_name == ep_name)
+        self.miro
+            .frames
+            .iter()
+            .find(|f| f.entry_point_name == ep_name)
     }
 
     pub fn get_contract_by_name(&self, name: &str) -> Option<&ContractMetadata> {
@@ -224,7 +227,10 @@ impl EvmBatMetadata {
             if contract.external {
                 continue;
             }
-            if matches!(contract.contract_type, EvmContractType::Interface | EvmContractType::Library) {
+            if matches!(
+                contract.contract_type,
+                EvmContractType::Interface | EvmContractType::Library
+            ) {
                 continue;
             }
 
@@ -233,8 +239,10 @@ impl EvmBatMetadata {
                 .functions
                 .iter()
                 .filter(|f| {
-                    matches!(f.visibility, EvmVisibility::External | EvmVisibility::Public)
-                        && !f.is_constructor
+                    matches!(
+                        f.visibility,
+                        EvmVisibility::External | EvmVisibility::Public
+                    ) && !f.is_constructor
                 })
                 .collect();
 

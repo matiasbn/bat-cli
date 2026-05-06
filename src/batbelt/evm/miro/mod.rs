@@ -82,10 +82,7 @@ pub async fn deploy_co_frames() -> EvmMiroResult<()> {
         return Ok(());
     }
 
-    println!(
-        "  Deploying {} frames in parallel...",
-        to_deploy.len()
-    );
+    println!("  Deploying {} frames in parallel...", to_deploy.len());
 
     // Launch all deployments in parallel — each task gets a clone of the config
     let mut join_set = JoinSet::new();
@@ -178,10 +175,8 @@ fn extract_board_id(board_url: &str) -> EvmMiroResult<String> {
         .and_then(|s| s.split('/').next())
         .map(|s| s.trim_end_matches('=').to_string() + "=")
         .ok_or_else(|| {
-            Report::new(EvmMiroError).attach_printable(format!(
-                "Cannot extract board_id from URL: {}",
-                board_url
-            ))
+            Report::new(EvmMiroError)
+                .attach_printable(format!("Cannot extract board_id from URL: {}", board_url))
         })
 }
 
@@ -416,8 +411,7 @@ fn resolve_evm_function_deps(
             if seen_names.contains(&func_meta.name) {
                 continue;
             }
-            if called_names.contains(&func_meta.name)
-                && !seen_ids.contains(&func_meta.metadata_id)
+            if called_names.contains(&func_meta.name) && !seen_ids.contains(&func_meta.metadata_id)
             {
                 seen_ids.insert(func_meta.metadata_id.clone());
                 seen_names.insert(func_meta.name.clone());
@@ -559,10 +553,8 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
     let func = evm_metadata
         .get_function_by_id(&ep.function_metadata_id)
         .ok_or_else(|| {
-            Report::new(EvmMiroError).attach_printable(format!(
-                "Function '{}' not found",
-                ep.function_metadata_id
-            ))
+            Report::new(EvmMiroError)
+                .attach_printable(format!("Function '{}' not found", ep.function_metadata_id))
         })?
         .clone();
 
@@ -613,15 +605,17 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
 
     let mut id_to_image: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
-    id_to_image.insert(ep.function_metadata_id.clone(), entry_point_image_id.clone());
+    id_to_image.insert(
+        ep.function_metadata_id.clone(),
+        entry_point_image_id.clone(),
+    );
 
     let mut bfs_queue: VecDeque<(String, String, Vec<String>, Vec<String>, String)> =
         VecDeque::new();
 
     // Read body lines for the entry point function
     let ep_body_lines: Vec<String> = {
-        let file_content =
-            std::fs::read_to_string(&contract.file_path).unwrap_or_default();
+        let file_content = std::fs::read_to_string(&contract.file_path).unwrap_or_default();
         let lines: Vec<&str> = file_content.lines().collect();
         let start = if func.line > 0 { func.line - 1 } else { 0 };
         let end = ep_end_line.min(lines.len());
@@ -688,12 +682,9 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
             caller_name,
             arrow_name
         );
-        BatDialoguer::input_with_default(prompt, "".to_string())
-            .change_context(EvmMiroError)?;
+        BatDialoguer::input_with_default(prompt, "".to_string()).change_context(EvmMiroError)?;
 
-        for (idx, (dep_id, dep_name, dep_path, dep_line, dep_end)) in
-            new_deps.iter().enumerate()
-        {
+        for (idx, (dep_id, dep_name, dep_path, dep_line, dep_end)) in new_deps.iter().enumerate() {
             // .js extension → JavaScript syntax highlighting in silicon (best for Solidity)
             let dep_sc = SourceCodeParser::new(
                 format!("dep_{}.js", dep_name),
@@ -793,10 +784,7 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
         }
     }
 
-    println!(
-        "  Screenshots deployed for {}",
-        entry_point_name.green()
-    );
+    println!("  Screenshots deployed for {}", entry_point_name.green());
 
     Ok(())
 }

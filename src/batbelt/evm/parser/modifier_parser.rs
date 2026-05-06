@@ -1,11 +1,10 @@
-use solar_parse::{
-    ast,
-    interface::Session,
-};
+use solar_parse::{ast, interface::Session};
 
 use crate::batbelt::evm::types::{EvmModifierDef, EvmParam};
 
-use super::evm_file_parser::{extract_source_by_lines, span_to_end_line, span_to_line, type_to_string};
+use super::evm_file_parser::{
+    extract_source_by_lines, span_to_end_line, span_to_line, type_to_string,
+};
 
 /// Parse a modifier (ItemFunction with kind == Modifier) into EvmModifierDef.
 pub fn parse_modifier_definition(
@@ -51,10 +50,7 @@ pub fn parse_modifier_definition(
 }
 
 fn parse_parameter(sess: &Session, p: &ast::VariableDefinition<'_>) -> EvmParam {
-    let name = p
-        .name
-        .map(|n| n.as_str().to_string())
-        .unwrap_or_default();
+    let name = p.name.map(|n| n.as_str().to_string()).unwrap_or_default();
     let type_name = type_to_string(sess, &p.ty);
     let storage_location = p.data_location.map(|s| s.to_str().to_string());
 

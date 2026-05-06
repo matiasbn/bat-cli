@@ -625,7 +625,10 @@ impl BatConfig {
             .into_iter()
             .filter_map(|e| e.ok())
             .any(|e| {
-                e.path().extension().map(|ext| ext == "sol").unwrap_or(false)
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "sol")
+                    .unwrap_or(false)
                     && !e.path().to_str().unwrap_or("").contains("test")
                     && !e.path().to_str().unwrap_or("").contains("script")
             });

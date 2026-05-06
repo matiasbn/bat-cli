@@ -159,8 +159,7 @@ impl ProjectCommands {
 
         if bat_config.project_type == ProjectType::Foundry {
             // Foundry/Solidity: run EVM sonar
-            let mut sol_sonar =
-                crate::batbelt::evm::sonar::sonar::EvmSonar::new("..");
+            let mut sol_sonar = crate::batbelt::evm::sonar::sonar::EvmSonar::new("..");
             let metadata = sol_sonar.run().change_context(CommandError)?;
 
             // Create auditor folders
@@ -192,15 +191,20 @@ impl ProjectCommands {
         if use_miro {
             // Try reading defaults from .env (dev convenience)
             let _ = dotenvy::dotenv();
-            let env_token = std::env::var("MIRO_OAUTH_TOKEN").ok().filter(|s| !s.is_empty());
-            let env_board = std::env::var("MIRO_BOARD_URL").ok().filter(|s| !s.is_empty());
+            let env_token = std::env::var("MIRO_OAUTH_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty());
+            let env_board = std::env::var("MIRO_BOARD_URL")
+                .ok()
+                .filter(|s| !s.is_empty());
 
             let miro_oauth_token: String = match env_token {
                 Some(token) => {
-                    let masked = format!("{}...{}", &token[..6], &token[token.len()-4..]);
-                    let use_env = BatDialoguer::select_yes_or_no(
-                        format!("Use .env MIRO_OAUTH_TOKEN? ({})", masked),
-                    )
+                    let masked = format!("{}...{}", &token[..6], &token[token.len() - 4..]);
+                    let use_env = BatDialoguer::select_yes_or_no(format!(
+                        "Use .env MIRO_OAUTH_TOKEN? ({})",
+                        masked
+                    ))
                     .change_context(CommandError)?;
                     if use_env {
                         token
@@ -210,22 +214,25 @@ impl ProjectCommands {
                     }
                 }
                 None => {
-                    bat_dialoguer::input("Miro OAuth access token:")
-                        .change_context(CommandError)?
+                    bat_dialoguer::input("Miro OAuth access token:").change_context(CommandError)?
                 }
             };
 
             let miro_board_url: String = match env_board {
                 Some(url) => {
-                    let use_env = BatDialoguer::select_yes_or_no(
-                        format!("Use .env MIRO_BOARD_URL? ({})", url),
-                    )
+                    let use_env = BatDialoguer::select_yes_or_no(format!(
+                        "Use .env MIRO_BOARD_URL? ({})",
+                        url
+                    ))
                     .change_context(CommandError)?;
                     if use_env {
                         match BatConfig::normalize_miro_board_url(&url) {
                             Ok(normalized) => normalized,
                             Err(_) => {
-                                println!("{} .env URL is invalid, please enter manually", "Error:".red());
+                                println!(
+                                    "{} .env URL is invalid, please enter manually",
+                                    "Error:".red()
+                                );
                                 Self::prompt_miro_board_url(&miro_oauth_token).await?
                             }
                         }
@@ -288,11 +295,8 @@ impl ProjectCommands {
                 bat_dialoguer::input("Miro board url:").change_context(CommandError)?;
             match BatConfig::normalize_miro_board_url(&miro_board_url_input) {
                 Ok(url) => {
-                    match crate::batbelt::miro::MiroConfig::validate_board(
-                        miro_oauth_token,
-                        &url,
-                    )
-                    .await
+                    match crate::batbelt::miro::MiroConfig::validate_board(miro_oauth_token, &url)
+                        .await
                     {
                         Ok(board_name) => {
                             println!("{} Board validated: \"{}\"", "OK".green(), board_name);
@@ -497,9 +501,7 @@ mod project_commands_functions {
             .map(|ep| ep.name.clone())
             .collect();
 
-        let co_bat_folder = BatFolder::CodeOverhaulFolderPath {
-            program_name: None,
-        };
+        let co_bat_folder = BatFolder::CodeOverhaulFolderPath { program_name: None };
         let co_dir_file_name = co_bat_folder
             .get_all_bat_files(false, None, None)
             .change_context(CommandError)?;
@@ -546,9 +548,7 @@ mod project_commands_functions {
             .collect();
 
         if !deprecated_ep.is_empty() {
-            let deprecated_co_bat_folder = BatFolder::CodeOverhaulDeprecated {
-                program_name: None,
-            };
+            let deprecated_co_bat_folder = BatFolder::CodeOverhaulDeprecated { program_name: None };
             if !deprecated_co_bat_folder
                 .folder_exists()
                 .change_context(CommandError)?
