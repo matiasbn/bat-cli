@@ -556,6 +556,14 @@ impl BatFolder {
 }
 
 pub fn prettify_source_code_path(path: &str) -> BatPathResult<String> {
+    // EVM paths: strip leading "../" prefix
+    // e.g. "../src/DelegationManager.sol" → "src/DelegationManager.sol"
+    // e.g. "../lib/erc7579/src/Ownable.sol" → "lib/erc7579/src/Ownable.sol"
+    if path.ends_with(".sol") {
+        return Ok(path.trim_start_matches("../").to_string());
+    }
+
+    // SVM paths: original logic
     let mut path_split = path.split("/src/");
     let prefix_with_program = path_split.next().unwrap();
     let program_name = prefix_with_program.split("/").last().unwrap();

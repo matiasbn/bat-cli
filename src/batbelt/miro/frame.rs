@@ -268,7 +268,7 @@ impl MiroFrame {
 
         let prompt_text = format!("Please select the destination {}", "Miro Frame".green());
         let selection =
-            BatDialoguer::select(prompt_text, frame_names, None).change_context(MiroError)?;
+            BatDialoguer::fuzzy_select(prompt_text, frame_names).change_context(MiroError)?;
 
         let selected = sorted_frames[selection];
         let miro_frame = MiroFrame::new_from_item_id(&selected.frame_id).await?;

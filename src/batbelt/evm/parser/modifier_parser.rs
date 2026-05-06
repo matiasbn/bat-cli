@@ -38,13 +38,16 @@ pub fn parse_modifier_definition(
         })
         .unwrap_or_default();
 
-    let line = span_to_line(sess, func.header.span.to(func.body_span));
+    let full_span = func.header.span.to(func.body_span);
+    let line = span_to_line(sess, full_span);
+    let end_line = span_to_end_line(sess, full_span);
 
     EvmModifierDef {
         name,
         params,
         body_source,
         line,
+        end_line,
         contract_name: contract_name.to_string(),
     }
 }

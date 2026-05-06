@@ -254,16 +254,19 @@ impl MiroCommand {
 
     async fn source_code_screenshots(&self) -> Result<(), CommandError> {
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
-        let selected_miro_frame = if bat_config.project_type == ProjectType::Foundry {
-            MiroFrame::prompt_select_frame_from_metadata()
+        if bat_config.project_type == ProjectType::Foundry {
+            let selected_miro_frame = MiroFrame::prompt_select_frame_from_metadata()
                 .await
-                .change_context(CommandError)?
+                .change_context(CommandError)?;
+            crate::batbelt::evm::miro::deploy_source_code_screenshots(selected_miro_frame)
+                .await
+                .change_context(CommandError)?;
         } else {
-            MiroFrame::prompt_select_frame(None)
+            let selected_miro_frame = MiroFrame::prompt_select_frame(None)
                 .await
-                .change_context(CommandError)?
-        };
-        miro_command_functions::prompt_deploy_source_code(selected_miro_frame, false).await?;
+                .change_context(CommandError)?;
+            miro_command_functions::prompt_deploy_source_code(selected_miro_frame, false).await?;
+        }
         Ok(())
     }
 
