@@ -2,7 +2,7 @@ use colored::Colorize;
 use error_stack::{Report, ResultExt};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{json, Value};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::{error::Error, fmt};
 use tokio::task::JoinSet;
 
@@ -513,7 +513,7 @@ pub async fn deploy_source_code_screenshots(selected_miro_frame: MiroFrame) -> E
             crate::batbelt::bat_dialoguer::select(&prompt_text, source_options, None).unwrap();
         let is_external = source_selection == 1;
 
-        // Step 2: Filter contracts and select one
+        // Step 2: Filter contracts and file-level item groups, select one
         let mut filtered_contracts: Vec<_> = evm_metadata
             .contracts
             .iter()
@@ -521,9 +521,21 @@ pub async fn deploy_source_code_screenshots(selected_miro_frame: MiroFrame) -> E
             .collect();
         filtered_contracts.sort_by(|a, b| a.name.cmp(&b.name));
 
-        if filtered_contracts.is_empty() {
+        // Group file-level items by file_path
+        let mut file_item_groups: HashMap<String, Vec<&crate::batbelt::evm::types::EvmFileItem>> =
+            HashMap::new();
+        for fi in evm_metadata.file_items.iter().filter(|fi| fi.external == is_external) {
+            file_item_groups
+                .entry(fi.file_path.clone())
+                .or_default()
+                .push(fi);
+        }
+        let mut file_paths: Vec<String> = file_item_groups.keys().cloned().collect();
+        file_paths.sort();
+
+        if filtered_contracts.is_empty() && file_paths.is_empty() {
             println!(
-                "  {} No contracts found in {}",
+                "  {} No contracts or file-level items found in {}",
                 "Warning:".bright_yellow(),
                 if is_external { "lib" } else { "src" }
             );
@@ -536,52 +548,96 @@ pub async fn deploy_source_code_screenshots(selected_miro_frame: MiroFrame) -> E
             continue;
         }
 
-        let contract_names: Vec<String> = filtered_contracts
-            .iter()
-            .map(|c| format!("{} ({})", c.name, c.file_path))
-            .collect();
-        let prompt_text = format!("Select {}", "contract".green());
-        let contract_selection =
-            BatDialoguer::fuzzy_select(prompt_text, contract_names).change_context(EvmMiroError)?;
-        let selected_contract = filtered_contracts[contract_selection];
+        // Build selection list: contracts first, then [file] entries
+        enum SelectionKind {
+            Contract(usize),
+            FileItems(String),
+        }
+        let mut selection_labels: Vec<String> = Vec::new();
+        let mut selection_kinds: Vec<SelectionKind> = Vec::new();
 
-        // Step 3: Build item list from the selected contract
+        for (i, c) in filtered_contracts.iter().enumerate() {
+            selection_labels.push(format!("{} ({})", c.name, c.file_path));
+            selection_kinds.push(SelectionKind::Contract(i));
+        }
+        for fp in &file_paths {
+            let short_name = std::path::Path::new(fp)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| fp.clone());
+            selection_labels.push(format!("[file] {}", short_name));
+            selection_kinds.push(SelectionKind::FileItems(fp.clone()));
+        }
+
+        let prompt_text = format!("Select {}", "contract or file".green());
+        let top_selection =
+            BatDialoguer::fuzzy_select(prompt_text, selection_labels).change_context(EvmMiroError)?;
+        let selected_kind = &selection_kinds[top_selection];
+
+        // Step 3: Build item list based on selection
         let mut item_labels: Vec<String> = Vec::new();
 
-        // Track item type and index for later SourceCodeParser construction
-        enum ContractItem {
-            Function(usize),
-            StorageVar(usize),
-            Event(usize),
-            Modifier(usize),
+        enum ScreenshotItem {
+            ContractFunction(usize),
+            ContractStorageVar(usize),
+            ContractEvent(usize),
+            ContractModifier(usize),
+            FileItem(usize),
         }
-        let mut item_refs: Vec<ContractItem> = Vec::new();
+        let mut item_refs: Vec<ScreenshotItem> = Vec::new();
 
-        for (i, func) in selected_contract.functions.iter().enumerate() {
-            if func.is_constructor {
-                continue;
+        // Will hold file_path for screenshot deployment
+        let screenshot_file_path: String;
+        let screenshot_context_name: String;
+
+        match selected_kind {
+            SelectionKind::Contract(ci) => {
+                let selected_contract = filtered_contracts[*ci];
+                screenshot_file_path = selected_contract.file_path.clone();
+                screenshot_context_name = selected_contract.name.clone();
+
+                for (i, func) in selected_contract.functions.iter().enumerate() {
+                    if func.is_constructor {
+                        continue;
+                    }
+                    item_labels.push(format!("[fn] {}", func.name));
+                    item_refs.push(ScreenshotItem::ContractFunction(i));
+                }
+                for (i, var) in selected_contract.state_variables.iter().enumerate() {
+                    item_labels.push(format!("[var] {}", var.name));
+                    item_refs.push(ScreenshotItem::ContractStorageVar(i));
+                }
+                for (i, event) in selected_contract.events.iter().enumerate() {
+                    item_labels.push(format!("[event] {}", event.name));
+                    item_refs.push(ScreenshotItem::ContractEvent(i));
+                }
+                for (i, modifier) in selected_contract.modifiers.iter().enumerate() {
+                    item_labels.push(format!("[mod] {}", modifier.name));
+                    item_refs.push(ScreenshotItem::ContractModifier(i));
+                }
             }
-            item_labels.push(format!("[fn] {}", func.name));
-            item_refs.push(ContractItem::Function(i));
-        }
-        for (i, var) in selected_contract.state_variables.iter().enumerate() {
-            item_labels.push(format!("[var] {}", var.name));
-            item_refs.push(ContractItem::StorageVar(i));
-        }
-        for (i, event) in selected_contract.events.iter().enumerate() {
-            item_labels.push(format!("[event] {}", event.name));
-            item_refs.push(ContractItem::Event(i));
-        }
-        for (i, modifier) in selected_contract.modifiers.iter().enumerate() {
-            item_labels.push(format!("[mod] {}", modifier.name));
-            item_refs.push(ContractItem::Modifier(i));
+            SelectionKind::FileItems(fp) => {
+                screenshot_file_path = fp.clone();
+                let short_name = std::path::Path::new(fp)
+                    .file_stem()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| fp.clone());
+                screenshot_context_name = short_name;
+
+                if let Some(items) = file_item_groups.get(fp) {
+                    for (i, fi) in items.iter().enumerate() {
+                        item_labels.push(format!("[{}] {}", fi.kind, fi.name));
+                        item_refs.push(ScreenshotItem::FileItem(i));
+                    }
+                }
+            }
         }
 
         if item_labels.is_empty() {
             println!(
-                "  {} No items found in contract {}",
+                "  {} No items found in {}",
                 "Warning:".bright_yellow(),
-                selected_contract.name
+                screenshot_context_name
             );
             continue_selection = crate::batbelt::bat_dialoguer::select_yes_or_no(&format!(
                 "Do you want to {} in the {} frame?",
@@ -595,7 +651,7 @@ pub async fn deploy_source_code_screenshots(selected_miro_frame: MiroFrame) -> E
         let prompt_text = format!(
             "Select {} from {}",
             "items to screenshot".green(),
-            selected_contract.name.green()
+            screenshot_context_name.green()
         );
         let selections = BatDialoguer::multiselect(
             prompt_text,
@@ -629,47 +685,75 @@ pub async fn deploy_source_code_screenshots(selected_miro_frame: MiroFrame) -> E
         for &sel_idx in &selections {
             let item = &item_refs[sel_idx];
             let (name, start_line, end_line) = match item {
-                ContractItem::Function(i) => {
-                    let f = &selected_contract.functions[*i];
-                    let end = if f.end_line > 0 {
-                        f.end_line
+                ScreenshotItem::ContractFunction(i) => {
+                    if let SelectionKind::Contract(ci) = selected_kind {
+                        let f = &filtered_contracts[*ci].functions[*i];
+                        let end = if f.end_line > 0 {
+                            f.end_line
+                        } else {
+                            find_function_end_line(&screenshot_file_path, f.line)
+                        };
+                        (
+                            format!("{}.{}.js", screenshot_context_name, f.name),
+                            f.line,
+                            end,
+                        )
                     } else {
-                        find_function_end_line(&selected_contract.file_path, f.line)
-                    };
-                    (
-                        format!("{}.{}.js", selected_contract.name, f.name),
-                        f.line,
-                        end,
-                    )
+                        continue;
+                    }
                 }
-                ContractItem::StorageVar(i) => {
-                    let v = &selected_contract.state_variables[*i];
-                    (
-                        format!("{}.{}.js", selected_contract.name, v.name),
-                        v.line,
-                        v.line,
-                    )
-                }
-                ContractItem::Event(i) => {
-                    let e = &selected_contract.events[*i];
-                    (
-                        format!("{}.{}.js", selected_contract.name, e.name),
-                        e.line,
-                        e.line,
-                    )
-                }
-                ContractItem::Modifier(i) => {
-                    let m = &selected_contract.modifiers[*i];
-                    let end = if m.end_line > 0 {
-                        m.end_line
+                ScreenshotItem::ContractStorageVar(i) => {
+                    if let SelectionKind::Contract(ci) = selected_kind {
+                        let v = &filtered_contracts[*ci].state_variables[*i];
+                        (
+                            format!("{}.{}.js", screenshot_context_name, v.name),
+                            v.line,
+                            v.line,
+                        )
                     } else {
-                        m.line + m.body_source.lines().count()
-                    };
-                    (
-                        format!("{}.{}.js", selected_contract.name, m.name),
-                        m.line,
-                        end,
-                    )
+                        continue;
+                    }
+                }
+                ScreenshotItem::ContractEvent(i) => {
+                    if let SelectionKind::Contract(ci) = selected_kind {
+                        let e = &filtered_contracts[*ci].events[*i];
+                        (
+                            format!("{}.{}.js", screenshot_context_name, e.name),
+                            e.line,
+                            e.line,
+                        )
+                    } else {
+                        continue;
+                    }
+                }
+                ScreenshotItem::ContractModifier(i) => {
+                    if let SelectionKind::Contract(ci) = selected_kind {
+                        let m = &filtered_contracts[*ci].modifiers[*i];
+                        let end = if m.end_line > 0 {
+                            m.end_line
+                        } else {
+                            m.line + m.body_source.lines().count()
+                        };
+                        (
+                            format!("{}.{}.js", screenshot_context_name, m.name),
+                            m.line,
+                            end,
+                        )
+                    } else {
+                        continue;
+                    }
+                }
+                ScreenshotItem::FileItem(i) => {
+                    if let SelectionKind::FileItems(fp) = selected_kind {
+                        let fi = &file_item_groups[fp][*i];
+                        (
+                            format!("{}.{}.js", screenshot_context_name, fi.name),
+                            fi.line,
+                            fi.end_line,
+                        )
+                    } else {
+                        continue;
+                    }
                 }
             };
 
@@ -687,7 +771,7 @@ pub async fn deploy_source_code_screenshots(selected_miro_frame: MiroFrame) -> E
 
             let sc = SourceCodeParser::new(
                 screenshot_name,
-                selected_contract.file_path.clone(),
+                screenshot_file_path.clone(),
                 start_line,
                 end_line,
             );

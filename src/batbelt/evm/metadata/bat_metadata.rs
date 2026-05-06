@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, fs};
 
 use crate::batbelt::evm::types::{
-    AccessControlType, EvmContract, EvmContractType, EvmEvent, EvmModifierDef, EvmMutability,
-    EvmParam, EvmVisibility, StorageVariable,
+    AccessControlType, EvmContract, EvmContractType, EvmEvent, EvmFileItem, EvmModifierDef,
+    EvmMutability, EvmParam, EvmVisibility, StorageVariable,
 };
 
 #[derive(Debug)]
@@ -29,6 +29,8 @@ pub struct EvmBatMetadata {
     pub entry_points: Vec<EntryPointMetadata>,
     pub function_dependencies: Vec<FunctionDependency>,
     pub interfaces: Vec<InterfaceMetadata>,
+    #[serde(default)]
+    pub file_items: Vec<EvmFileItem>,
     #[serde(default)]
     pub miro: MiroMetadataRef,
 }
@@ -177,9 +179,23 @@ impl EvmBatMetadata {
         self.entry_points.iter().find(|ep| ep.name == name)
     }
 
-    /// Build metadata from parsed contracts.
-    pub fn from_contracts(contracts: Vec<EvmContract>) -> Self {
+    /// Build metadata from parsed contracts and file-level items.
+    /// Preserves existing Miro metadata if present.
+    pub fn from_contracts(contracts: Vec<EvmContract>, file_items: Vec<EvmFileItem>) -> Self {
         let mut metadata = Self::default();
+        // Preserve existing Miro metadata across sonar re-runs.
+        // Extract only the "miro" field from raw JSON to avoid losing frames
+        // when other struct fields change between versions.
+        if let Ok(content) = fs::read_to_string(EVM_METADATA_FILE) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(miro_val) = json.get("miro") {
+                    if let Ok(miro) = serde_json::from_value::<MiroMetadataRef>(miro_val.clone()) {
+                        metadata.miro = miro;
+                    }
+                }
+            }
+        }
+        metadata.file_items = file_items;
 
         for contract in &contracts {
             let contract_id = format!("{}_{}", contract.file_path, contract.name);
