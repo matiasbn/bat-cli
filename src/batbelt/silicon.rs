@@ -40,16 +40,15 @@ pub fn create_figure(
         .next()
         .unwrap_or("rs");
     let syntax = match ext {
-        // Solidity: try native .sol syntax first, fall back to JavaScript
-        // (JS shares function/if/return/braces syntax with Solidity,
-        // unlike Rust which renders .sol code without highlighting)
+        // Solidity: use JavaScript syntax (best color match with Dracula)
         "sol" => ps
-            .find_syntax_by_extension("sol")
-            .or_else(|| ps.find_syntax_by_extension("js"))
+            .find_syntax_by_extension("js")
             .or_else(|| ps.find_syntax_by_extension("rs"))
             .expect("Syntax not found in syntect"),
-        _ => ps
-            .find_syntax_by_extension("rs")
+        // For any other extension, try it directly first, fall back to Rust
+        other => ps
+            .find_syntax_by_extension(other)
+            .or_else(|| ps.find_syntax_by_extension("rs"))
             .expect("Syntax not found in syntect"),
     };
     let mut highlighter = HighlightLines::new(syntax, theme);

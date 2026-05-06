@@ -8,7 +8,7 @@ use tokio::task::JoinSet;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::evm::metadata::bat_metadata::{EvmBatMetadata, MiroFrameRef};
-use crate::batbelt::miro::connector::{create_connector, create_connector_with_color};
+use crate::batbelt::miro::connector::create_connector_with_color;
 use crate::batbelt::miro::frame::{
     MiroFrame, MIRO_BOARD_COLUMNS, MIRO_FRAME_HEIGHT, MIRO_FRAME_WIDTH, MIRO_INITIAL_X,
     MIRO_INITIAL_Y,
@@ -601,8 +601,10 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
         find_function_end_line(&contract.file_path, func.line)
     };
 
+    // Use .js extension so silicon renders with JavaScript syntax highlighting
+    // (Dracula + JS gives the best color contrast for Solidity code)
     let ep_sc = SourceCodeParser::new(
-        format!("ep_{}.sol", func.name),
+        format!("ep_{}.js", func.name),
         contract.file_path.clone(),
         ep_start_line,
         ep_end_line,
@@ -611,8 +613,8 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
     let ep_image = ep_sc
         .deploy_screenshot_to_miro_frame(
             co_miro_frame.clone(),
-            -(MIRO_FRAME_WIDTH as i64) / 2 + 200,
-            -(MIRO_FRAME_HEIGHT as i64) / 2 + 200,
+            1200,
+            600,
             SourceCodeScreenshotOptions {
                 include_path: true,
                 offset_to_start_line: true,
@@ -627,82 +629,7 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
 
     let entry_point_image_id = ep_image.item_id.clone();
 
-    // 2. Deploy validations screenshot at (4200, 650)
-    // Include: modifiers starting with "only" + require/revert/assert from body
-    let validations_image_id = {
-        let file_content =
-            std::fs::read_to_string(&contract.file_path).unwrap_or_default();
-        let file_lines: Vec<&str> = file_content.lines().collect();
-
-        let mut val_parts: Vec<String> = Vec::new();
-
-        // Add "only" modifiers as validation entries
-        for mod_name in &ep.modifiers {
-            if mod_name.starts_with("only") {
-                val_parts.push(format!("modifier {}()", mod_name));
-            }
-        }
-
-        // Find require/revert/assert lines within the function range
-        let start = if func.line > 0 { func.line - 1 } else { 0 };
-        let end = ep_end_line.min(file_lines.len());
-
-        for i in start..end {
-            let trimmed = file_lines[i].trim();
-            if trimmed.starts_with("require(")
-                || trimmed.starts_with("require (")
-                || trimmed.starts_with("revert ")
-                || trimmed.starts_with("revert(")
-                || trimmed.starts_with("assert(")
-                || trimmed.starts_with("assert (")
-                || (trimmed.starts_with("if (")
-                    && file_lines
-                        .get(i + 1)
-                        .map_or(false, |next| next.trim().starts_with("revert")))
-            {
-                val_parts.push(format!("L{}: {}", i + 1, trimmed));
-            }
-        }
-
-        // Build the screenshot content with header (like SVM: "/// Validations")
-        let val_content = if val_parts.is_empty() {
-            "/// Validations\n\nNo validations detected".to_string()
-        } else {
-            format!("/// Validations\n\n{}", val_parts.join("\n"))
-        };
-
-        let val_name = format!("validations_{}.sol", func.name);
-        let temp_path = format!("/tmp/{}", val_name);
-        std::fs::write(&temp_path, &val_content).unwrap_or_default();
-
-        let total_lines = val_content.lines().count();
-        let val_sc = SourceCodeParser::new(val_name, temp_path, 1, total_lines);
-        let val_image = val_sc
-            .deploy_screenshot_to_miro_frame(
-                co_miro_frame.clone(),
-                4200,
-                650,
-                SourceCodeScreenshotOptions {
-                    include_path: false,
-                    offset_to_start_line: false,
-                    filter_comments: false,
-                    font_size: Some(12),
-                    filters: None,
-                    show_line_number: false,
-                },
-            )
-            .await
-            .change_context(EvmMiroError)?;
-
-        // Arrow: entry point → validations
-        create_connector(&entry_point_image_id, &val_image.item_id, None)
-            .await
-            .change_context(EvmMiroError)?;
-
-        val_image.item_id
-    };
-
-    // 3. BFS deployment of dependency screenshots
+    // 2. BFS deployment of dependency screenshots
     // Resolve deps from function body + modifiers (not from function_dependencies which may be empty)
     // Track both IDs and names to prevent deploying virtual parent versions of overridden functions
     let mut deployed_function_ids: HashSet<String> = HashSet::new();
@@ -793,8 +720,9 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
         for (idx, (dep_id, dep_name, dep_path, dep_line, dep_end)) in
             new_deps.iter().enumerate()
         {
+            // .js extension → JavaScript syntax highlighting in silicon (best for Solidity)
             let dep_sc = SourceCodeParser::new(
-                format!("dep_{}.sol", dep_name),
+                format!("dep_{}.js", dep_name),
                 dep_path.clone(),
                 *dep_line,
                 *dep_end,
@@ -834,7 +762,10 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
 
             id_to_image.insert(dep_id.clone(), dep_image.item_id.clone());
             deployed_function_ids.insert(dep_id.clone());
-            deployed_function_names.insert(dep_name.clone());
+            // Store the base name (strip "modifier " prefix) so virtual/override
+            // and modifier-as-function duplicates are caught
+            let base_name = dep_name.strip_prefix("modifier ").unwrap_or(dep_name);
+            deployed_function_names.insert(base_name.to_string());
             dependency_image_ids.push(dep_image.item_id.clone());
 
             // Read body of dep for further BFS (only for non-modifier deps)
@@ -866,7 +797,7 @@ pub async fn deploy_co_screenshots(entry_point_name: &str) -> EvmMiroResult<()> 
         {
             frame.images_deployed = true;
             frame.entry_point_image_id = entry_point_image_id.clone();
-            frame.validations_image_id = validations_image_id.clone();
+            frame.validations_image_id = String::new();
             frame.dependency_image_ids = dependency_image_ids.clone();
         }
     })
