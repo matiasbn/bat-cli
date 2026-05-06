@@ -360,19 +360,17 @@ fn collect_inheritance_chain<'a>(
     chain
 }
 
-/// Resolve direct dependencies for a function by scanning its body for internal calls
-/// (via AST) and modifiers. Searches the full inheritance chain for modifier definitions
-/// and internal functions. Returns (metadata_id, name, file_path, line, end_line).
+/// Resolve direct dependencies for a function using pre-computed metadata from sonar
+/// + modifier resolution from the inheritance chain.
+/// Returns (metadata_id, name, file_path, line, end_line).
 fn resolve_evm_function_deps(
     evm_metadata: &EvmBatMetadata,
     contract_name: &str,
     func_metadata_id: &str,
     func_modifiers: &[String],
-    func_lines: &[String],
+    _func_lines: &[String],
     _contract_file_path: &str,
 ) -> Vec<(String, String, String, usize, usize)> {
-    use crate::batbelt::evm::parser::call_resolver::extract_calls_from_source;
-
     let mut deps: Vec<(String, String, String, usize, usize)> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
     let mut seen_ids: HashSet<String> = HashSet::new();
@@ -397,24 +395,24 @@ fn resolve_evm_function_deps(
                         end,
                     ));
                 }
-                break; // found it, stop searching chain
+                break;
             }
         }
     }
 
-    // 2. Resolve internal function calls from body using AST
-    // extract_calls_from_source parses the body and walks the AST for Expr::Call nodes
-    let body_source = func_lines.join("\n");
-    let called_names: HashSet<String> = extract_calls_from_source(&body_source)
-        .into_iter()
-        .collect();
+    // 2. Read pre-computed function dependencies from metadata (resolved during sonar)
+    let called_names: HashSet<String> = evm_metadata
+        .function_dependencies
+        .iter()
+        .find(|d| d.function_metadata_id == func_metadata_id)
+        .map(|d| d.callees.iter().cloned().collect())
+        .unwrap_or_default();
 
     for c in &chain {
         for func_meta in &c.functions {
             if func_meta.metadata_id == func_metadata_id {
-                continue; // skip self
+                continue;
             }
-            // Skip functions that share name with an already-resolved modifier
             if seen_names.contains(&func_meta.name) {
                 continue;
             }

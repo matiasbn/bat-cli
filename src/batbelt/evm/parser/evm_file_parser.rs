@@ -21,7 +21,12 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
             .attach_printable(format!("File is empty or unreadable: {}", file_path)));
     }
 
-    let tokens: proc_macro2::TokenStream = source.parse().map_err(|e: proc_macro2::LexError| {
+    // Preprocess Solidity source to make it compatible with proc_macro2's Rust tokenizer.
+    // Solidity has syntax that Rust's lexer cannot handle (single-quoted strings,
+    // hex"..." literals, unicode"..." literals).
+    let preprocessed = preprocess_solidity_source(&source);
+
+    let tokens: proc_macro2::TokenStream = preprocessed.parse().map_err(|e: proc_macro2::LexError| {
         Report::new(EvmParserError)
             .attach_printable(format!("Lex error in {}: {}", file_path, e))
     })?;
@@ -119,4 +124,129 @@ pub fn extract_source_by_lines(source: &str, start_line: usize, end_line: usize)
     let start = if start_line > 0 { start_line - 1 } else { 0 };
     let end = end_line.min(lines.len());
     lines[start..end].join("\n")
+}
+
+/// Preprocess Solidity source to make it compatible with proc_macro2's Rust tokenizer.
+/// Handles:
+/// - Single-quoted strings: 'text' → "text" (Solidity allows both, Rust only double quotes)
+/// - hex"..." literals: hex"aa" → "aa" (strip the hex/unicode prefix)
+/// - unicode"..." literals: unicode"text" → "text"
+fn preprocess_solidity_source(source: &str) -> String {
+    let mut result = String::with_capacity(source.len());
+    let chars: Vec<char> = source.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        // Skip line comments
+        if i + 1 < len && chars[i] == '/' && chars[i + 1] == '/' {
+            while i < len && chars[i] != '\n' {
+                result.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+
+        // Skip block comments
+        if i + 1 < len && chars[i] == '/' && chars[i + 1] == '*' {
+            result.push(chars[i]);
+            result.push(chars[i + 1]);
+            i += 2;
+            while i + 1 < len && !(chars[i] == '*' && chars[i + 1] == '/') {
+                result.push(chars[i]);
+                i += 1;
+            }
+            if i + 1 < len {
+                result.push(chars[i]);
+                result.push(chars[i + 1]);
+                i += 2;
+            }
+            continue;
+        }
+
+        // Skip double-quoted strings (don't modify them)
+        if chars[i] == '"' {
+            result.push(chars[i]);
+            i += 1;
+            while i < len && chars[i] != '"' {
+                if chars[i] == '\\' && i + 1 < len {
+                    result.push(chars[i]);
+                    result.push(chars[i + 1]);
+                    i += 2;
+                } else {
+                    result.push(chars[i]);
+                    i += 1;
+                }
+            }
+            if i < len {
+                result.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+
+        // Handle hex"..." and unicode"..." prefixed string literals.
+        // Strip the prefix so proc_macro2 sees just a regular string literal.
+        if i + 3 < len && chars[i] == 'h' && chars[i + 1] == 'e' && chars[i + 2] == 'x' && chars[i + 3] == '"' {
+            // hex"..." → "..."
+            i += 3; // skip "hex", the " will be handled next iteration
+            continue;
+        }
+        if i + 7 < len && chars[i] == 'u' && chars[i + 1] == 'n' && chars[i + 2] == 'i'
+            && chars[i + 3] == 'c' && chars[i + 4] == 'o' && chars[i + 5] == 'd'
+            && chars[i + 6] == 'e' && chars[i + 7] == '"'
+        {
+            // unicode"..." → "..."
+            i += 7; // skip "unicode", the " will be handled next iteration
+            continue;
+        }
+
+        // Handle single-quoted strings: 'text' → "text"
+        // In Solidity, single quotes delimit string literals.
+        // In Rust, single quotes are for char literals (single char only).
+        if chars[i] == '\'' {
+            // Look ahead to find the closing single quote
+            let mut j = i + 1;
+            let mut is_string = false;
+            while j < len && chars[j] != '\'' && chars[j] != '\n' {
+                if chars[j] == '\\' && j + 1 < len {
+                    j += 2;
+                } else {
+                    j += 1;
+                }
+            }
+            // If we found a closing quote and content length > 1, it's a string
+            if j < len && chars[j] == '\'' && (j - i - 1) > 1 {
+                is_string = true;
+            }
+
+            if is_string {
+                result.push('"');
+                i += 1;
+                while i < len && chars[i] != '\'' {
+                    if chars[i] == '"' {
+                        result.push('\\');
+                        result.push('"');
+                    } else if chars[i] == '\\' && i + 1 < len {
+                        result.push(chars[i]);
+                        result.push(chars[i + 1]);
+                        i += 1;
+                    } else {
+                        result.push(chars[i]);
+                    }
+                    i += 1;
+                }
+                result.push('"');
+                if i < len {
+                    i += 1; // skip closing '
+                }
+                continue;
+            }
+        }
+
+        result.push(chars[i]);
+        i += 1;
+    }
+
+    result
 }

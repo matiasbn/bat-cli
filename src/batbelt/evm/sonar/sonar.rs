@@ -7,8 +7,8 @@ use std::io::Write;
 use std::time::Duration;
 use walkdir::WalkDir;
 
-use crate::batbelt::evm::metadata::bat_metadata::{EvmBatMetadata, EvmMetadataError, EvmMetadataResult};
-use crate::batbelt::evm::parser::call_resolver::CallResolver;
+use crate::batbelt::evm::metadata::bat_metadata::{EvmBatMetadata, FunctionDependency, EvmMetadataError, EvmMetadataResult};
+use crate::batbelt::evm::parser::call_resolver::{CallResolver, extract_calls_from_source};
 use crate::batbelt::evm::parser::import_resolver::ImportResolver;
 use crate::batbelt::evm::parser::inheritance_resolver::InheritanceResolver;
 use crate::batbelt::evm::parser::evm_file_parser::parse_sol_file;
@@ -80,13 +80,15 @@ impl EvmSonar {
 
     /// Run all 5 phases of the EVM sonar scan.
     pub fn run(&mut self) -> EvmMetadataResult<EvmBatMetadata> {
+        // Clear previous log
+        let _ = std::fs::write("Batlog.log", "");
         self.sonar_start_animation();
 
         self.phase_1_source_scan()?;
         self.phase_2_imports_and_inheritance()?;
         self.phase_3_access_control()?;
-        self.phase_4_function_dependencies()?;
-        let metadata = self.phase_5_entry_points()?;
+        let deps = self.phase_4_function_dependencies()?;
+        let metadata = self.phase_5_entry_points(deps)?;
 
         if self.error_count > 0 {
             println!(
@@ -247,15 +249,17 @@ impl EvmSonar {
         Ok(())
     }
 
-    /// Phase 4: Resolve function call dependencies.
-    fn phase_4_function_dependencies(&self) -> EvmMetadataResult<()> {
-        let call_resolver = CallResolver::new(&self.contracts);
+    /// Phase 4: Resolve function call dependencies using AST.
+    /// Returns a Vec of FunctionDependency to be persisted in metadata.
+    fn phase_4_function_dependencies(&self) -> EvmMetadataResult<Vec<FunctionDependency>> {
         let total_functions: usize = self.contracts.iter().map(|c| c.functions.len()).sum();
         let pb = Self::create_spinner();
         pb.set_message(format!("Function dependencies [0/{}]", total_functions));
 
+        let mut all_deps: Vec<FunctionDependency> = Vec::new();
         let mut count = 0usize;
         let mut total_calls = 0usize;
+
         for contract in &self.contracts {
             for function in &contract.functions {
                 count += 1;
@@ -263,8 +267,16 @@ impl EvmSonar {
                     "Function dependencies [{}/{}]: {}.{}",
                     count, total_functions, contract.name, function.name
                 ));
-                let calls = call_resolver.resolve_calls(&contract.name, function);
-                total_calls += calls.len();
+
+                // Use AST-based call extraction on the function body
+                let callees = extract_calls_from_source(&function.body_source);
+                total_calls += callees.len();
+
+                let func_id = format!("{}_{}_{}", contract.file_path, contract.name, function.name);
+                all_deps.push(FunctionDependency {
+                    function_metadata_id: func_id,
+                    callees,
+                });
             }
         }
 
@@ -273,15 +285,16 @@ impl EvmSonar {
             SPARKLE, total_functions, total_calls
         ));
 
-        Ok(())
+        Ok(all_deps)
     }
 
     /// Phase 5: Build entry points and generate final metadata.
-    fn phase_5_entry_points(&self) -> EvmMetadataResult<EvmBatMetadata> {
+    fn phase_5_entry_points(&self, deps: Vec<FunctionDependency>) -> EvmMetadataResult<EvmBatMetadata> {
         let pb = Self::create_spinner();
         pb.set_message("Building entry points...");
 
-        let metadata = EvmBatMetadata::from_contracts(self.contracts.clone());
+        let mut metadata = EvmBatMetadata::from_contracts(self.contracts.clone());
+        metadata.function_dependencies = deps;
         metadata.save_metadata()?;
 
         pb.finish_with_message(format!(
