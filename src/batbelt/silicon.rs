@@ -35,10 +35,7 @@ pub fn create_figure(
 
     // Syntax-highlight every line.
     // Detect language from file_name extension, default to Rust.
-    let ext = file_name
-        .rsplit('.')
-        .next()
-        .unwrap_or("rs");
+    let ext = file_name.rsplit('.').next().unwrap_or("rs");
     let syntax = match ext {
         // Solidity: use JavaScript syntax (best color match with Dracula)
         "sol" => ps

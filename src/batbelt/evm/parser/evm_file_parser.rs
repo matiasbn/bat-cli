@@ -17,8 +17,7 @@ use super::contract_parser::parse_contract_definition;
 /// Parse a single .sol file into a `EvmFile` structure.
 pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
     let source = fs::read_to_string(file_path).map_err(|e: io::Error| {
-        Report::new(EvmParserError)
-            .attach_printable(format!("Cannot read {}: {}", file_path, e))
+        Report::new(EvmParserError).attach_printable(format!("Cannot read {}: {}", file_path, e))
     })?;
 
     if source.is_empty() {
@@ -33,14 +32,12 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
     let result = sess.enter(|| -> Result<EvmFile, Report<EvmParserError>> {
         let arena = ast::Arena::new();
         let mut parser = Parser::from_file(&sess, &arena, Path::new(file_path)).map_err(|_| {
-            Report::new(EvmParserError)
-                .attach_printable(format!("Cannot open {}", file_path))
+            Report::new(EvmParserError).attach_printable(format!("Cannot open {}", file_path))
         })?;
 
         let ast = parser.parse_file().map_err(|e| {
             e.emit();
-            Report::new(EvmParserError)
-                .attach_printable(format!("Parse error in {}", file_path))
+            Report::new(EvmParserError).attach_printable(format!("Parse error in {}", file_path))
         })?;
 
         let mut sol_file = EvmFile {
@@ -72,7 +69,8 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                     sol_file.imports.push(sol_import);
                 }
                 ast::ItemKind::Contract(contract_def) => {
-                    let contract = parse_contract_definition(&sess, contract_def, file_path, &source);
+                    let contract =
+                        parse_contract_definition(&sess, contract_def, file_path, &source);
                     sol_file.contracts.push(contract);
                 }
                 _ => {}

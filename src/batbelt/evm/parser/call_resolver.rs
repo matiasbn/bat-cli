@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use solar_parse::{
     ast,
-    interface::{Session, source_map::FileName},
+    interface::{source_map::FileName, Session},
     Parser,
 };
 
@@ -32,11 +32,7 @@ impl<'a> CallResolver<'a> {
 
     /// Resolve all calls in a function's body using AST-based extraction.
     /// Falls back to regex if AST parsing fails.
-    pub fn resolve_calls(
-        &self,
-        contract_name: &str,
-        function: &EvmFunction,
-    ) -> Vec<ResolvedCall> {
+    pub fn resolve_calls(&self, contract_name: &str, function: &EvmFunction) -> Vec<ResolvedCall> {
         let body = &function.body_source;
         if body.is_empty() {
             return Vec::new();
@@ -138,9 +134,7 @@ pub fn extract_calls_from_source(source: &str) -> Vec<String> {
     // Wrap in a dummy function so it parses as a valid Solidity file
     let wrapped = format!("contract _C {{ function _f() {{ {} }} }}", source);
 
-    let sess = Session::builder()
-        .with_silent_emitter(None)
-        .build();
+    let sess = Session::builder().with_silent_emitter(None).build();
 
     let result = sess.enter(|| -> Option<Vec<String>> {
         let arena = ast::Arena::new();
@@ -149,7 +143,8 @@ pub fn extract_calls_from_source(source: &str) -> Vec<String> {
             &arena,
             FileName::Custom("call_resolver".into()),
             wrapped.clone(),
-        ).ok()?;
+        )
+        .ok()?;
 
         let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
 
@@ -204,7 +199,12 @@ fn extract_calls_from_stmt(kind: &ast::StmtKind<'_>, calls: &mut Vec<String>) {
                 extract_calls_from_stmt(&else_stmt.kind, calls);
             }
         }
-        ast::StmtKind::For { init, cond, next, body } => {
+        ast::StmtKind::For {
+            init,
+            cond,
+            next,
+            body,
+        } => {
             if let Some(init_stmt) = init {
                 extract_calls_from_stmt(&init_stmt.kind, calls);
             }

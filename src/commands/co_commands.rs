@@ -375,11 +375,9 @@ impl CodeOverhaulCommand {
         let evm_metadata = EvmBatMetadata::read_metadata().change_context(CommandError)?;
 
         // List to-review files
-        let review_files = BatFolder::CodeOverhaulToReview {
-            program_name: None,
-        }
-        .get_all_files_names(true, None, None)
-        .change_context(CommandError)?;
+        let review_files = BatFolder::CodeOverhaulToReview { program_name: None }
+            .get_all_files_names(true, None, None)
+            .change_context(CommandError)?;
 
         if review_files.is_empty() {
             return Err(Report::new(CommandError).attach_printable(format!(
@@ -488,10 +486,8 @@ impl CodeOverhaulCommand {
             .change_context(CommandError)?;
 
         // Prompt Miro deployment
-        let deployed = co_commands_functions::prompt_deploy_miro_evm(
-            entrypoint_name.clone(),
-        )
-        .await?;
+        let deployed =
+            co_commands_functions::prompt_deploy_miro_evm(entrypoint_name.clone()).await?;
         if deployed {
             use crate::batbelt::metadata::BatMetadataCommit;
             GitCommit::UpdateMetadataJson {
@@ -533,9 +529,7 @@ mod co_commands_functions {
         Ok(deploy_frame)
     }
 
-    pub async fn prompt_deploy_miro_evm(
-        entry_point_name: String,
-    ) -> CommandResult<bool> {
+    pub async fn prompt_deploy_miro_evm(entry_point_name: String) -> CommandResult<bool> {
         let prompt_text = format!(
             "Do you want to deploy the code-overhaul screenshots to Miro for {} now?",
             entry_point_name.clone().bright_green()

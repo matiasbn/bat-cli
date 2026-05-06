@@ -13,7 +13,7 @@ pub const SOLIDITY_CO_TEMPLATE: &str = r#"# State changes:
 
 /// Generate a populated code-overhaul file for a Solidity entry point.
 pub fn generate_co_content(
-    entry_point_name: &str,
+    _entry_point_name: &str,
     access_control: &[String],
     parameters: &[String],
     storage_vars: &[String],

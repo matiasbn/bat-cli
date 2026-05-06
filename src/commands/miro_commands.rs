@@ -102,8 +102,7 @@ impl MiroCommand {
         // get entrypoints name
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
         let entrypoints_names = if bat_config.project_type == ProjectType::Foundry {
-            crate::batbelt::evm::miro::get_entry_point_names()
-                .change_context(CommandError)?
+            crate::batbelt::evm::miro::get_entry_point_names().change_context(CommandError)?
         } else if bat_config.is_multi_program() {
             let program_name = bat_config
                 .prompt_select_program()
@@ -603,7 +602,6 @@ impl MiroCommand {
         .change_context(CommandError)?;
         Ok(())
     }
-
 
     async fn deploy_co_screenshots(&self, entry_point_name: Option<String>) -> CommandResult<()> {
         Self::deploy_co_screenshots_with_program(entry_point_name, None).await
@@ -1220,12 +1218,10 @@ impl MiroCommand {
                 }
 
                 // Deploy init / init_if_needed accounts
-                let init_accounts = ca_info_list
-                    .into_iter()
-                    .filter(|ca_info| {
-                        ca_info.is_init
-                            && ca_info.solana_account_type == SolanaAccountType::ProgramStateAccount
-                    });
+                let init_accounts = ca_info_list.into_iter().filter(|ca_info| {
+                    ca_info.is_init
+                        && ca_info.solana_account_type == SolanaAccountType::ProgramStateAccount
+                });
                 for init_account in init_accounts {
                     let struct_metadata_vec = SourceCodeMetadata::get_filtered_structs(
                         Some(init_account.account_struct_name.clone()),

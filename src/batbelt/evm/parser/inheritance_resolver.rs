@@ -10,10 +10,8 @@ pub struct InheritanceResolver<'a> {
 
 impl<'a> InheritanceResolver<'a> {
     pub fn new(contracts: &'a [EvmContract]) -> Self {
-        let contracts_by_name: HashMap<String, &EvmContract> = contracts
-            .iter()
-            .map(|c| (c.name.clone(), c))
-            .collect();
+        let contracts_by_name: HashMap<String, &EvmContract> =
+            contracts.iter().map(|c| (c.name.clone(), c)).collect();
         Self { contracts_by_name }
     }
 
