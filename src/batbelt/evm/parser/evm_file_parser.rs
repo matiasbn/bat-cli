@@ -10,7 +10,7 @@ use solar_parse::{
 };
 
 use super::{EvmParserError, EvmParserResult};
-use crate::batbelt::evm::types::{EvmFile, EvmImport, ImportSymbol};
+use crate::batbelt::evm::types::{EvmFile, EvmFileItem, EvmFileItemKind, EvmImport, ImportSymbol};
 
 use super::contract_parser::parse_contract_definition;
 
@@ -44,6 +44,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
             path: file_path.to_string(),
             imports: Vec::new(),
             contracts: Vec::new(),
+            file_items: Vec::new(),
             pragma: None,
         };
 
@@ -72,6 +73,82 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                     let contract =
                         parse_contract_definition(&sess, contract_def, file_path, &source);
                     sol_file.contracts.push(contract);
+                }
+                ast::ItemKind::Struct(s) => {
+                    sol_file.file_items.push(EvmFileItem {
+                        name: s.name.as_str().to_string(),
+                        kind: EvmFileItemKind::Struct,
+                        file_path: String::new(),
+                        line: span_to_line(&sess, item.span),
+                        end_line: span_to_end_line(&sess, item.span),
+                        external: false,
+                    });
+                }
+                ast::ItemKind::Enum(e) => {
+                    sol_file.file_items.push(EvmFileItem {
+                        name: e.name.as_str().to_string(),
+                        kind: EvmFileItemKind::Enum,
+                        file_path: String::new(),
+                        line: span_to_line(&sess, item.span),
+                        end_line: span_to_end_line(&sess, item.span),
+                        external: false,
+                    });
+                }
+                ast::ItemKind::Error(e) => {
+                    sol_file.file_items.push(EvmFileItem {
+                        name: e.name.as_str().to_string(),
+                        kind: EvmFileItemKind::Error,
+                        file_path: String::new(),
+                        line: span_to_line(&sess, item.span),
+                        end_line: span_to_end_line(&sess, item.span),
+                        external: false,
+                    });
+                }
+                ast::ItemKind::Udvt(u) => {
+                    sol_file.file_items.push(EvmFileItem {
+                        name: u.name.as_str().to_string(),
+                        kind: EvmFileItemKind::TypeAlias,
+                        file_path: String::new(),
+                        line: span_to_line(&sess, item.span),
+                        end_line: span_to_end_line(&sess, item.span),
+                        external: false,
+                    });
+                }
+                ast::ItemKind::Variable(v) => {
+                    if let Some(name_ident) = &v.name {
+                        sol_file.file_items.push(EvmFileItem {
+                            name: name_ident.as_str().to_string(),
+                            kind: EvmFileItemKind::Constant,
+                            file_path: String::new(),
+                            line: span_to_line(&sess, item.span),
+                            end_line: span_to_end_line(&sess, item.span),
+                            external: false,
+                        });
+                    }
+                }
+                ast::ItemKind::Function(f) => {
+                    if f.kind != ast::FunctionKind::Modifier {
+                        if let Some(name_ident) = &f.header.name {
+                            sol_file.file_items.push(EvmFileItem {
+                                name: name_ident.as_str().to_string(),
+                                kind: EvmFileItemKind::FreeFunction,
+                                file_path: String::new(),
+                                line: span_to_line(&sess, item.span),
+                                end_line: span_to_end_line(&sess, item.span),
+                                external: false,
+                            });
+                        }
+                    }
+                }
+                ast::ItemKind::Event(ev) => {
+                    sol_file.file_items.push(EvmFileItem {
+                        name: ev.name.as_str().to_string(),
+                        kind: EvmFileItemKind::Event,
+                        file_path: String::new(),
+                        line: span_to_line(&sess, item.span),
+                        end_line: span_to_end_line(&sess, item.span),
+                        external: false,
+                    });
                 }
                 _ => {}
             }

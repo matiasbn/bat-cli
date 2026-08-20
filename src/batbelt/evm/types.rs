@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Solidity function visibility levels.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -116,12 +117,50 @@ pub struct EvmContract {
     pub external: bool,
 }
 
+/// Kinds of file-level declarations (not inside a contract).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EvmFileItemKind {
+    Struct,
+    Enum,
+    Error,
+    TypeAlias,
+    Constant,
+    FreeFunction,
+    Event,
+}
+
+impl fmt::Display for EvmFileItemKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Struct => write!(f, "struct"),
+            Self::Enum => write!(f, "enum"),
+            Self::Error => write!(f, "error"),
+            Self::TypeAlias => write!(f, "type"),
+            Self::Constant => write!(f, "constant"),
+            Self::FreeFunction => write!(f, "fn"),
+            Self::Event => write!(f, "event"),
+        }
+    }
+}
+
+/// A file-level declaration (struct, enum, error, type alias, constant, free function).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EvmFileItem {
+    pub name: String,
+    pub kind: EvmFileItemKind,
+    pub file_path: String,
+    pub line: usize,
+    pub end_line: usize,
+    pub external: bool,
+}
+
 /// A parsed .sol file containing one or more contracts.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvmFile {
     pub path: String,
     pub imports: Vec<EvmImport>,
     pub contracts: Vec<EvmContract>,
+    pub file_items: Vec<EvmFileItem>,
     pub pragma: Option<String>,
 }
 

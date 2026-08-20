@@ -14,7 +14,7 @@ use crate::batbelt::evm::parser::call_resolver::extract_calls_from_source;
 use crate::batbelt::evm::parser::evm_file_parser::parse_sol_file;
 use crate::batbelt::evm::parser::import_resolver::ImportResolver;
 use crate::batbelt::evm::parser::inheritance_resolver::InheritanceResolver;
-use crate::batbelt::evm::types::EvmContract;
+use crate::batbelt::evm::types::{EvmContract, EvmFileItem};
 
 static BAT: Emoji<'_, '_> = Emoji("🦇", "BatSonar");
 static FOLDER: Emoji<'_, '_> = Emoji("📂", "Folder");
@@ -25,6 +25,7 @@ static WAVE: Emoji<'_, '_> = Emoji("〰", "-");
 pub struct EvmSonar {
     project_root: String,
     contracts: Vec<EvmContract>,
+    file_items: Vec<EvmFileItem>,
     error_count: usize,
 }
 
@@ -33,6 +34,7 @@ impl EvmSonar {
         Self {
             project_root: project_root.to_string(),
             contracts: Vec::new(),
+            file_items: Vec::new(),
             error_count: 0,
         }
     }
@@ -139,6 +141,11 @@ impl EvmSonar {
                     for contract in sol_file.contracts {
                         self.contracts.push(contract);
                     }
+                    for mut file_item in sol_file.file_items {
+                        file_item.file_path = file_path.clone();
+                        file_item.external = false;
+                        self.file_items.push(file_item);
+                    }
                 }
                 Err(e) => {
                     self.log_error(&format!("Failed to parse [SRC] {}: {:?}", file_path, e));
@@ -159,6 +166,11 @@ impl EvmSonar {
                     for contract in sol_file.contracts {
                         self.contracts.push(contract);
                     }
+                    for mut file_item in sol_file.file_items {
+                        file_item.file_path = file_path.clone();
+                        file_item.external = true;
+                        self.file_items.push(file_item);
+                    }
                 }
                 Err(e) => {
                     self.log_error(&format!("Failed to parse [EXT] {}: {:?}", file_path, e));
@@ -168,6 +180,7 @@ impl EvmSonar {
 
         let src_contracts = self.contracts.iter().filter(|c| !c.external).count();
         let ext_contracts = self.contracts.iter().filter(|c| c.external).count();
+        let file_items_count = self.file_items.len();
         let error_msg = if self.error_count > 0 {
             format!(", {} errors", self.error_count)
         } else {
@@ -175,11 +188,12 @@ impl EvmSonar {
         };
 
         pb.finish_with_message(format!(
-            "{} Source scan: {} contracts ({} src, {} lib){}",
+            "{} Source scan: {} contracts ({} src, {} lib), {} file-level items{}",
             SPARKLE,
             self.contracts.len(),
             src_contracts,
             ext_contracts,
+            file_items_count,
             error_msg
         ));
 
@@ -310,7 +324,7 @@ impl EvmSonar {
         let pb = Self::create_spinner();
         pb.set_message("Building entry points...");
 
-        let mut metadata = EvmBatMetadata::from_contracts(self.contracts.clone());
+        let mut metadata = EvmBatMetadata::from_contracts(self.contracts.clone(), self.file_items.clone());
         metadata.function_dependencies = deps;
         metadata.save_metadata()?;
 
