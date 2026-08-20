@@ -123,11 +123,41 @@ impl MiroCredentials {
         let _ = path;
     }
 
+    /// Resolve which Miro app to authorize against.
+    ///
+    /// Order: environment, then what `--setup` stored, then whatever was baked
+    /// in at compile time. Building with
+    ///
+    /// ```sh
+    /// BAT_MIRO_CLIENT_ID=... BAT_MIRO_CLIENT_SECRET=... cargo install --path . --locked
+    /// ```
+    ///
+    /// ships a binary whose users never see the setup step at all: `bat-cli
+    /// login` takes them straight to the consent page.
     fn app_credentials(&self) -> (String, String) {
-        let id = std::env::var("BAT_MIRO_CLIENT_ID").unwrap_or_else(|_| self.client_id.clone());
-        let secret =
-            std::env::var("BAT_MIRO_CLIENT_SECRET").unwrap_or_else(|_| self.client_secret.clone());
-        (id, secret)
+        let pick = |from_env: &str, stored: &str, baked: Option<&str>| -> String {
+            if let Ok(value) = std::env::var(from_env) {
+                if !value.trim().is_empty() {
+                    return value;
+                }
+            }
+            if !stored.trim().is_empty() {
+                return stored.to_string();
+            }
+            baked.unwrap_or_default().to_string()
+        };
+        (
+            pick(
+                "BAT_MIRO_CLIENT_ID",
+                &self.client_id,
+                option_env!("BAT_MIRO_CLIENT_ID"),
+            ),
+            pick(
+                "BAT_MIRO_CLIENT_SECRET",
+                &self.client_secret,
+                option_env!("BAT_MIRO_CLIENT_SECRET"),
+            ),
+        )
     }
 
     fn is_expired(&self) -> bool {
@@ -190,6 +220,7 @@ pub async fn login(setup: bool, force: bool) -> Result<(), MiroError> {
 
     if setup || credentials.app_credentials().0.is_empty() {
         print_setup_instructions();
+        open_in_browser("https://miro.com/app/settings/user-profile/apps");
         credentials.client_id = BatDialoguer::input("Miro app Client ID".to_string())
             .change_context(MiroError)?
             .trim()
@@ -359,13 +390,14 @@ pub async fn logout() -> Result<(), MiroError> {
 
 fn print_setup_instructions() {
     let redirect_uri = format!("http://localhost:{REDIRECT_PORT}{REDIRECT_PATH}");
+    println!("\n{}\n", "One-time Miro app setup".bold());
     println!(
-        "\n{}\n",
-        "One-time Miro app setup (only the first person needs to do this)".bold()
+        "There is no Miro app to authorize against yet, so there is nothing to send\nyou to a consent page for. Creating one takes a minute, and it is the {}\ntime you will see this screen — afterwards {} only opens the browser.\n",
+        "only".bold(),
+        "bat-cli login".green()
     );
-    println!("Miro has no API to create a Developer team, so this part is manual.\n");
     println!(
-        "  1. Open your apps:\n     {}",
+        "  1. Your apps page is opening in the browser:\n     {}",
         "https://miro.com/app/settings/user-profile/apps".blue()
     );
     println!("  2. Click {}. If you have no Developer team yet, Miro asks you", "+ Create new app".bold());
@@ -387,6 +419,11 @@ fn print_setup_instructions() {
     println!(
         "\nThen copy the app's Client ID and Client secret below. They are stored in\n{} and reused by every project, so this is the last copy-paste.\n",
         MiroCredentials::path()
+    );
+    println!(
+        "{} to skip this for your whole team, build once with the app credentials\nbaked in:\n  {}\n",
+        "Tip:".bold(),
+        "BAT_MIRO_CLIENT_ID=… BAT_MIRO_CLIENT_SECRET=… cargo install --path . --locked".yellow()
     );
 }
 

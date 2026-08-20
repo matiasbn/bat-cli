@@ -37,6 +37,18 @@ register and the `boards:read` / `boards:write` scopes. Creating the Developer
 team itself has no public API, so that step stays manual — Miro offers it
 automatically the first time you create an app.
 
+Miro does not document PKCE, so the token exchange needs a client secret and
+therefore an app: the very first `bat-cli login` on a machine has nothing to
+authorize against yet, which is why it asks for one. To skip that for everyone
+else, build once with the app credentials baked in:
+
+```bash
+BAT_MIRO_CLIENT_ID=... BAT_MIRO_CLIENT_SECRET=... cargo install --path . --locked
+```
+
+Then `bat-cli login` opens the consent page directly — no setup screen. The same
+values are also read from those environment variables at runtime.
+
 ## Preferences (`config`)
 
 Everything that belongs to you rather than to a project lives in
