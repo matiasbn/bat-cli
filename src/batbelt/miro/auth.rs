@@ -31,7 +31,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
-use crate::batbelt::miro::MiroError;
+use crate::batbelt::miro::{app_credentials, MiroError};
 use crate::config::{global_config_dir, CONFIG_DIR_ENV};
 
 /// Where Miro sends the browser back. Must match the app's configured redirect
@@ -125,17 +125,15 @@ impl MiroCredentials {
 
     /// Resolve which Miro app to authorize against.
     ///
-    /// Order: environment, then what `--setup` stored, then whatever was baked
-    /// in at compile time. Building with
+    /// Order: environment, then what `--setup` stored, then the compile-time
+    /// environment, then the shared app in [`app_credentials`].
     ///
-    /// ```sh
-    /// BAT_MIRO_CLIENT_ID=... BAT_MIRO_CLIENT_SECRET=... cargo install --path . --locked
-    /// ```
-    ///
-    /// ships a binary whose users never see the setup step at all: `bat-cli
-    /// login` takes them straight to the consent page.
+    /// The shared app is what makes the zero-paste flow work: when it is set,
+    /// no user ever creates a Miro app or pastes anything — `bat-cli login`
+    /// opens the consent page, they pick their team and press Accept.
     fn app_credentials(&self) -> (String, String) {
-        let pick = |from_env: &str, stored: &str, baked: Option<&str>| -> String {
+        let shared = app_credentials::shared_app();
+        let pick = |from_env: &str, stored: &str, baked: Option<&str>, shared: Option<&str>| {
             if let Ok(value) = std::env::var(from_env) {
                 if !value.trim().is_empty() {
                     return value;
@@ -144,18 +142,25 @@ impl MiroCredentials {
             if !stored.trim().is_empty() {
                 return stored.to_string();
             }
-            baked.unwrap_or_default().to_string()
+            if let Some(baked) = baked {
+                if !baked.trim().is_empty() {
+                    return baked.to_string();
+                }
+            }
+            shared.unwrap_or_default().to_string()
         };
         (
             pick(
                 "BAT_MIRO_CLIENT_ID",
                 &self.client_id,
                 option_env!("BAT_MIRO_CLIENT_ID"),
+                shared.map(|(id, _)| id),
             ),
             pick(
                 "BAT_MIRO_CLIENT_SECRET",
                 &self.client_secret,
                 option_env!("BAT_MIRO_CLIENT_SECRET"),
+                shared.map(|(_, secret)| secret),
             ),
         )
     }
@@ -421,9 +426,9 @@ fn print_setup_instructions() {
         MiroCredentials::path()
     );
     println!(
-        "{} to skip this for your whole team, build once with the app credentials\nbaked in:\n  {}\n",
+        "{} nobody else has to repeat this. One app serves every user — fill in\n{} and your teammates only ever press Accept.\n",
         "Tip:".bold(),
-        "BAT_MIRO_CLIENT_ID=… BAT_MIRO_CLIENT_SECRET=… cargo install --path . --locked".yellow()
+        "src/batbelt/miro/app_credentials.rs".yellow()
     );
 }
 

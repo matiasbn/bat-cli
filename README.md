@@ -37,17 +37,21 @@ register and the `boards:read` / `boards:write` scopes. Creating the Developer
 team itself has no public API, so that step stays manual — Miro offers it
 automatically the first time you create an app.
 
-Miro does not document PKCE, so the token exchange needs a client secret and
-therefore an app: the very first `bat-cli login` on a machine has nothing to
-authorize against yet, which is why it asks for one. To skip that for everyone
-else, build once with the app credentials baked in:
+### One app for everybody
 
-```bash
-BAT_MIRO_CLIENT_ID=... BAT_MIRO_CLIENT_SECRET=... cargo install --path . --locked
-```
+Only **one** Miro app is ever needed, no matter how many people use bat-cli.
+Fill its credentials into `src/batbelt/miro/app_credentials.rs` and every other
+user skips app creation entirely: `bat-cli login` opens Miro's consent page,
+they pick their own team, press Accept, and that is the whole flow.
 
-Then `bat-cli login` opens the consent page directly — no setup screen. The same
-values are also read from those environment variables at runtime.
+The setup screen only appears when no shared app is configured. Miro does not
+document PKCE and exposes no API to discover a user's apps, so without a
+configured app there is nothing for bat-cli to authorize against.
+
+The values are also read from `BAT_MIRO_CLIENT_ID` / `BAT_MIRO_CLIENT_SECRET`,
+at runtime or at build time — but note that `cargo install bat-cli` compiles on
+the user's machine, where those variables are not set, so only the constants
+travel with a published crate.
 
 ## Preferences (`config`)
 

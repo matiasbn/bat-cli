@@ -8,6 +8,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use serde_json::{self, Value};
 
+pub mod app_credentials;
 pub mod auth;
 pub mod client;
 pub mod connector;
