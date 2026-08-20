@@ -397,8 +397,7 @@ fn print_setup_instructions() {
     let redirect_uri = format!("http://localhost:{REDIRECT_PORT}{REDIRECT_PATH}");
     println!("\n{}\n", "One-time Miro app setup".bold());
     println!(
-        "There is no Miro app to authorize against yet, so there is nothing to send\nyou to a consent page for. Creating one takes a minute, and it is the {}\ntime you will see this screen — afterwards {} only opens the browser.\n",
-        "only".bold(),
+        "OAuth needs an app to authorize against, and Miro has no API to create one,\nso this runs once per machine. It takes about a minute. From then on\n{} only opens the browser.\n",
         "bat-cli login".green()
     );
     println!(
@@ -425,11 +424,7 @@ fn print_setup_instructions() {
         "\nThen copy the app's Client ID and Client secret below. They are stored in\n{} and reused by every project, so this is the last copy-paste.\n",
         MiroCredentials::path()
     );
-    println!(
-        "{} nobody else has to repeat this. One app serves every user — fill in\n{} and your teammates only ever press Accept.\n",
-        "Tip:".bold(),
-        "src/batbelt/miro/app_credentials.rs".yellow()
-    );
+
 }
 
 /// Accept exactly one redirect and pull the `code` out of it.
