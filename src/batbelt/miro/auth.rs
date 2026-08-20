@@ -32,6 +32,7 @@ use tokio::net::TcpListener;
 
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::miro::MiroError;
+use crate::config::{global_config_dir, CONFIG_DIR_ENV};
 
 /// Where Miro sends the browser back. Must match the app's configured redirect
 /// URI **exactly**, so the port is fixed rather than picked at random.
@@ -41,9 +42,6 @@ const AUTHORIZE_URL: &str = "https://miro.com/oauth/authorize";
 const TOKEN_URL: &str = "https://api.miro.com/v1/oauth/token";
 const TOKEN_INFO_URL: &str = "https://api.miro.com/v1/oauth-token";
 const REVOKE_URL: &str = "https://api.miro.com/v2/oauth/revoke";
-
-/// Overrides the whole config directory, mostly for tests and CI.
-const CONFIG_DIR_ENV: &str = "BAT_CLI_CONFIG_DIR";
 
 /// How long we wait for the user to finish authorizing in the browser.
 const AUTHORIZE_TIMEOUT: Duration = Duration::from_secs(300);
@@ -69,27 +67,6 @@ pub struct MiroCredentials {
     pub team_name: String,
     #[serde(default)]
     pub user_name: String,
-}
-
-/// Directory holding the machine-wide config.
-///
-/// XDG layout on every platform (`~/.config/bat-cli`), which is where CLI users
-/// expect to find it and where a dotfiles repo can pick it up. `confy`'s default
-/// would have been `~/Library/Application Support/rs.bat-cli` on macOS, which is
-/// neither discoverable nor consistent with the rest of the toolchain.
-pub fn config_dir() -> PathBuf {
-    if let Ok(directory) = std::env::var(CONFIG_DIR_ENV) {
-        if !directory.trim().is_empty() {
-            return PathBuf::from(directory);
-        }
-    }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        if !xdg.trim().is_empty() {
-            return PathBuf::from(xdg).join("bat-cli");
-        }
-    }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".config").join("bat-cli")
 }
 
 impl MiroCredentials {
@@ -128,7 +105,7 @@ impl MiroCredentials {
     }
 
     pub fn path_buf() -> PathBuf {
-        config_dir().join("miro.toml")
+        global_config_dir().join("miro.toml")
     }
 
     pub fn path() -> String {
@@ -662,18 +639,21 @@ mod auth_test {
     /// environment variables, and `cargo test` runs tests in parallel threads.
     #[test]
     fn test_config_dir_and_credentials_round_trip() {
+        let _guard = crate::config::CONFIG_ENV_GUARD
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         temp_env(CONFIG_DIR_ENV, Some("/tmp/bat-cli-test"), || {
-            assert_eq!(config_dir(), PathBuf::from("/tmp/bat-cli-test"));
+            assert_eq!(global_config_dir(), PathBuf::from("/tmp/bat-cli-test"));
         });
         temp_env(CONFIG_DIR_ENV, None, || {
             temp_env("XDG_CONFIG_HOME", Some("/tmp/xdg"), || {
-                assert_eq!(config_dir(), PathBuf::from("/tmp/xdg/bat-cli"));
+                assert_eq!(global_config_dir(), PathBuf::from("/tmp/xdg/bat-cli"));
             });
             // With no XDG override it must land on ~/.config/bat-cli.
             temp_env("XDG_CONFIG_HOME", None, || {
                 let home = std::env::var("HOME").unwrap();
                 assert_eq!(
-                    config_dir(),
+                    global_config_dir(),
                     PathBuf::from(home).join(".config").join("bat-cli")
                 );
             });

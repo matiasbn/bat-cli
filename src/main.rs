@@ -72,6 +72,12 @@ enum BatCommands {
     },
     /// Revoke the stored Miro token and forget it
     Logout,
+    /// Show or edit the machine-wide preferences (~/.config/bat-cli/config.toml)
+    Config {
+        /// Re-answer the preferences instead of only printing them
+        #[arg(long)]
+        edit: bool,
+    },
     /// code-overhaul files management
     #[command(subcommand)]
     CodeOverhaul(CodeOverhaulCommand),
@@ -111,6 +117,9 @@ impl BatCommands {
             BatCommands::Logout => crate::batbelt::miro::auth::logout()
                 .await
                 .change_context(CommandError),
+            BatCommands::Config { edit } => {
+                ProjectCommands::show_global_config(*edit).change_context(CommandError)
+            }
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
             BatCommands::Miro(command) => command.execute_command().await,
@@ -140,7 +149,7 @@ impl BatCommands {
                 return Ok(());
             }
             // Authentication is machine-wide, so it must work outside a project.
-            BatCommands::Login { .. } | BatCommands::Logout => {
+            BatCommands::Login { .. } | BatCommands::Logout | BatCommands::Config { .. } => {
                 return Ok(());
             }
             BatCommands::Package(_) => {
@@ -325,7 +334,8 @@ async fn run() -> CommandResult<()> {
         BatCommands::Package(..)
         | BatCommands::Init
         | BatCommands::Login { .. }
-        | BatCommands::Logout => {
+        | BatCommands::Logout
+        | BatCommands::Config { .. } => {
             env_logger::init();
             Ok(())
         }

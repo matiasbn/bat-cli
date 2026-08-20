@@ -37,8 +37,26 @@ register and the `boards:read` / `boards:write` scopes. Creating the Developer
 team itself has no public API, so that step stays manual — Miro offers it
 automatically the first time you create an app.
 
-Credentials live in `~/.config/bat-cli/miro.toml` (`0600`), or in
-`$XDG_CONFIG_HOME/bat-cli`, or wherever `BAT_CLI_CONFIG_DIR` points.
+## Preferences (`config`)
+
+Everything that belongs to you rather than to a project lives in
+`~/.config/bat-cli/` — `$XDG_CONFIG_HOME/bat-cli`, or wherever
+`BAT_CLI_CONFIG_DIR` points:
+
+| file | holds |
+|---|---|
+| `config.toml` | `auditor_name`, `code_editor`, `use_code_editor` |
+| `miro.toml` | the OAuth credentials (`0600`) |
+
+```bash
+bat-cli config          # show the effective preferences and where they live
+bat-cli config --edit   # re-answer them
+```
+
+Your code editor is answered once per machine, not once per audit. A project's
+`BatAuditor.toml` still overrides any of these; whatever it leaves unset falls
+back to the global file. Project-scoped settings — `external_bat_metadata`, and
+everything in `Bat.toml` — stay with the project.
 
 ## What it does
 
