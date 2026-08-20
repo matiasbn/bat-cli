@@ -153,7 +153,11 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     let client = if options.dry_run {
         None
     } else {
-        Some(MiroClient::new().change_context(EvmMiroError)?)
+        Some(
+            MiroClient::new_refreshed()
+                .await
+                .change_context(EvmMiroError)?,
+        )
     };
 
     // The board is scanned at most once, to pick the region origin.

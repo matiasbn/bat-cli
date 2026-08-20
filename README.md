@@ -14,6 +14,28 @@ Supports **Anchor**, **Pinocchio**, **vanilla Rust** (Solana), and **Foundry** (
 cargo install bat-cli
 ```
 
+## Authentication (`login`)
+
+Miro authorization happens once per machine, not once per project:
+
+```bash
+bat-cli login --setup   # first time: register your Miro app credentials
+bat-cli login           # opens the browser, you press Accept
+bat-cli login --status  # who the token belongs to, and its scopes
+bat-cli logout          # revoke it
+```
+
+`login` runs the OAuth 2.0 authorization code flow: it listens on
+`http://localhost:9871/callback`, opens Miro in your browser, and stores the
+resulting token in your user config directory. Every project picks it up
+automatically, so `miro_oauth_access_token` in `BatAuditor.toml` can stay empty
+(setting it still overrides the global token). Expiring tokens are refreshed
+transparently.
+
+`--setup` walks through creating the Miro app, including the redirect URI to
+register and the `boards:read` / `boards:write` scopes. Creating the Developer
+team itself has no public API, so that step stays manual.
+
 ## What it does
 
 ### Initialize (`init`)
@@ -57,6 +79,11 @@ Deploys annotated code screenshots and dependency graphs to a Miro board for man
 - `miro entrypoint-screenshots` — deploys entry point and context accounts to a selected frame
 - `miro source-code-screenshots` — deploys arbitrary source code screenshots
 - `miro function-dependencies` — deploys a function and its dependency tree
+- `miro evm-auto-deploy` — **EVM**: fully automatic deployment of every entry
+  point's dependency graph. One frame per entry point, sized to the computed
+  layout, with each screenshot uploaded already positioned and one connector per
+  call site anchored to the exact calling line. `--dry-run` prints the layout
+  without contacting Miro
 - Interactive BFS deployment of dependency screenshots with caller→callee arrows
 - Screenshots use Dracula theme with syntax highlighting via [silicon](https://github.com/Aloxaf/silicon)
 - Board URL is validated against the Miro API during setup

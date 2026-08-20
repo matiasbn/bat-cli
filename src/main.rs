@@ -58,6 +58,20 @@ enum BatCommands {
     Init,
     /// Reload the Bat project files (ideal to resume work from git clone)
     Reload,
+    /// Authorize bat-cli against Miro once, for every project on this machine
+    Login {
+        /// Register the Miro app credentials before authorizing
+        #[arg(long)]
+        setup: bool,
+        /// Show who the stored token belongs to, and its scopes
+        #[arg(long)]
+        status: bool,
+        /// Re-authorize even if a valid token is already stored
+        #[arg(long)]
+        force: bool,
+    },
+    /// Revoke the stored Miro token and forget it
+    Logout,
     /// code-overhaul files management
     #[command(subcommand)]
     CodeOverhaul(CodeOverhaulCommand),
@@ -82,6 +96,21 @@ impl BatCommands {
         match self {
             BatCommands::Init => ProjectCommands::Init.init_bat_project().await,
             BatCommands::Reload => ProjectCommands::Reload.execute_command(),
+            BatCommands::Login {
+                setup,
+                status,
+                force,
+            } => {
+                use crate::batbelt::miro::auth;
+                if *status {
+                    auth::status().await.change_context(CommandError)
+                } else {
+                    auth::login(*setup, *force).await.change_context(CommandError)
+                }
+            }
+            BatCommands::Logout => crate::batbelt::miro::auth::logout()
+                .await
+                .change_context(CommandError),
             BatCommands::CodeOverhaul(command) => command.execute_command().await,
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
             BatCommands::Miro(command) => command.execute_command().await,
@@ -108,6 +137,10 @@ impl BatCommands {
                 return Ok(());
             }
             BatCommands::Reload => {
+                return Ok(());
+            }
+            // Authentication is machine-wide, so it must work outside a project.
+            BatCommands::Login { .. } | BatCommands::Logout => {
                 return Ok(());
             }
             BatCommands::Package(_) => {
@@ -289,7 +322,10 @@ async fn run() -> CommandResult<()> {
     Suggestion::set_report();
     // env_logger selectively
     match cli.command {
-        BatCommands::Package(..) | BatCommands::Init => {
+        BatCommands::Package(..)
+        | BatCommands::Init
+        | BatCommands::Login { .. }
+        | BatCommands::Logout => {
             env_logger::init();
             Ok(())
         }

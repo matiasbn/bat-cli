@@ -134,6 +134,13 @@ impl MiroClient {
         })
     }
 
+    /// Build a client after making sure the globally stored token is still
+    /// valid, refreshing it when the app issues expiring tokens.
+    pub async fn new_refreshed() -> Result<Self, MiroError> {
+        crate::batbelt::miro::auth::refresh_if_needed().await?;
+        Self::new()
+    }
+
     pub fn board_url(&self) -> &str {
         &self.board_url
     }

@@ -8,6 +8,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use serde_json::{self, Value};
 
+pub mod auth;
 pub mod client;
 pub mod connector;
 pub mod frame;
@@ -45,7 +46,13 @@ impl MiroConfig {
         Self::check_miro_enabled()?;
         let bat_config = BatConfig::get_config().change_context(MiroError)?;
         let bat_auditor_config = BatAuditorConfig::get_config().change_context(MiroError)?;
-        let access_token = bat_auditor_config.miro_oauth_access_token;
+        // A per-project token still wins, but an empty one now falls back to the
+        // machine-wide credentials written by `bat-cli login`.
+        let access_token = if bat_auditor_config.miro_oauth_access_token.trim().is_empty() {
+            auth::stored_access_token()
+        } else {
+            bat_auditor_config.miro_oauth_access_token
+        };
         let board_url = bat_config.miro_board_url;
         let board_id = Self::get_miro_board_id(board_url.clone())?;
         Ok(MiroConfig {
@@ -74,11 +81,15 @@ impl MiroConfig {
 
     pub fn check_miro_enabled() -> Result<(), MiroError> {
         let bat_auditor_config = BatAuditorConfig::get_config().unwrap();
-        if bat_auditor_config.miro_oauth_access_token.is_empty() {
-            return Err(Report::new(MiroError)
-                .attach_printable("miro_oauth_access_token is empty in BatAuditor.toml"));
-        };
-        Ok(())
+        if !bat_auditor_config.miro_oauth_access_token.trim().is_empty() {
+            return Ok(());
+        }
+        if !auth::stored_access_token().trim().is_empty() {
+            return Ok(());
+        }
+        Err(Report::new(MiroError)
+            .attach_printable("no Miro token available")
+            .attach_printable("run `bat-cli login`, or set miro_oauth_access_token in BatAuditor.toml"))
     }
 
     pub fn get_frame_url(&self, frame_id: &str) -> String {
