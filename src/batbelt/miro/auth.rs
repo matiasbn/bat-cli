@@ -19,6 +19,7 @@
 //! endpoint that creates teams is Enterprise-only and requires a Company Admin
 //! — so that one step stays manual, and `--setup` links straight to it.
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -41,8 +42,8 @@ const TOKEN_URL: &str = "https://api.miro.com/v1/oauth/token";
 const TOKEN_INFO_URL: &str = "https://api.miro.com/v1/oauth-token";
 const REVOKE_URL: &str = "https://api.miro.com/v2/oauth/revoke";
 
-const CONFY_APP: &str = "bat-cli";
-const CONFY_CONFIG: &str = "miro";
+/// Overrides the whole config directory, mostly for tests and CI.
+const CONFIG_DIR_ENV: &str = "BAT_CLI_CONFIG_DIR";
 
 /// How long we wait for the user to finish authorizing in the browser.
 const AUTHORIZE_TIMEOUT: Duration = Duration::from_secs(300);
@@ -70,38 +71,79 @@ pub struct MiroCredentials {
     pub user_name: String,
 }
 
+/// Directory holding the machine-wide config.
+///
+/// XDG layout on every platform (`~/.config/bat-cli`), which is where CLI users
+/// expect to find it and where a dotfiles repo can pick it up. `confy`'s default
+/// would have been `~/Library/Application Support/rs.bat-cli` on macOS, which is
+/// neither discoverable nor consistent with the rest of the toolchain.
+pub fn config_dir() -> PathBuf {
+    if let Ok(directory) = std::env::var(CONFIG_DIR_ENV) {
+        if !directory.trim().is_empty() {
+            return PathBuf::from(directory);
+        }
+    }
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.trim().is_empty() {
+            return PathBuf::from(xdg).join("bat-cli");
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".config").join("bat-cli")
+}
+
 impl MiroCredentials {
     pub fn load() -> Result<Self, MiroError> {
-        confy::load(CONFY_APP, CONFY_CONFIG)
+        let path = Self::path_buf();
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let content = std::fs::read_to_string(&path)
             .into_report()
             .change_context(MiroError)
-            .attach_printable("cannot read the global Miro credentials")
+            .attach_printable_lazy(|| format!("cannot read {}", path.display()))?;
+        toml::from_str(&content)
+            .into_report()
+            .change_context(MiroError)
+            .attach_printable_lazy(|| format!("cannot parse {}", path.display()))
     }
 
     pub fn save(&self) -> Result<(), MiroError> {
-        confy::store(CONFY_APP, CONFY_CONFIG, self)
+        let path = Self::path_buf();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .into_report()
+                .change_context(MiroError)
+                .attach_printable_lazy(|| format!("cannot create {}", parent.display()))?;
+        }
+        let content = toml::to_string_pretty(self)
+            .into_report()
+            .change_context(MiroError)?;
+        std::fs::write(&path, content)
             .into_report()
             .change_context(MiroError)
-            .attach_printable("cannot write the global Miro credentials")?;
-        self.restrict_permissions();
+            .attach_printable_lazy(|| format!("cannot write {}", path.display()))?;
+        Self::restrict_permissions(&path);
         Ok(())
     }
 
+    pub fn path_buf() -> PathBuf {
+        config_dir().join("miro.toml")
+    }
+
     pub fn path() -> String {
-        confy::get_configuration_file_path(CONFY_APP, CONFY_CONFIG)
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|_| "<unknown>".to_string())
+        Self::path_buf().display().to_string()
     }
 
     /// The file holds a bearer token, so keep it owner-only.
-    fn restrict_permissions(&self) {
+    fn restrict_permissions(path: &Path) {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if let Ok(path) = confy::get_configuration_file_path(CONFY_APP, CONFY_CONFIG) {
-                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-            }
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
         }
+        #[cfg(not(unix))]
+        let _ = path;
     }
 
     fn app_credentials(&self) -> (String, String) {
@@ -346,13 +388,12 @@ fn print_setup_instructions() {
     );
     println!("Miro has no API to create a Developer team, so this part is manual.\n");
     println!(
-        "  1. Create a Developer team if you do not have one:\n     {}",
-        "https://miro.com/app/settings/user-profile/teams".blue()
-    );
-    println!(
-        "  2. Create the app:\n     {}",
+        "  1. Open your apps:\n     {}",
         "https://miro.com/app/settings/user-profile/apps".blue()
     );
+    println!("  2. Click {}. If you have no Developer team yet, Miro asks you", "+ Create new app".bold());
+    println!("     to create one first: tick the terms checkbox and press \"Create team\".");
+    println!("     The app is then assigned to that team automatically.");
     println!(
         "  3. {} \"Expire user authorization token\" — unchecked means the token\n     never expires, which is what a CLI wants.",
         "Leave unchecked".yellow()
@@ -364,7 +405,8 @@ fn print_setup_instructions() {
     );
     println!("  5. Redirect URI for OAuth2.0: paste exactly\n     {}", redirect_uri.green());
     println!("  6. Install the app on the team that {} the boards you audit,", "owns".bold());
-    println!("     otherwise the API answers 404 for those boards.");
+    println!("     which may not be the Developer team. Otherwise the API answers");
+    println!("     404 for those boards.");
     println!(
         "\nThen copy the app's Client ID and Client secret below. They are stored in\n{} and reused by every project, so this is the last copy-paste.\n",
         MiroCredentials::path()
@@ -615,6 +657,72 @@ fn query_params(target: &str) -> Vec<(String, String)> {
 #[cfg(test)]
 mod auth_test {
     use super::*;
+
+    /// Both halves live in one test on purpose: they mutate process-wide
+    /// environment variables, and `cargo test` runs tests in parallel threads.
+    #[test]
+    fn test_config_dir_and_credentials_round_trip() {
+        temp_env(CONFIG_DIR_ENV, Some("/tmp/bat-cli-test"), || {
+            assert_eq!(config_dir(), PathBuf::from("/tmp/bat-cli-test"));
+        });
+        temp_env(CONFIG_DIR_ENV, None, || {
+            temp_env("XDG_CONFIG_HOME", Some("/tmp/xdg"), || {
+                assert_eq!(config_dir(), PathBuf::from("/tmp/xdg/bat-cli"));
+            });
+            // With no XDG override it must land on ~/.config/bat-cli.
+            temp_env("XDG_CONFIG_HOME", None, || {
+                let home = std::env::var("HOME").unwrap();
+                assert_eq!(
+                    config_dir(),
+                    PathBuf::from(home).join(".config").join("bat-cli")
+                );
+            });
+        });
+
+        let directory = std::env::temp_dir().join("bat_cli_credentials_test");
+        let _ = std::fs::remove_dir_all(&directory);
+        temp_env(CONFIG_DIR_ENV, Some(directory.to_str().unwrap()), || {
+            // A missing file must read as empty rather than failing.
+            assert!(MiroCredentials::load().unwrap().access_token.is_empty());
+
+            let credentials = MiroCredentials {
+                client_id: "id".to_string(),
+                access_token: "secret-token".to_string(),
+                ..Default::default()
+            };
+            credentials.save().unwrap();
+
+            let loaded = MiroCredentials::load().unwrap();
+            assert_eq!(loaded.access_token, "secret-token");
+            assert_eq!(loaded.client_id, "id");
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = std::fs::metadata(MiroCredentials::path_buf())
+                    .unwrap()
+                    .permissions()
+                    .mode();
+                assert_eq!(mode & 0o777, 0o600, "the token file must not be readable by others");
+            }
+        });
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The env var tests mutate process state, so they run the body inline and
+    /// restore the previous value afterwards.
+    fn temp_env<F: FnOnce()>(key: &str, value: Option<&str>, body: F) {
+        let previous = std::env::var(key).ok();
+        match value {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+        body();
+        match previous {
+            Some(previous) => std::env::set_var(key, previous),
+            None => std::env::remove_var(key),
+        }
+    }
 
     #[test]
     fn test_query_params_are_decoded() {

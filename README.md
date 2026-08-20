@@ -34,7 +34,11 @@ transparently.
 
 `--setup` walks through creating the Miro app, including the redirect URI to
 register and the `boards:read` / `boards:write` scopes. Creating the Developer
-team itself has no public API, so that step stays manual.
+team itself has no public API, so that step stays manual — Miro offers it
+automatically the first time you create an app.
+
+Credentials live in `~/.config/bat-cli/miro.toml` (`0600`), or in
+`$XDG_CONFIG_HOME/bat-cli`, or wherever `BAT_CLI_CONFIG_DIR` points.
 
 ## What it does
 
