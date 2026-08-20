@@ -1,3 +1,4 @@
+pub mod auto_deploy;
 use colored::Colorize;
 use error_stack::{Report, ResultExt};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};

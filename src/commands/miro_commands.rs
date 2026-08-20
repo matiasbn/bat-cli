@@ -59,6 +59,29 @@ pub enum MiroCommand {
     SourceCodeScreenshots,
     /// Creates screenshot for a function and it dependencies
     FunctionDependencies,
+    /// EVM only: deploys every entry point dependency graph automatically —
+    /// one frame per entry point, screenshots already positioned, and one
+    /// connector per call site anchored to the exact calling line.
+    EvmAutoDeploy {
+        /// Entry point to deploy, as `name` or `Contract.name`
+        #[arg(long)]
+        entry_point: Option<String>,
+        /// Deploy every entry point in the project
+        #[arg(long)]
+        all: bool,
+        /// Stop expanding the call graph past this depth
+        #[arg(long, default_value_t = 4)]
+        max_depth: usize,
+        /// Cap on screenshots per frame
+        #[arg(long, default_value_t = 60)]
+        max_nodes: usize,
+        /// Print the computed layout without sending anything to Miro
+        #[arg(long)]
+        dry_run: bool,
+        /// Include contracts coming from lib/
+        #[arg(long)]
+        include_external: bool,
+    },
 }
 
 impl BatEnumerator for MiroCommand {}
@@ -79,7 +102,11 @@ impl BatCommandEnumerator for MiroCommand {
 
 impl MiroCommand {
     pub async fn execute_command(&self) -> Result<(), CommandError> {
-        MiroConfig::check_miro_enabled().change_context(CommandError)?;
+        // `--dry-run` computes the layout offline, so it must work without a token.
+        let needs_miro = !matches!(self, MiroCommand::EvmAutoDeploy { dry_run: true, .. });
+        if needs_miro {
+            MiroConfig::check_miro_enabled().change_context(CommandError)?;
+        }
         match self {
             MiroCommand::CodeOverhaulFrames => self.deploy_co_frames().await,
             MiroCommand::CodeOverhaulScreenshots { entry_point_name } => {
@@ -88,6 +115,25 @@ impl MiroCommand {
             MiroCommand::EntrypointScreenshots => self.entrypoint_screenshots().await,
             MiroCommand::SourceCodeScreenshots => self.source_code_screenshots().await,
             MiroCommand::FunctionDependencies => self.function_dependencies().await,
+            MiroCommand::EvmAutoDeploy {
+                entry_point,
+                all,
+                max_depth,
+                max_nodes,
+                dry_run,
+                include_external,
+            } => crate::batbelt::evm::miro::auto_deploy::run(
+                crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
+                    entry_point: entry_point.clone(),
+                    all: *all,
+                    max_depth: *max_depth,
+                    max_nodes: *max_nodes,
+                    dry_run: *dry_run,
+                    include_external: *include_external,
+                },
+            )
+            .await
+            .change_context(CommandError),
         }
     }
 

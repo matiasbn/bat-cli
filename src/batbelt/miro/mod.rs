@@ -8,9 +8,11 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use serde_json::{self, Value};
 
+pub mod client;
 pub mod connector;
 pub mod frame;
 pub mod image;
+pub mod layout;
 pub mod item;
 pub mod shape;
 pub mod sticky_note;
