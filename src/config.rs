@@ -706,6 +706,21 @@ impl BatConfig {
     }
 
     pub fn get_config() -> Result<Self, BatConfigError> {
+        // Say plainly that this is not a bat project. Without this the failure
+        // surfaces as "Error canonicalization path: Bat.toml", which does not
+        // tell the user what to do about it.
+        if !Path::new("Bat.toml").exists() {
+            let working_directory = std::env::current_dir()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|_| ".".to_string());
+            return Err(Report::new(BatConfigError)
+                .attach_printable(format!("no Bat.toml in {working_directory}"))
+                .attach(crate::Suggestion(
+                    "cd into an audit project (the directory containing Bat.toml, or its \
+                     parent containing bat-audit/), or run `bat-cli init` to create one"
+                        .to_string(),
+                )));
+        }
         let path = BatFile::BatToml
             .get_path(true)
             .change_context(BatConfigError)?;
