@@ -56,8 +56,7 @@ impl ProjectCommands {
             return Self::reload_bat_project();
         }
 
-        let bat_config = BatConfig::new_with_prompt().change_context(CommandError)?;
-        println!("Detected a {:?} project", bat_config.project_type);
+        BatConfig::new_with_prompt().change_context(CommandError)?;
 
         TemplateGenerator
             .create_workspace_folders()
@@ -72,9 +71,15 @@ impl ProjectCommands {
         println!("\nScanning the source code...");
         SonarCommand::Run.execute_command()?;
 
+        let board_url = BatConfig::get_config()
+            .change_context(CommandError)?
+            .miro_board_url;
+        println!("\n{} project ready.", "✓".green());
+        if !board_url.trim().is_empty() {
+            println!("  board: {}", board_url.blue());
+        }
         println!(
-            "\n{} project ready. Run {} to deploy an entry point to Miro.",
-            "✓".green(),
+            "  run {} to deploy an entry point",
             "bat-cli deploy".yellow()
         );
         Ok(())
@@ -142,7 +147,7 @@ impl ProjectCommands {
                     .change_context(CommandError)?;
             match MiroConfig::create_board(token, board_name.trim()).await {
                 Ok((name, url)) => {
-                    println!("{} created board \"{}\"", "✓".green(), name);
+                    println!("{} created board \"{}\"\n  {}", "✓".green(), name, url.blue());
                     return Ok(url);
                 }
                 Err(report) => {
