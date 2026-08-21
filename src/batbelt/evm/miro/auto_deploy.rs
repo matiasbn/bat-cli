@@ -593,7 +593,6 @@ async fn deploy_one(
             continue;
         };
 
-        let source_line = caller.start_line + edge.line_in_slice - 1;
         pending.push(PendingConnector {
             marker_x: caller_placed.x - caller_placed.width / 2.0
                 + caller_placed.width * start_anchor.x_fraction,
@@ -622,7 +621,11 @@ async fn deploy_one(
                 stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
                 stroke_width: options.stroke_width.to_string(),
                 dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
-                caption: Some(format!("<p>L{source_line}</p>")),
+                // No caption. It carried the line number back when the arrow
+                // could only reach the border of a screenshot; now the head
+                // lands on the calling line itself, so the label repeats what
+                // the picture already says.
+                caption: None,
                 arrow: ArrowEnd::Start,
             },
         });
