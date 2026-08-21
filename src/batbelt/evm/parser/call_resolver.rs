@@ -790,3 +790,48 @@ mod body_only_test {
         assert!(!names.contains(&"f"), "got {names:?}");
     }
 }
+
+#[cfg(test)]
+mod ast_path_test {
+    use super::*;
+
+    /// Source where the two extractors must disagree.
+    ///
+    /// The regex fallback scans text, so it reads `ghost()` inside a block
+    /// comment and `phantom()` inside a string literal as calls, and it takes
+    /// `returns (` for a call to `returns`. The AST sees none of them. Asserting
+    /// their absence is therefore an assertion that the AST path ran.
+    const TRICKY: &str = r#"{
+        /* ghost(); */
+        string memory note = "phantom()";
+        uint256 value = real(1);
+    }"#;
+
+    #[test]
+    fn test_dependency_scan_uses_the_ast() {
+        let names = extract_calls_from_source(TRICKY);
+        assert!(names.contains(&"real".to_string()), "got {names:?}");
+        assert!(!names.contains(&"ghost".to_string()), "comment read as a call: {names:?}");
+        assert!(!names.contains(&"phantom".to_string()), "string read as a call: {names:?}");
+    }
+
+    #[test]
+    fn test_call_sites_use_the_ast() {
+        let sites = extract_call_sites_from_source(TRICKY);
+        let names: Vec<&str> = sites.iter().map(|site| site.name.as_str()).collect();
+        assert!(names.contains(&"real"), "got {names:?}");
+        assert!(!names.contains(&"ghost"), "comment read as a call: {names:?}");
+        assert!(!names.contains(&"phantom"), "string read as a call: {names:?}");
+    }
+
+    /// What the fallback would produce, kept as the contrast: if this ever
+    /// matches the AST output, the probe above has stopped proving anything.
+    #[test]
+    fn test_the_fallback_really_is_fooled() {
+        let names = extract_calls_regex(TRICKY);
+        assert!(
+            names.contains(&"ghost".to_string()) || names.contains(&"phantom".to_string()),
+            "the regex fallback no longer differs from the AST: {names:?}"
+        );
+    }
+}
