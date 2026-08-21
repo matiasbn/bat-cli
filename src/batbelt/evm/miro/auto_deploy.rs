@@ -994,6 +994,7 @@ fn build_graph(
         }
     }
 
+    split_shared_leaves(&mut nodes, &mut edges);
     Ok((nodes, edges, truncated))
 }
 
@@ -1569,5 +1570,145 @@ mod facing_anchor_test {
         let from_b = facing_anchor(b, a);
         assert_eq!((from_a.x_fraction, from_a.y_fraction), (0.5, 1.0));
         assert_eq!((from_b.x_fraction, from_b.y_fraction), (0.5, 0.0));
+    }
+}
+
+/// Give every caller of a shared leaf its own copy of it.
+///
+/// Sharing a node keeps the diagram small, but a node shared by callers sitting
+/// on different layers is what produces the long edges: layering puts it after
+/// its deepest caller, so the arrows from the shallower ones have to cross every
+/// column in between. In `Vault.depositWithReferral`, `MathLib.mulDiv` alone
+/// accounts for three of the five such edges.
+///
+/// A leaf is the one case where splitting is nearly free: it carries no subtree,
+/// so a copy costs exactly one screenshot, and the copy lands on the layer right
+/// after its caller, which turns a layer-spanning edge into an adjacent one by
+/// construction.
+///
+/// Both conditions are counted off the edge list — out-degree zero, in-degree
+/// above one — with no notion of what the function does. "Leaf" here means leaf
+/// *as drawn*: a node can have no outgoing edges because it genuinely calls
+/// nothing, because a call could not be resolved, or because its callee lives in
+/// `lib/` and was excluded. For laying out the picture those are the same thing,
+/// since what matters is that the node has nothing hanging off it.
+fn split_shared_leaves(nodes: &mut Vec<GraphNode>, edges: &mut [GraphEdge]) {
+    let mut outgoing: HashMap<&str, usize> = HashMap::new();
+    let mut incoming: HashMap<&str, usize> = HashMap::new();
+    for edge in edges.iter() {
+        *outgoing.entry(edge.from.as_str()).or_insert(0) += 1;
+        *incoming.entry(edge.to.as_str()).or_insert(0) += 1;
+    }
+
+    let shared_leaves: HashSet<String> = nodes
+        .iter()
+        .filter(|node| {
+            outgoing.get(node.id.as_str()).copied().unwrap_or(0) == 0
+                && incoming.get(node.id.as_str()).copied().unwrap_or(0) > 1
+        })
+        .map(|node| node.id.clone())
+        .collect();
+    if shared_leaves.is_empty() {
+        return;
+    }
+
+    let template: HashMap<String, GraphNode> = nodes
+        .iter()
+        .filter(|node| shared_leaves.contains(&node.id))
+        .map(|node| (node.id.clone(), node.clone()))
+        .collect();
+
+    // The first caller keeps the original node; the rest get copies.
+    let mut used: HashSet<String> = HashSet::new();
+    let mut copies: Vec<GraphNode> = Vec::new();
+    for edge in edges.iter_mut() {
+        if !shared_leaves.contains(&edge.to) {
+            continue;
+        }
+        if used.insert(edge.to.clone()) {
+            continue;
+        }
+        let Some(original) = template.get(&edge.to) else {
+            continue;
+        };
+        let copy_id = format!("{}#{}", edge.to, copies.len());
+        let mut copy = original.clone();
+        copy.id = copy_id.clone();
+        copies.push(copy);
+        edge.to = copy_id;
+    }
+
+    nodes.extend(copies);
+}
+
+#[cfg(test)]
+mod split_shared_leaves_test {
+    use super::*;
+
+    fn node(id: &str) -> GraphNode {
+        GraphNode {
+            id: id.to_string(),
+            label: id.to_string(),
+            file_path: String::new(),
+            start_line: 1,
+            end_line: 2,
+            depth: 0,
+            font_size: 22,
+            png_path: String::new(),
+            png_width: 0,
+            png_height: 0,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+        }
+    }
+
+    fn edge(from: &str, to: &str) -> GraphEdge {
+        GraphEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            line_in_slice: 1,
+            column: 0,
+            symbol: to.to_string(),
+        }
+    }
+
+    /// The rule is arithmetic on the edge list: out-degree zero, in-degree above
+    /// one. Nothing about it knows what a function does.
+    #[test]
+    fn test_a_leaf_with_several_callers_is_split() {
+        let mut nodes = vec![node("a"), node("b"), node("leaf")];
+        let mut edges = vec![edge("a", "leaf"), edge("b", "leaf")];
+
+        split_shared_leaves(&mut nodes, &mut edges);
+
+        assert_eq!(nodes.len(), 4, "the leaf should have gained a copy");
+        assert_ne!(edges[0].to, edges[1].to, "each caller gets its own");
+        assert_eq!(edges[0].to, "leaf", "the first caller keeps the original");
+    }
+
+    /// A node with children carries a subtree, so a copy is not cheap and the
+    /// rule leaves it alone.
+    #[test]
+    fn test_a_shared_node_with_children_is_left_shared() {
+        let mut nodes = vec![node("a"), node("b"), node("mid"), node("deep")];
+        let mut edges = vec![edge("a", "mid"), edge("b", "mid"), edge("mid", "deep")];
+
+        split_shared_leaves(&mut nodes, &mut edges);
+
+        assert_eq!(nodes.len(), 4, "nothing should have been copied");
+        assert_eq!(edges[0].to, "mid");
+        assert_eq!(edges[1].to, "mid");
+    }
+
+    /// One caller means nothing to gain: a copy would be the same picture.
+    #[test]
+    fn test_a_leaf_with_one_caller_is_untouched() {
+        let mut nodes = vec![node("a"), node("leaf")];
+        let mut edges = vec![edge("a", "leaf")];
+
+        split_shared_leaves(&mut nodes, &mut edges);
+
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(edges[0].to, "leaf");
     }
 }
