@@ -15,6 +15,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::batbelt::evm::metadata::bat_metadata::{
     AutoDeployedFrame, ContractMetadata, EvmBatMetadata, FunctionMetadata, ShelfState,
@@ -47,6 +48,23 @@ const REGION_MARGIN: f64 = 5_000.0;
 /// Small enough that the arrow head reads as landing on the token itself.
 const ANCHOR_MARKER_SIZE: f64 = 24.0;
 
+/// A bar that shows what is happening and how far along it is.
+///
+/// Rendering and uploading are both long enough to look like a hang without
+/// one: a deployment can render dozens of screenshots and then make a hundred
+/// API calls, and the previous output went silent for the whole of each phase.
+fn phase_bar(label: &str, total: usize) -> ProgressBar {
+    let bar = ProgressBar::new(total as u64);
+    bar.set_style(
+        ProgressStyle::with_template("  {spinner:.blue} {msg} {pos}/{len} {wide_bar:.blue}")
+            .unwrap()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
+    );
+    bar.set_message(label.to_string());
+    bar.enable_steady_tick(std::time::Duration::from_millis(100));
+    bar
+}
+
 /// Connector colors, cycled per depth so sibling levels stay distinguishable.
 const DEPTH_COLORS: &[&str] = &[
     "#2d9bf0", "#f24726", "#8fd14f", "#fac710", "#a259ff", "#12cdd4", "#ff8c00", "#e6007a",
@@ -58,10 +76,12 @@ pub struct AutoDeployOptions {
     pub entry_point: Option<String>,
     /// Deploy every entry point in the project.
     pub all: bool,
-    /// Stop expanding the call graph past this depth.
-    pub max_depth: usize,
-    /// Hard cap on the number of screenshots per frame.
-    pub max_nodes: usize,
+    /// Optional depth limit. Unset follows the tree until it ends, which it
+    /// does on its own: recursion is cut per path and the leaves are functions
+    /// that call nothing.
+    pub max_depth: Option<usize>,
+    /// Optional cap on screenshots per frame. Unset means draw the whole tree.
+    pub max_nodes: Option<usize>,
     /// Compute and print the layout without touching Miro.
     pub dry_run: bool,
     /// Include contracts coming from `lib/`.
@@ -80,8 +100,8 @@ impl Default for AutoDeployOptions {
         Self {
             entry_point: None,
             all: false,
-            max_depth: 4,
-            max_nodes: 60,
+            max_depth: None,
+            max_nodes: None,
             dry_run: false,
             include_external: false,
             replace: false,
@@ -348,15 +368,22 @@ async fn deploy_one(
         println!("  no function metadata found, skipping");
         return Ok(());
     }
+    let depth = nodes.iter().map(|node| node.depth).max().unwrap_or(0);
+    println!(
+        "  {} screenshots, {} connectors, {} levels deep",
+        nodes.len().to_string().green(),
+        edges.len().to_string().green(),
+        (depth + 1).to_string().green()
+    );
     if truncated > 0 {
         println!(
-            "  {} {} node(s) not expanded (max-depth {} / max-nodes {})",
+            "  {} {} call site(s) left out by --max-nodes {}",
             "note:".yellow(),
             truncated,
-            options.max_depth,
-            options.max_nodes
+            options.max_nodes.unwrap_or_default()
         );
     }
+
 
     render_and_measure(&mut nodes)?;
 
@@ -429,106 +456,11 @@ async fn deploy_one(
         frame_y.round()
     );
 
-    // Images, already positioned and parented — one call each, no follow-up PATCH.
-    let mut image_ids: HashMap<String, String> = HashMap::new();
-    for node in &nodes {
-        let placed = match layout.node(&node.id) {
-            Some(placed) => placed,
-            None => continue,
-        };
-        let image_id = client
-            .create_image_in_frame(
-                &node.png_path,
-                &frame_id,
-                &node.label,
-                placed.x,
-                placed.y,
-                placed.width,
-            )
-            .await
-            .change_context(EvmMiroError)?;
-        println!("    {} {}", "✓".green(), node.label);
-        image_ids.insert(node.id.clone(), image_id);
-    }
-
-    // Connectors, one per call site. Each starts on an invisible marker sitting
-    // on the called token, because Miro clips a connector at the boundary of the
-    // item it attaches to: anchoring inside the screenshot itself would push the
-    // arrow head out to the screenshot's border.
-    let back_edges: HashSet<(String, String)> = layout.back_edges.iter().cloned().collect();
-    let mut connector_ids = Vec::new();
-    let mut marker_ids = Vec::new();
-    for (edge, start_anchor) in edges.iter().zip(anchors.iter()) {
-        let (Some(start_id), Some(end_id)) =
-            (image_ids.get(&edge.from), image_ids.get(&edge.to))
-        else {
-            continue;
-        };
-        let caller = match by_id.get(edge.from.as_str()) {
-            Some(node) => *node,
-            None => continue,
-        };
-        let callee = match by_id.get(edge.to.as_str()) {
-            Some(node) => *node,
-            None => continue,
-        };
-
-        let end_anchor = RelativeAnchor::new(
-            0.0,
-            silicon::line_geometry(Some(callee.font_size))
-                .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height),
-        );
-
-        let Some(caller_placed) = layout.node(&edge.from) else {
-            continue;
-        };
-        let marker_id = client
-            .create_anchor_marker(
-                &frame_id,
-                caller_placed.x - caller_placed.width / 2.0
-                    + caller_placed.width * start_anchor.x_fraction,
-                caller_placed.y - caller_placed.height / 2.0
-                    + caller_placed.height * start_anchor.y_fraction,
-                ANCHOR_MARKER_SIZE,
-            )
-            .await
-            .change_context(EvmMiroError)?;
-        marker_ids.push(marker_id.clone());
-
-        let source_line = caller.start_line + edge.line_in_slice - 1;
-        let style = ConnectorStyle {
-            stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
-            stroke_width: options.stroke_width.to_string(),
-            dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
-            caption: Some(format!("<p>L{source_line}</p>")),
-            arrow_at_start: true,
-        };
-
-        let _ = start_id;
-        let connector_id = client
-            .create_connector(
-                &marker_id,
-                // Centre, so Miro routes into the marker from above and the
-                // connector keeps its elbowed look. The head then points down
-                // at the token: its tip is exact, but its body is roughly as
-                // long as a line is tall at this stroke width, so it reads as
-                // sitting slightly high. Anchoring on the right edge would lay
-                // the head along the line instead, at the cost of a straight
-                // horizontal run into the token, which reads worse.
-                // `--stroke-width` shrinks the head if the offset matters more.
-                RelativeAnchor::new(0.5, 0.5),
-                end_id,
-                end_anchor,
-                style,
-            )
-            .await
-            .change_context(EvmMiroError)?;
-        connector_ids.push(connector_id);
-    }
-    println!("    {} {} connector(s)", "✓".green(), connector_ids.len());
-
+    // Record the frame before filling it. If the run dies partway through, the
+    // frame is still registered and `--replace` can clean it up; recording only
+    // on success would leave an orphan nothing knows about.
     let frame_url = client.frame_url(&frame_id);
-    let record = AutoDeployedFrame {
+    let mut record = AutoDeployedFrame {
         entry_point: title.clone(),
         frame_id: frame_id.clone(),
         frame_url: frame_url.clone(),
@@ -536,19 +468,178 @@ async fn deploy_one(
         y: frame_y,
         width: layout.frame_width,
         height: layout.frame_height,
-        images: image_ids.into_iter().collect(),
-        connector_ids,
-        marker_ids,
+        images: Vec::new(),
+        connector_ids: Vec::new(),
+        marker_ids: Vec::new(),
     };
-    EvmBatMetadata::update_metadata(|m| {
-        m.miro.auto.frames.retain(|f| f.entry_point != record.entry_point);
-        m.miro.auto.frames.push(record.clone());
-    })
-    .change_context(EvmMiroError)?;
+    save_frame_record(&record)?;
+
+    // Images, already positioned and parented — one call each, no follow-up
+    // PATCH. They are independent of each other, so they go up concurrently;
+    // the client's semaphore and credit budget are what actually bound the rate.
+    let uploads: Vec<_> = nodes
+        .iter()
+        .filter_map(|node| layout.node(&node.id).map(|placed| (node, placed)))
+        .collect();
+    let bar = phase_bar("uploading screenshots", uploads.len());
+    let mut upload_tasks = tokio::task::JoinSet::new();
+    for (node, placed) in uploads {
+        let client = client.clone();
+        let frame_id = frame_id.clone();
+        let node_id = node.id.clone();
+        let png_path = node.png_path.clone();
+        let label = node.label.clone();
+        let (x, y, width) = (placed.x, placed.y, placed.width);
+        let bar = bar.clone();
+        upload_tasks.spawn(async move {
+            let result = client
+                .create_image_in_frame(&png_path, &frame_id, &label, x, y, width)
+                .await;
+            bar.inc(1);
+            result.map(|image_id| (node_id, image_id))
+        });
+    }
+
+    let mut image_ids: HashMap<String, String> = HashMap::new();
+    while let Some(joined) = upload_tasks.join_next().await {
+        let (node_id, image_id) = joined
+            .into_report()
+            .change_context(EvmMiroError)?
+            .change_context(EvmMiroError)?;
+        image_ids.insert(node_id, image_id);
+    }
+    bar.finish_and_clear();
+    println!("    {} {} screenshots uploaded", "✓".green(), image_ids.len());
+
+    // Connectors, one per call site. Each starts on an invisible marker sitting
+    // on the called token, because Miro clips a connector at the boundary of the
+    // item it attaches to: anchoring inside the screenshot itself would push the
+    // arrow head out to the screenshot's border.
+    let back_edges: HashSet<(String, String)> = layout.back_edges.iter().cloned().collect();
+
+    // Each call site needs a marker and then a connector attached to it. The
+    // two are ordered within a call site but independent across them, so each
+    // pair runs as one task.
+    struct PendingConnector {
+        marker_x: f64,
+        marker_y: f64,
+        start_id: String,
+        end_id: String,
+        end_anchor: RelativeAnchor,
+        style: ConnectorStyle,
+    }
+
+    let mut pending = Vec::new();
+    for (edge, start_anchor) in edges.iter().zip(anchors.iter()) {
+        let (Some(start_id), Some(end_id)) = (image_ids.get(&edge.from), image_ids.get(&edge.to))
+        else {
+            continue;
+        };
+        let (Some(caller), Some(callee)) = (
+            by_id.get(edge.from.as_str()),
+            by_id.get(edge.to.as_str()),
+        ) else {
+            continue;
+        };
+        let Some(caller_placed) = layout.node(&edge.from) else {
+            continue;
+        };
+
+        let source_line = caller.start_line + edge.line_in_slice - 1;
+        pending.push(PendingConnector {
+            marker_x: caller_placed.x - caller_placed.width / 2.0
+                + caller_placed.width * start_anchor.x_fraction,
+            marker_y: caller_placed.y - caller_placed.height / 2.0
+                + caller_placed.height * start_anchor.y_fraction,
+            start_id: start_id.clone(),
+            end_id: end_id.clone(),
+            end_anchor: RelativeAnchor::new(
+                0.0,
+                silicon::line_geometry(Some(callee.font_size))
+                    .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height),
+            ),
+            style: ConnectorStyle {
+                stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
+                stroke_width: options.stroke_width.to_string(),
+                dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
+                caption: Some(format!("<p>L{source_line}</p>")),
+                arrow_at_start: true,
+            },
+        });
+    }
+
+    let bar = phase_bar("drawing connectors", pending.len());
+    let mut connector_tasks = tokio::task::JoinSet::new();
+    for item in pending {
+        let client = client.clone();
+        let frame_id = frame_id.clone();
+        let bar = bar.clone();
+        connector_tasks.spawn(async move {
+            let marker_id = client
+                .create_anchor_marker(
+                    &frame_id,
+                    item.marker_x,
+                    item.marker_y,
+                    ANCHOR_MARKER_SIZE,
+                )
+                .await?;
+            let _ = item.start_id;
+            let connector_id = client
+                .create_connector(
+                    &marker_id,
+                    // Centre, so Miro routes into the marker from above and the
+                    // connector keeps its elbowed look. The head then points
+                    // down at the token: its tip is exact, but its body is
+                    // roughly as long as a line is tall at this stroke width,
+                    // so it reads as sitting slightly high. `--stroke-width`
+                    // shrinks the head if the offset matters more.
+                    RelativeAnchor::new(0.5, 0.5),
+                    &item.end_id,
+                    item.end_anchor,
+                    item.style,
+                )
+                .await?;
+            bar.inc(1);
+            Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((marker_id, connector_id))
+        });
+    }
+
+    let mut connector_ids = Vec::new();
+    let mut marker_ids = Vec::new();
+    while let Some(joined) = connector_tasks.join_next().await {
+        let (marker_id, connector_id) = joined
+            .into_report()
+            .change_context(EvmMiroError)?
+            .change_context(EvmMiroError)?;
+        marker_ids.push(marker_id);
+        connector_ids.push(connector_id);
+    }
+    bar.finish_and_clear();
+    println!("    {} {} connector(s)", "✓".green(), connector_ids.len());
+
+    record.images = image_ids.into_iter().collect();
+    record.connector_ids = connector_ids;
+    record.marker_ids = marker_ids;
+    save_frame_record(&record)?;
 
     println!("  {}", frame_url.blue());
     cleanup(&nodes);
     Ok(())
+}
+
+/// Store what a deployment owns, replacing any earlier record for the same
+/// entry point.
+fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
+    let record = record.clone();
+    EvmBatMetadata::update_metadata(move |metadata| {
+        metadata
+            .miro
+            .auto
+            .frames
+            .retain(|frame| frame.entry_point != record.entry_point);
+        metadata.miro.auto.frames.push(record.clone());
+    })
+    .change_context(EvmMiroError)
 }
 
 /// Delete the frame, images and connectors left by an earlier run, so iterating
@@ -711,6 +802,16 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
 }
 
 /// BFS over the call graph, keeping every call site with its line.
+/// Walk the call graph from an entry point, producing a **tree**.
+///
+/// A function called from three places gets three screenshots, not one shared
+/// node with three arrows coming into it. Sharing makes the picture smaller but
+/// unreadable: the shared node has to sit somewhere, so its incoming arrows
+/// come from several layers at once and cross everything in between. A tree
+/// costs more screenshots and reads at a glance.
+///
+/// Recursion is cut per path rather than globally: a callee already present in
+/// the current chain of callers is drawn once and not expanded again.
 fn build_graph(
     metadata: &EvmBatMetadata,
     contract_name: &str,
@@ -726,11 +827,9 @@ fn build_graph(
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
     let mut truncated = 0usize;
 
-    let root_id = node_id(contract_name, function_name);
-    seen.insert(root_id.clone());
+    let root_id = instance_id(&mut nodes, contract_name, function_name);
     nodes.push(make_node(
         root_id.clone(),
         format!("{contract_name}.{function_name}"),
@@ -739,66 +838,83 @@ fn build_graph(
         0,
     ));
 
-    let mut queue: VecDeque<(String, String, String, usize)> = VecDeque::new();
-    queue.push_back((
-        root_id,
-        contract_name.to_string(),
-        function_name.to_string(),
-        0,
-    ));
+    // Depth-first, so siblings stay in source order and each subtree is built
+    // before the next one starts — which is the order the layout wants.
+    struct Pending {
+        node_id: String,
+        contract: String,
+        function: String,
+        depth: usize,
+        /// Callers above this node, to cut recursion without deduping globally.
+        ancestors: Vec<String>,
+    }
 
-    while let Some((caller_id, caller_contract, caller_function, depth)) = queue.pop_front() {
-        if depth >= options.max_depth {
+    let mut stack = vec![Pending {
+        node_id: root_id,
+        contract: contract_name.to_string(),
+        function: function_name.to_string(),
+        depth: 0,
+        ancestors: vec![node_key(contract_name, function_name)],
+    }];
+
+    while let Some(current) = stack.pop() {
+        if options.max_depth.is_some_and(|limit| current.depth >= limit) {
             continue;
         }
-        let Some(contract) = metadata.get_contract_by_name(&caller_contract) else {
+        let Some(contract) = metadata.get_contract_by_name(&current.contract) else {
             continue;
         };
-        let Some(function) = find_function(metadata, &caller_contract, &caller_function) else {
+        let Some(function) = find_function(metadata, &current.contract, &current.function) else {
             continue;
         };
-        let slice = read_slice(&contract.file_path, function.line, function_end(&function, contract));
+        let slice = read_slice(
+            &contract.file_path,
+            function.line,
+            function_end(&function, contract),
+        );
 
-        // Modifiers count as dependencies; their call site is the signature line
-        // where the modifier name appears.
+        let mut children: Vec<Pending> = Vec::new();
+
+        // Modifiers count as dependencies; their call site is the line of the
+        // signature where the modifier name appears.
         for modifier_name in &function.modifiers {
-            if let Some((owner, definition)) = find_modifier(metadata, &caller_contract, modifier_name)
-            {
-                let target_id = format!("modifier:{}::{}", owner.name, definition.name);
-                let line_in_slice = slice
-                    .iter()
-                    .position(|line| line.contains(modifier_name))
-                    .map(|index| index + 1)
-                    .unwrap_or(1);
-                edges.push(GraphEdge {
-                    from: caller_id.clone(),
-                    to: target_id.clone(),
-                    line_in_slice,
-                    column: slice
-                        .get(line_in_slice - 1)
-                        .and_then(|line| line.find(modifier_name.as_str()))
-                        .unwrap_or(0),
-                    symbol: modifier_name.clone(),
-                });
-                if seen.insert(target_id.clone()) {
-                    if nodes.len() >= options.max_nodes {
-                        truncated += 1;
-                        continue;
-                    }
-                    nodes.push(make_modifier_node(
-                        target_id,
-                        owner,
-                        definition.name.clone(),
-                        definition.line,
-                        if definition.end_line > 0 {
-                            definition.end_line
-                        } else {
-                            definition.line + 6
-                        },
-                        depth + 1,
-                    ));
-                }
+            let Some((owner, definition)) =
+                find_modifier(metadata, &current.contract, modifier_name)
+            else {
+                continue;
+            };
+            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
+                truncated += 1;
+                continue;
             }
+            let line_in_slice = slice
+                .iter()
+                .position(|line| line.contains(modifier_name))
+                .map(|index| index + 1)
+                .unwrap_or(1);
+            let target_id = instance_id(&mut nodes, &owner.name, &definition.name);
+            edges.push(GraphEdge {
+                from: current.node_id.clone(),
+                to: target_id.clone(),
+                line_in_slice,
+                column: slice
+                    .get(line_in_slice - 1)
+                    .and_then(|line| line.find(modifier_name.as_str()))
+                    .unwrap_or(0),
+                symbol: modifier_name.clone(),
+            });
+            nodes.push(make_modifier_node(
+                target_id,
+                owner,
+                definition.name.clone(),
+                definition.line,
+                if definition.end_line > 0 {
+                    definition.end_line
+                } else {
+                    definition.line + 6
+                },
+                current.depth + 1,
+            ));
         }
 
         for call in extract_call_sites_from_source(&slice.join("\n")) {
@@ -807,45 +923,60 @@ fn build_graph(
             else {
                 continue;
             };
-            if target_contract.name == caller_contract && target_function.name == caller_function {
-                continue; // direct recursion on itself, nothing to draw
+            let key = node_key(&target_contract.name, &target_function.name);
+            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
+                truncated += 1;
+                continue;
             }
-            let target_id = node_id(&target_contract.name, &target_function.name);
+
+            let target_id = instance_id(&mut nodes, &target_contract.name, &target_function.name);
             edges.push(GraphEdge {
-                from: caller_id.clone(),
+                from: current.node_id.clone(),
                 to: target_id.clone(),
                 line_in_slice: call.line,
                 column: call.column,
                 symbol: call.symbol.clone(),
             });
+            nodes.push(make_node(
+                target_id.clone(),
+                format!("{}.{}", target_contract.name, target_function.name),
+                target_contract,
+                &target_function,
+                current.depth + 1,
+            ));
 
-            if seen.insert(target_id.clone()) {
-                if nodes.len() >= options.max_nodes {
-                    truncated += 1;
-                    continue;
-                }
-                nodes.push(make_node(
-                    target_id.clone(),
-                    format!("{}.{}", target_contract.name, target_function.name),
-                    target_contract,
-                    &target_function,
-                    depth + 1,
-                ));
-                queue.push_back((
-                    target_id,
-                    target_contract.name.clone(),
-                    target_function.name.clone(),
-                    depth + 1,
-                ));
+            // Already somewhere above us: draw it, do not descend into it again.
+            if current.ancestors.contains(&key) {
+                continue;
             }
+            let mut ancestors = current.ancestors.clone();
+            ancestors.push(key);
+            children.push(Pending {
+                node_id: target_id,
+                contract: target_contract.name.clone(),
+                function: target_function.name.clone(),
+                depth: current.depth + 1,
+                ancestors,
+            });
+        }
+
+        // Reversed, because popping a stack undoes the order.
+        for child in children.into_iter().rev() {
+            stack.push(child);
         }
     }
 
-    // Drop edges pointing at nodes that were cut by the caps.
-    let known: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
-    edges.retain(|edge| known.contains(edge.from.as_str()) && known.contains(edge.to.as_str()));
-
     Ok((nodes, edges, truncated))
+}
+
+/// Identity of a function, used to detect recursion along a path.
+fn node_key(contract: &str, function: &str) -> String {
+    format!("{contract}::{function}")
+}
+
+/// A unique id per *occurrence*, since the same function can appear many times.
+fn instance_id(nodes: &[GraphNode], contract: &str, function: &str) -> String {
+    format!("{}#{}", node_key(contract, function), nodes.len())
 }
 
 fn node_id(contract: &str, function: &str) -> String {
@@ -1072,11 +1203,13 @@ fn read_slice(file_path: &str, start_line: usize, end_line: usize) -> Vec<String
 
 /// Render every node and read back its pixel size, without uploading anything.
 fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
-    let destination = BatFolder::AuditorFigures
+    let destination = BatFolder::Figures
         .get_path(true)
         .change_context(EvmMiroError)?;
 
+    let bar = phase_bar("rendering screenshots", nodes.len());
     for node in nodes.iter_mut() {
+        bar.inc(1);
         let code = read_slice(&node.file_path, node.start_line, node.end_line);
         if code.is_empty() {
             continue;
@@ -1120,6 +1253,8 @@ fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
         node.png_height = height;
         node.rendered_lines = rendered;
     }
+    bar.finish_and_clear();
+    println!("    {} {} screenshots rendered", "✓".green(), nodes.len());
     Ok(())
 }
 

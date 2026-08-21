@@ -16,15 +16,9 @@ The dev profile uses `lto = true` and `codegen-units = 1`; builds are expensive.
 
 Running the CLI against a real project: the binary must be executed from inside the audited project's audit workspace (or a directory whose child `bat-audit/` holds `Bat.toml` — `auto_detect_bat_audit_dir()` in `src/main.rs` will `cd` into it). Test projects are kept in a gitignored `test-workspace/` and driven via each project's `package.json` scripts (`cargo run --manifest-path ../../Cargo.toml -- init`); see `PACKAGE.md` for the template.
 
-Release/format go through the CLI itself (dev-only subcommands, gated on `#[cfg(debug_assertions)]`):
-
-```bash
-cargo run package format    # clippy --fix + cargo fix + fmt + commit
-cargo run package release   # bump version, git flow release, tag, cargo publish, cargo install
-```
-
-When cutting a release by hand (git-flow: branch off `develop`, bump `Cargo.toml`,
-`git flow release finish`, push `main`/`develop`/tags), always finish with **both** of these:
+Releases are cut by hand with git-flow; the CLI no longer carries its own release
+tooling (branch off `develop`, bump `Cargo.toml`,
+`git flow release finish`, push `main`/`develop`/tags). Always finish with **both** of these:
 
 ```bash
 cargo publish                              # run this in a background agent, it takes minutes

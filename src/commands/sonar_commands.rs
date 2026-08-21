@@ -1,10 +1,9 @@
-use crate::batbelt::metadata::{BatMetadata, BatMetadataCommit};
+use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::sonar::SonarResultType;
 
 use crate::batbelt::BatEnumerator;
 use clap::Subcommand;
 
-use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::path::BatFile;
 use error_stack::{Result, ResultExt};
 
@@ -17,7 +16,7 @@ use super::CommandError;
 
 #[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter)]
 pub enum SonarCommand {
-    /// Gets metadata from the source code
+    /// Rescan the source code and rebuild the metadata
     Run,
 }
 impl BatEnumerator for SonarCommand {}
@@ -30,17 +29,10 @@ impl BatCommandEnumerator for SonarCommand {
     }
 
     fn check_metadata_is_initialized(&self) -> bool {
-        match self {
-            SonarCommand::Run => false,
-        }
-    }
-
-    fn check_correct_branch(&self) -> bool {
-        match self {
-            SonarCommand::Run => true,
-        }
+        false
     }
 }
+
 impl SonarCommand {
     fn execute_run(&self) -> CommandResult<()> {
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
@@ -55,14 +47,8 @@ impl SonarCommand {
     fn execute_run_foundry(&self) -> CommandResult<()> {
         use crate::batbelt::evm::sonar::sonar::EvmSonar;
 
-        let mut evm_sonar = EvmSonar::new("..");
+        let mut evm_sonar = EvmSonar::new(".");
         evm_sonar.run().change_context(CommandError)?;
-
-        GitCommit::UpdateMetadataJson {
-            bat_metadata_commit: BatMetadataCommit::RunSonarMetadataCommit,
-        }
-        .create_commit(true)
-        .change_context(CommandError)?;
 
         Ok(())
     }
@@ -95,10 +81,6 @@ impl SonarCommand {
                 .change_context(CommandError)?;
         }
 
-        // backup miro metadata
-        let bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
-        let miro_metadata = bat_metadata.miro;
-
         // backup co metadata
         let metadata_content = metadata_bat_file
             .read_content(false)
@@ -111,11 +93,6 @@ impl SonarCommand {
         TemplateGenerator
             .create_metadata_json()
             .change_context(CommandError)?;
-
-        // reload miro backup
-        let mut bat_metadata = BatMetadata::read_metadata().change_context(CommandError)?;
-        bat_metadata.miro = miro_metadata;
-        bat_metadata.save_metadata().change_context(CommandError)?;
         BatSonarInteractive::SonarStart {
             sonar_result_type: SonarResultType::Struct,
         }
@@ -132,12 +109,6 @@ impl SonarCommand {
         metadata_bkp_bat_file
             .remove_file()
             .change_context(CommandError)?;
-
-        GitCommit::UpdateMetadataJson {
-            bat_metadata_commit: BatMetadataCommit::RunSonarMetadataCommit,
-        }
-        .create_commit(true)
-        .change_context(CommandError)?;
 
         Ok(())
     }

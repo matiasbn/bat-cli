@@ -95,7 +95,7 @@ impl SourceCodeParser {
         &self,
         options: SourceCodeScreenshotOptions,
     ) -> Result<String, ParserError> {
-        let dest_path = BatFolder::AuditorFigures
+        let dest_path = BatFolder::Figures
             .get_path(true)
             .change_context(ParserError)?;
         let mut offset = if options.offset_to_start_line {

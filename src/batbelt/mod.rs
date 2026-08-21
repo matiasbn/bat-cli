@@ -5,12 +5,9 @@ use std::fmt::{Debug, Display};
 use std::rc::Rc;
 use strum::IntoEnumIterator;
 
-#[allow(dead_code, unused_imports)]
-pub mod analytics;
 pub mod bat_dialoguer;
 pub mod command_line;
 pub mod evm;
-pub mod git;
 pub mod metadata;
 pub mod miro;
 pub mod parser;

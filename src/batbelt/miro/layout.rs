@@ -104,6 +104,13 @@ pub fn layout_graph(
     edges: &[LayoutEdge],
     config: LayoutConfig,
 ) -> GraphLayout {
+    // A tree gets the tree algorithm: children in a contiguous band, parent
+    // centred on them. That is what makes a diagram with no crossing edges,
+    // which layering plus barycentre ordering only approximates.
+    if is_tree(nodes, edges) {
+        return layout_tree(root_id, nodes, edges, config);
+    }
+
     let by_id: HashMap<&str, &LayoutNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
     let (forward_edges, back_edges) = split_back_edges(root_id, nodes, edges);
@@ -174,6 +181,138 @@ pub fn layout_graph(
     GraphLayout {
         nodes: placed,
         back_edges,
+        bbox_width,
+        bbox_height,
+        frame_width: bbox_width + 2.0 * config.padding_x,
+        frame_height: bbox_height + 2.0 * config.padding_y + config.title_band,
+    }
+}
+
+/// True when every node has at most one parent and there are no cycles.
+fn is_tree(nodes: &[LayoutNode], edges: &[LayoutEdge]) -> bool {
+    let mut parents: HashMap<&str, usize> = HashMap::new();
+    for edge in edges {
+        *parents.entry(edge.to.as_str()).or_insert(0) += 1;
+    }
+    parents.values().all(|count| *count <= 1) && edges.len() + 1 <= nodes.len().max(1)
+}
+
+/// Reingold–Tilford style: x from the depth, y from the subtree's own extent.
+///
+/// Every subtree owns a contiguous vertical band, so no two edges can cross and
+/// an arrow never has to travel across a layer it does not belong to.
+fn layout_tree(
+    root_id: &str,
+    nodes: &[LayoutNode],
+    edges: &[LayoutEdge],
+    config: LayoutConfig,
+) -> GraphLayout {
+    let by_id: HashMap<&str, &LayoutNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+
+    // Siblings follow the order of the calls that produce them, so a callee
+    // invoked near the top of its caller is drawn above one invoked lower down
+    // and the arrows leave in the order the code reads.
+    let mut ordered: HashMap<&str, Vec<(f64, &str)>> = HashMap::new();
+    for edge in edges {
+        ordered
+            .entry(edge.from.as_str())
+            .or_default()
+            .push((edge.from_line_fraction, edge.to.as_str()));
+    }
+    let children: HashMap<&str, Vec<&str>> = ordered
+        .into_iter()
+        .map(|(parent, mut kids)| {
+            kids.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            (parent, kids.into_iter().map(|(_, id)| id).collect())
+        })
+        .collect();
+
+    // Depth of every node, and the widest node per depth, so layers line up.
+    let mut depth: HashMap<&str, usize> = HashMap::new();
+    let mut order: Vec<&str> = Vec::new();
+    let mut stack = vec![(root_id, 0usize)];
+    while let Some((id, level)) = stack.pop() {
+        if depth.contains_key(id) {
+            continue;
+        }
+        depth.insert(id, level);
+        order.push(id);
+        for child in children.get(id).cloned().unwrap_or_default().iter().rev() {
+            stack.push((child, level + 1));
+        }
+    }
+    // Nodes unreachable from the root still need a place.
+    for node in nodes {
+        if !depth.contains_key(node.id.as_str()) {
+            depth.insert(node.id.as_str(), 0);
+            order.push(node.id.as_str());
+        }
+    }
+
+    let layer_count = depth.values().copied().max().unwrap_or(0) + 1;
+    let mut layer_width = vec![0.0_f64; layer_count];
+    for node in nodes {
+        let level = depth[node.id.as_str()];
+        layer_width[level] = layer_width[level].max(node.width);
+    }
+    let mut layer_x = vec![0.0_f64; layer_count];
+    let mut cursor = config.padding_x;
+    for (level, width) in layer_width.iter().enumerate() {
+        layer_x[level] = cursor;
+        cursor += width + config.gutter_x;
+    }
+
+    // Post-order: a leaf takes its own height, a parent spans its children.
+    let mut extent: HashMap<&str, f64> = HashMap::new();
+    for id in order.iter().rev() {
+        let own = by_id.get(id).map(|n| n.height).unwrap_or(0.0);
+        let kids = children.get(id).cloned().unwrap_or_default();
+        if kids.is_empty() {
+            extent.insert(id, own);
+            continue;
+        }
+        let span: f64 = kids.iter().map(|kid| extent.get(kid).copied().unwrap_or(0.0)).sum::<f64>()
+            + config.gutter_y * (kids.len().saturating_sub(1)) as f64;
+        extent.insert(id, span.max(own));
+    }
+
+    // Pre-order: hand each subtree its band, centre the parent inside it.
+    let top = config.padding_y + config.title_band;
+    let mut placed: Vec<PlacedNode> = Vec::new();
+    let mut bands = vec![(root_id, top)];
+    while let Some((id, band_top)) = bands.pop() {
+        let Some(node) = by_id.get(id) else { continue };
+        let band = extent.get(id).copied().unwrap_or(node.height);
+        let level = depth[id];
+
+        placed.push(PlacedNode {
+            id: id.to_string(),
+            layer: level,
+            x: layer_x[level] + node.width / 2.0,
+            y: band_top + band / 2.0,
+            width: node.width,
+            height: node.height,
+        });
+
+        let kids = children.get(id).cloned().unwrap_or_default();
+        let mut child_top = band_top;
+        let mut queued = Vec::new();
+        for kid in kids {
+            queued.push((kid, child_top));
+            child_top += extent.get(kid).copied().unwrap_or(0.0) + config.gutter_y;
+        }
+        for entry in queued.into_iter().rev() {
+            bands.push(entry);
+        }
+    }
+
+    let bbox_width = layer_width.iter().sum::<f64>()
+        + config.gutter_x * (layer_count.saturating_sub(1)) as f64;
+    let bbox_height = extent.get(root_id).copied().unwrap_or(0.0);
+
+    GraphLayout {
+        nodes: placed,
+        back_edges: Vec::new(),
         bbox_width,
         bbox_height,
         frame_width: bbox_width + 2.0 * config.padding_x,
@@ -684,14 +823,19 @@ mod layout_test {
         );
     }
 
+    /// Column splitting belongs to the layered algorithm, which only runs for
+    /// graphs that are not trees — a tree is laid out as a tree, where one tall
+    /// band is the honest shape and splitting it would create crossings. The
+    /// extra shared node here is what makes this a DAG.
     #[test]
     fn test_tall_layer_is_split_into_columns() {
-        let mut nodes = vec![node("root", 1200.0, 400.0)];
+        let mut nodes = vec![node("root", 1200.0, 400.0), node("shared", 900.0, 200.0)];
         let mut edges = Vec::new();
         for i in 0..20 {
             let id = format!("dep{i}");
             nodes.push(node(&id, 1000.0, 1500.0));
             edges.push(edge("root", &id, i as f64 / 20.0));
+            edges.push(edge(&id, "shared", 0.5));
         }
         let config = LayoutConfig {
             max_layer_height: 12_000.0,
@@ -778,5 +922,125 @@ mod layout_test {
         let (x_a, y_a) = allocator.place(4_000.0, 1_000.0);
         let (x_b, y_b) = resumed.place(4_000.0, 1_000.0);
         assert_eq!((x_a, y_a), (x_b, y_b));
+    }
+}
+
+#[cfg(test)]
+mod tree_layout_test {
+    use super::*;
+
+    fn node(id: &str, width: f64, height: f64) -> LayoutNode {
+        LayoutNode {
+            id: id.to_string(),
+            width,
+            height,
+        }
+    }
+
+    fn edge(from: &str, to: &str) -> LayoutEdge {
+        LayoutEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            from_line_fraction: 0.5,
+        }
+    }
+
+    /// Two edges cross when one starts above the other and ends below it.
+    fn crossings(layout: &GraphLayout, edges: &[LayoutEdge]) -> usize {
+        let segment = |edge: &LayoutEdge| {
+            let from = layout.node(&edge.from)?;
+            let to = layout.node(&edge.to)?;
+            Some((from.y, to.y, from.layer))
+        };
+        let segments: Vec<_> = edges.iter().filter_map(segment).collect();
+        let mut count = 0;
+        for (index, a) in segments.iter().enumerate() {
+            for b in segments.iter().skip(index + 1) {
+                if a.2 != b.2 {
+                    continue; // only siblings' edges share a corridor
+                }
+                if (a.0 - b.0) * (a.1 - b.1) < 0.0 {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    /// The shape a deployment actually produces: the same helper appears once
+    /// per caller instead of being shared.
+    #[test]
+    fn test_tree_layout_has_no_crossings() {
+        let mut nodes = vec![node("root", 1600.0, 700.0)];
+        let mut edges = Vec::new();
+        for branch in 0..4 {
+            let parent = format!("dep{branch}");
+            nodes.push(node(&parent, 1200.0, 400.0));
+            edges.push(edge("root", &parent));
+            for leaf in 0..3 {
+                let child = format!("leaf{branch}_{leaf}");
+                nodes.push(node(&child, 1000.0, 250.0));
+                edges.push(edge(&parent, &child));
+            }
+        }
+        let layout = layout_graph("root", &nodes, &edges, LayoutConfig::default());
+
+        assert_eq!(crossings(&layout, &edges), 0);
+        for (i, a) in layout.nodes.iter().enumerate() {
+            for b in layout.nodes.iter().skip(i + 1) {
+                let overlap_x = (a.x - b.x).abs() < (a.width + b.width) / 2.0;
+                let overlap_y = (a.y - b.y).abs() < (a.height + b.height) / 2.0;
+                assert!(!(overlap_x && overlap_y), "{} and {} overlap", a.id, b.id);
+            }
+        }
+    }
+
+    /// A parent sits opposite the middle of the band its children occupy, so the
+    /// arrows leave it fanning out rather than doubling back.
+    #[test]
+    fn test_parent_is_centred_on_its_children() {
+        let nodes = vec![
+            node("root", 1200.0, 300.0),
+            node("a", 1000.0, 200.0),
+            node("b", 1000.0, 600.0),
+            node("c", 1000.0, 200.0),
+        ];
+        let edges = vec![edge("root", "a"), edge("root", "b"), edge("root", "c")];
+        let layout = layout_graph("root", &nodes, &edges, LayoutConfig::default());
+
+        let root = layout.node("root").unwrap();
+        let first = layout.node("a").unwrap();
+        let last = layout.node("c").unwrap();
+        let middle = (first.y + last.y) / 2.0;
+        assert!(
+            (root.y - middle).abs() < 1.0,
+            "root at {} but its children span a midpoint of {middle}",
+            root.y
+        );
+    }
+
+    /// Repeating a shared helper is the whole point: each copy is its own node.
+    #[test]
+    fn test_repeated_helper_gets_its_own_box() {
+        let nodes = vec![
+            node("root", 1200.0, 300.0),
+            node("a", 1000.0, 200.0),
+            node("b", 1000.0, 200.0),
+            node("helper#1", 900.0, 150.0),
+            node("helper#2", 900.0, 150.0),
+        ];
+        let edges = vec![
+            edge("root", "a"),
+            edge("root", "b"),
+            edge("a", "helper#1"),
+            edge("b", "helper#2"),
+        ];
+        let layout = layout_graph("root", &nodes, &edges, LayoutConfig::default());
+
+        let first = layout.node("helper#1").unwrap();
+        let second = layout.node("helper#2").unwrap();
+        assert_ne!(first.y, second.y, "the two copies must not sit on top of each other");
+        assert_eq!(first.layer, second.layer);
+        assert_eq!(crossings(&layout, &edges), 0);
     }
 }

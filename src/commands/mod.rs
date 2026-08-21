@@ -1,14 +1,6 @@
-#[allow(dead_code, unused_imports)]
-pub mod analytics_commands;
-pub mod co_commands;
-#[allow(dead_code, unused_imports)]
-pub mod finding_commands;
-pub mod miro_commands;
 pub mod project_commands;
-#[allow(dead_code, unused_imports)]
-pub mod repository_commands;
 pub mod sonar_commands;
-pub mod tools_commands;
+pub mod update_commands;
 
 use crate::batbelt::BatEnumerator;
 use inflector::Inflector;
@@ -34,7 +26,6 @@ where
 {
     fn execute_command(&self) -> CommandResult<()>;
     fn check_metadata_is_initialized(&self) -> bool;
-    fn check_correct_branch(&self) -> bool;
     fn get_bat_package_json_commands(command_name: String) -> BatPackageJsonCommand {
         let command_with_options_regex = Regex::new(r"\w+ \{\s*([\s\w]+: false,\n)+\}").unwrap();
         let boolean_flag_regex = Regex::new(r"\w+: false,").unwrap();

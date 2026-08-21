@@ -14,6 +14,18 @@ Supports **Anchor**, **Pinocchio**, **vanilla Rust** (Solana), and **Foundry** (
 cargo install bat-cli
 ```
 
+## Updating (`update`)
+
+```bash
+bat-cli update           # install the latest version published to crates.io
+bat-cli update --check   # only report whether a newer version exists
+bat-cli update --force   # reinstall even when already up to date
+```
+
+It reads the latest version from the crates.io API, compares it numerically
+against the running binary, and shells out to
+`cargo install bat-cli --version X --force --locked`.
+
 ## Authentication (`login`)
 
 Miro authorization happens once per machine, not once per project:
@@ -78,11 +90,16 @@ everything in `Bat.toml` — stay with the project.
 
 ### Initialize (`init`)
 
-Sets up the audit workspace: detects the project framework (Anchor, Pinocchio, or Foundry), configures Miro integration (with API validation), and runs the initial sonar analysis.
+Detects the project framework, creates the Miro board (or picks an existing
+one), writes `Bat.toml` and `BatMetadata.json` at the root of the audited
+repository, and runs the initial sonar analysis. bat-cli creates no branches and
+no commits.
 
-### Static analysis (`sonar`)
+### Rescan (`sonar`)
 
-Parses the entire codebase via AST and extracts metadata into a single `BatMetadata.json`:
+`init` scans once. Run `sonar` after the source changes to rebuild
+`BatMetadata.json`, which is what `deploy` reads. It parses the codebase via AST
+and extracts:
 
 **Solana (Anchor / Pinocchio / vanilla Rust):**
 - Functions, structs, traits, enums

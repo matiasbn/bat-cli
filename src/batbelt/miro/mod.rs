@@ -11,13 +11,10 @@ use serde_json::{self, Value};
 pub mod app_credentials;
 pub mod auth;
 pub mod client;
-pub mod connector;
 pub mod frame;
 pub mod image;
 pub mod layout;
 pub mod item;
-pub mod shape;
-pub mod sticky_note;
 
 use error_stack::{Report, Result, ResultExt};
 
@@ -46,14 +43,9 @@ impl MiroConfig {
     pub fn new() -> Result<Self, MiroError> {
         Self::check_miro_enabled()?;
         let bat_config = BatConfig::get_config().change_context(MiroError)?;
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(MiroError)?;
-        // A per-project token still wins, but an empty one now falls back to the
-        // machine-wide credentials written by `bat-cli login`.
-        let access_token = if bat_auditor_config.miro_oauth_access_token.trim().is_empty() {
-            auth::stored_access_token()
-        } else {
-            bat_auditor_config.miro_oauth_access_token
-        };
+        // The token is machine-wide: `bat-cli login` stores it once for every
+        // project, so there is no per-project copy to prefer.
+        let access_token = auth::stored_access_token();
         let board_url = bat_config.miro_board_url;
         let board_id = Self::get_miro_board_id(board_url.clone())?;
         Ok(MiroConfig {
@@ -81,16 +73,12 @@ impl MiroConfig {
     }
 
     pub fn check_miro_enabled() -> Result<(), MiroError> {
-        let bat_auditor_config = BatAuditorConfig::get_config().unwrap();
-        if !bat_auditor_config.miro_oauth_access_token.trim().is_empty() {
-            return Ok(());
-        }
         if !auth::stored_access_token().trim().is_empty() {
             return Ok(());
         }
         Err(Report::new(MiroError)
             .attach_printable("no Miro token available")
-            .attach_printable("run `bat-cli login`, or set miro_oauth_access_token in BatAuditor.toml"))
+            .attach(crate::Suggestion("run `bat-cli login`".to_string())))
     }
 
     pub fn get_frame_url(&self, frame_id: &str) -> String {
@@ -156,6 +144,50 @@ impl MiroConfig {
         let board_name = json["name"].as_str().unwrap_or("(unnamed)").to_string();
 
         Ok(board_name)
+    }
+
+    /// Create a board and return `(name, url)`.
+    ///
+    /// Saves the user a trip to the browser on `bat-cli init`. Note that the
+    /// free plan caps team boards at three, so this can legitimately fail and
+    /// the caller must be able to fall back to picking an existing board.
+    pub async fn create_board(access_token: &str, name: &str) -> Result<(String, String), MiroError> {
+        let body = serde_json::json!({
+            "name": name,
+            "description": "Dependency diagrams deployed by bat-cli",
+        })
+        .to_string();
+
+        let response = reqwest::Client::new()
+            .post("https://api.miro.com/v2/boards")
+            .header(AUTHORIZATION, format!("Bearer {}", access_token))
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await
+            .map_err(|error| {
+                log::error!("Miro create board error: {:#?}", error);
+                Report::new(MiroError).attach_printable("failed to reach the Miro API")
+            })?;
+
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(Report::new(MiroError)
+                .attach_printable(format!("Miro answered {status} creating the board: {text}")));
+        }
+
+        let json: Value = serde_json::from_str(&text)
+            .map_err(|_| Report::new(MiroError).attach_printable("malformed Miro response"))?;
+        let board_id = json["id"].as_str().unwrap_or_default().to_string();
+        let board_name = json["name"].as_str().unwrap_or(name).to_string();
+        if board_id.is_empty() {
+            return Err(Report::new(MiroError).attach_printable("Miro returned no board id"));
+        }
+        Ok((
+            board_name,
+            format!("https://miro.com/app/board/{}/", board_id),
+        ))
     }
 
     /// Fetches the user's boards from the Miro API using the given OAuth token.

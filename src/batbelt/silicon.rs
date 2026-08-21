@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use silicon::assets::HighlightingAssets;
 use silicon::formatter::ImageFormatterBuilder;
 use silicon::utils::{Background, ShadowAdder};
@@ -5,6 +6,13 @@ use syntect::easy::HighlightLines;
 use syntect::util::LinesWithEndings;
 
 use std::fs;
+
+/// Syntax definitions and themes, loaded once.
+///
+/// `HighlightingAssets::new()` reads and decodes the bundled syntax and theme
+/// dumps every time it is called. Doing that per screenshot dominated the
+/// render phase of a deployment, which produces dozens of them.
+static ASSETS: Lazy<HighlightingAssets> = Lazy::new(HighlightingAssets::new);
 
 /// Dracula background color.
 const BG: image::Rgba<u8> = image::Rgba([0x28, 0x2a, 0x36, 0xff]);
@@ -127,11 +135,8 @@ pub fn create_figure(
 
     let size = font_size.map(|s| s as f32).unwrap_or(DEFAULT_FONT_SIZE);
 
-    // Load syntax definitions and themes bundled with silicon/syntect.
-    let ha = HighlightingAssets::new();
-    let (ps, ts) = (ha.syntax_set, ha.theme_set);
-
-    let theme = &ts.themes["Dracula"];
+    let ps = &ASSETS.syntax_set;
+    let theme = &ASSETS.theme_set.themes["Dracula"];
 
     // Syntax-highlight every line.
     // Detect language from file_name extension, default to Rust.
