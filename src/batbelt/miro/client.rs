@@ -433,6 +433,19 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// Whether an item is still on the board.
+    ///
+    /// The registry records what was deployed, but a board is edited by hand:
+    /// a frame deleted in Miro leaves an entry behind that points at nothing.
+    /// Trusting the registry alone means refusing to redeploy something that is
+    /// no longer there.
+    pub async fn item_exists(&self, item_id: &str) -> bool {
+        let url = format!("{}/{}", self.endpoint("items"), item_id);
+        self.execute(LEVEL_1_CREDITS, "item_exists", move |http| http.get(&url))
+            .await
+            .is_ok()
+    }
+
     /// Create a card standing in for a function drawn elsewhere on the board.
     ///
     /// The link goes in the shape's `content` as an `<a href>`, because the REST

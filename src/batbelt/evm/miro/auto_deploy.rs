@@ -249,6 +249,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             &options,
             client.as_ref(),
             &mut allocator,
+            true,
         )
         .await?;
 
@@ -411,24 +412,32 @@ async fn deploy_one(
     options: &AutoDeployOptions,
     client: Option<&MiroClient>,
     allocator: &mut ShelfAllocator,
+    // True when the user named this function, false when it is being built only
+    // because a card needs somewhere to point.
+    is_primary: bool,
 ) -> Result<()> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
 
-    // One frame per function, board-wide. A function already on the board is
-    // pointed at, never drawn a second time: that is what lets several diagrams
-    // share a helper's frame, and what keeps the fan-in readable — a single
-    // frame with several references, rather than a copy per caller.
+    // One frame per function, board-wide. Asked for as a link target, a function
+    // already on the board is pointed at rather than drawn again — that is what
+    // lets several diagrams share a helper's frame and keeps the fan-in
+    // readable. Asked for directly, it is the user's call.
     if !options.dry_run {
-        if let Some(existing) = metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == title)
-        {
-            println!("  already on the board: {}", existing.frame_url.blue());
-            return Ok(());
+        if let Some(url) = live_frame_url(&title, client).await? {
+            if !is_primary {
+                return Ok(());
+            }
+            println!("  already on the board: {}", url.blue());
+            println!(
+                "  {} deploying again builds a second frame; the one above stays\n  where it is, to be deleted by hand if it is no longer wanted.",
+                "note:".yellow()
+            );
+            if !BatDialoguer::select_yes_or_no("Deploy it again anyway?".to_string())
+                .change_context(EvmMiroError)?
+            {
+                return Ok(());
+            }
         }
     }
 
@@ -2071,18 +2080,12 @@ async fn ensure_target_frames(
 
     let mut resolved = HashMap::new();
     for target in wanted {
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        if let Some(existing) = metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == target)
-        {
+        if let Some(url) = live_frame_url(&target, Some(client)).await? {
             println!("  {} reuses its frame", target.blue());
-            resolved.insert(target, existing.frame_url.clone());
+            resolved.insert(target, url);
             continue;
         }
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
 
         let Some((contract, function)) = target.split_once('.') else {
             continue;
@@ -2097,6 +2100,7 @@ async fn ensure_target_frames(
             options,
             Some(client),
             allocator,
+            false,
         ))
         .await?;
 
@@ -2112,4 +2116,48 @@ async fn ensure_target_frames(
         }
     }
     Ok(resolved)
+}
+
+/// The frame URL for a function, if it is registered **and** still on the board.
+///
+/// A registry entry outlives the frame it names: boards are edited by hand, and
+/// deleting a frame in Miro leaves the entry behind. Checking the board costs
+/// one read and turns "you already deployed this" into something true, rather
+/// than a refusal to redeploy what is no longer there. A stale entry is dropped
+/// on the way past, so the question is only asked once.
+async fn live_frame_url(title: &str, client: Option<&MiroClient>) -> Result<Option<String>> {
+    let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+    let Some(record) = metadata
+        .miro
+        .auto
+        .frames
+        .iter()
+        .find(|frame| frame.entry_point == title)
+    else {
+        return Ok(None);
+    };
+    let (frame_id, url) = (record.frame_id.clone(), record.frame_url.clone());
+
+    let Some(client) = client else {
+        return Ok(Some(url));
+    };
+    if client.item_exists(&frame_id).await {
+        return Ok(Some(url));
+    }
+
+    println!(
+        "  {} the frame recorded for {} is gone from the board; forgetting it",
+        "note:".yellow(),
+        title
+    );
+    let owner = title.to_string();
+    EvmBatMetadata::update_metadata(move |metadata| {
+        metadata
+            .miro
+            .auto
+            .frames
+            .retain(|frame| frame.entry_point != owner);
+    })
+    .change_context(EvmMiroError)?;
+    Ok(None)
 }
