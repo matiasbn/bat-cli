@@ -44,6 +44,10 @@ const PATH_HEADER_LINES: usize = 2;
 /// reserve for automatic deployments.
 const REGION_MARGIN: f64 = 5_000.0;
 
+/// How many times to cut and re-lay out before giving up. Each pass removes at
+/// least one edge, so this only guards against a pathological graph.
+const MAX_CUT_PASSES: usize = 5;
+
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
 const ANCHOR_MARKER_SIZE: f64 = 24.0;
@@ -108,11 +112,26 @@ impl Default for AutoDeployOptions {
     }
 }
 
-/// One rendered function in the graph.
+/// What a node stands for.
+#[derive(Debug, Clone, PartialEq)]
+enum NodeKind {
+    /// A screenshot of the function's source.
+    Screenshot,
+    /// A card standing in for a function drawn in its own frame, holding a link
+    /// that navigates there.
+    Link { target: String },
+}
+
+/// A card is small and fixed: it carries a name and a link, nothing to measure.
+const LINK_CARD_WIDTH: f64 = 900.0;
+const LINK_CARD_HEIGHT: f64 = 240.0;
+
+/// One function in the graph.
 #[derive(Debug, Clone)]
 struct GraphNode {
     id: String,
     label: String,
+    kind: NodeKind,
     file_path: String,
     /// 1-based, inclusive, in the source file.
     start_line: usize,
@@ -413,7 +432,8 @@ async fn deploy_one(
         }
     }
 
-    let (mut nodes, edges, truncated) = build_graph(metadata, contract_name, function_name, options)?;
+    let (mut nodes, mut edges, truncated) =
+        build_graph(metadata, contract_name, function_name, options)?;
     if nodes.is_empty() {
         println!("  no function metadata found, skipping");
         return Ok(());
@@ -446,7 +466,6 @@ async fn deploy_one(
         })
         .collect();
 
-    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     let anchors = compute_anchors(&nodes, &edges);
     let layout_edges: Vec<LayoutEdge> = edges
         .iter()
@@ -459,7 +478,44 @@ async fn deploy_one(
         .collect();
 
     let root_id = nodes[0].id.clone();
-    let layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+    let mut layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+
+    // Cut the edges that skip layers and lay it out again. Cutting one changes
+    // where everything sits, which can expose another, so repeat until nothing
+    // is left to cut — bounded, since every pass strictly removes an edge.
+    let mut anchors = anchors;
+    for _ in 0..MAX_CUT_PASSES {
+        let cut = cut_long_edges(&mut nodes, &mut edges, &layout);
+        if cut == 0 {
+            break;
+        }
+        println!(
+            "  {} {} call(s) reach a function far enough away to link to instead",
+            "note:".yellow(),
+            cut
+        );
+
+        anchors = compute_anchors(&nodes, &edges);
+        let layout_nodes: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|node| LayoutNode {
+                id: node.id.clone(),
+                width: node.board_width(),
+                height: node.board_height(),
+            })
+            .collect();
+        let layout_edges: Vec<LayoutEdge> = edges
+            .iter()
+            .zip(anchors.iter())
+            .map(|(edge, anchor)| LayoutEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                from_line_fraction: anchor.y_fraction,
+            })
+            .collect();
+        layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+    }
+    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
     // board positions instead of repeating the first one.
@@ -502,6 +558,12 @@ async fn deploy_one(
         frame_y.round()
     );
 
+    // Every card needs somewhere to go. One frame per function, board-wide: two
+    // cards for the same helper resolve to the same frame, and a helper already
+    // deployed is reused rather than drawn again. That is what keeps the fan-in
+    // answerable — one frame with several references, not a copy per caller.
+    let target_frames = ensure_target_frames(&nodes, options, client, allocator).await?;
+
     // Record the frame before filling it, so a run that dies partway through
     // still leaves something that names what is on the board.
     let frame_url = client.frame_url(&frame_id);
@@ -534,12 +596,24 @@ async fn deploy_one(
         let node_id = node.id.clone();
         let png_path = node.png_path.clone();
         let label = node.label.clone();
-        let (x, y, width) = (placed.x, placed.y, placed.width);
+        let kind = node.kind.clone();
+        let target_url = match &node.kind {
+            NodeKind::Link { target } => target_frames.get(target).cloned().unwrap_or_default(),
+            NodeKind::Screenshot => String::new(),
+        };
+        let (x, y, width, height) = (placed.x, placed.y, placed.width, placed.height);
         let bar = bar.clone();
         upload_tasks.spawn(async move {
-            let result = client
-                .create_image_in_frame(&png_path, &frame_id, &label, x, y, width)
-                .await;
+            let result = match kind {
+                NodeKind::Link { .. } => {
+                    client
+                        .create_link_card(&frame_id, &label, &target_url, x, y, width, height)
+                        .await
+                }
+                NodeKind::Screenshot => client
+                    .create_image_in_frame(&png_path, &frame_id, &label, x, y, width)
+                    .await,
+            };
             bar.inc(1);
             result.map(|image_id| (node_id, image_id))
         });
@@ -1034,6 +1108,7 @@ fn make_node(
     depth: usize,
 ) -> GraphNode {
     GraphNode {
+        kind: NodeKind::Screenshot,
         id,
         label,
         file_path: contract.file_path.clone(),
@@ -1058,6 +1133,7 @@ fn make_modifier_node(
     depth: usize,
 ) -> GraphNode {
     GraphNode {
+        kind: NodeKind::Screenshot,
         id,
         label: format!("{}.{} (modifier)", contract.name, name),
         file_path: contract.file_path.clone(),
@@ -1665,6 +1741,7 @@ mod split_shared_leaves_test {
 
     fn node(id: &str) -> GraphNode {
         GraphNode {
+            kind: NodeKind::Screenshot,
             id: id.to_string(),
             label: id.to_string(),
             file_path: String::new(),
@@ -1729,4 +1806,310 @@ mod split_shared_leaves_test {
         assert_eq!(nodes.len(), 2);
         assert_eq!(edges[0].to, "leaf");
     }
+}
+
+/// Replace the target of every edge that skips layers with a link card.
+///
+/// The decision is per **edge**, not per function, and that distinction is the
+/// point. `FeeLib.feeOf` is called from layer 1 and from layer 2. Laid out, it
+/// sits on layer 3: the arrow from layer 2 is fine, the one from layer 1 has to
+/// cross the column in between. Sending the whole function to its own frame
+/// would take away the arrow that was already fine. Cutting the edge takes away
+/// only the one that was not — the near caller keeps the screenshot, the far one
+/// gets a card that links to the function's own frame.
+///
+/// A leaf is never cut: a copy of it costs one small screenshot and
+/// [`split_shared_leaves`] has already made those, so a card would be a click in
+/// exchange for nothing.
+///
+/// Returns the number of edges cut.
+fn cut_long_edges(
+    nodes: &mut Vec<GraphNode>,
+    edges: &mut [GraphEdge],
+    layout: &GraphLayout,
+) -> usize {
+    let layer_of: HashMap<&str, usize> = layout
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node.layer))
+        .collect();
+
+    let has_children: HashSet<&str> = edges.iter().map(|edge| edge.from.as_str()).collect();
+
+    let long: Vec<usize> = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| {
+            let (Some(from), Some(to)) =
+                (layer_of.get(edge.from.as_str()), layer_of.get(edge.to.as_str()))
+            else {
+                return false;
+            };
+            to.saturating_sub(*from) > 1 && has_children.contains(edge.to.as_str())
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if long.is_empty() {
+        return 0;
+    }
+
+    let label_of: HashMap<&str, &str> = nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node.label.as_str()))
+        .collect();
+
+    let mut cards: Vec<GraphNode> = Vec::new();
+    for index in &long {
+        let edge = &edges[*index];
+        let Some(label) = label_of.get(edge.to.as_str()).copied() else {
+            continue;
+        };
+        cards.push(GraphNode {
+            id: format!("\u{0}link{index}"),
+            label: label.to_string(),
+            kind: NodeKind::Link {
+                target: label.to_string(),
+            },
+            file_path: String::new(),
+            start_line: 0,
+            end_line: 0,
+            depth: 0,
+            font_size: 22,
+            png_path: String::new(),
+            png_width: LINK_CARD_WIDTH as u32,
+            png_height: LINK_CARD_HEIGHT as u32,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+        });
+    }
+
+    for (position, index) in long.iter().enumerate() {
+        edges[*index].to = cards[position].id.clone();
+    }
+    nodes.extend(cards);
+
+    // Whatever the cuts left unreachable is not part of this diagram any more.
+    prune_unreachable(nodes, edges);
+    long.len()
+}
+
+/// Drop nodes no longer reachable from the root, and the edges into them.
+fn prune_unreachable(nodes: &mut Vec<GraphNode>, edges: &[GraphEdge]) {
+    let Some(root) = nodes.first().map(|node| node.id.clone()) else {
+        return;
+    };
+    let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+    for edge in edges {
+        adjacency
+            .entry(edge.from.as_str())
+            .or_default()
+            .push(edge.to.as_str());
+    }
+
+    let mut reachable: HashSet<String> = HashSet::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if !reachable.insert(id.clone()) {
+            continue;
+        }
+        for next in adjacency.get(id.as_str()).cloned().unwrap_or_default() {
+            stack.push(next.to_string());
+        }
+    }
+    nodes.retain(|node| reachable.contains(&node.id));
+}
+
+#[cfg(test)]
+mod cut_long_edges_test {
+    use super::*;
+    use crate::batbelt::miro::layout::{layout_graph, LayoutConfig, LayoutEdge, LayoutNode};
+
+    fn node(id: &str) -> GraphNode {
+        GraphNode {
+            id: id.to_string(),
+            label: id.to_string(),
+            kind: NodeKind::Screenshot,
+            file_path: String::new(),
+            start_line: 1,
+            end_line: 2,
+            depth: 0,
+            font_size: 22,
+            png_path: String::new(),
+            png_width: 1000,
+            png_height: 300,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+        }
+    }
+
+    fn edge(from: &str, to: &str) -> GraphEdge {
+        GraphEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            line_in_slice: 1,
+            column: 0,
+            symbol: to.to_string(),
+        }
+    }
+
+    fn lay(nodes: &[GraphNode], edges: &[GraphEdge]) -> GraphLayout {
+        let layout_nodes: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|n| LayoutNode {
+                id: n.id.clone(),
+                width: n.board_width(),
+                height: n.board_height(),
+            })
+            .collect();
+        let layout_edges: Vec<LayoutEdge> = edges
+            .iter()
+            .map(|e| LayoutEdge {
+                from: e.from.clone(),
+                to: e.to.clone(),
+                from_line_fraction: 0.5,
+            })
+            .collect();
+        layout_graph(&nodes[0].id, &layout_nodes, &layout_edges, LayoutConfig::default())
+    }
+
+    /// The shape of the case that prompted this: one caller near, one far.
+    /// Only the far one should turn into a card.
+    #[test]
+    fn test_only_the_far_caller_is_cut() {
+        // Layers: root 0, far 1, near 2, shared 3, child 4.
+        //
+        // `near` reaches `shared` from the layer right before it, `far` from two
+        // layers back. `shared` has a child, so it is worth a frame of its own.
+        let mut nodes = vec![
+            node("root"),
+            node("far"),
+            node("near"),
+            node("shared"),
+            node("child"),
+        ];
+        let mut edges = vec![
+            edge("root", "far"),
+            edge("far", "near"),
+            edge("near", "shared"),
+            edge("far", "shared"),
+            edge("shared", "child"),
+        ];
+
+        let layout = lay(&nodes, &edges);
+        let cut = cut_long_edges(&mut nodes, &mut edges, &layout);
+
+        assert_eq!(cut, 1, "exactly the one edge that skipped a layer");
+        let cards: Vec<&GraphNode> = nodes
+            .iter()
+            .filter(|n| matches!(n.kind, NodeKind::Link { .. }))
+            .collect();
+        assert_eq!(cards.len(), 1);
+        assert_eq!(
+            cards[0].kind,
+            NodeKind::Link {
+                target: "shared".to_string()
+            }
+        );
+        // The near caller still points at the screenshot.
+        assert!(edges.iter().any(|e| e.from == "near" && e.to == "shared"));
+    }
+
+    /// A leaf is cheaper to copy than to link, so it is left alone.
+    #[test]
+    fn test_a_far_leaf_is_not_cut() {
+        let mut nodes = vec![node("root"), node("far"), node("near"), node("leaf")];
+        let mut edges = vec![
+            edge("root", "far"),
+            edge("far", "near"),
+            edge("near", "leaf"),
+            edge("far", "leaf"),
+        ];
+
+        let layout = lay(&nodes, &edges);
+        assert_eq!(cut_long_edges(&mut nodes, &mut edges, &layout), 0);
+        assert!(nodes.iter().all(|n| n.kind == NodeKind::Screenshot));
+    }
+
+    /// Nothing to do when every edge already joins adjacent layers.
+    #[test]
+    fn test_a_clean_graph_is_untouched() {
+        let mut nodes = vec![node("root"), node("a"), node("b")];
+        let mut edges = vec![edge("root", "a"), edge("a", "b")];
+
+        let layout = lay(&nodes, &edges);
+        assert_eq!(cut_long_edges(&mut nodes, &mut edges, &layout), 0);
+        assert_eq!(nodes.len(), 3);
+    }
+}
+
+/// Frame URL for every function a card in this graph points at.
+///
+/// A function that already has a frame is reused; one that does not is deployed
+/// first, so the card has somewhere to go. Distinct cards for the same function
+/// collapse to one lookup, which is what makes several diagrams share a helper's
+/// frame instead of each building its own.
+async fn ensure_target_frames(
+    nodes: &[GraphNode],
+    options: &AutoDeployOptions,
+    client: &MiroClient,
+    allocator: &mut ShelfAllocator,
+) -> Result<HashMap<String, String>> {
+    let wanted: Vec<String> = {
+        let mut seen = HashSet::new();
+        nodes
+            .iter()
+            .filter_map(|node| match &node.kind {
+                NodeKind::Link { target } => Some(target.clone()),
+                NodeKind::Screenshot => None,
+            })
+            .filter(|target| seen.insert(target.clone()))
+            .collect()
+    };
+    if wanted.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut resolved = HashMap::new();
+    for target in wanted {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        if let Some(existing) = metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == target)
+        {
+            println!("  {} reuses its frame", target.blue());
+            resolved.insert(target, existing.frame_url.clone());
+            continue;
+        }
+
+        let Some((contract, function)) = target.split_once('.') else {
+            continue;
+        };
+        println!("  {} needs a frame of its own, deploying it first", target.blue());
+        // Boxed because this is the recursive step: the frame being built for a
+        // helper can itself need cards, and those need frames.
+        Box::pin(deploy_one(
+            &metadata,
+            contract,
+            function,
+            options,
+            Some(client),
+            allocator,
+        ))
+        .await?;
+
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        if let Some(created) = metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == target)
+        {
+            resolved.insert(target, created.frame_url.clone());
+        }
+    }
+    Ok(resolved)
 }
