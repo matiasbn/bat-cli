@@ -104,7 +104,7 @@ When a branch is too large to draw inline, `auto_deploy` emits a **link card** p
 
 **Decision: keep the `<a href>`.** It navigates correctly; it just renders as a text link instead of showing Miro's arrow affordance. Link cards are rare by design — only a branch too big to draw inline produces one, typically one to three per diagram — so the manual alternative is a few seconds of "Link to" per diagram.
 
-`miro-app/` holds a small Web SDK app that converts those anchors into native `linkedTo` in one click. It works, but it needs to be hosted (localhost during development, or GitHub Pages for a permanent URL) and installed per user, which was judged more ceremony than the problem warrants. Left in the tree as an escape hatch, not part of the flow.
+A Web SDK app that converted those anchors into native `linkedTo` in one click was built and then removed (commit `2cbf1cb`, reverted here). It worked, but it has to be hosted somewhere and installed by each user against their own Miro app, which is more ceremony than the problem warrants. Recovering it is a `git show` away if that trade ever changes — rebuilding it from scratch is not worth it.
 
 ## Conventions
 
