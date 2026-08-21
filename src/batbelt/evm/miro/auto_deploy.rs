@@ -178,7 +178,7 @@ fn font_for_depth(depth: usize) -> usize {
 pub async fn run(options: AutoDeployOptions) -> Result<()> {
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
 
-    let targets = select_entry_points(&metadata, &options)?;
+    let targets = select_targets(&metadata, &options)?;
     if targets.is_empty() {
         return Err(Report::new(EvmMiroError)
             .attach_printable("no entry point matched; run `bat-cli sonar` first"));
@@ -249,19 +249,23 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     Ok(())
 }
 
-/// Which entry points to deploy.
+/// What to deploy.
 ///
-/// Deploying a whole project at once is deliberately not the default: an audit
-/// is reviewed one entry point at a time, and a project of any size would put
-/// thousands of objects on a board that Miro starts to slow down past a
-/// thousand. With no `--entry-point` and no `--all`, ask.
-fn select_entry_points(
+/// Any function can be deployed, not just an entry point: a shared helper needs
+/// a frame of its own for anything else to be able to point at it, and it is
+/// worth looking at on its own terms too.
+///
+/// Deploying a whole project at once is deliberately not the default. An audit
+/// is read one function at a time, and a project of any size would put thousands
+/// of objects on a board that Miro starts to slow down past a thousand — so with
+/// nothing named, ask.
+fn select_targets(
     metadata: &EvmBatMetadata,
     options: &AutoDeployOptions,
 ) -> Result<Vec<(String, String)>> {
     // `EntryPointMetadata::name` is stored as `Contract.function`, so strip the
     // prefix to get the bare function name used to look it up in the contract.
-    let mut all: Vec<(String, String)> = metadata
+    let mut entry_points: Vec<(String, String)> = metadata
         .entry_points
         .iter()
         .map(|ep| {
@@ -273,28 +277,46 @@ fn select_entry_points(
             (ep.contract_name.clone(), function)
         })
         .collect();
-    all.sort();
-    all.dedup();
+    entry_points.sort();
+    entry_points.dedup();
 
     if options.all {
-        return Ok(all);
+        return Ok(entry_points);
     }
 
+    // Everything the project defines, minus the constructors and minus `lib/`,
+    // which is dependency code nobody deploys on purpose.
+    let is_entry_point: HashSet<(String, String)> = entry_points.iter().cloned().collect();
+    let mut others: Vec<(String, String)> = metadata
+        .contracts
+        .iter()
+        .filter(|contract| !contract.external)
+        .flat_map(|contract| {
+            contract
+                .functions
+                .iter()
+                .filter(|function| !function.is_constructor)
+                .map(|function| (contract.name.clone(), function.name.clone()))
+        })
+        .filter(|target| !is_entry_point.contains(target))
+        .collect();
+    others.sort();
+    others.dedup();
+
     if let Some(wanted) = &options.entry_point {
-        return Ok(all
+        return Ok(entry_points
             .into_iter()
+            .chain(others)
             .filter(|(contract, function)| {
                 *function == *wanted || format!("{contract}.{function}") == *wanted
             })
+            .take(1)
             .collect());
     }
 
-    if all.is_empty() {
-        return Ok(all);
-    }
-
-    // Mark the ones already on the board, so a long list still shows what is
-    // left to do.
+    // Entry points first, since that is where reading usually starts, then
+    // everything else. One flat list, because it is fuzzy-searchable: typing
+    // `feeOf` reaches a helper as fast as an entry point.
     let deployed: HashSet<String> = metadata
         .miro
         .auto
@@ -302,23 +324,37 @@ fn select_entry_points(
         .iter()
         .map(|frame| frame.entry_point.clone())
         .collect();
+
+    let all: Vec<(String, String)> = entry_points
+        .iter()
+        .cloned()
+        .chain(others.iter().cloned())
+        .collect();
+    if all.is_empty() {
+        return Ok(all);
+    }
+
+    let entry_point_count = entry_points.len();
     let labels: Vec<String> = all
         .iter()
-        .map(|(contract, function)| {
+        .enumerate()
+        .map(|(index, (contract, function))| {
             let title = format!("{contract}.{function}");
-            if deployed.contains(&title) {
-                format!("{title} {}", "(deployed)".green())
+            let mut label = if index < entry_point_count {
+                format!("{title}  {}", "[entry point]".blue())
             } else {
-                title
+                title.clone()
+            };
+            if deployed.contains(&title) {
+                label = format!("{label} {}", "(deployed)".green());
             }
+            label
         })
         .collect();
 
-    let selection = BatDialoguer::fuzzy_select(
-        "Select the entry point to deploy:".to_string(),
-        labels,
-    )
-    .change_context(EvmMiroError)?;
+    let selection =
+        BatDialoguer::fuzzy_select("Select what to deploy:".to_string(), labels)
+            .change_context(EvmMiroError)?;
 
     Ok(vec![all[selection].clone()])
 }
