@@ -95,6 +95,7 @@ pub async fn run(check: bool, force: bool) -> CommandResult<()> {
 
     println!("\nInstalling {} with cargo...", latest.green());
     install(&latest)?;
+    publish_new_guide();
 
     println!(
         "\n{} bat-cli {} installed. Run {} to confirm.",
@@ -103,6 +104,46 @@ pub async fn run(check: bool, force: bool) -> CommandResult<()> {
         "bat-cli --version".yellow()
     );
     Ok(())
+}
+
+/// Ask the just-installed binary to regenerate the AI guide as itself.
+///
+/// This process is the OUTGOING version: it refreshed the guide on startup, so without
+/// this the machine would keep describing the version we just replaced until the user
+/// happened to run something else. Best-effort — an update that installed correctly must
+/// not fail because a guide could not be rewritten.
+fn publish_new_guide() {
+    let Ok(binary) = which_bat_cli() else {
+        log::debug!("could not locate the installed bat-cli to refresh its guide");
+        return;
+    };
+    match Command::new(&binary)
+        .arg("refresh-ai-guide")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
+        Ok(status) if status.success() => {}
+        Ok(status) => log::debug!("refresh-ai-guide exited with {status}"),
+        Err(error) => log::debug!("could not run refresh-ai-guide: {error}"),
+    }
+}
+
+/// Where `cargo install` put the binary: `$CARGO_HOME/bin/bat-cli`, falling back to
+/// `~/.cargo/bin`. Deliberately not `which`: the shell may still resolve an older copy
+/// earlier on PATH, and we want the one we just wrote.
+fn which_bat_cli() -> std::result::Result<std::path::PathBuf, ()> {
+    let home = std::env::var("CARGO_HOME")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var("HOME").ok().map(|h| std::path::PathBuf::from(h).join(".cargo")))
+        .ok_or(())?;
+    let binary = home.join("bin").join(CRATE_NAME);
+    if binary.is_file() {
+        Ok(binary)
+    } else {
+        Err(())
+    }
 }
 
 fn install(version: &str) -> CommandResult<()> {

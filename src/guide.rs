@@ -348,9 +348,15 @@ directory with `XDG_CONFIG_HOME` or `BAT_CLI_CONFIG_DIR`. **Authorization is per
 per project**: one `bat-cli login` covers every audit on the box, and only the board URL
 belongs to the project.
 
-After `bat-cli update`, the guide catches up on the next command you run — but a **project**
-does not. Its `BatMetadata.json` still comes from the old parser until `bat-cli sonar` runs
-inside it, and `Bat.toml`'s `bat_cli_version` is what tells you so.
+**When this guide appears.** Not at `cargo install` — cargo runs nothing after it builds. The
+first bat-cli command you run publishes it, along with the assistant skills, and every command
+after that re-checks them. `bat-cli update` publishes the new version's guide itself, by asking
+the binary it just installed to do it (the updating process is the outgoing version, so it
+could not). `bat-cli refresh-ai-guide` forces the same thing on demand; it needs no project.
+
+A **project** does not catch up on its own: after an update its `BatMetadata.json` still comes
+from the old parser until `bat-cli sonar` runs inside it, and `Bat.toml`'s `bat_cli_version` is
+what tells you so.
 
 `-v` / `-vv` raise the `env_logger` level (logs go to stderr); `RUST_LOG` works too.
 
@@ -526,6 +532,10 @@ so you re-open only the docs that actually changed — not everything.
 - **`Bat.toml` carries `bat_cli_version`**, stamped by `init`/`sonar`/`deploy`: which binary
   last scanned this project, and therefore whether `BatMetadata.json` came from the parser you
   are running today.
+- **`bat-cli update` now publishes the new version's guide immediately**, by asking the binary
+  it just installed to regenerate it — the updating process is the outgoing version, so the
+  guide used to describe the replaced version until you happened to run something else.
+  `bat-cli refresh-ai-guide` does the same on demand and needs no project.
   _Re-read: README.md, workflow.md, metadata.md._
 "##;
 
@@ -566,8 +576,8 @@ re-read everything before every action:
    THIS project. Behind `bat-cli --version` means `BatMetadata.json` predates your parser —
    run `bat-cli sonar` before trusting it.
 
-If the guide directory does not exist, no bat-cli command has run since it was installed: run
-`bat-cli config` (harmless, needs no project) to generate it, then read it.
+If the guide directory does not exist, no bat-cli command has run since it was installed:
+run `bat-cli refresh-ai-guide` (harmless, needs no project) to publish it, then read it.
 
 Non-negotiables: run from the project root; never answer an interactive `dialoguer` prompt by
 guessing — hand those commands to the user; prefer `--dry-run` while checking a graph, since a
@@ -590,7 +600,7 @@ binary — not in the audited repository. Read it once, then stay current cheapl
 1. The guide is `~/.config/bat-cli/ai_context/` (or under `$XDG_CONFIG_HOME/bat-cli` /
    `$BAT_CLI_CONFIG_DIR` when either is set): `README.md`, `workflow.md`, `metadata.md`,
    `changelog.md`. Follow README's "read once" rules thereafter. If the directory does not
-   exist, run `bat-cli config` once to generate it.
+   exist, run `bat-cli refresh-ai-guide` once to publish it.
 2. **`changelog.md` is how you learn what changed.** The docs carry the version that generated
    them. If `bat-cli --version` is HIGHER, read `changelog.md` FIRST — each entry lists the new
    capabilities AND a `Re-read:` line naming exactly which docs changed, so you re-open only

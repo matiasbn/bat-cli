@@ -89,8 +89,16 @@ not the project, so one copy per machine is the honest granularity.
 
 `refresh_ai_surface()` does both, and `main::run` calls it **before every command** — including
 `config` and `update`, which have no project at all. So the guide and the skill are checked on
-every single bat-cli run, and a fresh `cargo install` publishes them the first time the user
-runs anything. Every write goes through `write_if_changed`, so a no-op run touches nothing;
+every single bat-cli run.
+
+There is deliberately **no `build.rs`**: cargo runs nothing after `cargo install`, and the only
+hook that would fire during it is a build script, which would also run on every `cargo build`
+here and in CI and would be writing into the user's `$HOME` from a compile. First use is close
+enough — the README's very next step after installing is `bat-cli login`. Two things close the
+remaining gaps: the hidden `bat-cli refresh-ai-guide` subcommand publishes the guide on demand
+with no project, and `update_commands::publish_new_guide` runs it **on the binary just
+installed**, because the updating process is the outgoing version and would otherwise leave the
+machine describing the version it just replaced. Every write goes through `write_if_changed`, so a no-op run touches nothing;
 `write_managed_block` appends to a `GEMINI.md` the user already wrote rather than clobbering it.
 
 `Bat.toml`'s `bat_cli_version` is a *different* signal from the guide's stamp, and the docs say

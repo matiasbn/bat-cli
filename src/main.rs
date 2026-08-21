@@ -79,6 +79,13 @@ enum BatCommands {
     /// Rescan the source code after it changed, rebuilding the metadata that
     /// deploy reads
     Sonar,
+    /// Regenerate the machine-global AI guide and reinstall the assistant skills.
+    ///
+    /// Hidden because `main::run` already does this before every command; it exists
+    /// so a freshly installed binary can be asked to publish ITS OWN guide — see
+    /// `update_commands`, where the running process is the outgoing version.
+    #[command(name = "refresh-ai-guide", hide = true)]
+    RefreshAiGuide,
     /// Deploy an entry point's screenshots to a Miro board
     Deploy {
         /// Entry point to deploy, as `name` or `Contract.name`. Omit to pick
@@ -141,6 +148,8 @@ impl BatCommands {
                 ProjectCommands::show_global_config(*edit).change_context(CommandError)
             }
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
+            // The refresh already ran in `main::run`; nothing left to do.
+            BatCommands::RefreshAiGuide => Ok(()),
             BatCommands::Deploy {
                 entry_point,
                 all,
@@ -179,6 +188,7 @@ impl BatCommands {
             | BatCommands::Login { .. }
             | BatCommands::Logout
             | BatCommands::Config { .. }
+            | BatCommands::RefreshAiGuide
             | BatCommands::Update { .. } => return Ok(()),
             BatCommands::Sonar => false,
             BatCommands::Deploy { .. } => true,
