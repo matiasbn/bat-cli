@@ -155,9 +155,14 @@ pub fn layout_graph(
         for column in layer_columns {
             let this_column_width = column_width(column, &by_id);
             let this_column_height = column_height(column, &by_id, config);
-            // Center the column vertically against the tallest layer.
-            let mut y_cursor =
-                config.padding_y + config.title_band + (bbox_height - this_column_height) / 2.0;
+            // Layer 0 holds the entry point and stays at the top-left corner, so
+            // the frame reads as "the calls start here". Deeper layers are
+            // centred against the tallest one.
+            let mut y_cursor = if layer_index == 0 {
+                config.padding_y + config.title_band
+            } else {
+                config.padding_y + config.title_band + (bbox_height - this_column_height) / 2.0
+            };
             for id in column {
                 let node = match by_id.get(id.as_str()) {
                     Some(node) => *node,

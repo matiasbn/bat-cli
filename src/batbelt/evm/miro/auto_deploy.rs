@@ -21,7 +21,7 @@ use crate::batbelt::evm::metadata::bat_metadata::{
     AutoDeployedFrame, ContractMetadata, EvmBatMetadata, FunctionMetadata, ShelfState,
 };
 use crate::batbelt::evm::miro::EvmMiroError;
-use crate::batbelt::evm::parser::call_resolver::extract_call_sites_from_source;
+use crate::batbelt::evm::parser::call_resolver::{body_only, extract_call_sites_from_source};
 use crate::batbelt::evm::types::EvmContractType;
 use crate::batbelt::miro::client::{ConnectorStyle, MiroClient, RelativeAnchor};
 use crate::batbelt::miro::layout::{
@@ -802,16 +802,13 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
 }
 
 /// BFS over the call graph, keeping every call site with its line.
-/// Walk the call graph from an entry point, producing a **tree**.
+/// Walk the call graph from an entry point.
 ///
-/// A function called from three places gets three screenshots, not one shared
-/// node with three arrows coming into it. Sharing makes the picture smaller but
-/// unreadable: the shared node has to sit somewhere, so its incoming arrows
-/// come from several layers at once and cross everything in between. A tree
-/// costs more screenshots and reads at a glance.
-///
-/// Recursion is cut per path rather than globally: a callee already present in
-/// the current chain of callers is drawn once and not expanded again.
+/// One screenshot per function, however many places call it. Drawing a copy per
+/// call site was tried and is worse: `Vault.depositWithReferral` came to 77
+/// screenshots for 27 distinct functions, with `MathLib.mulDiv` — three lines of
+/// arithmetic — repeated fourteen times. Two thirds of that diagram carried no
+/// information.
 fn build_graph(
     metadata: &EvmBatMetadata,
     contract_name: &str,
@@ -828,8 +825,12 @@ fn build_graph(
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut truncated = 0usize;
+    // One node per function: a second call to the same function points at the
+    // node that already exists.
+    let mut drawn: HashMap<String, String> = HashMap::new();
 
-    let root_id = instance_id(&mut nodes, contract_name, function_name);
+    let root_id = node_key(contract_name, function_name);
+    drawn.insert(root_id.clone(), root_id.clone());
     nodes.push(make_node(
         root_id.clone(),
         format!("{contract_name}.{function_name}"),
@@ -845,8 +846,6 @@ fn build_graph(
         contract: String,
         function: String,
         depth: usize,
-        /// Callers above this node, to cut recursion without deduping globally.
-        ancestors: Vec<String>,
     }
 
     let mut stack = vec![Pending {
@@ -854,7 +853,6 @@ fn build_graph(
         contract: contract_name.to_string(),
         function: function_name.to_string(),
         depth: 0,
-        ancestors: vec![node_key(contract_name, function_name)],
     }];
 
     while let Some(current) = stack.pop() {
@@ -892,7 +890,7 @@ fn build_graph(
                 .position(|line| line.contains(modifier_name))
                 .map(|index| index + 1)
                 .unwrap_or(1);
-            let target_id = instance_id(&mut nodes, &owner.name, &definition.name);
+            let target_id = node_key(&owner.name, &definition.name);
             edges.push(GraphEdge {
                 from: current.node_id.clone(),
                 to: target_id.clone(),
@@ -903,33 +901,37 @@ fn build_graph(
                     .unwrap_or(0),
                 symbol: modifier_name.clone(),
             });
-            nodes.push(make_modifier_node(
-                target_id,
-                owner,
-                definition.name.clone(),
-                definition.line,
-                if definition.end_line > 0 {
-                    definition.end_line
-                } else {
-                    definition.line + 6
-                },
-                current.depth + 1,
-            ));
+            if drawn.insert(target_id.clone(), target_id.clone()).is_none() {
+                nodes.push(make_modifier_node(
+                    target_id,
+                    owner,
+                    definition.name.clone(),
+                    definition.line,
+                    if definition.end_line > 0 {
+                        definition.end_line
+                    } else {
+                        definition.line + 6
+                    },
+                    current.depth + 1,
+                ));
+            }
         }
 
-        for call in extract_call_sites_from_source(&slice.join("\n")) {
+        for call in extract_call_sites_from_source(&body_only(&slice).join("\n")) {
             let Some((target_contract, target_function)) =
                 resolve_call(metadata, contract, &call.name, options)
             else {
                 continue;
             };
-            let key = node_key(&target_contract.name, &target_function.name);
+            let target_id = node_key(&target_contract.name, &target_function.name);
+            if target_id == current.node_id {
+                continue; // a function calling itself needs no arrow
+            }
             if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
                 truncated += 1;
                 continue;
             }
 
-            let target_id = instance_id(&mut nodes, &target_contract.name, &target_function.name);
             edges.push(GraphEdge {
                 from: current.node_id.clone(),
                 to: target_id.clone(),
@@ -937,6 +939,12 @@ fn build_graph(
                 column: call.column,
                 symbol: call.symbol.clone(),
             });
+
+            // Seen before: the arrow points at the node already drawn, and there
+            // is nothing left to expand.
+            if drawn.insert(target_id.clone(), target_id.clone()).is_some() {
+                continue;
+            }
             nodes.push(make_node(
                 target_id.clone(),
                 format!("{}.{}", target_contract.name, target_function.name),
@@ -944,19 +952,11 @@ fn build_graph(
                 &target_function,
                 current.depth + 1,
             ));
-
-            // Already somewhere above us: draw it, do not descend into it again.
-            if current.ancestors.contains(&key) {
-                continue;
-            }
-            let mut ancestors = current.ancestors.clone();
-            ancestors.push(key);
             children.push(Pending {
                 node_id: target_id,
                 contract: target_contract.name.clone(),
                 function: target_function.name.clone(),
                 depth: current.depth + 1,
-                ancestors,
             });
         }
 
@@ -974,10 +974,6 @@ fn node_key(contract: &str, function: &str) -> String {
     format!("{contract}::{function}")
 }
 
-/// A unique id per *occurrence*, since the same function can appear many times.
-fn instance_id(nodes: &[GraphNode], contract: &str, function: &str) -> String {
-    format!("{}#{}", node_key(contract, function), nodes.len())
-}
 
 fn node_id(contract: &str, function: &str) -> String {
     format!("{contract}::{function}")
