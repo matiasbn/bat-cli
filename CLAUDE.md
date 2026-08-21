@@ -27,7 +27,7 @@ When cutting a release by hand (git-flow: branch off `develop`, bump `Cargo.toml
 `git flow release finish`, push `main`/`develop`/tags), always finish with **both** of these:
 
 ```bash
-cargo publish
+cargo publish                              # run this in a background agent, it takes minutes
 cargo install --path . --force --locked
 ```
 
