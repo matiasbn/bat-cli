@@ -44,9 +44,6 @@ const PATH_HEADER_LINES: usize = 2;
 /// reserve for automatic deployments.
 const REGION_MARGIN: f64 = 5_000.0;
 
-/// Above this many screenshots, confirm before deploying.
-const LARGE_TREE_WARNING: usize = 120;
-
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
 const ANCHOR_MARKER_SIZE: f64 = 24.0;
@@ -387,22 +384,6 @@ async fn deploy_one(
         );
     }
 
-    // A big tree is a lot of API calls and a lot of objects on the board, so
-    // give the chance to back out rather than discovering it halfway through.
-    if !options.dry_run && nodes.len() > LARGE_TREE_WARNING {
-        let approximate_calls = nodes.len() + edges.len() * 2 + 1;
-        println!(
-            "  {} that is roughly {} API calls",
-            "note:".yellow(),
-            approximate_calls
-        );
-        if !BatDialoguer::select_yes_or_no("Continue?".to_string())
-            .change_context(EvmMiroError)?
-        {
-            cleanup(&nodes);
-            return Ok(());
-        }
-    }
 
     render_and_measure(&mut nodes)?;
 
@@ -474,6 +455,24 @@ async fn deploy_one(
         frame_x.round(),
         frame_y.round()
     );
+
+    // Record the frame before filling it. If the run dies partway through, the
+    // frame is still registered and `--replace` can clean it up; recording only
+    // on success would leave an orphan nothing knows about.
+    let frame_url = client.frame_url(&frame_id);
+    let mut record = AutoDeployedFrame {
+        entry_point: title.clone(),
+        frame_id: frame_id.clone(),
+        frame_url: frame_url.clone(),
+        x: frame_x,
+        y: frame_y,
+        width: layout.frame_width,
+        height: layout.frame_height,
+        images: Vec::new(),
+        connector_ids: Vec::new(),
+        marker_ids: Vec::new(),
+    };
+    save_frame_record(&record)?;
 
     // Images, already positioned and parented — one call each, no follow-up
     // PATCH. They are independent of each other, so they go up concurrently;
@@ -618,28 +617,29 @@ async fn deploy_one(
     bar.finish_and_clear();
     println!("    {} {} connector(s)", "✓".green(), connector_ids.len());
 
-    let frame_url = client.frame_url(&frame_id);
-    let record = AutoDeployedFrame {
-        entry_point: title.clone(),
-        frame_id: frame_id.clone(),
-        frame_url: frame_url.clone(),
-        x: frame_x,
-        y: frame_y,
-        width: layout.frame_width,
-        height: layout.frame_height,
-        images: image_ids.into_iter().collect(),
-        connector_ids,
-        marker_ids,
-    };
-    EvmBatMetadata::update_metadata(|m| {
-        m.miro.auto.frames.retain(|f| f.entry_point != record.entry_point);
-        m.miro.auto.frames.push(record.clone());
-    })
-    .change_context(EvmMiroError)?;
+    record.images = image_ids.into_iter().collect();
+    record.connector_ids = connector_ids;
+    record.marker_ids = marker_ids;
+    save_frame_record(&record)?;
 
     println!("  {}", frame_url.blue());
     cleanup(&nodes);
     Ok(())
+}
+
+/// Store what a deployment owns, replacing any earlier record for the same
+/// entry point.
+fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
+    let record = record.clone();
+    EvmBatMetadata::update_metadata(move |metadata| {
+        metadata
+            .miro
+            .auto
+            .frames
+            .retain(|frame| frame.entry_point != record.entry_point);
+        metadata.miro.auto.frames.push(record.clone());
+    })
+    .change_context(EvmMiroError)
 }
 
 /// Delete the frame, images and connectors left by an earlier run, so iterating
