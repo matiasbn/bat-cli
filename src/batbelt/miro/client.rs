@@ -480,45 +480,6 @@ impl MiroClient {
     }
 }
 
-impl MiroClient {
-    /// Delete one item. A missing item counts as success, so cleaning up after
-    /// a partial run is idempotent.
-    pub async fn delete_item(&self, item_id: &str) -> Result<(), MiroError> {
-        let url = format!("{}/{}", self.endpoint("items"), item_id);
-        match self
-            .execute(LEVEL_2_CREDITS, "delete_item", move |http| http.delete(&url))
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(report) => {
-                if format!("{report:?}").contains("HTTP 404") {
-                    return Ok(());
-                }
-                Err(report)
-            }
-        }
-    }
-
-    /// Delete one connector, tolerating one that is already gone.
-    pub async fn delete_connector(&self, connector_id: &str) -> Result<(), MiroError> {
-        let url = format!("{}/{}", self.endpoint("connectors"), connector_id);
-        match self
-            .execute(LEVEL_2_CREDITS, "delete_connector", move |http| {
-                http.delete(&url)
-            })
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(report) => {
-                if format!("{report:?}").contains("HTTP 404") {
-                    return Ok(());
-                }
-                Err(report)
-            }
-        }
-    }
-}
-
 /// Prefer `Retry-After`, fall back to `X-RateLimit-Reset` (a UNIX timestamp).
 fn retry_after(response: &reqwest::Response) -> Option<Duration> {
     let headers = response.headers();

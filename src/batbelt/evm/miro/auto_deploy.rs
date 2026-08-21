@@ -86,8 +86,6 @@ pub struct AutoDeployOptions {
     pub dry_run: bool,
     /// Include contracts coming from `lib/`.
     pub include_external: bool,
-    /// Delete the previous deployment of this entry point before redeploying.
-    pub replace: bool,
     /// Compose a local preview PNG of the frame at this path.
     pub preview: Option<String>,
     /// Connector thickness in dp, 1 to 24. Miro's UI snaps this to its own
@@ -104,7 +102,6 @@ impl Default for AutoDeployOptions {
             max_nodes: None,
             dry_run: false,
             include_external: false,
-            replace: false,
             preview: None,
             stroke_width: 8,
         }
@@ -399,6 +396,23 @@ async fn deploy_one(
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
 
+    // One frame per function, board-wide. A function already on the board is
+    // pointed at, never drawn a second time: that is what lets several diagrams
+    // share a helper's frame, and what keeps the fan-in readable — a single
+    // frame with several references, rather than a copy per caller.
+    if !options.dry_run {
+        if let Some(existing) = metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+        {
+            println!("  already on the board: {}", existing.frame_url.blue());
+            return Ok(());
+        }
+    }
+
     let (mut nodes, edges, truncated) = build_graph(metadata, contract_name, function_name, options)?;
     if nodes.is_empty() {
         println!("  no function metadata found, skipping");
@@ -469,10 +483,6 @@ async fn deploy_one(
     }
 
     let client = client.expect("client is present when not in dry-run mode");
-
-    if options.replace {
-        remove_previous_deployment(client, &title).await?;
-    }
     let frame_id = client
         .create_frame(
             &format!("auto: {title}"),
@@ -492,9 +502,8 @@ async fn deploy_one(
         frame_y.round()
     );
 
-    // Record the frame before filling it. If the run dies partway through, the
-    // frame is still registered and `--replace` can clean it up; recording only
-    // on success would leave an orphan nothing knows about.
+    // Record the frame before filling it, so a run that dies partway through
+    // still leaves something that names what is on the board.
     let frame_url = client.frame_url(&frame_id);
     let mut record = AutoDeployedFrame {
         entry_point: title.clone(),
@@ -704,60 +713,6 @@ fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
         metadata.miro.auto.frames.push(record.clone());
     })
     .change_context(EvmMiroError)
-}
-
-/// Delete the frame, images and connectors left by an earlier run, so iterating
-/// on the layout does not pile up duplicates on the board.
-///
-/// Connectors go first: deleting an item its connector still points at leaves
-/// the connector dangling.
-async fn remove_previous_deployment(client: &MiroClient, entry_point: &str) -> Result<()> {
-    let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-    let Some(previous) = metadata
-        .miro
-        .auto
-        .frames
-        .iter()
-        .find(|frame| frame.entry_point == entry_point)
-        .cloned()
-    else {
-        return Ok(());
-    };
-
-    println!(
-        "  replacing the previous deployment ({} image(s), {} connector(s), {} marker(s))",
-        previous.images.len(),
-        previous.connector_ids.len(),
-        previous.marker_ids.len()
-    );
-    for connector_id in &previous.connector_ids {
-        client
-            .delete_connector(connector_id)
-            .await
-            .change_context(EvmMiroError)?;
-    }
-    for marker_id in &previous.marker_ids {
-        client
-            .delete_item(marker_id)
-            .await
-            .change_context(EvmMiroError)?;
-    }
-    for (_, image_id) in &previous.images {
-        client
-            .delete_item(image_id)
-            .await
-            .change_context(EvmMiroError)?;
-    }
-    client
-        .delete_item(&previous.frame_id)
-        .await
-        .change_context(EvmMiroError)?;
-
-    EvmBatMetadata::update_metadata(|m| {
-        m.miro.auto.frames.retain(|f| f.entry_point != entry_point);
-    })
-    .change_context(EvmMiroError)?;
-    Ok(())
 }
 
 /// Anchors for every edge, in the same order as `edges`.

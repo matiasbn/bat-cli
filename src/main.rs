@@ -102,9 +102,6 @@ enum BatCommands {
         /// Include contracts coming from lib/
         #[arg(long)]
         include_external: bool,
-        /// Delete the previous deployment of this entry point first
-        #[arg(long)]
-        replace: bool,
         /// Write a local PNG preview of the composed frame to this path
         #[arg(long)]
         preview: Option<String>,
@@ -150,7 +147,6 @@ impl BatCommands {
                 max_nodes,
                 dry_run,
                 include_external,
-                replace,
                 preview,
                 stroke_width,
             } => crate::batbelt::evm::miro::auto_deploy::run(
@@ -161,7 +157,6 @@ impl BatCommands {
                     max_nodes: *max_nodes,
                     dry_run: *dry_run,
                     include_external: *include_external,
-                    replace: *replace,
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
                 },
