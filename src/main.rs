@@ -42,11 +42,10 @@ struct Cli {
     Default, strum_macros::Display, Subcommand, Debug, PartialEq, Clone, strum_macros::EnumIter,
 )]
 enum BatCommands {
-    /// Initialize a Bat project
+    /// Set up a bat project here: detect the framework, create the Miro board
+    /// and scan the source code
     #[default]
     Init,
-    /// Reload the Bat project files (ideal to resume work from git clone)
-    Reload,
     /// Authorize bat-cli against Miro once, for every project on this machine
     Login {
         /// Register the Miro app credentials before authorizing
@@ -76,9 +75,10 @@ enum BatCommands {
         #[arg(long)]
         edit: bool,
     },
-    /// Execute the BatSonar to create metadata files for all Sonar result types
+    /// Rescan the source code after it changed, rebuilding the metadata that
+    /// deploy reads
     Sonar,
-    /// Deploy an entry point's dependency graph to Miro
+    /// Deploy an entry point's screenshots to a Miro board
     Deploy {
         /// Entry point to deploy, as `name` or `Contract.name`. Omit to pick
         /// one from a list.
@@ -120,7 +120,6 @@ impl BatCommands {
         self.validate_command()?;
         match self {
             BatCommands::Init => ProjectCommands::Init.init_bat_project().await,
-            BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::Login {
                 setup,
                 status,
@@ -178,7 +177,6 @@ impl BatCommands {
     fn validate_command(&self) -> CommandResult<()> {
         let check_metadata = match self {
             BatCommands::Init
-            | BatCommands::Reload
             | BatCommands::Login { .. }
             | BatCommands::Logout
             | BatCommands::Config { .. }

@@ -16,7 +16,7 @@ use super::CommandError;
 
 #[derive(Subcommand, Debug, strum_macros::Display, PartialEq, Clone, strum_macros::EnumIter)]
 pub enum SonarCommand {
-    /// Gets metadata from the source code
+    /// Rescan the source code and rebuild the metadata
     Run,
 }
 impl BatEnumerator for SonarCommand {}

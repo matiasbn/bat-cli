@@ -25,7 +25,6 @@ use crate::config::{BatConfig, BatGlobalConfig};
 pub enum ProjectCommands {
     #[default]
     Init,
-    Reload,
 }
 
 impl BatEnumerator for ProjectCommands {}
@@ -34,7 +33,6 @@ impl BatCommandEnumerator for ProjectCommands {
     fn execute_command(&self) -> CommandResult<()> {
         match self {
             ProjectCommands::Init => unimplemented!("init is async, call init_bat_project"),
-            ProjectCommands::Reload => Self::reload_bat_project(),
         }
     }
 
@@ -48,12 +46,11 @@ impl ProjectCommands {
     /// scan the code.
     pub async fn init_bat_project(&self) -> Result<(), CommandError> {
         if BatFile::BatToml.file_exists().change_context(CommandError)? {
-            println!(
-                "{} already exists here; running {} instead",
-                "Bat.toml".yellow(),
-                "reload".yellow()
-            );
-            return Self::reload_bat_project();
+            return Err(Report::new(CommandError)
+                .attach_printable("this is already a bat project")
+                .attach(crate::Suggestion(
+                    "run `bat-cli sonar` to rescan the source after it changed".to_string(),
+                )));
         }
 
         BatConfig::new_with_prompt().change_context(CommandError)?;
@@ -85,16 +82,6 @@ impl ProjectCommands {
         Ok(())
     }
 
-    /// Rebuild the metadata cache from the current source.
-    fn reload_bat_project() -> CommandResult<()> {
-        BatConfig::get_config().change_context(CommandError)?;
-        TemplateGenerator
-            .create_workspace_folders()
-            .change_context(CommandError)?;
-        SonarCommand::Run.execute_command()?;
-        println!("{} metadata reloaded", "✓".green());
-        Ok(())
-    }
 
     /// Ask for the Miro board once and record it in `Bat.toml`.
     ///

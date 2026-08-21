@@ -95,9 +95,11 @@ one), writes `Bat.toml` and `BatMetadata.json` at the root of the audited
 repository, and runs the initial sonar analysis. bat-cli creates no branches and
 no commits.
 
-### Static analysis (`sonar`)
+### Rescan (`sonar`)
 
-Parses the entire codebase via AST and extracts metadata into a single `BatMetadata.json`:
+`init` scans once. Run `sonar` after the source changes to rebuild
+`BatMetadata.json`, which is what `deploy` reads. It parses the codebase via AST
+and extracts:
 
 **Solana (Anchor / Pinocchio / vanilla Rust):**
 - Functions, structs, traits, enums
