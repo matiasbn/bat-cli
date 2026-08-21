@@ -30,13 +30,11 @@ use log4rs::encode::pattern::PatternEncoder;
 
 // use crate::commands::analytics_commands::AnalyticsCommand;
 use log4rs::Config;
-use package::PackageCommand;
 use regex::Regex;
 
 pub mod batbelt;
 pub mod commands;
 pub mod config;
-pub mod package;
 
 // pub type BatDerive = #[derive(Debug, PartialEq, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
@@ -72,6 +70,15 @@ enum BatCommands {
     },
     /// Revoke the stored Miro token and forget it
     Logout,
+    /// Update bat-cli to the latest published version
+    Update {
+        /// Only report whether a newer version exists
+        #[arg(long)]
+        check: bool,
+        /// Reinstall even when already up to date
+        #[arg(long)]
+        force: bool,
+    },
     /// Show or edit the machine-wide preferences (~/.config/bat-cli/config.toml)
     Config {
         /// Re-answer the preferences instead of only printing them
@@ -89,9 +96,6 @@ enum BatCommands {
     /// Miro integration
     #[command(subcommand)]
     Miro(MiroCommand),
-    /// Cargo publish operations, available only for dev
-    #[command(subcommand)]
-    Package(PackageCommand),
 }
 
 impl BatEnumerator for BatCommands {}
@@ -117,6 +121,9 @@ impl BatCommands {
             BatCommands::Logout => crate::batbelt::miro::auth::logout()
                 .await
                 .change_context(CommandError),
+            BatCommands::Update { check, force } => {
+                crate::commands::update_commands::run(*check, *force).await
+            }
             BatCommands::Config { edit } => {
                 ProjectCommands::show_global_config(*edit).change_context(CommandError)
             }
@@ -124,19 +131,6 @@ impl BatCommands {
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
             BatCommands::Miro(command) => command.execute_command().await,
             BatCommands::Tool(command) => command.execute_command(),
-            // only for dev
-            #[cfg(debug_assertions)]
-            BatCommands::Package(PackageCommand::Format) => {
-                package::format().change_context(CommandError)
-            }
-            #[cfg(debug_assertions)]
-            BatCommands::Package(PackageCommand::Release) => {
-                package::release().change_context(CommandError)
-            }
-            #[cfg(not(debug_assertions))]
-            BatCommands::Package(_) => {
-                unimplemented!("Command only implemented for dev operations")
-            }
         }
     }
 
@@ -149,10 +143,10 @@ impl BatCommands {
                 return Ok(());
             }
             // Authentication is machine-wide, so it must work outside a project.
-            BatCommands::Login { .. } | BatCommands::Logout | BatCommands::Config { .. } => {
-                return Ok(());
-            }
-            BatCommands::Package(_) => {
+            BatCommands::Login { .. }
+            | BatCommands::Logout
+            | BatCommands::Config { .. }
+            | BatCommands::Update { .. } => {
                 return Ok(());
             }
             BatCommands::Sonar => (
@@ -331,11 +325,11 @@ async fn run() -> CommandResult<()> {
     Suggestion::set_report();
     // env_logger selectively
     match cli.command {
-        BatCommands::Package(..)
-        | BatCommands::Init
+        BatCommands::Init
         | BatCommands::Login { .. }
         | BatCommands::Logout
-        | BatCommands::Config { .. } => {
+        | BatCommands::Config { .. }
+        | BatCommands::Update { .. } => {
             env_logger::init();
             Ok(())
         }

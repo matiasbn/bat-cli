@@ -14,6 +14,18 @@ Supports **Anchor**, **Pinocchio**, **vanilla Rust** (Solana), and **Foundry** (
 cargo install bat-cli
 ```
 
+## Updating (`update`)
+
+```bash
+bat-cli update           # install the latest version published to crates.io
+bat-cli update --check   # only report whether a newer version exists
+bat-cli update --force   # reinstall even when already up to date
+```
+
+It reads the latest version from the crates.io API, compares it numerically
+against the running binary, and shells out to
+`cargo install bat-cli --version X --force --locked`.
+
 ## Authentication (`login`)
 
 Miro authorization happens once per machine, not once per project:

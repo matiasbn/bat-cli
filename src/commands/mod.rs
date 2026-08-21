@@ -9,6 +9,7 @@ pub mod project_commands;
 pub mod repository_commands;
 pub mod sonar_commands;
 pub mod tools_commands;
+pub mod update_commands;
 
 use crate::batbelt::BatEnumerator;
 use inflector::Inflector;
