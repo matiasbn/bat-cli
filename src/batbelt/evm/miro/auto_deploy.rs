@@ -15,6 +15,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use colored::Colorize;
 use error_stack::{IntoReport, Report, ResultExt};
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::batbelt::evm::metadata::bat_metadata::{
     AutoDeployedFrame, ContractMetadata, EvmBatMetadata, FunctionMetadata, ShelfState,
@@ -46,6 +47,23 @@ const REGION_MARGIN: f64 = 5_000.0;
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
 const ANCHOR_MARKER_SIZE: f64 = 24.0;
+
+/// A bar that shows what is happening and how far along it is.
+///
+/// Rendering and uploading are both long enough to look like a hang without
+/// one: a deployment can render dozens of screenshots and then make a hundred
+/// API calls, and the previous output went silent for the whole of each phase.
+fn phase_bar(label: &str, total: usize) -> ProgressBar {
+    let bar = ProgressBar::new(total as u64);
+    bar.set_style(
+        ProgressStyle::with_template("  {spinner:.blue} {msg} {pos}/{len} {wide_bar:.blue}")
+            .unwrap()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
+    );
+    bar.set_message(label.to_string());
+    bar.enable_steady_tick(std::time::Duration::from_millis(100));
+    bar
+}
 
 /// Connector colors, cycled per depth so sibling levels stay distinguishable.
 const DEPTH_COLORS: &[&str] = &[
@@ -429,102 +447,147 @@ async fn deploy_one(
         frame_y.round()
     );
 
-    // Images, already positioned and parented — one call each, no follow-up PATCH.
-    let mut image_ids: HashMap<String, String> = HashMap::new();
-    for node in &nodes {
-        let placed = match layout.node(&node.id) {
-            Some(placed) => placed,
-            None => continue,
-        };
-        let image_id = client
-            .create_image_in_frame(
-                &node.png_path,
-                &frame_id,
-                &node.label,
-                placed.x,
-                placed.y,
-                placed.width,
-            )
-            .await
-            .change_context(EvmMiroError)?;
-        println!("    {} {}", "✓".green(), node.label);
-        image_ids.insert(node.id.clone(), image_id);
+    // Images, already positioned and parented — one call each, no follow-up
+    // PATCH. They are independent of each other, so they go up concurrently;
+    // the client's semaphore and credit budget are what actually bound the rate.
+    let uploads: Vec<_> = nodes
+        .iter()
+        .filter_map(|node| layout.node(&node.id).map(|placed| (node, placed)))
+        .collect();
+    let bar = phase_bar("uploading screenshots", uploads.len());
+    let mut upload_tasks = tokio::task::JoinSet::new();
+    for (node, placed) in uploads {
+        let client = client.clone();
+        let frame_id = frame_id.clone();
+        let node_id = node.id.clone();
+        let png_path = node.png_path.clone();
+        let label = node.label.clone();
+        let (x, y, width) = (placed.x, placed.y, placed.width);
+        let bar = bar.clone();
+        upload_tasks.spawn(async move {
+            let result = client
+                .create_image_in_frame(&png_path, &frame_id, &label, x, y, width)
+                .await;
+            bar.inc(1);
+            result.map(|image_id| (node_id, image_id))
+        });
     }
+
+    let mut image_ids: HashMap<String, String> = HashMap::new();
+    while let Some(joined) = upload_tasks.join_next().await {
+        let (node_id, image_id) = joined
+            .into_report()
+            .change_context(EvmMiroError)?
+            .change_context(EvmMiroError)?;
+        image_ids.insert(node_id, image_id);
+    }
+    bar.finish_and_clear();
+    println!("    {} {} screenshots uploaded", "✓".green(), image_ids.len());
 
     // Connectors, one per call site. Each starts on an invisible marker sitting
     // on the called token, because Miro clips a connector at the boundary of the
     // item it attaches to: anchoring inside the screenshot itself would push the
     // arrow head out to the screenshot's border.
     let back_edges: HashSet<(String, String)> = layout.back_edges.iter().cloned().collect();
-    let mut connector_ids = Vec::new();
-    let mut marker_ids = Vec::new();
+
+    // Each call site needs a marker and then a connector attached to it. The
+    // two are ordered within a call site but independent across them, so each
+    // pair runs as one task.
+    struct PendingConnector {
+        marker_x: f64,
+        marker_y: f64,
+        start_id: String,
+        end_id: String,
+        end_anchor: RelativeAnchor,
+        style: ConnectorStyle,
+    }
+
+    let mut pending = Vec::new();
     for (edge, start_anchor) in edges.iter().zip(anchors.iter()) {
-        let (Some(start_id), Some(end_id)) =
-            (image_ids.get(&edge.from), image_ids.get(&edge.to))
+        let (Some(start_id), Some(end_id)) = (image_ids.get(&edge.from), image_ids.get(&edge.to))
         else {
             continue;
         };
-        let caller = match by_id.get(edge.from.as_str()) {
-            Some(node) => *node,
-            None => continue,
+        let (Some(caller), Some(callee)) = (
+            by_id.get(edge.from.as_str()),
+            by_id.get(edge.to.as_str()),
+        ) else {
+            continue;
         };
-        let callee = match by_id.get(edge.to.as_str()) {
-            Some(node) => *node,
-            None => continue,
-        };
-
-        let end_anchor = RelativeAnchor::new(
-            0.0,
-            silicon::line_geometry(Some(callee.font_size))
-                .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height),
-        );
-
         let Some(caller_placed) = layout.node(&edge.from) else {
             continue;
         };
-        let marker_id = client
-            .create_anchor_marker(
-                &frame_id,
-                caller_placed.x - caller_placed.width / 2.0
-                    + caller_placed.width * start_anchor.x_fraction,
-                caller_placed.y - caller_placed.height / 2.0
-                    + caller_placed.height * start_anchor.y_fraction,
-                ANCHOR_MARKER_SIZE,
-            )
-            .await
-            .change_context(EvmMiroError)?;
-        marker_ids.push(marker_id.clone());
 
         let source_line = caller.start_line + edge.line_in_slice - 1;
-        let style = ConnectorStyle {
-            stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
-            stroke_width: options.stroke_width.to_string(),
-            dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
-            caption: Some(format!("<p>L{source_line}</p>")),
-            arrow_at_start: true,
-        };
+        pending.push(PendingConnector {
+            marker_x: caller_placed.x - caller_placed.width / 2.0
+                + caller_placed.width * start_anchor.x_fraction,
+            marker_y: caller_placed.y - caller_placed.height / 2.0
+                + caller_placed.height * start_anchor.y_fraction,
+            start_id: start_id.clone(),
+            end_id: end_id.clone(),
+            end_anchor: RelativeAnchor::new(
+                0.0,
+                silicon::line_geometry(Some(callee.font_size))
+                    .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height),
+            ),
+            style: ConnectorStyle {
+                stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
+                stroke_width: options.stroke_width.to_string(),
+                dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
+                caption: Some(format!("<p>L{source_line}</p>")),
+                arrow_at_start: true,
+            },
+        });
+    }
 
-        let _ = start_id;
-        let connector_id = client
-            .create_connector(
-                &marker_id,
-                // Centre, so Miro routes into the marker from above and the
-                // connector keeps its elbowed look. The head then points down
-                // at the token: its tip is exact, but its body is roughly as
-                // long as a line is tall at this stroke width, so it reads as
-                // sitting slightly high. Anchoring on the right edge would lay
-                // the head along the line instead, at the cost of a straight
-                // horizontal run into the token, which reads worse.
-                // `--stroke-width` shrinks the head if the offset matters more.
-                RelativeAnchor::new(0.5, 0.5),
-                end_id,
-                end_anchor,
-                style,
-            )
-            .await
+    let bar = phase_bar("drawing connectors", pending.len());
+    let mut connector_tasks = tokio::task::JoinSet::new();
+    for item in pending {
+        let client = client.clone();
+        let frame_id = frame_id.clone();
+        let bar = bar.clone();
+        connector_tasks.spawn(async move {
+            let marker_id = client
+                .create_anchor_marker(
+                    &frame_id,
+                    item.marker_x,
+                    item.marker_y,
+                    ANCHOR_MARKER_SIZE,
+                )
+                .await?;
+            let _ = item.start_id;
+            let connector_id = client
+                .create_connector(
+                    &marker_id,
+                    // Centre, so Miro routes into the marker from above and the
+                    // connector keeps its elbowed look. The head then points
+                    // down at the token: its tip is exact, but its body is
+                    // roughly as long as a line is tall at this stroke width,
+                    // so it reads as sitting slightly high. `--stroke-width`
+                    // shrinks the head if the offset matters more.
+                    RelativeAnchor::new(0.5, 0.5),
+                    &item.end_id,
+                    item.end_anchor,
+                    item.style,
+                )
+                .await?;
+            bar.inc(1);
+            Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((marker_id, connector_id))
+        });
+    }
+
+    let mut connector_ids = Vec::new();
+    let mut marker_ids = Vec::new();
+    while let Some(joined) = connector_tasks.join_next().await {
+        let (marker_id, connector_id) = joined
+            .into_report()
+            .change_context(EvmMiroError)?
             .change_context(EvmMiroError)?;
+        marker_ids.push(marker_id);
         connector_ids.push(connector_id);
     }
+    bar.finish_and_clear();
     println!("    {} {} connector(s)", "✓".green(), connector_ids.len());
 
     let frame_url = client.frame_url(&frame_id);
@@ -1076,7 +1139,9 @@ fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
         .get_path(true)
         .change_context(EvmMiroError)?;
 
+    let bar = phase_bar("rendering screenshots", nodes.len());
     for node in nodes.iter_mut() {
+        bar.inc(1);
         let code = read_slice(&node.file_path, node.start_line, node.end_line);
         if code.is_empty() {
             continue;
@@ -1120,6 +1185,8 @@ fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
         node.png_height = height;
         node.rendered_lines = rendered;
     }
+    bar.finish_and_clear();
+    println!("    {} {} screenshots rendered", "✓".green(), nodes.len());
     Ok(())
 }
 
