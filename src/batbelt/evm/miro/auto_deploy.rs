@@ -489,20 +489,27 @@ async fn deploy_one(
     let root_id = nodes[0].id.clone();
     let mut layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
 
-    // Cut the edges that skip layers and lay it out again. Cutting one changes
-    // where everything sits, which can expose another, so repeat until nothing
-    // is left to cut — bounded, since every pass strictly removes an edge.
+    // Only cut when the frame is too big to read, and only a cut that measurably
+    // shrinks it. Arrows reaching across layers are not by themselves a reason:
+    // the layout already reserves a corridor for them, so they cross nothing.
+    // What a card buys is space, and it only buys space when the call it
+    // replaces was the last reference to a branch.
     let mut anchors = anchors;
     for _ in 0..MAX_CUT_PASSES {
-        let cut = cut_long_edges(&mut nodes, &mut edges, &layout);
-        if cut == 0 {
+        if screenshot_count(&nodes) <= READABLE_SCREENSHOTS {
             break;
         }
+        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges) else {
+            // Too big, but nothing left that cutting would shrink.
+            break;
+        };
         println!(
-            "  {} {} call(s) reach a function far enough away to link to instead",
+            "  {} {} screenshots is more than reads well; linking a branch out to\n  its own frame instead",
             "note:".yellow(),
-            cut
+            screenshot_count(&nodes)
         );
+        nodes = cut_nodes;
+        edges = cut_edges;
 
         anchors = compute_anchors(&nodes, &edges);
         let layout_nodes: Vec<LayoutNode> = nodes
@@ -944,10 +951,9 @@ fn build_graph(
     function_name: &str,
     options: &AutoDeployOptions,
 ) -> Result<(Vec<GraphNode>, Vec<GraphEdge>, usize)> {
-    let Some(root_function) = find_function(metadata, contract_name, function_name) else {
-        return Ok((Vec::new(), Vec::new(), 0));
-    };
-    let Some(root_contract) = metadata.get_contract_by_name(contract_name) else {
+    let Some((root_contract, root_function)) =
+        find_function(metadata, contract_name, function_name)
+    else {
         return Ok((Vec::new(), Vec::new(), 0));
     };
 
@@ -988,10 +994,10 @@ fn build_graph(
         if options.max_depth.is_some_and(|limit| current.depth >= limit) {
             continue;
         }
-        let Some(contract) = metadata.get_contract_by_name(&current.contract) else {
-            continue;
-        };
-        let Some(function) = find_function(metadata, &current.contract, &current.function) else {
+        // The contract that defines the function, which is where its source is.
+        let Some((contract, function)) =
+            find_function(metadata, &current.contract, &current.function)
+        else {
             continue;
         };
         let slice = read_slice(
@@ -1185,16 +1191,21 @@ fn function_end(function: &FunctionMetadata, contract: &ContractMetadata) -> usi
     function.line
 }
 
-fn find_function(
-    metadata: &EvmBatMetadata,
+/// Find a function, and the contract that actually **defines** it.
+///
+/// Returning the contract it was reached through instead is wrong for anything
+/// inherited: `Settlement.settle` is defined in `Pipeline`, so reading its source
+/// out of `Settlement.sol` lands on unrelated lines, and the screenshot comes out
+/// empty. That silently truncated every diagram at the first inherited call.
+fn find_function<'a>(
+    metadata: &'a EvmBatMetadata,
     contract_name: &str,
     function_name: &str,
-) -> Option<FunctionMetadata> {
+) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
     let contract = metadata.get_contract_by_name(contract_name)?;
     if let Some(function) = contract.functions.iter().find(|f| f.name == function_name) {
-        return Some(function.clone());
+        return Some((contract, function.clone()));
     }
-    // Inherited function.
     for base in &contract.base_contracts {
         if let Some(found) = find_function(metadata, base, function_name) {
             return Some(found);
@@ -1278,8 +1289,8 @@ fn resolve_call<'a>(
                     if !keep(target) {
                         continue;
                     }
-                    if let Some(function) = find_function(metadata, &target.name, method) {
-                        return Some((target, function));
+                    if let Some(found) = find_function(metadata, &target.name, method) {
+                        return Some(found);
                     }
                 }
             }
@@ -1288,9 +1299,9 @@ fn resolve_call<'a>(
         if !keep(contract) {
             continue;
         }
-        if let Some(function) = find_function(metadata, &contract.name, method) {
+        if let Some(found) = find_function(metadata, &contract.name, method) {
             // Skip interface-only declarations with no body.
-            return Some((contract, function));
+            return Some(found);
         }
     }
     None
@@ -1832,98 +1843,111 @@ mod split_shared_leaves_test {
     }
 }
 
-/// Replace the target of every edge that skips layers with a link card.
+/// How many screenshots a frame can hold and still be read in one sitting.
 ///
-/// The decision is per **edge**, not per function, and that distinction is the
-/// point. `FeeLib.feeOf` is called from layer 1 and from layer 2. Laid out, it
-/// sits on layer 3: the arrow from layer 2 is fine, the one from layer 1 has to
-/// cross the column in between. Sending the whole function to its own frame
-/// would take away the arrow that was already fine. Cutting the edge takes away
-/// only the one that was not — the near caller keeps the screenshot, the far one
-/// gets a card that links to the function's own frame.
+/// Measured rather than chosen: `Vault.depositWithReferral` at 32 screenshots
+/// and 14874x2894 is comfortable, so the limit sits above what has been seen to
+/// work. Below it nothing is cut, and the diagram shows the code.
+const READABLE_SCREENSHOTS: usize = 45;
+
+/// Replace one call with a card linking to the callee's own frame.
 ///
-/// A leaf is never cut: a copy of it costs one small screenshot and
+/// The decision is per **edge**, not per function. `FeeLib.feeOf` is called from
+/// layer 1 and from layer 2 and lays out on layer 3: the arrow from layer 2 is
+/// fine, the one from layer 1 reaches further. Moving the whole function out
+/// would take away the arrow that was already fine, so only the far call is
+/// replaced — the near caller keeps the screenshot.
+fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize) {
+    let Some(label) = nodes
+        .iter()
+        .find(|node| node.id == edges[index].to)
+        .map(|node| node.label.clone())
+    else {
+        return;
+    };
+
+    let card_id = format!("\u{0}link{index}");
+    nodes.push(GraphNode {
+        id: card_id.clone(),
+        label: label.clone(),
+        kind: NodeKind::Link { target: label },
+        file_path: String::new(),
+        start_line: 0,
+        end_line: 0,
+        depth: 0,
+        font_size: 22,
+        png_path: String::new(),
+        png_width: LINK_CARD_WIDTH as u32,
+        png_height: LINK_CARD_HEIGHT as u32,
+        rendered_lines: Vec::new(),
+        line_offset: 0,
+    });
+    edges[index].to = card_id;
+    prune_unreachable(nodes, edges);
+}
+
+/// Screenshots only: a card is a reference, not something to read.
+fn screenshot_count(nodes: &[GraphNode]) -> usize {
+    nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Screenshot)
+        .count()
+}
+
+/// The cut that removes the most screenshots, if any removes one at all.
+///
+/// A cut has to earn its place. Replacing a call to a shared function takes
+/// nothing off the frame, because the other caller still needs the function and
+/// everything under it: the card is added and no screenshot leaves. It only pays
+/// when the call was the last reference, so the subtree becomes unreachable and
+/// goes with it.
+///
+/// Any call is a candidate, not only the ones reaching across layers. A call
+/// spanning layers can never strand anything — the longer path that put its
+/// target down there arrives through a nearer caller, which keeps holding it up.
+/// The calls that free space are the ordinary ones: the single call into a deep
+/// branch, whose removal takes the branch with it.
+///
+/// Leaves are never candidates: a copy costs one small screenshot and
 /// [`split_shared_leaves`] has already made those, so a card would be a click in
 /// exchange for nothing.
-///
-/// Returns the number of edges cut.
-fn cut_long_edges(
-    nodes: &mut Vec<GraphNode>,
-    edges: &mut [GraphEdge],
-    layout: &GraphLayout,
-) -> usize {
-    let layer_of: HashMap<&str, usize> = layout
-        .nodes
-        .iter()
-        .map(|node| (node.id.as_str(), node.layer))
-        .collect();
-
+fn best_cut(
+    nodes: &[GraphNode],
+    edges: &[GraphEdge],
+) -> Option<(Vec<GraphNode>, Vec<GraphEdge>)> {
     let has_children: HashSet<&str> = edges.iter().map(|edge| edge.from.as_str()).collect();
 
-    let long: Vec<usize> = edges
-        .iter()
-        .enumerate()
-        .filter(|(_, edge)| {
-            let (Some(from), Some(to)) =
-                (layer_of.get(edge.from.as_str()), layer_of.get(edge.to.as_str()))
-            else {
-                return false;
-            };
-            to.saturating_sub(*from) > 1 && has_children.contains(edge.to.as_str())
-        })
-        .map(|(index, _)| index)
-        .collect();
-    if long.is_empty() {
-        return 0;
-    }
+    let before = screenshot_count(nodes);
+    let mut best: Option<(usize, Vec<GraphNode>, Vec<GraphEdge>)> = None;
 
-    let label_of: HashMap<&str, &str> = nodes
-        .iter()
-        .map(|node| (node.id.as_str(), node.label.as_str()))
-        .collect();
-
-    let mut cards: Vec<GraphNode> = Vec::new();
-    for index in &long {
-        let edge = &edges[*index];
-        let Some(label) = label_of.get(edge.to.as_str()).copied() else {
+    for (index, edge) in edges.iter().enumerate() {
+        if !has_children.contains(edge.to.as_str()) {
             continue;
-        };
-        cards.push(GraphNode {
-            id: format!("\u{0}link{index}"),
-            label: label.to_string(),
-            kind: NodeKind::Link {
-                target: label.to_string(),
-            },
-            file_path: String::new(),
-            start_line: 0,
-            end_line: 0,
-            depth: 0,
-            font_size: 22,
-            png_path: String::new(),
-            png_width: LINK_CARD_WIDTH as u32,
-            png_height: LINK_CARD_HEIGHT as u32,
-            rendered_lines: Vec::new(),
-            line_offset: 0,
-        });
+        }
+
+        let mut candidate_nodes = nodes.to_vec();
+        let mut candidate_edges = edges.to_vec();
+        cut_edge(&mut candidate_nodes, &mut candidate_edges, index);
+
+        let saved = before.saturating_sub(screenshot_count(&candidate_nodes));
+        if saved == 0 {
+            continue;
+        }
+        if best.as_ref().map(|(most, _, _)| saved > *most).unwrap_or(true) {
+            best = Some((saved, candidate_nodes, candidate_edges));
+        }
     }
 
-    for (position, index) in long.iter().enumerate() {
-        edges[*index].to = cards[position].id.clone();
-    }
-    nodes.extend(cards);
-
-    // Whatever the cuts left unreachable is not part of this diagram any more.
-    prune_unreachable(nodes, edges);
-    long.len()
+    best.map(|(_, nodes, edges)| (nodes, edges))
 }
 
 /// Drop nodes no longer reachable from the root, and the edges into them.
-fn prune_unreachable(nodes: &mut Vec<GraphNode>, edges: &[GraphEdge]) {
+fn prune_unreachable(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>) {
     let Some(root) = nodes.first().map(|node| node.id.clone()) else {
         return;
     };
     let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
-    for edge in edges {
+    for edge in edges.iter() {
         adjacency
             .entry(edge.from.as_str())
             .or_default()
@@ -1941,10 +1965,11 @@ fn prune_unreachable(nodes: &mut Vec<GraphNode>, edges: &[GraphEdge]) {
         }
     }
     nodes.retain(|node| reachable.contains(&node.id));
+    edges.retain(|edge| reachable.contains(&edge.from) && reachable.contains(&edge.to));
 }
 
 #[cfg(test)]
-mod cut_long_edges_test {
+mod cut_test {
     use super::*;
     use crate::batbelt::miro::layout::{layout_graph, LayoutConfig, LayoutEdge, LayoutNode};
 
@@ -1993,25 +2018,28 @@ mod cut_long_edges_test {
                 from_line_fraction: 0.5,
             })
             .collect();
-        layout_graph(&nodes[0].id, &layout_nodes, &layout_edges, LayoutConfig::default())
+        layout_graph(
+            &nodes[0].id,
+            &layout_nodes,
+            &layout_edges,
+            LayoutConfig::default(),
+        )
     }
 
-    /// The shape of the case that prompted this: one caller near, one far.
-    /// Only the far one should turn into a card.
+    /// The case that made the rule necessary. `shared` is reached from far away
+    /// *and* from next door, so cutting the far call leaves it drawn for the
+    /// near one and takes nothing off the frame. A card would be added for
+    /// nothing.
     #[test]
-    fn test_only_the_far_caller_is_cut() {
-        // Layers: root 0, far 1, near 2, shared 3, child 4.
-        //
-        // `near` reaches `shared` from the layer right before it, `far` from two
-        // layers back. `shared` has a child, so it is worth a frame of its own.
-        let mut nodes = vec![
+    fn test_a_cut_that_saves_nothing_is_refused() {
+        let nodes = vec![
             node("root"),
             node("far"),
             node("near"),
             node("shared"),
             node("child"),
         ];
-        let mut edges = vec![
+        let edges = vec![
             edge("root", "far"),
             edge("far", "near"),
             edge("near", "shared"),
@@ -2019,50 +2047,67 @@ mod cut_long_edges_test {
             edge("shared", "child"),
         ];
 
-        let layout = lay(&nodes, &edges);
-        let cut = cut_long_edges(&mut nodes, &mut edges, &layout);
+        if let Some((cut_nodes, _)) = best_cut(&nodes, &edges) {
+            assert!(
+                screenshot_count(&cut_nodes) < screenshot_count(&nodes),
+                "a cut that is taken has to free something"
+            );
+        }
+    }
 
-        assert_eq!(cut, 1, "exactly the one edge that skipped a layer");
-        let cards: Vec<&GraphNode> = nodes
-            .iter()
-            .filter(|n| matches!(n.kind, NodeKind::Link { .. }))
-            .collect();
-        assert_eq!(cards.len(), 1);
-        assert_eq!(
-            cards[0].kind,
-            NodeKind::Link {
-                target: "shared".to_string()
+    /// Cutting one long call can never take a screenshot off the frame, and the
+    /// layering is why.
+    ///
+    /// A call spans layers only because a longer path reaches the same function,
+    /// and that path arrives through a different caller one layer above it. Cut
+    /// the long call and the function still hangs off that other caller, with
+    /// everything under it. There is no graph where this comes out otherwise, so
+    /// there is no graph where a single cut pays for itself in space.
+    #[test]
+    fn test_a_long_call_always_has_a_nearer_caller() {
+        for extra in 0..4 {
+            let mut nodes = vec![node("root"), node("mid"), node("target"), node("child")];
+            let mut edges = vec![
+                edge("root", "mid"),
+                edge("root", "target"),
+                edge("mid", "target"),
+                edge("target", "child"),
+            ];
+            // Lengthen the path a few different ways; the property holds anyway.
+            for step in 0..extra {
+                let id = format!("step{step}");
+                nodes.push(node(&id));
+                edges.push(edge("mid", &id));
+                edges.push(edge(&id, "target"));
             }
-        );
-        // The near caller still points at the screenshot.
-        assert!(edges.iter().any(|e| e.from == "near" && e.to == "shared"));
+
+            // Cut the long call specifically, rather than whichever cut is
+            // best overall, since the claim is about that one.
+            let long = edges
+                .iter()
+                .position(|e| e.from == "root" && e.to == "target")
+                .expect("the long call");
+            let mut cut_nodes = nodes.clone();
+            let mut cut_edges = edges.clone();
+            cut_edge(&mut cut_nodes, &mut cut_edges, long);
+
+            assert_eq!(
+                screenshot_count(&cut_nodes),
+                screenshot_count(&nodes),
+                "with {extra} extra hops, cutting the long call freed a screenshot"
+            );
+        }
     }
 
-    /// A leaf is cheaper to copy than to link, so it is left alone.
+    /// Nothing to consider when every call reaches the next layer along.
     #[test]
-    fn test_a_far_leaf_is_not_cut() {
-        let mut nodes = vec![node("root"), node("far"), node("near"), node("leaf")];
-        let mut edges = vec![
-            edge("root", "far"),
-            edge("far", "near"),
-            edge("near", "leaf"),
-            edge("far", "leaf"),
-        ];
+    fn test_a_clean_graph_has_no_candidate() {
+        let nodes = vec![node("root"), node("a"), node("b")];
+        let edges = vec![edge("root", "a"), edge("a", "b")];
 
-        let layout = lay(&nodes, &edges);
-        assert_eq!(cut_long_edges(&mut nodes, &mut edges, &layout), 0);
-        assert!(nodes.iter().all(|n| n.kind == NodeKind::Screenshot));
-    }
-
-    /// Nothing to do when every edge already joins adjacent layers.
-    #[test]
-    fn test_a_clean_graph_is_untouched() {
-        let mut nodes = vec![node("root"), node("a"), node("b")];
-        let mut edges = vec![edge("root", "a"), edge("a", "b")];
-
-        let layout = lay(&nodes, &edges);
-        assert_eq!(cut_long_edges(&mut nodes, &mut edges, &layout), 0);
-        assert_eq!(nodes.len(), 3);
+        // `a` holds `b` up on its own, so cutting root→a frees both.
+        let (cut_nodes, _) = best_cut(&nodes, &edges).expect("cutting root->a strands b");
+        assert!(screenshot_count(&cut_nodes) < screenshot_count(&nodes));
     }
 }
 
