@@ -525,6 +525,9 @@ async fn deploy_one(
         marker_y: f64,
         /// Points the edge has to pass through, one per layer it skips.
         bends: Vec<(f64, f64)>,
+        /// Where the line meets the callee, in frame coordinates. Needed to
+        /// decide which side of the previous point it should leave through.
+        end_point: (f64, f64),
         start_id: String,
         end_id: String,
         end_anchor: RelativeAnchor,
@@ -554,6 +557,18 @@ async fn deploy_one(
             marker_y: caller_placed.y - caller_placed.height / 2.0
                 + caller_placed.height * start_anchor.y_fraction,
             bends: layout.routes.get(index).cloned().unwrap_or_default(),
+            end_point: {
+                let placed = layout.node(&edge.to);
+                let fraction = silicon::line_geometry(Some(callee.font_size))
+                    .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height);
+                match placed {
+                    Some(placed) => (
+                        placed.x - placed.width / 2.0,
+                        placed.y - placed.height / 2.0 + placed.height * fraction,
+                    ),
+                    None => (0.0, 0.0),
+                }
+            },
             start_id: start_id.clone(),
             end_id: end_id.clone(),
             end_anchor: RelativeAnchor::new(
@@ -596,44 +611,59 @@ async fn deploy_one(
                 );
             }
 
-            // The head belongs on the first hop, which is the one that lands on
-            // the calling token; the rest of the chain is plain line.
-            let centre = RelativeAnchor::new(0.5, 0.5);
-            for (hop, pair) in markers.windows(2).enumerate() {
+            // Every point the line passes through, in order: the calling token,
+            // then each bend, then the callee.
+            let mut points = vec![(item.marker_x, item.marker_y)];
+            points.extend(item.bends.iter().copied());
+            points.push(item.end_point);
+
+            // The head belongs on the first hop, the one that lands on the
+            // calling token; the rest of the chain is plain line.
+            for hop in 0..points.len() - 1 {
+                let here = points[hop];
+                let next = points[hop + 1];
+
                 let mut style = item.style.clone();
                 style.arrow_at_start = hop == 0;
-                style.caption = if hop == 0 { item.style.caption.clone() } else { None };
-                connectors.push(
-                    client
-                        .create_connector(&pair[0], centre, &pair[1], centre, style)
-                        .await?,
-                );
-            }
+                style.caption = if hop == 0 {
+                    item.style.caption.clone()
+                } else {
+                    None
+                };
 
-            let last = markers.last().cloned().unwrap_or(anchor_marker);
-            let mut style = item.style.clone();
-            style.arrow_at_start = markers.len() == 1;
-            if markers.len() > 1 {
-                style.caption = None;
+                // Leave through the side that faces where the line is going.
+                // Anchoring at the centre instead lets Miro pick, and it always
+                // picks the same one, so every arrow ended up approaching from
+                // above however the boxes were arranged.
+                let leaving = facing_anchor(here, next);
+
+                if hop + 1 < markers.len() {
+                    connectors.push(
+                        client
+                            .create_connector(
+                                &markers[hop],
+                                leaving,
+                                &markers[hop + 1],
+                                facing_anchor(next, here),
+                                style,
+                            )
+                            .await?,
+                    );
+                } else {
+                    // The last hop lands on the callee's own signature line.
+                    connectors.push(
+                        client
+                            .create_connector(
+                                &markers[hop],
+                                leaving,
+                                &item.end_id,
+                                item.end_anchor,
+                                style,
+                            )
+                            .await?,
+                    );
+                }
             }
-            connectors.push(
-                client
-                    .create_connector(
-                        &last,
-                        // Centre, so Miro routes into the marker from above and
-                        // the connector keeps its elbowed look. The head then
-                        // points down at the token: its tip is exact, but its
-                        // body is roughly as long as a line is tall at this
-                        // stroke width, so it reads as sitting slightly high.
-                        // `--stroke-width` shrinks the head if that matters
-                        // more.
-                        centre,
-                        &item.end_id,
-                        item.end_anchor,
-                        style,
-                    )
-                    .await?,
-            );
 
             let _ = item.start_id;
             bar.inc(1);
@@ -1515,4 +1545,68 @@ fn truncate(text: &str, width: usize) -> String {
         return text.to_string();
     }
     format!("{}…", &text[..width.saturating_sub(1)])
+}
+
+/// Which side of an item a connector should leave through to reach `toward`.
+///
+/// Anchoring at the centre lets Miro choose, and it chooses the same side every
+/// time — so every arrow approached its token from above regardless of where
+/// the line actually came from. Picking the side that faces the other end makes
+/// a line coming from below arrive from below, and one coming from the right
+/// arrive horizontally, which is the variation that makes a dense diagram
+/// readable.
+fn facing_anchor(from: (f64, f64), toward: (f64, f64)) -> RelativeAnchor {
+    let dx = toward.0 - from.0;
+    let dy = toward.1 - from.1;
+
+    // Whichever axis dominates decides the side; a tie is treated as horizontal
+    // because the layout runs left to right.
+    if dy.abs() > dx.abs() {
+        if dy > 0.0 {
+            RelativeAnchor::new(0.5, 1.0)
+        } else {
+            RelativeAnchor::new(0.5, 0.0)
+        }
+    } else if dx >= 0.0 {
+        RelativeAnchor::new(1.0, 0.5)
+    } else {
+        RelativeAnchor::new(0.0, 0.5)
+    }
+}
+
+#[cfg(test)]
+mod facing_anchor_test {
+    use super::*;
+
+    #[test]
+    fn test_the_side_faces_the_other_end() {
+        let origin = (100.0, 100.0);
+
+        // Straight to the right, and far enough right that x dominates.
+        let right = facing_anchor(origin, (500.0, 120.0));
+        assert_eq!((right.x_fraction, right.y_fraction), (1.0, 0.5));
+
+        // Mostly downwards.
+        let below = facing_anchor(origin, (120.0, 900.0));
+        assert_eq!((below.x_fraction, below.y_fraction), (0.5, 1.0));
+
+        // Mostly upwards.
+        let above = facing_anchor(origin, (120.0, -400.0));
+        assert_eq!((above.x_fraction, above.y_fraction), (0.5, 0.0));
+
+        // Back to the left, which happens on a cycle.
+        let left = facing_anchor(origin, (-300.0, 110.0));
+        assert_eq!((left.x_fraction, left.y_fraction), (0.0, 0.5));
+    }
+
+    /// The two ends of one hop must face each other, not the same way.
+    #[test]
+    fn test_both_ends_of_a_hop_face_each_other() {
+        let a = (0.0, 0.0);
+        let b = (0.0, 500.0);
+        let from_a = facing_anchor(a, b);
+        let from_b = facing_anchor(b, a);
+        assert_eq!((from_a.x_fraction, from_a.y_fraction), (0.5, 1.0));
+        assert_eq!((from_b.x_fraction, from_b.y_fraction), (0.5, 0.0));
+    }
 }
