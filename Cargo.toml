@@ -1,6 +1,6 @@
 [package]
 name = "bat-cli"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 description = "Blockchain Auditor Toolkit (BAT)"
 license = "MIT"
@@ -40,7 +40,6 @@ regex = "1.7.1"
 syn = { version = "2", features = ["full", "parsing", "visit"] }
 proc-macro2 = "1"
 quote = "1"
-log4rs = "1.2.0"
 assert_fs = "1.0.10"
 image = "0.24"
 lazy-regex = "2.5.0"

@@ -9,34 +9,23 @@ use inflector::Inflector;
 
 use crate::batbelt::metadata::BatMetadata;
 use crate::batbelt::path::BatFile;
-use crate::commands::miro_commands::MiroCommand;
 use crate::commands::sonar_commands::SonarCommand;
-use crate::commands::{BatCommandEnumerator, BatPackageJsonCommand, CommandResult};
+use crate::commands::{BatCommandEnumerator, CommandResult};
 
 use crate::batbelt::BatEnumerator;
-use batbelt::git::git_action::GitAction;
 
-use commands::co_commands::CodeOverhaulCommand;
 use commands::CommandError;
 use error_stack::fmt::{Charset, ColorMode};
 use error_stack::{IntoReport, Result};
 use error_stack::{Report, ResultExt};
 
 use crate::commands::project_commands::ProjectCommands;
-use crate::commands::tools_commands::ToolCommand;
-use log4rs::append::file::FileAppender;
-use log4rs::config::{Appender, Root};
-use log4rs::encode::pattern::PatternEncoder;
 
-// use crate::commands::analytics_commands::AnalyticsCommand;
-use log4rs::Config;
-use package::PackageCommand;
 use regex::Regex;
 
 pub mod batbelt;
 pub mod commands;
 pub mod config;
-pub mod package;
 
 // pub type BatDerive = #[derive(Debug, PartialEq, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
@@ -53,11 +42,10 @@ struct Cli {
     Default, strum_macros::Display, Subcommand, Debug, PartialEq, Clone, strum_macros::EnumIter,
 )]
 enum BatCommands {
-    /// Initialize a Bat project
+    /// Set up a bat project here: detect the framework, create the Miro board
+    /// and scan the source code
     #[default]
     Init,
-    /// Reload the Bat project files (ideal to resume work from git clone)
-    Reload,
     /// Authorize bat-cli against Miro once, for every project on this machine
     Login {
         /// Register the Miro app credentials before authorizing
@@ -72,26 +60,58 @@ enum BatCommands {
     },
     /// Revoke the stored Miro token and forget it
     Logout,
+    /// Update bat-cli to the latest published version
+    Update {
+        /// Only report whether a newer version exists
+        #[arg(long)]
+        check: bool,
+        /// Reinstall even when already up to date
+        #[arg(long)]
+        force: bool,
+    },
     /// Show or edit the machine-wide preferences (~/.config/bat-cli/config.toml)
     Config {
         /// Re-answer the preferences instead of only printing them
         #[arg(long)]
         edit: bool,
     },
-    /// code-overhaul files management
-    #[command(subcommand)]
-    CodeOverhaul(CodeOverhaulCommand),
-    /// Execute the BatSonar to create metadata files for all Sonar result types
+    /// Rescan the source code after it changed, rebuilding the metadata that
+    /// deploy reads
     Sonar,
-    /// utils tools
-    #[command(subcommand)]
-    Tool(ToolCommand),
-    /// Miro integration
-    #[command(subcommand)]
-    Miro(MiroCommand),
-    /// Cargo publish operations, available only for dev
-    #[command(subcommand)]
-    Package(PackageCommand),
+    /// Deploy an entry point's screenshots to a Miro board
+    Deploy {
+        /// Entry point to deploy, as `name` or `Contract.name`. Omit to pick
+        /// one from a list.
+        #[arg(long)]
+        entry_point: Option<String>,
+        /// Deploy every entry point at once. Not recommended: a real project
+        /// puts thousands of objects on the board, and review happens one entry
+        /// point at a time.
+        #[arg(long)]
+        all: bool,
+        /// Stop expanding the call graph past this depth. Unset follows it to
+        /// the end
+        #[arg(long)]
+        max_depth: Option<usize>,
+        /// Cap the screenshots per frame. Unset draws the whole tree
+        #[arg(long)]
+        max_nodes: Option<usize>,
+        /// Print the computed layout without sending anything to Miro
+        #[arg(long)]
+        dry_run: bool,
+        /// Include contracts coming from lib/
+        #[arg(long)]
+        include_external: bool,
+        /// Delete the previous deployment of this entry point first
+        #[arg(long)]
+        replace: bool,
+        /// Write a local PNG preview of the composed frame to this path
+        #[arg(long)]
+        preview: Option<String>,
+        /// Connector thickness in dp (1-24)
+        #[arg(long, default_value_t = 8)]
+        stroke_width: u32,
+    },
 }
 
 impl BatEnumerator for BatCommands {}
@@ -101,7 +121,6 @@ impl BatCommands {
         self.validate_command()?;
         match self {
             BatCommands::Init => ProjectCommands::Init.init_bat_project().await,
-            BatCommands::Reload => ProjectCommands::Reload.execute_command(),
             BatCommands::Login {
                 setup,
                 status,
@@ -117,77 +136,59 @@ impl BatCommands {
             BatCommands::Logout => crate::batbelt::miro::auth::logout()
                 .await
                 .change_context(CommandError),
+            BatCommands::Update { check, force } => {
+                crate::commands::update_commands::run(*check, *force).await
+            }
             BatCommands::Config { edit } => {
                 ProjectCommands::show_global_config(*edit).change_context(CommandError)
             }
-            BatCommands::CodeOverhaul(command) => command.execute_command().await,
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
-            BatCommands::Miro(command) => command.execute_command().await,
-            BatCommands::Tool(command) => command.execute_command(),
-            // only for dev
-            #[cfg(debug_assertions)]
-            BatCommands::Package(PackageCommand::Format) => {
-                package::format().change_context(CommandError)
-            }
-            #[cfg(debug_assertions)]
-            BatCommands::Package(PackageCommand::Release) => {
-                package::release().change_context(CommandError)
-            }
-            #[cfg(not(debug_assertions))]
-            BatCommands::Package(_) => {
-                unimplemented!("Command only implemented for dev operations")
-            }
+            BatCommands::Deploy {
+                entry_point,
+                all,
+                max_depth,
+                max_nodes,
+                dry_run,
+                include_external,
+                replace,
+                preview,
+                stroke_width,
+            } => crate::batbelt::evm::miro::auto_deploy::run(
+                crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
+                    entry_point: entry_point.clone(),
+                    all: *all,
+                    max_depth: *max_depth,
+                    max_nodes: *max_nodes,
+                    dry_run: *dry_run,
+                    include_external: *include_external,
+                    replace: *replace,
+                    preview: preview.clone(),
+                    stroke_width: *stroke_width,
+                },
+            )
+            .await
+            .change_context(CommandError),
         }
     }
 
+    /// Every command that reads project data needs the metadata cache to exist.
+    ///
+    /// There is no branch check any more: bat-cli does not create commits or
+    /// manage git, so it has no business dictating which branch you are on.
     fn validate_command(&self) -> CommandResult<()> {
-        let (check_metadata, check_branch) = match self {
-            BatCommands::Init => {
-                return Ok(());
-            }
-            BatCommands::Reload => {
-                return Ok(());
-            }
-            // Authentication is machine-wide, so it must work outside a project.
-            BatCommands::Login { .. } | BatCommands::Logout | BatCommands::Config { .. } => {
-                return Ok(());
-            }
-            BatCommands::Package(_) => {
-                return Ok(());
-            }
-            BatCommands::Sonar => (
-                SonarCommand::Run.check_metadata_is_initialized(),
-                SonarCommand::Run.check_correct_branch(),
-            ),
-            BatCommands::Tool(command) => (
-                command.check_metadata_is_initialized(),
-                command.check_correct_branch(),
-            ),
-            BatCommands::CodeOverhaul(command) => (
-                command.check_metadata_is_initialized(),
-                command.check_correct_branch(),
-            ),
-            // BatCommands::Finding(command) => (
-            //     command.check_metadata_is_initialized(),
-            //     command.check_correct_branch(),
-            // ),
-            BatCommands::Miro(command) => (
-                command.check_metadata_is_initialized(),
-                command.check_correct_branch(),
-            ),
-            // BatCommands::Repository(command) => (
-            //     command.check_metadata_is_initialized(),
-            //     command.check_correct_branch(),
-            // ),
-            // BatCommands::Analytics(command) => (
-            //     command.check_metadata_is_initialized(),
-            //     command.check_correct_branch(),
-            // ),
+        let check_metadata = match self {
+            BatCommands::Init
+            | BatCommands::Login { .. }
+            | BatCommands::Logout
+            | BatCommands::Config { .. }
+            | BatCommands::Update { .. } => return Ok(()),
+            BatCommands::Sonar => false,
+            BatCommands::Deploy { .. } => true,
         };
+
         if check_metadata {
             let bat_config = crate::config::BatConfig::get_config().change_context(CommandError)?;
             if bat_config.project_type == crate::config::ProjectType::Foundry {
-                // Foundry uses EvmBatMetadata, not BatMetadata (SVM)
                 crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata::read_metadata()
                     .change_context(CommandError)?;
             } else {
@@ -197,64 +198,7 @@ impl BatCommands {
                     .change_context(CommandError)?;
             }
         }
-
-        if check_branch {
-            GitAction::CheckCorrectBranch
-                .execute_action()
-                .change_context(CommandError)?;
-        }
         Ok(())
-    }
-
-    pub fn get_bat_package_json_commands(
-        project_type: &crate::config::ProjectType,
-    ) -> Vec<BatPackageJsonCommand> {
-        use crate::config::ProjectType;
-        let _is_anchor = *project_type == ProjectType::Anchor;
-
-        BatCommands::get_type_vec()
-            .into_iter()
-            .filter_map(|command| match command {
-                // Anchor, Pinocchio, and Foundry commands
-                BatCommands::CodeOverhaul(_)
-                    if *project_type == ProjectType::Anchor
-                        || *project_type == ProjectType::Pinocchio
-                        || *project_type == ProjectType::Foundry =>
-                {
-                    Some(CodeOverhaulCommand::get_bat_package_json_commands(
-                        command.to_string().to_kebab_case(),
-                    ))
-                }
-                // BatCommands::Analytics(_) if is_anchor => {
-                //     Some(AnalyticsCommand::get_bat_package_json_commands(
-                //         command.to_string().to_kebab_case(),
-                //     ))
-                // }
-                // Universal commands
-                // BatCommands::Finding(_) => Some(FindingCommand::get_bat_package_json_commands(
-                //     command.to_string().to_kebab_case(),
-                // )),
-                BatCommands::Tool(_) => Some(ToolCommand::get_bat_package_json_commands(
-                    command.to_string().to_kebab_case(),
-                )),
-                BatCommands::Miro(_) => Some(MiroCommand::get_bat_package_json_commands(
-                    command.to_string().to_kebab_case(),
-                )),
-                // BatCommands::Repository(_) => {
-                //     Some(RepositoryCommand::get_bat_package_json_commands(
-                //         command.to_string().to_kebab_case(),
-                //     ))
-                // }
-                BatCommands::Sonar => Some(SonarCommand::get_bat_package_json_commands(
-                    command.to_string().to_kebab_case(),
-                )),
-                BatCommands::Reload => Some(BatPackageJsonCommand {
-                    command_name: command.to_string().to_kebab_case(),
-                    command_options: vec![],
-                }),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
     }
 
     pub fn get_pretty_command(&self) -> CommandResult<String> {
@@ -272,31 +216,6 @@ impl BatCommands {
     }
 }
 
-fn init_log(cli: Cli) -> CommandResult<()> {
-    let bat_log_file = BatFile::Batlog;
-    let logfile = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new(
-            "{d(%Y-%m-%d %H:%M:%S)} [{f}:{L}] {h({l})} {M}{n}{m}{n}",
-        )))
-        .build(bat_log_file.get_path(false).change_context(CommandError)?)
-        .into_report()
-        .change_context(CommandError)?;
-
-    let config = Config::builder()
-        .appender(Appender::builder().build("logfile", Box::new(logfile)))
-        .build(
-            Root::builder()
-                .appender("logfile")
-                .build(cli.verbose.log_level_filter()),
-        )
-        .into_report()
-        .change_context(CommandError)?;
-
-    log4rs::init_config(config)
-        .into_report()
-        .change_context(CommandError)?;
-    Ok(())
-}
 
 pub struct Suggestion(String);
 
@@ -310,40 +229,19 @@ impl Suggestion {
     }
 }
 
-/// If `Bat.toml` is not in the current directory but exists inside `bat-audit/`,
-/// automatically change the working directory so all relative paths resolve correctly.
-fn auto_detect_bat_audit_dir() {
-    use std::path::Path;
-    if Path::new("Bat.toml").exists() {
-        return; // Already in the right directory
-    }
-    if Path::new("bat-audit/Bat.toml").exists() && std::env::set_current_dir("bat-audit").is_ok() {
-        println!(
-            "{} auto-detected bat-audit/ directory, changing working directory",
-            "bat-cli".blue()
-        );
-    }
-}
 
 async fn run() -> CommandResult<()> {
     let cli: Cli = Cli::parse();
 
     Suggestion::set_report();
-    // env_logger selectively
-    match cli.command {
-        BatCommands::Package(..)
-        | BatCommands::Init
-        | BatCommands::Login { .. }
-        | BatCommands::Logout
-        | BatCommands::Config { .. } => {
-            env_logger::init();
-            Ok(())
-        }
-        _ => {
-            auto_detect_bat_audit_dir();
-            init_log(cli.clone())
-        }
-    }?;
+
+    // Logs go to stderr, controlled by -v/-q or RUST_LOG, rather than to a file
+    // inside the project that nobody read.
+    env_logger::Builder::new()
+        .filter_level(cli.verbose.log_level_filter())
+        .parse_default_env()
+        .format_timestamp(None)
+        .init();
 
     cli.command.execute().await
 }

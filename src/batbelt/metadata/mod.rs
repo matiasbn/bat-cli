@@ -3,8 +3,6 @@ pub mod entrypoint_metadata;
 pub mod enums_source_code_metadata;
 pub mod function_dependencies_metadata;
 pub mod functions_source_code_metadata;
-pub mod miro_metadata;
-pub mod program_accounts_metadata;
 pub mod structs_source_code_metadata;
 pub mod trait_metadata;
 pub mod traits_source_code_metadata;
@@ -32,7 +30,6 @@ use crate::batbelt::metadata::function_dependencies_metadata::FunctionDependenci
 use crate::batbelt::metadata::functions_source_code_metadata::{
     FunctionMetadataType, FunctionSourceCodeMetadata,
 };
-use crate::batbelt::metadata::miro_metadata::MiroCodeOverhaulMetadata;
 use crate::batbelt::metadata::structs_source_code_metadata::{
     StructMetadataType, StructSourceCodeMetadata,
 };
@@ -49,11 +46,10 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::batbelt::git::git_commit::GitCommit;
 use crate::batbelt::metadata::enums_source_code_metadata::{
     EnumMetadataType, EnumSourceCodeMetadata,
 };
-use crate::config::{BatAuditorConfig, BatConfig};
+use crate::config::BatConfig;
 use serde_json::{json, Value};
 use walkdir::DirEntry;
 
@@ -108,7 +104,6 @@ pub struct BatMetadata {
     pub function_dependencies: Vec<FunctionDependenciesMetadata>,
     pub traits: Vec<TraitMetadata>,
     pub context_accounts: Vec<ContextAccountsMetadata>,
-    pub miro: MiroMetadata,
 }
 
 // fn project_name_default() -> String {
@@ -127,7 +122,6 @@ impl BatMetadata {
             function_dependencies: vec![],
             traits: vec![],
             context_accounts: vec![],
-            miro: Default::default(),
         }
     }
 
@@ -148,9 +142,6 @@ impl BatMetadata {
     /// Internal read without acquiring the lock. Use only when the lock
     /// is already held (e.g. inside `update_metadata`).
     fn read_metadata_unlocked() -> MetadataResult<Self> {
-        if BatMetadataEnvVariables::assert_use_external_metadata() {
-            return Self::read_external_metadata();
-        }
         let metadata_json_bat_file = BatFile::BatMetadataFile;
         let bat_metadata_value: Value = serde_json::from_str(
             &metadata_json_bat_file
@@ -167,63 +158,10 @@ impl BatMetadata {
                 .change_context(MetadataError)?
                 .project_name;
             bat_metadata.save_metadata_unlocked()?;
-            GitCommit::UpdateMetadataJson {
-                bat_metadata_commit: BatMetadataCommit::UpdateMetadataVersion,
-            }
-            .create_commit(true)
-            .change_context(MetadataError)?;
         }
         Ok(bat_metadata)
     }
 
-    fn read_external_metadata() -> MetadataResult<Self> {
-        let external_bat_metadata_selected = match BatMetadataEnvVariables::BatMetadataFileSelected
-            .read_value()
-        {
-            Ok(external_bat_path) => external_bat_path,
-            Err(_) => {
-                let bat_auditor_config =
-                    BatAuditorConfig::get_config().change_context(MetadataError)?;
-                let prompt_text = format!("Select the {} file to use:", "BatMetadata.json".green());
-                let selection = BatDialoguer::select(
-                    prompt_text,
-                    bat_auditor_config.external_bat_metadata.clone(),
-                    None,
-                )
-                .change_context(MetadataError)?;
-                let external_bat_metadata_selected =
-                    bat_auditor_config.external_bat_metadata[selection].clone();
-                BatMetadataEnvVariables::UseExternalMetadata
-                    .set_value(&external_bat_metadata_selected);
-                external_bat_metadata_selected
-            }
-        };
-
-        let metadata_json_bat_file = BatFile::Generic {
-            file_path: external_bat_metadata_selected.clone(),
-        };
-        let bat_metadata_value: Value = serde_json::from_str(
-            &metadata_json_bat_file
-                .read_content(true)
-                .change_context(MetadataError)?,
-        )
-        .into_report()
-        .change_context(MetadataError)?;
-        let bat_metadata: BatMetadata = serde_json::from_value(bat_metadata_value)
-            .into_report()
-            .attach_printable(format!(
-                "{} file at path {} is incompatible with this bat-cli version",
-                "BatMetadata.json".bright_green(),
-                external_bat_metadata_selected.clone()
-            ))
-            .attach(Suggestion(format!(
-                "run {} at {} to update the BatMetadata.json version",
-                "bat-cli sonar".bright_green(),
-                external_bat_metadata_selected.clone().bright_yellow()
-            )))
-            .change_context(MetadataError)?;
-        Ok(bat_metadata)
-    }
 
     pub fn save_metadata(&self) -> MetadataResult<()> {
         let _guard = METADATA_FILE_LOCK.lock().unwrap();
@@ -363,73 +301,6 @@ impl BatMetadata {
     }
 }
 
-#[derive(
-    Debug,
-    PartialEq,
-    Clone,
-    Copy,
-    strum_macros::Display,
-    strum_macros::EnumIter,
-    Serialize,
-    Deserialize,
-)]
-pub enum BatMetadataEnvVariables {
-    UseExternalMetadata,
-    BatMetadataFileSelected,
-}
-
-impl BatEnumerator for BatMetadataEnvVariables {}
-
-impl BatMetadataEnvVariables {
-    pub fn set_use_external_metadata_to_true() -> MetadataResult<()> {
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(MetadataError)?;
-        if bat_auditor_config.external_bat_metadata.is_empty() {
-            return Err(Report::new(MetadataError)
-                .attach_printable("external_bat_metadata vector is empty on BatAuditor.toml"))
-            .attach(Suggestion(format!(
-                "run {} to add external BatMetadata.json files",
-                "bat-cli reload".bright_green()
-            )));
-        }
-        let use_external = Self::UseExternalMetadata;
-        let new_value = "true";
-        use_external.set_value(new_value);
-        Ok(())
-    }
-
-    pub fn set_use_external_metadata_to_false() {
-        let use_external = Self::UseExternalMetadata;
-        let new_value = "false";
-        use_external.set_value(new_value);
-    }
-
-    pub fn assert_use_external_metadata() -> bool {
-        let use_external = Self::UseExternalMetadata;
-        match use_external.read_value() {
-            Ok(value) => value == "true",
-            Err(_) => false,
-        }
-    }
-
-    pub fn get_variable_key(&self) -> String {
-        self.to_string().to_screaming_snake_case()
-    }
-
-    pub fn set_value(&self, new_value: &str) {
-        let key = self.get_variable_key();
-        env::set_var(key, new_value);
-    }
-
-    pub fn read_value(&self) -> MetadataResult<String> {
-        let key = self.get_variable_key();
-        env::var(key).into_report().change_context(MetadataError)
-    }
-
-    pub fn clean_value(&self) {
-        let key = self.get_variable_key();
-        env::remove_var(key)
-    }
-}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum BatMetadataCommit {
@@ -548,42 +419,6 @@ impl MetadataErrorReports {
         Report::new(MetadataError)
             .attach_printable(message)
             .attach(initialize_suggestion)
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Default, Debug)]
-pub struct MiroMetadata {
-    pub code_overhaul: Vec<MiroCodeOverhaulMetadata>,
-}
-
-impl MiroMetadata {
-    pub fn new(code_overhaul: Vec<MiroCodeOverhaulMetadata>) -> Self {
-        Self { code_overhaul }
-    }
-
-    pub fn get_co_metadata_by_entrypoint_name(
-        entry_point_name: String,
-    ) -> MetadataResult<MiroCodeOverhaulMetadata> {
-        let bat_metadata = BatMetadata::read_metadata()?;
-        if bat_metadata.miro.code_overhaul.is_empty() {
-            return Err(
-                MetadataErrorReports::MiroCodeOverhaulMetadataNotInitialized.get_error_report()
-            );
-        }
-        match bat_metadata
-            .miro
-            .code_overhaul
-            .into_iter()
-            .find(|meta| meta.entry_point_name == entry_point_name)
-        {
-            None => {
-                Err(
-                    MetadataErrorReports::MiroCodeOverhaulMetadataNotFound { entry_point_name }
-                        .get_error_report(),
-                )
-            }
-            Some(co_meta) => Ok(co_meta),
-        }
     }
 }
 
