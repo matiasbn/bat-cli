@@ -68,28 +68,36 @@ the binary.
 
 An auditor drives bat-cli by talking to an assistant, not by reading `--help`. So a new
 capability is only half-shipped when it compiles: the assistant-facing guide has to learn it in
-the same change. `src/guide.rs` owns that surface (the design is borrowed from `rover`,
-`~/rover/src/guide.rs`), and it has two halves that are deliberately different:
+the same change. `src/guide.rs` owns that surface. The design comes from `rover` (`~/rover/src/guide.rs`) with
+one deliberate departure: **everything here is machine-global.** rover writes its guide per
+project because it owns the folder it writes into; bat-cli does not — its `Bat.toml` sits at
+the root of somebody else's repository, and four generated markdown files next to it are
+litter in a tree the auditor never asked us to touch. The guide also describes the *binary*,
+not the project, so one copy per machine is the honest granularity.
 
-- **`ai_context/`, per project and version-stamped.** `ensure_ai_guide` writes `README.md`,
-  `workflow.md`, `metadata.md` and `changelog.md` next to `Bat.toml`, from consts in
-  `src/guide.rs`, replacing `{BAT_CLI_VERSION}` with the running version. Because the binary
-  generates them, the guide cannot drift from the code that wrote it.
-- **The global routers, version-agnostic and byte-stable.** `ensure_global_ai_skills` installs
+- **The guide, version-stamped.** `ensure_ai_guide` writes `README.md`, `workflow.md`,
+  `metadata.md` and `changelog.md` into `<config_dir>/ai_context/` (so
+  `~/.config/bat-cli/ai_context/`, honouring `XDG_CONFIG_HOME` / `BAT_CLI_CONFIG_DIR`), from
+  consts in `src/guide.rs`, replacing `{BAT_CLI_VERSION}` with the running version. The binary
+  generates them, so they cannot drift from the code.
+- **The routers, version-agnostic and byte-stable.** `ensure_global_ai_skills` installs
   `~/.claude/skills/bat-cli/SKILL.md`, `~/.agents/skills/bat-cli/SKILL.md` and a managed block
-  in `~/.gemini/GEMINI.md`. They carry **no instructions** — they only tell an assistant to find
-  the nearest `Bat.toml` and read that project's `ai_context/`. Keeping them byte-stable is the
-  point: upgrading bat-cli never rewrites them, so a running session never needs a second
-  restart. Do not put version-specific content in `GLOBAL_SKILL_MD`/`GLOBAL_AGENTS_BODY`.
+  in `~/.gemini/GEMINI.md`. They carry **no instructions** — they only say where the guide
+  lives. Keeping them byte-stable is the point: upgrading bat-cli never rewrites them, so a
+  running assistant session never needs a second restart. Do not put version-specific content
+  in `GLOBAL_SKILL_MD`/`GLOBAL_AGENTS_BODY`.
 
-`refresh_project_ai_surface()` does both plus the version stamp, and runs on `sonar` (which
-`init` finishes with) and on `deploy`. Every write goes through `write_if_changed`, so a
-no-op run leaves the audited repo's git tree alone; `write_managed_block` appends to a
-`GEMINI.md` the user already wrote rather than clobbering it.
+`refresh_ai_surface()` does both, and `main::run` calls it **before every command** — including
+`config` and `update`, which have no project at all. So the guide and the skill are checked on
+every single bat-cli run, and a fresh `cargo install` publishes them the first time the user
+runs anything. Every write goes through `write_if_changed`, so a no-op run touches nothing;
+`write_managed_block` appends to a `GEMINI.md` the user already wrote rather than clobbering it.
 
-`Bat.toml` carries `bat_cli_version`, re-stamped on those same commands. That is the signal
-the whole scheme rests on: an assistant notes it when it loads the guide, and when it later
-rises it reads `changelog.md` instead of re-reading everything.
+`Bat.toml`'s `bat_cli_version` is a *different* signal from the guide's stamp, and the docs say
+so: the guide's stamp is which binary is installed, while `Bat.toml`'s is **which binary last
+scanned this project** — i.e. whether `BatMetadata.json` came from the parser you are running
+today. It is written by `record_bat_cli_version`, best-effort, and simply does nothing when
+there is no `Bat.toml` here.
 
 **So, when you change user-facing behaviour:**
 

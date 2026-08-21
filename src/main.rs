@@ -151,9 +151,6 @@ impl BatCommands {
                 preview,
                 stroke_width,
             } => {
-                // Deploy reads project state, so it is also a moment to make sure the AI
-                // guide next to Bat.toml matches the binary drawing the board.
-                crate::guide::refresh_project_ai_surface();
                 crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
@@ -243,6 +240,11 @@ async fn run() -> CommandResult<()> {
         .parse_default_env()
         .format_timestamp(None)
         .init();
+
+    // The AI guide describes the binary, so every command is a chance to make sure the one
+    // on disk is the one just installed — including `config` and `update`, which have no
+    // project at all. Best-effort by construction: it never fails the command.
+    crate::guide::refresh_ai_surface();
 
     cli.command.execute().await
 }

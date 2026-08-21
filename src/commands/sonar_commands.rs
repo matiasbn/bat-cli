@@ -43,10 +43,6 @@ impl SonarCommand {
             self.execute_run_svm()?;
         }
 
-        // A rescan is the canonical "this project caught up with the binary" moment: stamp
-        // the version into Bat.toml and regenerate the guide an assistant reads. Doing it
-        // here also covers `init`, which finishes by scanning.
-        crate::guide::refresh_project_ai_surface();
         Ok(())
     }
 
