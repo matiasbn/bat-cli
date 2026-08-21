@@ -12,7 +12,7 @@ use std::{fmt, fs};
 use error_stack::{IntoReport, Result, ResultExt};
 
 use crate::batbelt::metadata::BatMetadata;
-use crate::batbelt::path::{BatFile, BatFolder};
+use crate::batbelt::path::BatFile;
 
 #[derive(Debug)]
 pub struct TemplateError;
@@ -30,18 +30,6 @@ pub type TemplateResult<T> = Result<T, TemplateError>;
 pub struct TemplateGenerator;
 
 impl TemplateGenerator {
-    /// Create the directories a deployment needs.
-    pub fn create_workspace_folders(&self) -> TemplateResult<()> {
-        let figures = BatFolder::Figures
-            .get_path(false)
-            .change_context(TemplateError)?;
-        fs::create_dir_all(&figures)
-            .into_report()
-            .change_context(TemplateError)
-            .attach_printable_lazy(|| format!("cannot create {figures}"))?;
-        Ok(())
-    }
-
     /// Write an empty `BatMetadata.json`, which `sonar` then fills in.
     pub fn create_metadata_json(&self) -> TemplateResult<()> {
         BatFile::BatMetadataFile
@@ -53,9 +41,4 @@ impl TemplateGenerator {
         Ok(())
     }
 
-    /// Screenshots are regenerated on every deployment, so they are not worth
-    /// keeping under version control.
-    pub fn get_git_ignore_content(&self) -> String {
-        "figures/\n".to_string()
-    }
 }

@@ -56,12 +56,8 @@ impl ProjectCommands {
         BatConfig::new_with_prompt().change_context(CommandError)?;
 
         TemplateGenerator
-            .create_workspace_folders()
-            .change_context(CommandError)?;
-        TemplateGenerator
             .create_metadata_json()
             .change_context(CommandError)?;
-        Self::suggest_git_ignore()?;
 
         Self::configure_miro_board().await?;
 
@@ -161,25 +157,6 @@ impl ProjectCommands {
                 }
             }
         }
-    }
-
-    /// Screenshots are regenerated on demand, so keep them out of git — but only
-    /// suggest it, since bat-cli does not manage the repository.
-    fn suggest_git_ignore() -> CommandResult<()> {
-        let git_ignore = BatFile::GitIgnore;
-        let ignore_content = TemplateGenerator.get_git_ignore_content();
-        let already_ignored = git_ignore
-            .read_content(false)
-            .map(|content| content.contains("figures/"))
-            .unwrap_or(false);
-        if !already_ignored {
-            println!(
-                "\nConsider adding this to {}:\n{}",
-                ".gitignore".yellow(),
-                ignore_content.trim()
-            );
-        }
-        Ok(())
     }
 
     /// Print — and optionally re-answer — the preferences shared by every

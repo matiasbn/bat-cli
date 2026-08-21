@@ -464,7 +464,7 @@ async fn deploy_one(
     }
 
 
-    render_and_measure(&mut nodes)?;
+    render_and_measure(&mut nodes, &title)?;
 
     let layout_nodes: Vec<LayoutNode> = nodes
         .iter()
@@ -1330,7 +1330,13 @@ fn read_slice(file_path: &str, start_line: usize, end_line: usize) -> Vec<String
 }
 
 /// Render every node and read back its pixel size, without uploading anything.
-fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
+fn render_and_measure(nodes: &mut [GraphNode], owner: &str) -> Result<()> {
+    // Screenshots are scratch: they are deleted once uploaded, so the directory
+    // is often not there. Create it rather than treating its absence as an
+    // error the user has to fix.
+    BatFolder::Figures
+        .create_folder()
+        .change_context(EvmMiroError)?;
     let destination = BatFolder::Figures
         .get_path(true)
         .change_context(EvmMiroError)?;
@@ -1353,7 +1359,16 @@ fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
         node.line_offset = node.start_line.saturating_sub(PATH_HEADER_LINES);
 
         // `.js` gives Solidity the best Dracula colors available in syntect.
-        let file_name = format!("{}.js", node.id.replace([':', '.', '/'], "_"));
+        // Named after the deployment as well as the node. The same function
+        // appears in several graphs, and a deployment deletes its own files when
+        // it finishes: without the prefix, building a helper's frame partway
+        // through a bigger one would delete the screenshot that bigger one is
+        // still waiting to upload.
+        let file_name = format!(
+            "{}__{}.js",
+            owner.replace([':', '.', '/'], "_"),
+            node.id.replace([':', '.', '/'], "_")
+        );
         let png_path = silicon::create_figure(
             &rendered.join("\n"),
             &destination,
