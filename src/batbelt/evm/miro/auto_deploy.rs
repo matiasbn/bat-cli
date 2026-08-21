@@ -21,9 +21,9 @@ use crate::batbelt::evm::metadata::bat_metadata::{
     AutoDeployedFrame, ContractMetadata, EvmBatMetadata, FunctionMetadata, ShelfState,
 };
 use crate::batbelt::evm::miro::EvmMiroError;
-use crate::batbelt::evm::parser::call_resolver::extract_call_sites_from_source;
+use crate::batbelt::evm::parser::call_resolver::{body_only, extract_call_sites_from_source};
 use crate::batbelt::evm::types::EvmContractType;
-use crate::batbelt::miro::client::{ConnectorStyle, MiroClient, RelativeAnchor};
+use crate::batbelt::miro::client::{ArrowEnd, ConnectorStyle, MiroClient, RelativeAnchor};
 use crate::batbelt::miro::layout::{
     layout_graph, GraphLayout, LayoutConfig, LayoutEdge, LayoutNode, ShelfAllocator,
 };
@@ -523,6 +523,9 @@ async fn deploy_one(
     struct PendingConnector {
         marker_x: f64,
         marker_y: f64,
+        /// Where the line meets the callee, in frame coordinates. Needed to
+        /// decide which side of the marker it should leave through.
+        end_point: (f64, f64),
         start_id: String,
         end_id: String,
         end_anchor: RelativeAnchor,
@@ -530,7 +533,7 @@ async fn deploy_one(
     }
 
     let mut pending = Vec::new();
-    for (edge, start_anchor) in edges.iter().zip(anchors.iter()) {
+    for ((index, edge), start_anchor) in edges.iter().enumerate().zip(anchors.iter()) {
         let (Some(start_id), Some(end_id)) = (image_ids.get(&edge.from), image_ids.get(&edge.to))
         else {
             continue;
@@ -551,6 +554,18 @@ async fn deploy_one(
                 + caller_placed.width * start_anchor.x_fraction,
             marker_y: caller_placed.y - caller_placed.height / 2.0
                 + caller_placed.height * start_anchor.y_fraction,
+            end_point: {
+                let placed = layout.node(&edge.to);
+                let fraction = silicon::line_geometry(Some(callee.font_size))
+                    .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height);
+                match placed {
+                    Some(placed) => (
+                        placed.x - placed.width / 2.0,
+                        placed.y - placed.height / 2.0 + placed.height * fraction,
+                    ),
+                    None => (0.0, 0.0),
+                }
+            },
             start_id: start_id.clone(),
             end_id: end_id.clone(),
             end_anchor: RelativeAnchor::new(
@@ -563,7 +578,7 @@ async fn deploy_one(
                 stroke_width: options.stroke_width.to_string(),
                 dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
                 caption: Some(format!("<p>L{source_line}</p>")),
-                arrow_at_start: true,
+                arrow: ArrowEnd::Start,
             },
         });
     }
@@ -575,44 +590,57 @@ async fn deploy_one(
         let frame_id = frame_id.clone();
         let bar = bar.clone();
         connector_tasks.spawn(async move {
-            let marker_id = client
-                .create_anchor_marker(
-                    &frame_id,
-                    item.marker_x,
-                    item.marker_y,
-                    ANCHOR_MARKER_SIZE,
-                )
+            let mut markers = Vec::new();
+            let mut connectors = Vec::new();
+
+            let anchor_marker = client
+                .create_anchor_marker(&frame_id, item.marker_x, item.marker_y, ANCHOR_MARKER_SIZE)
                 .await?;
+            markers.push(anchor_marker.clone());
+
+
+            // One connector per call, screenshot to screenshot.
+            //
+            // Routing a long edge as a chain through the bend points would keep
+            // it off the screenshots it crosses, but the result is several
+            // linked connectors rather than one line, and a composite like that
+            // cannot be dragged into a better position by hand. Reordering by
+            // hand matters more than the guarantee, so the bends are left to the
+            // layout, where they still push the columns apart and leave the
+            // corridor free.
+            let mut style = item.style.clone();
+            style.arrow = ArrowEnd::Start;
+            connectors.push(
+                client
+                    .create_connector(
+                        &anchor_marker,
+                        // Leave through the side that faces the callee. Anchoring
+                        // at the centre lets Miro pick, and it picks the same
+                        // side every time, so every arrow approached from above
+                        // however the boxes were arranged.
+                        facing_anchor((item.marker_x, item.marker_y), item.end_point),
+                        &item.end_id,
+                        item.end_anchor,
+                        style,
+                    )
+                    .await?,
+            );
+
             let _ = item.start_id;
-            let connector_id = client
-                .create_connector(
-                    &marker_id,
-                    // Centre, so Miro routes into the marker from above and the
-                    // connector keeps its elbowed look. The head then points
-                    // down at the token: its tip is exact, but its body is
-                    // roughly as long as a line is tall at this stroke width,
-                    // so it reads as sitting slightly high. `--stroke-width`
-                    // shrinks the head if the offset matters more.
-                    RelativeAnchor::new(0.5, 0.5),
-                    &item.end_id,
-                    item.end_anchor,
-                    item.style,
-                )
-                .await?;
             bar.inc(1);
-            Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((marker_id, connector_id))
+            Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((markers, connectors))
         });
     }
 
     let mut connector_ids = Vec::new();
     let mut marker_ids = Vec::new();
     while let Some(joined) = connector_tasks.join_next().await {
-        let (marker_id, connector_id) = joined
+        let (markers, connectors) = joined
             .into_report()
             .change_context(EvmMiroError)?
             .change_context(EvmMiroError)?;
-        marker_ids.push(marker_id);
-        connector_ids.push(connector_id);
+        marker_ids.extend(markers);
+        connector_ids.extend(connectors);
     }
     bar.finish_and_clear();
     println!("    {} {} connector(s)", "✓".green(), connector_ids.len());
@@ -802,16 +830,13 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
 }
 
 /// BFS over the call graph, keeping every call site with its line.
-/// Walk the call graph from an entry point, producing a **tree**.
+/// Walk the call graph from an entry point.
 ///
-/// A function called from three places gets three screenshots, not one shared
-/// node with three arrows coming into it. Sharing makes the picture smaller but
-/// unreadable: the shared node has to sit somewhere, so its incoming arrows
-/// come from several layers at once and cross everything in between. A tree
-/// costs more screenshots and reads at a glance.
-///
-/// Recursion is cut per path rather than globally: a callee already present in
-/// the current chain of callers is drawn once and not expanded again.
+/// One screenshot per function, however many places call it. Drawing a copy per
+/// call site was tried and is worse: `Vault.depositWithReferral` came to 77
+/// screenshots for 27 distinct functions, with `MathLib.mulDiv` — three lines of
+/// arithmetic — repeated fourteen times. Two thirds of that diagram carried no
+/// information.
 fn build_graph(
     metadata: &EvmBatMetadata,
     contract_name: &str,
@@ -828,8 +853,12 @@ fn build_graph(
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut truncated = 0usize;
+    // One node per function: a second call to the same function points at the
+    // node that already exists.
+    let mut drawn: HashMap<String, String> = HashMap::new();
 
-    let root_id = instance_id(&mut nodes, contract_name, function_name);
+    let root_id = node_key(contract_name, function_name);
+    drawn.insert(root_id.clone(), root_id.clone());
     nodes.push(make_node(
         root_id.clone(),
         format!("{contract_name}.{function_name}"),
@@ -845,8 +874,6 @@ fn build_graph(
         contract: String,
         function: String,
         depth: usize,
-        /// Callers above this node, to cut recursion without deduping globally.
-        ancestors: Vec<String>,
     }
 
     let mut stack = vec![Pending {
@@ -854,7 +881,6 @@ fn build_graph(
         contract: contract_name.to_string(),
         function: function_name.to_string(),
         depth: 0,
-        ancestors: vec![node_key(contract_name, function_name)],
     }];
 
     while let Some(current) = stack.pop() {
@@ -892,7 +918,7 @@ fn build_graph(
                 .position(|line| line.contains(modifier_name))
                 .map(|index| index + 1)
                 .unwrap_or(1);
-            let target_id = instance_id(&mut nodes, &owner.name, &definition.name);
+            let target_id = node_key(&owner.name, &definition.name);
             edges.push(GraphEdge {
                 from: current.node_id.clone(),
                 to: target_id.clone(),
@@ -903,33 +929,37 @@ fn build_graph(
                     .unwrap_or(0),
                 symbol: modifier_name.clone(),
             });
-            nodes.push(make_modifier_node(
-                target_id,
-                owner,
-                definition.name.clone(),
-                definition.line,
-                if definition.end_line > 0 {
-                    definition.end_line
-                } else {
-                    definition.line + 6
-                },
-                current.depth + 1,
-            ));
+            if drawn.insert(target_id.clone(), target_id.clone()).is_none() {
+                nodes.push(make_modifier_node(
+                    target_id,
+                    owner,
+                    definition.name.clone(),
+                    definition.line,
+                    if definition.end_line > 0 {
+                        definition.end_line
+                    } else {
+                        definition.line + 6
+                    },
+                    current.depth + 1,
+                ));
+            }
         }
 
-        for call in extract_call_sites_from_source(&slice.join("\n")) {
+        for call in extract_call_sites_from_source(&body_only(&slice).join("\n")) {
             let Some((target_contract, target_function)) =
                 resolve_call(metadata, contract, &call.name, options)
             else {
                 continue;
             };
-            let key = node_key(&target_contract.name, &target_function.name);
+            let target_id = node_key(&target_contract.name, &target_function.name);
+            if target_id == current.node_id {
+                continue; // a function calling itself needs no arrow
+            }
             if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
                 truncated += 1;
                 continue;
             }
 
-            let target_id = instance_id(&mut nodes, &target_contract.name, &target_function.name);
             edges.push(GraphEdge {
                 from: current.node_id.clone(),
                 to: target_id.clone(),
@@ -937,6 +967,12 @@ fn build_graph(
                 column: call.column,
                 symbol: call.symbol.clone(),
             });
+
+            // Seen before: the arrow points at the node already drawn, and there
+            // is nothing left to expand.
+            if drawn.insert(target_id.clone(), target_id.clone()).is_some() {
+                continue;
+            }
             nodes.push(make_node(
                 target_id.clone(),
                 format!("{}.{}", target_contract.name, target_function.name),
@@ -944,19 +980,11 @@ fn build_graph(
                 &target_function,
                 current.depth + 1,
             ));
-
-            // Already somewhere above us: draw it, do not descend into it again.
-            if current.ancestors.contains(&key) {
-                continue;
-            }
-            let mut ancestors = current.ancestors.clone();
-            ancestors.push(key);
             children.push(Pending {
                 node_id: target_id,
                 contract: target_contract.name.clone(),
                 function: target_function.name.clone(),
                 depth: current.depth + 1,
-                ancestors,
             });
         }
 
@@ -966,6 +994,7 @@ fn build_graph(
         }
     }
 
+    split_shared_leaves(&mut nodes, &mut edges);
     Ok((nodes, edges, truncated))
 }
 
@@ -974,10 +1003,6 @@ fn node_key(contract: &str, function: &str) -> String {
     format!("{contract}::{function}")
 }
 
-/// A unique id per *occurrence*, since the same function can appear many times.
-fn instance_id(nodes: &[GraphNode], contract: &str, function: &str) -> String {
-    format!("{}#{}", node_key(contract, function), nodes.len())
-}
 
 fn node_id(contract: &str, function: &str) -> String {
     format!("{contract}::{function}")
@@ -1482,4 +1507,208 @@ fn truncate(text: &str, width: usize) -> String {
         return text.to_string();
     }
     format!("{}…", &text[..width.saturating_sub(1)])
+}
+
+/// Which side of an item a connector should leave through to reach `toward`.
+///
+/// Anchoring at the centre lets Miro choose, and it chooses the same side every
+/// time — so every arrow approached its token from above regardless of where
+/// the line actually came from. Picking the side that faces the other end makes
+/// a line coming from below arrive from below, and one coming from the right
+/// arrive horizontally, which is the variation that makes a dense diagram
+/// readable.
+fn facing_anchor(from: (f64, f64), toward: (f64, f64)) -> RelativeAnchor {
+    let dx = toward.0 - from.0;
+    let dy = toward.1 - from.1;
+
+    // Whichever axis dominates decides the side; a tie is treated as horizontal
+    // because the layout runs left to right.
+    if dy.abs() > dx.abs() {
+        if dy > 0.0 {
+            RelativeAnchor::new(0.5, 1.0)
+        } else {
+            RelativeAnchor::new(0.5, 0.0)
+        }
+    } else if dx >= 0.0 {
+        RelativeAnchor::new(1.0, 0.5)
+    } else {
+        RelativeAnchor::new(0.0, 0.5)
+    }
+}
+
+#[cfg(test)]
+mod facing_anchor_test {
+    use super::*;
+
+    #[test]
+    fn test_the_side_faces_the_other_end() {
+        let origin = (100.0, 100.0);
+
+        // Straight to the right, and far enough right that x dominates.
+        let right = facing_anchor(origin, (500.0, 120.0));
+        assert_eq!((right.x_fraction, right.y_fraction), (1.0, 0.5));
+
+        // Mostly downwards.
+        let below = facing_anchor(origin, (120.0, 900.0));
+        assert_eq!((below.x_fraction, below.y_fraction), (0.5, 1.0));
+
+        // Mostly upwards.
+        let above = facing_anchor(origin, (120.0, -400.0));
+        assert_eq!((above.x_fraction, above.y_fraction), (0.5, 0.0));
+
+        // Back to the left, which happens on a cycle.
+        let left = facing_anchor(origin, (-300.0, 110.0));
+        assert_eq!((left.x_fraction, left.y_fraction), (0.0, 0.5));
+    }
+
+    /// The two ends of one hop must face each other, not the same way.
+    #[test]
+    fn test_both_ends_of_a_hop_face_each_other() {
+        let a = (0.0, 0.0);
+        let b = (0.0, 500.0);
+        let from_a = facing_anchor(a, b);
+        let from_b = facing_anchor(b, a);
+        assert_eq!((from_a.x_fraction, from_a.y_fraction), (0.5, 1.0));
+        assert_eq!((from_b.x_fraction, from_b.y_fraction), (0.5, 0.0));
+    }
+}
+
+/// Give every caller of a shared leaf its own copy of it.
+///
+/// Sharing a node keeps the diagram small, but a node shared by callers sitting
+/// on different layers is what produces the long edges: layering puts it after
+/// its deepest caller, so the arrows from the shallower ones have to cross every
+/// column in between. In `Vault.depositWithReferral`, `MathLib.mulDiv` alone
+/// accounts for three of the five such edges.
+///
+/// A leaf is the one case where splitting is nearly free: it carries no subtree,
+/// so a copy costs exactly one screenshot, and the copy lands on the layer right
+/// after its caller, which turns a layer-spanning edge into an adjacent one by
+/// construction.
+///
+/// Both conditions are counted off the edge list — out-degree zero, in-degree
+/// above one — with no notion of what the function does. "Leaf" here means leaf
+/// *as drawn*: a node can have no outgoing edges because it genuinely calls
+/// nothing, because a call could not be resolved, or because its callee lives in
+/// `lib/` and was excluded. For laying out the picture those are the same thing,
+/// since what matters is that the node has nothing hanging off it.
+fn split_shared_leaves(nodes: &mut Vec<GraphNode>, edges: &mut [GraphEdge]) {
+    let mut outgoing: HashMap<&str, usize> = HashMap::new();
+    let mut incoming: HashMap<&str, usize> = HashMap::new();
+    for edge in edges.iter() {
+        *outgoing.entry(edge.from.as_str()).or_insert(0) += 1;
+        *incoming.entry(edge.to.as_str()).or_insert(0) += 1;
+    }
+
+    let shared_leaves: HashSet<String> = nodes
+        .iter()
+        .filter(|node| {
+            outgoing.get(node.id.as_str()).copied().unwrap_or(0) == 0
+                && incoming.get(node.id.as_str()).copied().unwrap_or(0) > 1
+        })
+        .map(|node| node.id.clone())
+        .collect();
+    if shared_leaves.is_empty() {
+        return;
+    }
+
+    let template: HashMap<String, GraphNode> = nodes
+        .iter()
+        .filter(|node| shared_leaves.contains(&node.id))
+        .map(|node| (node.id.clone(), node.clone()))
+        .collect();
+
+    // The first caller keeps the original node; the rest get copies.
+    let mut used: HashSet<String> = HashSet::new();
+    let mut copies: Vec<GraphNode> = Vec::new();
+    for edge in edges.iter_mut() {
+        if !shared_leaves.contains(&edge.to) {
+            continue;
+        }
+        if used.insert(edge.to.clone()) {
+            continue;
+        }
+        let Some(original) = template.get(&edge.to) else {
+            continue;
+        };
+        let copy_id = format!("{}#{}", edge.to, copies.len());
+        let mut copy = original.clone();
+        copy.id = copy_id.clone();
+        copies.push(copy);
+        edge.to = copy_id;
+    }
+
+    nodes.extend(copies);
+}
+
+#[cfg(test)]
+mod split_shared_leaves_test {
+    use super::*;
+
+    fn node(id: &str) -> GraphNode {
+        GraphNode {
+            id: id.to_string(),
+            label: id.to_string(),
+            file_path: String::new(),
+            start_line: 1,
+            end_line: 2,
+            depth: 0,
+            font_size: 22,
+            png_path: String::new(),
+            png_width: 0,
+            png_height: 0,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+        }
+    }
+
+    fn edge(from: &str, to: &str) -> GraphEdge {
+        GraphEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            line_in_slice: 1,
+            column: 0,
+            symbol: to.to_string(),
+        }
+    }
+
+    /// The rule is arithmetic on the edge list: out-degree zero, in-degree above
+    /// one. Nothing about it knows what a function does.
+    #[test]
+    fn test_a_leaf_with_several_callers_is_split() {
+        let mut nodes = vec![node("a"), node("b"), node("leaf")];
+        let mut edges = vec![edge("a", "leaf"), edge("b", "leaf")];
+
+        split_shared_leaves(&mut nodes, &mut edges);
+
+        assert_eq!(nodes.len(), 4, "the leaf should have gained a copy");
+        assert_ne!(edges[0].to, edges[1].to, "each caller gets its own");
+        assert_eq!(edges[0].to, "leaf", "the first caller keeps the original");
+    }
+
+    /// A node with children carries a subtree, so a copy is not cheap and the
+    /// rule leaves it alone.
+    #[test]
+    fn test_a_shared_node_with_children_is_left_shared() {
+        let mut nodes = vec![node("a"), node("b"), node("mid"), node("deep")];
+        let mut edges = vec![edge("a", "mid"), edge("b", "mid"), edge("mid", "deep")];
+
+        split_shared_leaves(&mut nodes, &mut edges);
+
+        assert_eq!(nodes.len(), 4, "nothing should have been copied");
+        assert_eq!(edges[0].to, "mid");
+        assert_eq!(edges[1].to, "mid");
+    }
+
+    /// One caller means nothing to gain: a copy would be the same picture.
+    #[test]
+    fn test_a_leaf_with_one_caller_is_untouched() {
+        let mut nodes = vec![node("a"), node("leaf")];
+        let mut edges = vec![edge("a", "leaf")];
+
+        split_shared_leaves(&mut nodes, &mut edges);
+
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(edges[0].to, "leaf");
+    }
 }

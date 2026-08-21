@@ -79,6 +79,14 @@ pub struct PlacedNode {
 #[derive(Debug, Clone)]
 pub struct GraphLayout {
     pub nodes: Vec<PlacedNode>,
+    /// Where each edge has to bend, aligned with the input `edges`.
+    ///
+    /// Empty for an edge between adjacent layers, which already runs down the
+    /// corridor between them. An edge that skips layers gets one point per
+    /// layer it crosses, and the caller is expected to draw it as a chain
+    /// through those points instead of as one long connector — see
+    /// [`layout_graph`].
+    pub routes: Vec<Vec<(f64, f64)>>,
     /// Edges that were classified as cycles and should be drawn dashed.
     pub back_edges: Vec<(String, String)>,
     pub bbox_width: f64,
@@ -111,12 +119,26 @@ pub fn layout_graph(
         return layout_tree(root_id, nodes, edges, config);
     }
 
-    let by_id: HashMap<&str, &LayoutNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-
     let (forward_edges, back_edges) = split_back_edges(root_id, nodes, edges);
     let layers = assign_layers(root_id, nodes, &forward_edges);
-    let mut layer_members = group_by_layer(nodes, &layers);
-    order_layers(&mut layer_members, &forward_edges);
+
+    // Insert a placeholder in every layer an edge skips over.
+    //
+    // An edge between adjacent layers runs down the empty corridor between
+    // them. One that skips a layer has to cross the column of screenshots
+    // living there, which is what puts a line on top of a code block. Splitting
+    // it into a chain of one-layer hops fixes that, and because the
+    // placeholders take a slot in the ordering, the screenshots move aside to
+    // leave the corridor — the space is reserved rather than hoped for.
+    let (augmented_nodes, augmented_edges, routes_by_edge, layers) =
+        insert_bend_points(nodes, edges, &forward_edges, layers);
+
+    let by_id: HashMap<&str, &LayoutNode> = augmented_nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n))
+        .collect();
+    let mut layer_members = group_by_layer(&augmented_nodes, &layers);
+    order_layers(&mut layer_members, &augmented_edges);
 
     // Split any layer that would make the frame absurdly tall.
     let columns: Vec<Vec<Vec<String>>> = layer_members
@@ -155,9 +177,14 @@ pub fn layout_graph(
         for column in layer_columns {
             let this_column_width = column_width(column, &by_id);
             let this_column_height = column_height(column, &by_id, config);
-            // Center the column vertically against the tallest layer.
-            let mut y_cursor =
-                config.padding_y + config.title_band + (bbox_height - this_column_height) / 2.0;
+            // Layer 0 holds the entry point and stays at the top-left corner, so
+            // the frame reads as "the calls start here". Deeper layers are
+            // centred against the tallest one.
+            let mut y_cursor = if layer_index == 0 {
+                config.padding_y + config.title_band
+            } else {
+                config.padding_y + config.title_band + (bbox_height - this_column_height) / 2.0
+            };
             for id in column {
                 let node = match by_id.get(id.as_str()) {
                     Some(node) => *node,
@@ -178,8 +205,26 @@ pub fn layout_graph(
         layer_x += layer_widths[layer_index] + config.gutter_x;
     }
 
+    // Turn the placeholders into coordinates, then drop them: the caller draws
+    // the bends, it does not need boxes for them.
+    let position_of: HashMap<&str, (f64, f64)> = placed
+        .iter()
+        .map(|node| (node.id.as_str(), (node.x, node.y)))
+        .collect();
+    let routes: Vec<Vec<(f64, f64)>> = routes_by_edge
+        .iter()
+        .map(|bends| {
+            bends
+                .iter()
+                .filter_map(|id| position_of.get(id.as_str()).copied())
+                .collect()
+        })
+        .collect();
+    placed.retain(|node| !is_bend_point(&node.id));
+
     GraphLayout {
         nodes: placed,
+        routes,
         back_edges,
         bbox_width,
         bbox_height,
@@ -312,6 +357,8 @@ fn layout_tree(
 
     GraphLayout {
         nodes: placed,
+        // A tree has no edge that skips a layer, so nothing needs bending.
+        routes: vec![Vec::new(); edges.len()],
         back_edges: Vec::new(),
         bbox_width,
         bbox_height,
@@ -1043,4 +1090,85 @@ mod tree_layout_test {
         assert_eq!(first.layer, second.layer);
         assert_eq!(crossings(&layout, &edges), 0);
     }
+}
+
+/// Prefix marking a node that exists only to bend an edge.
+const BEND_PREFIX: &str = "\u{0}bend";
+
+fn is_bend_point(id: &str) -> bool {
+    id.starts_with(BEND_PREFIX)
+}
+
+/// Split every edge that skips a layer into a chain of one-layer hops.
+///
+/// Returns the augmented node and edge sets, the bend points belonging to each
+/// input edge (aligned with `edges`), and the layer of every node including the
+/// new ones.
+///
+/// The bend points have no size: they claim a slot in their layer's ordering,
+/// which pushes the screenshots apart by one gutter, and that gutter is the
+/// corridor the edge travels down.
+#[allow(clippy::type_complexity)]
+fn insert_bend_points(
+    nodes: &[LayoutNode],
+    edges: &[LayoutEdge],
+    forward_edges: &[LayoutEdge],
+    mut layers: HashMap<String, usize>,
+) -> (
+    Vec<LayoutNode>,
+    Vec<LayoutEdge>,
+    Vec<Vec<String>>,
+    HashMap<String, usize>,
+) {
+    let is_forward = |edge: &LayoutEdge| {
+        forward_edges
+            .iter()
+            .any(|kept| kept.from == edge.from && kept.to == edge.to)
+    };
+
+    let mut augmented_nodes = nodes.to_vec();
+    let mut augmented_edges: Vec<LayoutEdge> = Vec::new();
+    let mut routes: Vec<Vec<String>> = vec![Vec::new(); edges.len()];
+
+    for (index, edge) in edges.iter().enumerate() {
+        let (Some(&from_layer), Some(&to_layer)) =
+            (layers.get(&edge.from), layers.get(&edge.to))
+        else {
+            continue;
+        };
+
+        // A cycle runs backwards by definition and is drawn dashed; bending it
+        // would only add points to a line that is already an exception.
+        if !is_forward(edge) || to_layer <= from_layer + 1 {
+            augmented_edges.push(edge.clone());
+            continue;
+        }
+
+        let mut previous = edge.from.clone();
+        for layer in (from_layer + 1)..to_layer {
+            let id = format!("{BEND_PREFIX}{index}_{layer}");
+            augmented_nodes.push(LayoutNode {
+                id: id.clone(),
+                width: 0.0,
+                height: 0.0,
+            });
+            layers.insert(id.clone(), layer);
+            augmented_edges.push(LayoutEdge {
+                from: previous,
+                to: id.clone(),
+                // Inherit the caller's fraction so the chain keeps the vertical
+                // order of the calls it came from.
+                from_line_fraction: edge.from_line_fraction,
+            });
+            routes[index].push(id.clone());
+            previous = id;
+        }
+        augmented_edges.push(LayoutEdge {
+            from: previous,
+            to: edge.to.clone(),
+            from_line_fraction: edge.from_line_fraction,
+        });
+    }
+
+    (augmented_nodes, augmented_edges, routes, layers)
 }

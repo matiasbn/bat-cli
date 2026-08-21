@@ -705,3 +705,133 @@ uint256 c = mulDiv(p, q, r);
         assert_eq!(lines, vec![2, 4], "one call site per occurrence");
     }
 }
+
+
+/// Blank out everything that is not the function's body, keeping line and
+/// column positions intact.
+///
+/// Call sites are extracted by wrapping the source in
+/// `contract _C { function _f() { … } }`. A slice that still carries its own
+/// signature puts a function declaration inside a function body, which is not
+/// valid Solidity: the parse fails, the regex fallback runs, and it reads the
+/// signature `foo(uint256 a)` as a call to `foo` — every function ended up
+/// calling itself.
+///
+/// Blanking rather than trimming means a reported line is still the line in
+/// `slice`, and a reported column is still the column in that line.
+pub fn body_only(slice: &[String]) -> Vec<String> {
+    let Some(open_index) = slice.iter().position(|line| line.contains('{')) else {
+        return slice.to_vec();
+    };
+
+    let mut body: Vec<String> = slice.to_vec();
+    for line in body.iter_mut().take(open_index) {
+        *line = " ".repeat(line.len());
+    }
+    // Keep whatever follows the brace on its own line, blanking the rest.
+    if let Some(brace) = body[open_index].find('{') {
+        let tail = body[open_index][brace + 1..].to_string();
+        body[open_index] = format!("{}{}", " ".repeat(brace + 1), tail);
+    }
+
+    // The closing brace would end the wrapper's function early.
+    if let Some(close_index) = body.iter().rposition(|line| line.contains('}')) {
+        if close_index > open_index {
+            if let Some(brace) = body[close_index].rfind('}') {
+                let head = body[close_index][..brace].to_string();
+                body[close_index] = format!("{}{}", head, " ".repeat(body[close_index].len() - brace));
+            }
+        }
+    }
+    body
+}
+
+#[cfg(test)]
+mod body_only_test {
+    use super::*;
+
+    fn lines(text: &str) -> Vec<String> {
+        text.lines().map(|line| line.to_string()).collect()
+    }
+
+    /// The signature must not be read as a call to the function itself.
+    #[test]
+    fn test_signature_is_not_a_call_site() {
+        let slice = lines(
+            "function depositWithReferral(uint256 assets, address receiver)\n             external\n             returns (uint256 mintedShares)\n             {\n             mintedShares = _deposit(msg.sender, receiver, assets);\n             }",
+        );
+        let sites = extract_call_sites_from_source(&body_only(&slice).join("\n"));
+        let names: Vec<&str> = sites.iter().map(|site| site.name.as_str()).collect();
+
+        assert!(!names.contains(&"depositWithReferral"), "got {names:?}");
+        assert!(names.contains(&"_deposit"), "got {names:?}");
+    }
+
+    /// Blanking keeps every position, so anchors still land on the right token.
+    #[test]
+    fn test_positions_survive_blanking() {
+        let slice = lines(
+            "function quote(address asset) external view returns (uint256) {\n             return MathLib.wadMul(amount, price(asset));\n             }",
+        );
+        let sites = extract_call_sites_from_source(&body_only(&slice).join("\n"));
+
+        let wad = sites.iter().find(|s| s.name == "MathLib.wadMul").unwrap();
+        assert_eq!(wad.line, 2, "line numbers must still refer to the slice");
+        assert_eq!(&slice[1][wad.column..wad.column + wad.symbol.len()], "wadMul");
+    }
+
+    /// A one-line body keeps its call.
+    #[test]
+    fn test_body_on_the_signature_line() {
+        let slice = lines("function f() internal { return g(); }");
+        let sites = extract_call_sites_from_source(&body_only(&slice).join("\n"));
+        let names: Vec<&str> = sites.iter().map(|site| site.name.as_str()).collect();
+        assert!(names.contains(&"g"), "got {names:?}");
+        assert!(!names.contains(&"f"), "got {names:?}");
+    }
+}
+
+#[cfg(test)]
+mod ast_path_test {
+    use super::*;
+
+    /// Source where the two extractors must disagree.
+    ///
+    /// The regex fallback scans text, so it reads `ghost()` inside a block
+    /// comment and `phantom()` inside a string literal as calls, and it takes
+    /// `returns (` for a call to `returns`. The AST sees none of them. Asserting
+    /// their absence is therefore an assertion that the AST path ran.
+    const TRICKY: &str = r#"{
+        /* ghost(); */
+        string memory note = "phantom()";
+        uint256 value = real(1);
+    }"#;
+
+    #[test]
+    fn test_dependency_scan_uses_the_ast() {
+        let names = extract_calls_from_source(TRICKY);
+        assert!(names.contains(&"real".to_string()), "got {names:?}");
+        assert!(!names.contains(&"ghost".to_string()), "comment read as a call: {names:?}");
+        assert!(!names.contains(&"phantom".to_string()), "string read as a call: {names:?}");
+    }
+
+    #[test]
+    fn test_call_sites_use_the_ast() {
+        let sites = extract_call_sites_from_source(TRICKY);
+        let names: Vec<&str> = sites.iter().map(|site| site.name.as_str()).collect();
+        assert!(names.contains(&"real"), "got {names:?}");
+        assert!(!names.contains(&"ghost"), "comment read as a call: {names:?}");
+        assert!(!names.contains(&"phantom"), "string read as a call: {names:?}");
+    }
+
+    /// What the fallback would produce, kept as the contrast: if this ever
+    /// matches the AST output, the probe above has stopped proving anything.
+    #[test]
+    fn test_the_fallback_really_is_fooled() {
+        let names = extract_calls_regex(TRICKY);
+        assert!(
+            names.contains(&"ghost".to_string()) || names.contains(&"phantom".to_string()),
+            "the regex fallback no longer differs from the AST: {names:?}"
+        );
+    }
+}

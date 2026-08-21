@@ -101,13 +101,27 @@ pub struct ConnectorStyle {
     pub stroke_width: String,
     pub dashed: bool,
     pub caption: Option<String>,
-    /// Put the arrow head on `startItem` instead of `endItem`.
-    ///
-    /// The graph is built caller → callee, but the arrow reads better pointing
-    /// the other way: it lands on the exact line that makes the call, so the
-    /// picture says "this dependency is used *here*" rather than restating the
-    /// direction the reader already gets from the left-to-right layering.
-    pub arrow_at_start: bool,
+    /// Which end of the connector carries the arrow head, if any.
+    pub arrow: ArrowEnd,
+}
+
+/// Where a connector's arrow head goes.
+///
+/// [`ArrowEnd::None`] exists for the middle of a chained edge: an edge routed
+/// through invisible bend points is several connectors that must read as one
+/// line, so only the last of them may carry a head. Without this, the others
+/// draw an arrow pointing at a bend point nobody can see.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ArrowEnd {
+    /// On `startItem`. The graph is built caller → callee, but the arrow reads
+    /// better pointing the other way: it lands on the exact line that makes the
+    /// call, so the picture says "this dependency is used *here*" rather than
+    /// restating the direction the layout already shows.
+    Start,
+    /// On `endItem`.
+    End,
+    /// Neither end.
+    None,
 }
 
 impl Default for ConnectorStyle {
@@ -117,7 +131,7 @@ impl Default for ConnectorStyle {
             stroke_width: "3".to_string(),
             dashed: false,
             caption: None,
-            arrow_at_start: true,
+            arrow: ArrowEnd::Start,
         }
     }
 }
@@ -444,8 +458,8 @@ impl MiroClient {
                 "strokeColor": style.stroke_color,
                 "strokeWidth": style.stroke_width,
                 "strokeStyle": if style.dashed { "dashed" } else { "normal" },
-                "startStrokeCap": if style.arrow_at_start { "stealth" } else { "none" },
-                "endStrokeCap": if style.arrow_at_start { "none" } else { "stealth" },
+                "startStrokeCap": if style.arrow == ArrowEnd::Start { "stealth" } else { "none" },
+                "endStrokeCap": if style.arrow == ArrowEnd::End { "stealth" } else { "none" },
             },
         });
         if let Some(caption) = style.caption {
