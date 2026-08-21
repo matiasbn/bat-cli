@@ -65,6 +65,8 @@ pub struct AutoDeployOptions {
     pub replace: bool,
     /// Connector path type: `straight`, `elbowed` or `curved`.
     pub connector_shape: String,
+    /// Compose a local preview PNG of the frame at this path.
+    pub preview: Option<String>,
 }
 
 impl Default for AutoDeployOptions {
@@ -78,6 +80,7 @@ impl Default for AutoDeployOptions {
             include_external: false,
             replace: false,
             connector_shape: "elbowed".to_string(),
+            preview: None,
         }
     }
 }
@@ -120,6 +123,11 @@ struct GraphEdge {
     to: String,
     /// 1-based line inside the caller's captured slice.
     line_in_slice: usize,
+    /// 0-based column where the called name starts on that line.
+    column: usize,
+    /// The token the connector should point at, e.g. `wadMul` in
+    /// `MathLib.wadMul(...)`.
+    symbol: String,
 }
 
 /// How many board units one rendered pixel becomes.
@@ -323,6 +331,17 @@ async fn deploy_one(
     // board positions instead of repeating the first one.
     let (frame_x, frame_y) = allocator.place(layout.frame_width, layout.frame_height);
 
+    if let Some(preview_path) = &options.preview {
+        let path = if options.all {
+            let safe = title.replace(['.', '/'], "_");
+            format!("{}/{}.png", preview_path.trim_end_matches('/'), safe)
+        } else {
+            preview_path.clone()
+        };
+        render_preview(&nodes, &edges, &anchors, &layout, &path)?;
+        println!("  preview written to {}", path.blue());
+    }
+
     if options.dry_run {
         print_dry_run(&nodes, &edges, &anchors, &layout, (frame_x, frame_y));
         cleanup(&nodes);
@@ -494,27 +513,29 @@ async fn remove_previous_deployment(client: &MiroClient, entry_point: &str) -> R
 fn compute_anchors(nodes: &[GraphNode], edges: &[GraphEdge]) -> Vec<RelativeAnchor> {
     let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
-    let mut occurrences: HashMap<(&str, usize), usize> = HashMap::new();
+    // Keyed by line *and* column: two calls on one line now land on their own
+    // tokens, so only genuinely identical positions need fanning out.
+    let mut occurrences: HashMap<(&str, usize, usize), usize> = HashMap::new();
     for edge in edges {
         *occurrences
-            .entry((edge.from.as_str(), edge.line_in_slice))
+            .entry((edge.from.as_str(), edge.line_in_slice, edge.column))
             .or_insert(0) += 1;
     }
 
-    let mut seen: HashMap<(&str, usize), usize> = HashMap::new();
+    let mut seen: HashMap<(&str, usize, usize), usize> = HashMap::new();
     edges
         .iter()
         .map(|edge| {
             let Some(node) = by_id.get(edge.from.as_str()) else {
                 return RelativeAnchor::new(1.0, 0.5);
             };
-            let key = (edge.from.as_str(), edge.line_in_slice);
+            let key = (edge.from.as_str(), edge.line_in_slice, edge.column);
             let index = seen.entry(key).or_insert(0);
             let position = *index;
             *index += 1;
             let total = occurrences.get(&key).copied().unwrap_or(1);
 
-            let mut anchor = caller_anchor(node, edge.line_in_slice);
+            let mut anchor = caller_anchor(node, edge);
             if total > 1 && node.png_height > 0 {
                 // Spread the siblings across the line's own height, so each
                 // connector still visibly belongs to that line.
@@ -529,10 +550,14 @@ fn compute_anchors(nodes: &[GraphNode], edges: &[GraphEdge]) -> Vec<RelativeAnch
         .collect()
 }
 
-/// Anchor for the connector's start: just past the last character of the line
-/// that makes the call, at that line's vertical center.
-fn caller_anchor(node: &GraphNode, line_in_slice: usize) -> RelativeAnchor {
-    let line_index = line_in_slice - 1 + PATH_HEADER_LINES;
+/// Anchor for the connector's caller end: on the token that makes the call.
+///
+/// The AST gives the column of the callee's own name, so the anchor lands on
+/// `wadMul` in `MathLib.wadMul(amount, price(asset))` and on `price` a few
+/// columns later — two calls on one line get two distinct anchors with no
+/// guessing involved.
+fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
+    let line_index = edge.line_in_slice - 1 + PATH_HEADER_LINES;
     let geometry = silicon::line_geometry(Some(node.font_size));
     let y_fraction = geometry.line_center_fraction(line_index, node.png_height);
 
@@ -541,26 +566,46 @@ fn caller_anchor(node: &GraphNode, line_in_slice: usize) -> RelativeAnchor {
         .get(line_index)
         .cloned()
         .unwrap_or_default();
-    let end_x = silicon::line_end_x(
-        Some(node.font_size),
-        true,
-        node.rendered_lines.len(),
-        node.line_offset,
-        &line_text,
-    );
-    let char_width = silicon::line_end_x(Some(node.font_size), true, node.rendered_lines.len(), node.line_offset, "a")
-        .saturating_sub(silicon::line_end_x(
-            Some(node.font_size),
-            true,
-            node.rendered_lines.len(),
-            node.line_offset,
-            "",
-        ));
-    let anchor_x = end_x as f64 + char_width as f64 * ANCHOR_GAP_CHARS;
-    let x_fraction = if node.png_width == 0 {
-        1.0
+
+    // Prefer the recorded column; fall back to searching the line, and finally
+    // to the end of the line if the token is nowhere to be found.
+    let start = if line_text
+        .get(edge.column..edge.column + edge.symbol.len())
+        .map(|found| found == edge.symbol)
+        .unwrap_or(false)
+    {
+        Some(edge.column)
     } else {
-        anchor_x / node.png_width as f64
+        line_text.find(&edge.symbol)
+    };
+
+    let x_fraction = match (start, node.png_width) {
+        (Some(column), width) if width > 0 => {
+            let text_width = |text: &str| {
+                silicon::line_end_x(
+                    Some(node.font_size),
+                    true,
+                    node.rendered_lines.len(),
+                    node.line_offset,
+                    text,
+                ) as f64
+            };
+            // Aim at the middle of the token so the head visibly sits on it.
+            let before = text_width(&line_text[..column]);
+            let through = text_width(&line_text[..column + edge.symbol.len()]);
+            (before + through) / 2.0 / width as f64
+        }
+        (_, width) if width > 0 => {
+            silicon::line_end_x(
+                Some(node.font_size),
+                true,
+                node.rendered_lines.len(),
+                node.line_offset,
+                &line_text,
+            ) as f64
+                / width as f64
+        }
+        _ => 1.0,
     };
 
     RelativeAnchor::new(x_fraction, y_fraction)
@@ -630,6 +675,11 @@ fn build_graph(
                     from: caller_id.clone(),
                     to: target_id.clone(),
                     line_in_slice,
+                    column: slice
+                        .get(line_in_slice - 1)
+                        .and_then(|line| line.find(modifier_name.as_str()))
+                        .unwrap_or(0),
+                    symbol: modifier_name.clone(),
                 });
                 if seen.insert(target_id.clone()) {
                     if nodes.len() >= options.max_nodes {
@@ -666,6 +716,8 @@ fn build_graph(
                 from: caller_id.clone(),
                 to: target_id.clone(),
                 line_in_slice: call.line,
+                column: call.column,
+                symbol: call.symbol.clone(),
             });
 
             if seen.insert(target_id.clone()) {
@@ -970,6 +1022,153 @@ fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
         node.rendered_lines = rendered;
     }
     Ok(())
+}
+
+/// Compose the frame locally: the real screenshots at their real positions,
+/// plus a marker on every connector anchor.
+///
+/// Miro exposes no way to download a rendered board — export jobs are
+/// Enterprise-only and `board.picture` is just a generic icon — so this is how
+/// the layout gets reviewed without a human taking a screenshot. It shows
+/// sizing, spacing and exactly which line each anchor lands on. What it cannot
+/// show is Miro's own elbow routing, which the board decides.
+fn render_preview(
+    nodes: &[GraphNode],
+    edges: &[GraphEdge],
+    anchors: &[RelativeAnchor],
+    layout: &GraphLayout,
+    path: &str,
+) -> Result<()> {
+    use image::{Rgba, RgbaImage};
+
+    // Keep the canvas manageable for very wide frames.
+    let scale = (2600.0 / layout.frame_width).min(1.0);
+    let width = (layout.frame_width * scale).round().max(1.0) as u32;
+    let height = (layout.frame_height * scale).round().max(1.0) as u32;
+    let mut canvas = RgbaImage::from_pixel(width, height, Rgba([24, 25, 33, 255]));
+
+    for node in nodes {
+        let Some(placed) = layout.node(&node.id) else {
+            continue;
+        };
+        if node.png_path.is_empty() {
+            continue;
+        }
+        let Ok(screenshot) = image::open(&node.png_path) else {
+            continue;
+        };
+        let target_width = (placed.width * scale).round().max(1.0) as u32;
+        let target_height = (placed.height * scale).round().max(1.0) as u32;
+        let resized = screenshot.resize_exact(
+            target_width,
+            target_height,
+            image::imageops::FilterType::Triangle,
+        );
+        let left = ((placed.x - placed.width / 2.0) * scale).round() as i64;
+        let top = ((placed.y - placed.height / 2.0) * scale).round() as i64;
+        image::imageops::overlay(&mut canvas, &resized, left, top);
+    }
+
+    // Anchor points and the straight line between them. The real connector is
+    // routed by Miro, so treat this as "where it starts and ends", not "how it
+    // gets there".
+    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    for (index, (edge, anchor)) in edges.iter().zip(anchors.iter()).enumerate() {
+        let (Some(from), Some(to)) = (layout.node(&edge.from), layout.node(&edge.to)) else {
+            continue;
+        };
+        let start = (
+            ((from.x - from.width / 2.0 + from.width * anchor.x_fraction) * scale) as i64,
+            ((from.y - from.height / 2.0 + from.height * anchor.y_fraction) * scale) as i64,
+        );
+        let callee_fraction = by_id
+            .get(edge.to.as_str())
+            .map(|node| {
+                silicon::line_geometry(Some(node.font_size))
+                    .line_center_fraction(SIGNATURE_LINE_INDEX, node.png_height)
+            })
+            .unwrap_or(0.5);
+        let end = (
+            ((to.x - to.width / 2.0) * scale) as i64,
+            ((to.y - to.height / 2.0 + to.height * callee_fraction) * scale) as i64,
+        );
+
+        let hex = DEPTH_COLORS[from.layer % DEPTH_COLORS.len()];
+        let color = parse_hex(hex);
+        draw_line(&mut canvas, start, end, color);
+        // The arrow head sits on the caller, so mark that end fatter.
+        draw_disc(&mut canvas, start, 5, color);
+        draw_disc(&mut canvas, end, 2, color);
+        let _ = index;
+    }
+
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+    canvas
+        .save(path)
+        .into_report()
+        .change_context(EvmMiroError)
+        .attach_printable_lazy(|| format!("cannot write the preview to {path}"))?;
+    Ok(())
+}
+
+fn parse_hex(hex: &str) -> image::Rgba<u8> {
+    let clean = hex.trim_start_matches('#');
+    let value = u32::from_str_radix(clean, 16).unwrap_or(0xffffff);
+    image::Rgba([
+        ((value >> 16) & 0xff) as u8,
+        ((value >> 8) & 0xff) as u8,
+        (value & 0xff) as u8,
+        255,
+    ])
+}
+
+fn draw_line(
+    canvas: &mut image::RgbaImage,
+    from: (i64, i64),
+    to: (i64, i64),
+    color: image::Rgba<u8>,
+) {
+    // Bresenham, thick enough to stay visible once the canvas is scaled down.
+    let (mut x, mut y) = from;
+    let dx = (to.0 - x).abs();
+    let dy = -(to.1 - y).abs();
+    let step_x = if x < to.0 { 1 } else { -1 };
+    let step_y = if y < to.1 { 1 } else { -1 };
+    let mut error = dx + dy;
+    loop {
+        draw_disc(canvas, (x, y), 1, color);
+        if x == to.0 && y == to.1 {
+            break;
+        }
+        let double = 2 * error;
+        if double >= dy {
+            error += dy;
+            x += step_x;
+        }
+        if double <= dx {
+            error += dx;
+            y += step_y;
+        }
+    }
+}
+
+fn draw_disc(canvas: &mut image::RgbaImage, center: (i64, i64), radius: i64, color: image::Rgba<u8>) {
+    for offset_y in -radius..=radius {
+        for offset_x in -radius..=radius {
+            if offset_x * offset_x + offset_y * offset_y > radius * radius {
+                continue;
+            }
+            let x = center.0 + offset_x;
+            let y = center.1 + offset_y;
+            if x >= 0 && y >= 0 && (x as u32) < canvas.width() && (y as u32) < canvas.height() {
+                canvas.put_pixel(x as u32, y as u32, color);
+            }
+        }
+    }
 }
 
 fn cleanup(nodes: &[GraphNode]) {

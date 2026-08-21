@@ -385,12 +385,21 @@ fn is_builtin(name: &str) -> bool {
     )
 }
 
-/// A single call site: the callee name plus the 1-based line, relative to the
-/// source slice that was parsed.
+/// A single call site: the callee name plus where it sits in the source slice.
+///
+/// The column matters as much as the line. Two calls on one line — say
+/// `MathLib.wadMul(amount, price(asset))` — need two connectors landing on two
+/// different tokens, and the AST already knows exactly where each one starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallSite {
     pub name: String,
+    /// 1-based line, relative to the parsed slice.
     pub line: usize,
+    /// 0-based column where the callee's own name begins. For `a.b()` this is
+    /// the column of `b`, not of `a`.
+    pub column: usize,
+    /// The identifier the connector should point at: `b` for `a.b()`.
+    pub symbol: String,
 }
 
 /// Extract every call site — name **and** line — from a Solidity source slice.
@@ -399,13 +408,15 @@ pub struct CallSite {
 /// keeps one entry per occurrence, because the Miro deployment draws one
 /// connector per call site anchored to its exact line.
 ///
-/// The source is wrapped in `contract _C { function _f() { … } }` on a single
-/// leading line, so line `N` of the wrapped input is line `N` of `source`.
+/// The wrapper puts `source` on its own lines, so a reported column is the
+/// column in `source` and a reported line is one more than the line in
+/// `source`. Sharing a line with the wrapper would shift every column on the
+/// first line by the length of the prefix.
 pub fn extract_call_sites_from_source(source: &str) -> Vec<CallSite> {
     if source.trim().is_empty() {
         return Vec::new();
     }
-    let wrapped = format!("contract _C {{ function _f() {{ {} }} }}", source);
+    let wrapped = format!("contract _C {{ function _f() {{\n{}\n}} }}", source);
 
     let sess = Session::builder().with_silent_emitter(None).build();
 
@@ -421,7 +432,7 @@ pub fn extract_call_sites_from_source(source: &str) -> Vec<CallSite> {
 
         let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
 
-        let mut raw: Vec<(String, solar_parse::interface::Span)> = Vec::new();
+        let mut raw: Vec<(String, String, solar_parse::interface::Span)> = Vec::new();
         for item in file.items.iter() {
             if let ast::ItemKind::Contract(c) = &item.kind {
                 for body_item in c.body.iter() {
@@ -439,12 +450,23 @@ pub fn extract_call_sites_from_source(source: &str) -> Vec<CallSite> {
         let source_map = sess.source_map();
         let mut sites: Vec<CallSite> = raw
             .into_iter()
-            .map(|(name, span)| CallSite {
-                name,
-                line: source_map.lookup_char_pos(span.lo()).line,
+            .map(|(name, symbol, span)| {
+                let location = source_map.lookup_char_pos(span.lo());
+                CallSite {
+                    name,
+                    // The wrapper occupies the first line.
+                    line: location.line.saturating_sub(1).max(1),
+                    column: location.col.0,
+                    symbol,
+                }
             })
             .collect();
-        sites.sort_by(|a, b| a.line.cmp(&b.line).then_with(|| a.name.cmp(&b.name)));
+        sites.sort_by(|a, b| {
+            a.line
+                .cmp(&b.line)
+                .then_with(|| a.column.cmp(&b.column))
+                .then_with(|| a.name.cmp(&b.name))
+        });
         sites.dedup();
         Some(sites)
     });
@@ -465,19 +487,28 @@ fn extract_call_sites_regex(source: &str) -> Vec<CallSite> {
             if is_builtin(&name) || is_builtin(head) {
                 continue;
             }
+            let symbol = name.rsplit('.').next().unwrap_or(&name).to_string();
+            let column = cap
+                .get(1)
+                .map(|m| {
+                    // Point at the last segment, matching the AST behaviour.
+                    m.start() + name.len() - symbol.len()
+                })
+                .unwrap_or(0);
             sites.push(CallSite {
                 name,
                 line: idx + 1,
+                column,
+                symbol,
             });
         }
     }
     sites
 }
 
-fn collect_call_sites_from_stmt(
-    kind: &ast::StmtKind<'_>,
-    out: &mut Vec<(String, solar_parse::interface::Span)>,
-) {
+type RawCallSite = (String, String, solar_parse::interface::Span);
+
+fn collect_call_sites_from_stmt(kind: &ast::StmtKind<'_>, out: &mut Vec<RawCallSite>) {
     match kind {
         ast::StmtKind::Expr(expr) => collect_call_sites_from_expr(expr, out),
         ast::StmtKind::Return(opt_expr) => {
@@ -540,19 +571,16 @@ fn collect_call_sites_from_stmt(
     }
 }
 
-fn collect_call_sites_from_expr(
-    expr: &ast::Expr<'_>,
-    out: &mut Vec<(String, solar_parse::interface::Span)>,
-) {
+fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>) {
     match &expr.kind {
         ast::ExprKind::Call(callee, args) => {
             match &callee.kind {
                 ast::ExprKind::Ident(ident) => {
                     let name = ident.as_str().to_string();
                     if !is_builtin(&name) {
-                        // Anchor on the whole call expression, so the line is the
-                        // one the reader sees the call on.
-                        out.push((name, expr.span));
+                        // The identifier's own span, so the connector lands on
+                        // the called name rather than on the whole expression.
+                        out.push((name.clone(), name, ident.span));
                     }
                 }
                 ast::ExprKind::Member(obj_expr, method_ident) => {
@@ -560,7 +588,14 @@ fn collect_call_sites_from_expr(
                         let obj_name = obj_ident.as_str().to_string();
                         let method_name = method_ident.as_str().to_string();
                         if !is_builtin(&obj_name) {
-                            out.push((format!("{}.{}", obj_name, method_name), expr.span));
+                            // Point at the method, not at the receiver: in
+                            // `MathLib.wadMul(...)` the interesting token is
+                            // `wadMul`.
+                            out.push((
+                                format!("{}.{}", obj_name, method_name),
+                                method_name,
+                                method_ident.span,
+                            ));
                         }
                     }
                 }
@@ -623,6 +658,36 @@ _mint(receiver, mintedShares);
         assert_eq!(find("ShareLib.toShares"), vec![4]);
         assert_eq!(find("totalAssets"), vec![4]);
         assert_eq!(find("_mint"), vec![5]);
+    }
+
+    /// Two calls on one line must be told apart by column, which is what lets
+    /// the deployment draw one connector per token instead of stacking both on
+    /// the same spot.
+    #[test]
+    fn test_two_calls_on_the_same_line_have_distinct_columns() {
+        let source = "return MathLib.wadMul(amount, price(asset));";
+        let sites = extract_call_sites_from_source(source);
+
+        let wad = sites
+            .iter()
+            .find(|s| s.name == "MathLib.wadMul")
+            .expect("wadMul missing");
+        let price = sites
+            .iter()
+            .find(|s| s.name == "price")
+            .expect("price missing");
+
+        assert_eq!(wad.line, price.line, "both are on the same line");
+        assert_ne!(wad.column, price.column);
+        assert!(wad.column < price.column, "wadMul comes first");
+
+        // The column must point at the method, not at the receiver.
+        assert_eq!(wad.symbol, "wadMul");
+        assert_eq!(&source[wad.column..wad.column + wad.symbol.len()], "wadMul");
+        assert_eq!(
+            &source[price.column..price.column + price.symbol.len()],
+            "price"
+        );
     }
 
     #[test]

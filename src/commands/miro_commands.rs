@@ -87,6 +87,9 @@ pub enum MiroCommand {
         /// Connector path type
         #[arg(long, default_value = "elbowed")]
         connector_shape: String,
+        /// Write a local PNG preview of the composed frame to this path
+        #[arg(long)]
+        preview: Option<String>,
     },
 }
 
@@ -130,6 +133,7 @@ impl MiroCommand {
                 include_external,
                 replace,
                 connector_shape,
+                preview,
             } => crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
@@ -140,6 +144,7 @@ impl MiroCommand {
                     include_external: *include_external,
                     replace: *replace,
                     connector_shape: connector_shape.clone(),
+                    preview: preview.clone(),
                 },
             )
             .await
