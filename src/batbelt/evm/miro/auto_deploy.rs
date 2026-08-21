@@ -456,7 +456,14 @@ async fn deploy_one(
         let connector_id = client
             .create_connector(
                 &marker_id,
-                RelativeAnchor::new(0.5, 0.5),
+                // Right edge, not the centre: it makes the last segment run
+                // horizontally, so the arrow head lies along the calling line.
+                // Approaching the marker from above instead would point the head
+                // downwards, and at this stroke width the head is about as long
+                // as a line is tall — it would cover the line above the call.
+                // Every callee sits to the right, so the right edge is always
+                // the side the connector comes from.
+                RelativeAnchor::new(1.0, 0.5),
                 end_id,
                 end_anchor,
                 style,
