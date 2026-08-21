@@ -209,13 +209,23 @@ fn layout_tree(
 ) -> GraphLayout {
     let by_id: HashMap<&str, &LayoutNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
-    let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
+    // Siblings follow the order of the calls that produce them, so a callee
+    // invoked near the top of its caller is drawn above one invoked lower down
+    // and the arrows leave in the order the code reads.
+    let mut ordered: HashMap<&str, Vec<(f64, &str)>> = HashMap::new();
     for edge in edges {
-        children
+        ordered
             .entry(edge.from.as_str())
             .or_default()
-            .push(edge.to.as_str());
+            .push((edge.from_line_fraction, edge.to.as_str()));
     }
+    let children: HashMap<&str, Vec<&str>> = ordered
+        .into_iter()
+        .map(|(parent, mut kids)| {
+            kids.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            (parent, kids.into_iter().map(|(_, id)| id).collect())
+        })
+        .collect();
 
     // Depth of every node, and the widest node per depth, so layers line up.
     let mut depth: HashMap<&str, usize> = HashMap::new();
@@ -813,14 +823,19 @@ mod layout_test {
         );
     }
 
+    /// Column splitting belongs to the layered algorithm, which only runs for
+    /// graphs that are not trees — a tree is laid out as a tree, where one tall
+    /// band is the honest shape and splitting it would create crossings. The
+    /// extra shared node here is what makes this a DAG.
     #[test]
     fn test_tall_layer_is_split_into_columns() {
-        let mut nodes = vec![node("root", 1200.0, 400.0)];
+        let mut nodes = vec![node("root", 1200.0, 400.0), node("shared", 900.0, 200.0)];
         let mut edges = Vec::new();
         for i in 0..20 {
             let id = format!("dep{i}");
             nodes.push(node(&id, 1000.0, 1500.0));
             edges.push(edge("root", &id, i as f64 / 20.0));
+            edges.push(edge(&id, "shared", 0.5));
         }
         let config = LayoutConfig {
             max_layer_height: 12_000.0,
