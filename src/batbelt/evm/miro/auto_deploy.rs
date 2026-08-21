@@ -67,6 +67,9 @@ pub struct AutoDeployOptions {
     pub connector_shape: String,
     /// Compose a local preview PNG of the frame at this path.
     pub preview: Option<String>,
+    /// Connector thickness in dp, 1 to 24. Miro's UI snaps this to its own
+    /// preset levels, so 12 lands on roughly "level 5".
+    pub stroke_width: u32,
 }
 
 impl Default for AutoDeployOptions {
@@ -81,6 +84,7 @@ impl Default for AutoDeployOptions {
             replace: false,
             connector_shape: "elbowed".to_string(),
             preview: None,
+            stroke_width: 12,
         }
     }
 }
@@ -421,7 +425,7 @@ async fn deploy_one(
         let source_line = caller.start_line + edge.line_in_slice - 1;
         let style = ConnectorStyle {
             stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
-            stroke_width: "3".to_string(),
+            stroke_width: options.stroke_width.to_string(),
             dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
             caption: Some(format!("<p>L{source_line}</p>")),
             shape: options.connector_shape.clone(),

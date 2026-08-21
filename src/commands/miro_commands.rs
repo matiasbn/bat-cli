@@ -90,6 +90,9 @@ pub enum MiroCommand {
         /// Write a local PNG preview of the composed frame to this path
         #[arg(long)]
         preview: Option<String>,
+        /// Connector thickness in dp (1-24)
+        #[arg(long, default_value_t = 12)]
+        stroke_width: u32,
     },
 }
 
@@ -134,6 +137,7 @@ impl MiroCommand {
                 replace,
                 connector_shape,
                 preview,
+                stroke_width,
             } => crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
@@ -145,6 +149,7 @@ impl MiroCommand {
                     replace: *replace,
                     connector_shape: connector_shape.clone(),
                     preview: preview.clone(),
+                    stroke_width: *stroke_width,
                 },
             )
             .await
