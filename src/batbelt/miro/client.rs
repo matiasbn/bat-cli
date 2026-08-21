@@ -101,8 +101,6 @@ pub struct ConnectorStyle {
     pub stroke_width: String,
     pub dashed: bool,
     pub caption: Option<String>,
-    /// `straight`, `elbowed` or `curved`. Selectable with `--connector-shape`.
-    pub shape: String,
     /// Put the arrow head on `startItem` instead of `endItem`.
     ///
     /// The graph is built caller → callee, but the arrow reads better pointing
@@ -119,7 +117,6 @@ impl Default for ConnectorStyle {
             stroke_width: "3".to_string(),
             dashed: false,
             caption: None,
-            shape: "elbowed".to_string(),
             arrow_at_start: true,
         }
     }
@@ -386,6 +383,42 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// Create an invisible square used as a connector endpoint.
+    ///
+    /// Miro clips a connector at the boundary of the item it attaches to, so an
+    /// anchor placed inside a screenshot is pushed out to that screenshot's
+    /// border — the arrow ends up under the token instead of on it. Attaching to
+    /// a tiny transparent shape sitting on the token sidesteps that: the border
+    /// it gets clipped to *is* the token.
+    ///
+    /// `x`/`y` are the center, relative to the parent frame's top-left corner.
+    pub async fn create_anchor_marker(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        size: f64,
+    ) -> Result<String, MiroError> {
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": { "fillOpacity": "0.0", "borderOpacity": "0.0" },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": size, "height": size },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_anchor_marker", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
     /// Connect two items, anchoring each end at an exact point of the item.
     ///
     /// Note that frames cannot be connector endpoints — the API only accepts
@@ -401,7 +434,12 @@ impl MiroClient {
         let mut body = json!({
             "startItem": { "id": start_item_id, "position": start_anchor.to_json() },
             "endItem": { "id": end_item_id, "position": end_anchor.to_json() },
-            "shape": style.shape,
+            // Always elbowed: orthogonal segments are what makes a call graph
+            // readable, and the alternatives were only ever tried to find out
+            // whether the shape was what pushed anchors to the item border.
+            // It is not — Miro clips a connector at the item boundary whatever
+            // the shape.
+            "shape": "elbowed",
             "style": {
                 "strokeColor": style.stroke_color,
                 "strokeWidth": style.stroke_width,

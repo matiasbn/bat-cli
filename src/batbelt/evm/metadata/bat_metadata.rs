@@ -170,6 +170,9 @@ pub struct AutoDeployedFrame {
     /// `(graph node id, miro image id)`
     pub images: Vec<(String, String)>,
     pub connector_ids: Vec<String>,
+    /// Invisible shapes used as connector endpoints, one per call site.
+    #[serde(default)]
+    pub marker_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

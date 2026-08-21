@@ -84,14 +84,11 @@ pub enum MiroCommand {
         /// Delete the previous deployment of this entry point first
         #[arg(long)]
         replace: bool,
-        /// Connector path type
-        #[arg(long, default_value = "elbowed")]
-        connector_shape: String,
         /// Write a local PNG preview of the composed frame to this path
         #[arg(long)]
         preview: Option<String>,
         /// Connector thickness in dp (1-24)
-        #[arg(long, default_value_t = 12)]
+        #[arg(long, default_value_t = 8)]
         stroke_width: u32,
     },
 }
@@ -135,7 +132,6 @@ impl MiroCommand {
                 dry_run,
                 include_external,
                 replace,
-                connector_shape,
                 preview,
                 stroke_width,
             } => crate::batbelt::evm::miro::auto_deploy::run(
@@ -147,7 +143,6 @@ impl MiroCommand {
                     dry_run: *dry_run,
                     include_external: *include_external,
                     replace: *replace,
-                    connector_shape: connector_shape.clone(),
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
                 },

@@ -42,6 +42,10 @@ const PATH_HEADER_LINES: usize = 2;
 /// reserve for automatic deployments.
 const REGION_MARGIN: f64 = 5_000.0;
 
+/// Side of the invisible square the connector attaches to, in board units.
+/// Small enough that the arrow head reads as landing on the token itself.
+const ANCHOR_MARKER_SIZE: f64 = 24.0;
+
 /// Connector colors, cycled per depth so sibling levels stay distinguishable.
 const DEPTH_COLORS: &[&str] = &[
     "#2d9bf0", "#f24726", "#8fd14f", "#fac710", "#a259ff", "#12cdd4", "#ff8c00", "#e6007a",
@@ -63,8 +67,6 @@ pub struct AutoDeployOptions {
     pub include_external: bool,
     /// Delete the previous deployment of this entry point before redeploying.
     pub replace: bool,
-    /// Connector path type: `straight`, `elbowed` or `curved`.
-    pub connector_shape: String,
     /// Compose a local preview PNG of the frame at this path.
     pub preview: Option<String>,
     /// Connector thickness in dp, 1 to 24. Miro's UI snaps this to its own
@@ -82,9 +84,8 @@ impl Default for AutoDeployOptions {
             dry_run: false,
             include_external: false,
             replace: false,
-            connector_shape: "elbowed".to_string(),
             preview: None,
-            stroke_width: 12,
+            stroke_width: 8,
         }
     }
 }
@@ -398,9 +399,13 @@ async fn deploy_one(
         image_ids.insert(node.id.clone(), image_id);
     }
 
-    // Connectors, one per call site, anchored to the exact line.
+    // Connectors, one per call site. Each starts on an invisible marker sitting
+    // on the called token, because Miro clips a connector at the boundary of the
+    // item it attaches to: anchoring inside the screenshot itself would push the
+    // arrow head out to the screenshot's border.
     let back_edges: HashSet<(String, String)> = layout.back_edges.iter().cloned().collect();
     let mut connector_ids = Vec::new();
+    let mut marker_ids = Vec::new();
     for (edge, start_anchor) in edges.iter().zip(anchors.iter()) {
         let (Some(start_id), Some(end_id)) =
             (image_ids.get(&edge.from), image_ids.get(&edge.to))
@@ -422,18 +427,40 @@ async fn deploy_one(
                 .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height),
         );
 
+        let Some(caller_placed) = layout.node(&edge.from) else {
+            continue;
+        };
+        let marker_id = client
+            .create_anchor_marker(
+                &frame_id,
+                caller_placed.x - caller_placed.width / 2.0
+                    + caller_placed.width * start_anchor.x_fraction,
+                caller_placed.y - caller_placed.height / 2.0
+                    + caller_placed.height * start_anchor.y_fraction,
+                ANCHOR_MARKER_SIZE,
+            )
+            .await
+            .change_context(EvmMiroError)?;
+        marker_ids.push(marker_id.clone());
+
         let source_line = caller.start_line + edge.line_in_slice - 1;
         let style = ConnectorStyle {
             stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
             stroke_width: options.stroke_width.to_string(),
             dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
             caption: Some(format!("<p>L{source_line}</p>")),
-            shape: options.connector_shape.clone(),
             arrow_at_start: true,
         };
 
+        let _ = start_id;
         let connector_id = client
-            .create_connector(start_id, *start_anchor, end_id, end_anchor, style)
+            .create_connector(
+                &marker_id,
+                RelativeAnchor::new(0.5, 0.5),
+                end_id,
+                end_anchor,
+                style,
+            )
             .await
             .change_context(EvmMiroError)?;
         connector_ids.push(connector_id);
@@ -451,6 +478,7 @@ async fn deploy_one(
         height: layout.frame_height,
         images: image_ids.into_iter().collect(),
         connector_ids,
+        marker_ids,
     };
     EvmBatMetadata::update_metadata(|m| {
         m.miro.auto.frames.retain(|f| f.entry_point != record.entry_point);
@@ -482,13 +510,20 @@ async fn remove_previous_deployment(client: &MiroClient, entry_point: &str) -> R
     };
 
     println!(
-        "  replacing the previous deployment ({} image(s), {} connector(s))",
+        "  replacing the previous deployment ({} image(s), {} connector(s), {} marker(s))",
         previous.images.len(),
-        previous.connector_ids.len()
+        previous.connector_ids.len(),
+        previous.marker_ids.len()
     );
     for connector_id in &previous.connector_ids {
         client
             .delete_connector(connector_id)
+            .await
+            .change_context(EvmMiroError)?;
+    }
+    for marker_id in &previous.marker_ids {
+        client
+            .delete_item(marker_id)
             .await
             .change_context(EvmMiroError)?;
     }
