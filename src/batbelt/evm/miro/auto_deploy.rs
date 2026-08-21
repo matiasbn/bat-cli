@@ -523,6 +523,8 @@ async fn deploy_one(
     struct PendingConnector {
         marker_x: f64,
         marker_y: f64,
+        /// Points the edge has to pass through, one per layer it skips.
+        bends: Vec<(f64, f64)>,
         start_id: String,
         end_id: String,
         end_anchor: RelativeAnchor,
@@ -530,7 +532,7 @@ async fn deploy_one(
     }
 
     let mut pending = Vec::new();
-    for (edge, start_anchor) in edges.iter().zip(anchors.iter()) {
+    for ((index, edge), start_anchor) in edges.iter().enumerate().zip(anchors.iter()) {
         let (Some(start_id), Some(end_id)) = (image_ids.get(&edge.from), image_ids.get(&edge.to))
         else {
             continue;
@@ -551,6 +553,7 @@ async fn deploy_one(
                 + caller_placed.width * start_anchor.x_fraction,
             marker_y: caller_placed.y - caller_placed.height / 2.0
                 + caller_placed.height * start_anchor.y_fraction,
+            bends: layout.routes.get(index).cloned().unwrap_or_default(),
             start_id: start_id.clone(),
             end_id: end_id.clone(),
             end_anchor: RelativeAnchor::new(
@@ -575,44 +578,78 @@ async fn deploy_one(
         let frame_id = frame_id.clone();
         let bar = bar.clone();
         connector_tasks.spawn(async move {
-            let marker_id = client
-                .create_anchor_marker(
-                    &frame_id,
-                    item.marker_x,
-                    item.marker_y,
-                    ANCHOR_MARKER_SIZE,
-                )
+            let mut markers = Vec::new();
+            let mut connectors = Vec::new();
+
+            let anchor_marker = client
+                .create_anchor_marker(&frame_id, item.marker_x, item.marker_y, ANCHOR_MARKER_SIZE)
                 .await?;
+            markers.push(anchor_marker.clone());
+
+            // One invisible point per layer the edge skips, so it travels down
+            // the corridors instead of over the screenshots living in between.
+            for (x, y) in &item.bends {
+                markers.push(
+                    client
+                        .create_anchor_marker(&frame_id, *x, *y, ANCHOR_MARKER_SIZE)
+                        .await?,
+                );
+            }
+
+            // The head belongs on the first hop, which is the one that lands on
+            // the calling token; the rest of the chain is plain line.
+            let centre = RelativeAnchor::new(0.5, 0.5);
+            for (hop, pair) in markers.windows(2).enumerate() {
+                let mut style = item.style.clone();
+                style.arrow_at_start = hop == 0;
+                style.caption = if hop == 0 { item.style.caption.clone() } else { None };
+                connectors.push(
+                    client
+                        .create_connector(&pair[0], centre, &pair[1], centre, style)
+                        .await?,
+                );
+            }
+
+            let last = markers.last().cloned().unwrap_or(anchor_marker);
+            let mut style = item.style.clone();
+            style.arrow_at_start = markers.len() == 1;
+            if markers.len() > 1 {
+                style.caption = None;
+            }
+            connectors.push(
+                client
+                    .create_connector(
+                        &last,
+                        // Centre, so Miro routes into the marker from above and
+                        // the connector keeps its elbowed look. The head then
+                        // points down at the token: its tip is exact, but its
+                        // body is roughly as long as a line is tall at this
+                        // stroke width, so it reads as sitting slightly high.
+                        // `--stroke-width` shrinks the head if that matters
+                        // more.
+                        centre,
+                        &item.end_id,
+                        item.end_anchor,
+                        style,
+                    )
+                    .await?,
+            );
+
             let _ = item.start_id;
-            let connector_id = client
-                .create_connector(
-                    &marker_id,
-                    // Centre, so Miro routes into the marker from above and the
-                    // connector keeps its elbowed look. The head then points
-                    // down at the token: its tip is exact, but its body is
-                    // roughly as long as a line is tall at this stroke width,
-                    // so it reads as sitting slightly high. `--stroke-width`
-                    // shrinks the head if the offset matters more.
-                    RelativeAnchor::new(0.5, 0.5),
-                    &item.end_id,
-                    item.end_anchor,
-                    item.style,
-                )
-                .await?;
             bar.inc(1);
-            Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((marker_id, connector_id))
+            Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((markers, connectors))
         });
     }
 
     let mut connector_ids = Vec::new();
     let mut marker_ids = Vec::new();
     while let Some(joined) = connector_tasks.join_next().await {
-        let (marker_id, connector_id) = joined
+        let (markers, connectors) = joined
             .into_report()
             .change_context(EvmMiroError)?
             .change_context(EvmMiroError)?;
-        marker_ids.push(marker_id);
-        connector_ids.push(connector_id);
+        marker_ids.extend(markers);
+        connector_ids.extend(connectors);
     }
     bar.finish_and_clear();
     println!("    {} {} connector(s)", "✓".green(), connector_ids.len());
