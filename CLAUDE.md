@@ -18,8 +18,10 @@ Running the CLI against a real project: the binary must be executed from the roo
 
 ## Releasing (git-flow)
 
-The repo uses **git-flow** (`main` = master, `develop` = develop, tags carry **no `v`
-prefix**, e.g. `0.17.1`). The CLI carries no release tooling of its own. To cut `X.Y.Z`:
+The repo uses **git-flow** (`main` = master, `develop` = develop, version tags carry the **`v`
+prefix**, e.g. `v0.18.0` — `gitflow.prefix.versiontag` is `v`, so pass the bare `X.Y.Z` to the
+git-flow commands and let it add the `v`). The CLI carries no release tooling of its own. To
+cut `X.Y.Z`:
 
 1. `git flow release start X.Y.Z` — branches off `develop`.
    - Confirm the top `## X.Y.Z` heading of the `CHANGELOG` const (see "Telling the AI what
