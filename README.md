@@ -14,6 +14,66 @@ Supports **Anchor**, **Pinocchio**, **vanilla Rust** (Solana), and **Foundry** (
 cargo install bat-cli
 ```
 
+## Authentication (`login`)
+
+Miro authorization happens once per machine, not once per project:
+
+```bash
+bat-cli login --setup   # first time: register your Miro app credentials
+bat-cli login           # opens the browser, you press Accept
+bat-cli login --status  # who the token belongs to, and its scopes
+bat-cli logout          # revoke it
+```
+
+`login` runs the OAuth 2.0 authorization code flow: it listens on
+`http://localhost:9871/callback`, opens Miro in your browser, and stores the
+resulting token in your user config directory. Every project picks it up
+automatically, so `miro_oauth_access_token` in `BatAuditor.toml` can stay empty
+(setting it still overrides the global token). Expiring tokens are refreshed
+transparently.
+
+`--setup` walks through creating the Miro app, including the redirect URI to
+register and the `boards:read` / `boards:write` scopes. Creating the Developer
+team itself has no public API, so that step stays manual — Miro offers it
+automatically the first time you create an app.
+
+### One app for everybody
+
+Only **one** Miro app is ever needed, no matter how many people use bat-cli.
+Fill its credentials into `src/batbelt/miro/app_credentials.rs` and every other
+user skips app creation entirely: `bat-cli login` opens Miro's consent page,
+they pick their own team, press Accept, and that is the whole flow.
+
+The setup screen only appears when no shared app is configured. Miro does not
+document PKCE and exposes no API to discover a user's apps, so without a
+configured app there is nothing for bat-cli to authorize against.
+
+The values are also read from `BAT_MIRO_CLIENT_ID` / `BAT_MIRO_CLIENT_SECRET`,
+at runtime or at build time — but note that `cargo install bat-cli` compiles on
+the user's machine, where those variables are not set, so only the constants
+travel with a published crate.
+
+## Preferences (`config`)
+
+Everything that belongs to you rather than to a project lives in
+`~/.config/bat-cli/` — `$XDG_CONFIG_HOME/bat-cli`, or wherever
+`BAT_CLI_CONFIG_DIR` points:
+
+| file | holds |
+|---|---|
+| `config.toml` | `auditor_name`, `code_editor`, `use_code_editor` |
+| `miro.toml` | the OAuth credentials (`0600`) |
+
+```bash
+bat-cli config          # show the effective preferences and where they live
+bat-cli config --edit   # re-answer them
+```
+
+Your code editor is answered once per machine, not once per audit. A project's
+`BatAuditor.toml` still overrides any of these; whatever it leaves unset falls
+back to the global file. Project-scoped settings — `external_bat_metadata`, and
+everything in `Bat.toml` — stay with the project.
+
 ## What it does
 
 ### Initialize (`init`)
@@ -57,6 +117,13 @@ Deploys annotated code screenshots and dependency graphs to a Miro board for man
 - `miro entrypoint-screenshots` — deploys entry point and context accounts to a selected frame
 - `miro source-code-screenshots` — deploys arbitrary source code screenshots
 - `miro function-dependencies` — deploys a function and its dependency tree
+- `miro evm-auto-deploy` — **EVM**: fully automatic deployment of an entry
+  point's dependency graph. One frame per entry point, sized to the computed
+  layout, with each screenshot uploaded already positioned and one connector per
+  call site anchored to the exact calling line. Run it without arguments to pick
+  an entry point from a list; `--dry-run` prints the layout without contacting
+  Miro. Deployment is on demand by design — `--all` exists but a real project
+  would put thousands of objects on one board
 - Interactive BFS deployment of dependency screenshots with caller→callee arrows
 - Screenshots use Dracula theme with syntax highlighting via [silicon](https://github.com/Aloxaf/silicon)
 - Board URL is validated against the Miro API during setup
