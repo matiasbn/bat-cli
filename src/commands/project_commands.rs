@@ -57,6 +57,72 @@ impl BatCommandEnumerator for ProjectCommands {
 }
 
 impl ProjectCommands {
+    /// Print — and optionally re-answer — the preferences shared by every audit
+    /// on this machine.
+    pub fn show_global_config(edit: bool) -> CommandResult<()> {
+        use crate::batbelt::command_line::CodeEditor;
+        use crate::config::{global_config_dir, BatGlobalConfig};
+
+        let mut global = BatGlobalConfig::load().change_context(CommandError)?;
+
+        if edit {
+            let editors = CodeEditor::get_colorized_type_vec(false);
+            let selection = crate::batbelt::bat_dialoguer::BatDialoguer::select(
+                format!(
+                    "Select a code editor, choose {} to disable:",
+                    CodeEditor::None.get_colored_name(false)
+                ),
+                editors,
+                None,
+            )
+            .change_context(CommandError)?;
+            global.code_editor = CodeEditor::from_index(selection);
+            global.use_code_editor = global.code_editor != CodeEditor::None;
+
+            global.auditor_name = crate::batbelt::bat_dialoguer::BatDialoguer::input_with_default(
+                "Default auditor name".to_string(),
+                global.auditor_name.clone(),
+            )
+            .change_context(CommandError)?;
+
+            global.save().change_context(CommandError)?;
+        }
+
+        println!("{}", "bat-cli preferences".bold());
+        println!("  directory:    {}", global_config_dir().display());
+        println!("  config:       {}", BatGlobalConfig::path().display());
+        println!(
+            "  credentials:  {}",
+            crate::batbelt::miro::auth::MiroCredentials::path()
+        );
+        println!();
+        println!(
+            "  auditor_name:     {}",
+            if global.auditor_name.is_empty() {
+                "(unset)".to_string()
+            } else {
+                global.auditor_name.green().to_string()
+            }
+        );
+        println!(
+            "  code_editor:      {}",
+            global.code_editor.get_colored_name(false)
+        );
+        println!("  use_code_editor:  {}", global.use_code_editor);
+        println!(
+            "  miro:             {}",
+            if crate::batbelt::miro::auth::stored_access_token().is_empty() {
+                "not logged in — run `bat-cli login`".yellow().to_string()
+            } else {
+                "logged in".green().to_string()
+            }
+        );
+        println!(
+            "\nA project's BatAuditor.toml overrides any of these; anything it leaves\nunset falls back here."
+        );
+        Ok(())
+    }
+
     fn reload_bat_project(&self) -> CommandResult<()> {
         let bat_auditor_toml_file = BatFile::BatAuditorToml;
         if !bat_auditor_toml_file

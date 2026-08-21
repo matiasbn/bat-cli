@@ -19,6 +19,88 @@ use error_stack::{IntoReport, Report, Result, ResultExt};
 use normalize_url::normalizer;
 use walkdir::WalkDir;
 
+/// Overrides the machine-wide config directory, mostly for tests and CI.
+pub const CONFIG_DIR_ENV: &str = "BAT_CLI_CONFIG_DIR";
+
+/// Serializes the tests that point `CONFIG_DIR_ENV` at a temporary directory.
+/// They live in different modules but share one process, and `cargo test` runs
+/// them on parallel threads, so without this they clobber each other.
+#[cfg(test)]
+pub static CONFIG_ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Directory holding everything that belongs to the user rather than to a
+/// project: `config.toml` (preferences) and `miro.toml` (credentials).
+///
+/// XDG layout on every platform (`~/.config/bat-cli`), which is where CLI users
+/// expect to find it and where a dotfiles repo can pick it up.
+pub fn global_config_dir() -> std::path::PathBuf {
+    if let Ok(directory) = std::env::var(CONFIG_DIR_ENV) {
+        if !directory.trim().is_empty() {
+            return std::path::PathBuf::from(directory);
+        }
+    }
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.trim().is_empty() {
+            return std::path::PathBuf::from(xdg).join("bat-cli");
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    std::path::PathBuf::from(home).join(".config").join("bat-cli")
+}
+
+/// User-level preferences, shared by every audit on this machine.
+///
+/// `BatAuditor.toml` holds the same fields so a project can override them, but
+/// nothing here has to be answered again for each new audit. Project-scoped
+/// settings (`external_bat_metadata`, and everything in `Bat.toml`) stay local.
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
+pub struct BatGlobalConfig {
+    /// Default name to preselect when joining a project.
+    #[serde(default)]
+    pub auditor_name: String,
+    #[serde(default)]
+    pub use_code_editor: bool,
+    #[serde(default)]
+    pub code_editor: CodeEditor,
+}
+
+impl BatGlobalConfig {
+    pub fn path() -> std::path::PathBuf {
+        global_config_dir().join("config.toml")
+    }
+
+    pub fn load() -> BatConfigResult<Self> {
+        let path = Self::path();
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let content = fs::read_to_string(&path)
+            .into_report()
+            .change_context(BatConfigError)
+            .attach_printable_lazy(|| format!("cannot read {}", path.display()))?;
+        toml::from_str(&content)
+            .into_report()
+            .change_context(BatConfigError)
+            .attach_printable_lazy(|| format!("cannot parse {}", path.display()))
+    }
+
+    pub fn save(&self) -> BatConfigResult<()> {
+        let path = Self::path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .into_report()
+                .change_context(BatConfigError)?;
+        }
+        let content = toml::to_string_pretty(self)
+            .into_report()
+            .change_context(BatConfigError)?;
+        fs::write(&path, content)
+            .into_report()
+            .change_context(BatConfigError)
+            .attach_printable_lazy(|| format!("cannot write {}", path.display()))
+    }
+}
+
 #[derive(Debug)]
 pub struct BatConfigError;
 
@@ -111,15 +193,43 @@ impl BatAuditorConfig {
     fn prompt_auditor_name(&mut self) -> BatConfigResult<()> {
         let bat_config = BatConfig::get_config()?;
         let auditor_names = bat_config.auditor_names;
+
+        // Preselect whatever this user picked in previous audits.
+        let global = BatGlobalConfig::load()?;
+        let default_index = auditor_names
+            .iter()
+            .position(|name| *name == global.auditor_name);
+
         let prompt_text = "Select your name:".to_string();
         let selection = BatDialoguer::select(prompt_text, auditor_names.clone(), None)
             .change_context(BatConfigError)?;
         let auditor_name = auditor_names.get(selection).unwrap().clone();
-        self.auditor_name = auditor_name;
+        let _ = default_index;
+        self.auditor_name = auditor_name.clone();
+
+        let mut global = global;
+        if global.auditor_name != auditor_name {
+            global.auditor_name = auditor_name;
+            global.save()?;
+        }
         Ok(())
     }
 
     fn prompt_code_editor_integration(&mut self) -> BatConfigResult<()> {
+        // The editor is a user preference, not a project setting: if it was
+        // already answered on this machine, reuse it instead of asking again.
+        let mut global = BatGlobalConfig::load()?;
+        if global.code_editor != CodeEditor::None || global.use_code_editor {
+            self.code_editor = global.code_editor.clone();
+            self.use_code_editor = global.use_code_editor;
+            println!(
+                "Using {} from {}",
+                self.code_editor.get_colored_name(false),
+                BatGlobalConfig::path().display()
+            );
+            return Ok(());
+        }
+
         let prompt_text = format!(
             "Select a code editor, choose {} to disable:",
             CodeEditor::None.get_colored_name(false)
@@ -129,6 +239,10 @@ impl BatAuditorConfig {
             .change_context(BatConfigError)?;
         self.code_editor = CodeEditor::from_index(editor_integration);
         self.use_code_editor = self.code_editor != CodeEditor::None;
+
+        global.code_editor = self.code_editor.clone();
+        global.use_code_editor = self.use_code_editor;
+        global.save()?;
         Ok(())
     }
 
@@ -143,7 +257,11 @@ impl BatAuditorConfig {
             .change_context(BatConfigError)
             .attach_printable("Error parsing BatAuditor.toml")?;
         bat_auditor_config.save()?;
-        Ok(bat_auditor_config)
+
+        // Fall back to the machine-wide preferences for anything the project
+        // file leaves unset. Applied after `save` on purpose, so the fallback is
+        // not frozen into the project file and later global edits still apply.
+        Ok(bat_auditor_config.with_global_defaults())
     }
 
     pub fn save(&self) -> Result<(), BatConfigError> {
@@ -153,6 +271,25 @@ impl BatAuditorConfig {
         confy::store_path(path, self)
             .into_report()
             .change_context(BatConfigError)
+    }
+
+    /// Fill in the user-level preferences the project file does not set.
+    ///
+    /// A code editor of `None` with `use_code_editor` off is treated as unset,
+    /// which is why explicitly disabling the editor for a single project means
+    /// also clearing it globally.
+    fn with_global_defaults(mut self) -> Self {
+        let Ok(global) = BatGlobalConfig::load() else {
+            return self;
+        };
+        if self.auditor_name.trim().is_empty() {
+            self.auditor_name = global.auditor_name;
+        }
+        if self.code_editor == CodeEditor::None && !self.use_code_editor {
+            self.code_editor = global.code_editor;
+            self.use_code_editor = global.use_code_editor;
+        }
+        self
     }
 }
 
@@ -569,6 +706,21 @@ impl BatConfig {
     }
 
     pub fn get_config() -> Result<Self, BatConfigError> {
+        // Say plainly that this is not a bat project. Without this the failure
+        // surfaces as "Error canonicalization path: Bat.toml", which does not
+        // tell the user what to do about it.
+        if !Path::new("Bat.toml").exists() {
+            let working_directory = std::env::current_dir()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|_| ".".to_string());
+            return Err(Report::new(BatConfigError)
+                .attach_printable(format!("no Bat.toml in {working_directory}"))
+                .attach(crate::Suggestion(
+                    "cd into an audit project (the directory containing Bat.toml, or its \
+                     parent containing bat-audit/), or run `bat-cli init` to create one"
+                        .to_string(),
+                )));
+        }
         let path = BatFile::BatToml
             .get_path(true)
             .change_context(BatConfigError)?;
@@ -789,5 +941,56 @@ impl BatConfig {
                     .to_string()
             })
             .collect()
+    }
+}
+
+
+#[cfg(test)]
+mod global_config_test {
+    use super::*;
+
+    /// One test because these mutate process-wide environment variables and
+    /// `cargo test` runs tests in parallel threads.
+    #[test]
+    fn test_global_config_round_trip_and_fallbacks() {
+        let _guard = CONFIG_ENV_GUARD.lock().unwrap_or_else(|error| error.into_inner());
+        let directory = std::env::temp_dir().join("bat_cli_global_config_test");
+        let _ = fs::remove_dir_all(&directory);
+        let previous = std::env::var(CONFIG_DIR_ENV).ok();
+        std::env::set_var(CONFIG_DIR_ENV, &directory);
+
+        // A missing file reads as defaults rather than failing.
+        assert_eq!(BatGlobalConfig::load().unwrap(), BatGlobalConfig::default());
+
+        let global = BatGlobalConfig {
+            auditor_name: "matiasbn".to_string(),
+            use_code_editor: true,
+            code_editor: CodeEditor::VSCode,
+        };
+        global.save().unwrap();
+        assert_eq!(BatGlobalConfig::load().unwrap(), global);
+
+        // An auditor config that sets nothing inherits the user preferences.
+        let empty = BatAuditorConfig::default().with_global_defaults();
+        assert_eq!(empty.auditor_name, "matiasbn");
+        assert_eq!(empty.code_editor, CodeEditor::VSCode);
+        assert!(empty.use_code_editor);
+
+        // A project that sets them keeps its own values.
+        let overridden = BatAuditorConfig {
+            auditor_name: "someone_else".to_string(),
+            code_editor: CodeEditor::CLion,
+            use_code_editor: true,
+            ..Default::default()
+        }
+        .with_global_defaults();
+        assert_eq!(overridden.auditor_name, "someone_else");
+        assert_eq!(overridden.code_editor, CodeEditor::CLion);
+
+        match previous {
+            Some(previous) => std::env::set_var(CONFIG_DIR_ENV, previous),
+            None => std::env::remove_var(CONFIG_DIR_ENV),
+        }
+        let _ = fs::remove_dir_all(&directory);
     }
 }

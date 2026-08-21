@@ -99,6 +99,80 @@ pub struct InterfaceMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MiroMetadataRef {
     pub frames: Vec<MiroFrameRef>,
+    /// State of the automatic deployment (`miro evm-auto-deploy`).
+    #[serde(default)]
+    pub auto: AutoDeployState,
+}
+
+/// Everything the automatic deployment needs to stay incremental.
+///
+/// Keeping the allocator state here is what lets us place frames without ever
+/// asking Miro where there is free space: the board is scanned once, when the
+/// region is reserved, and never again.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AutoDeployState {
+    pub region: Option<ShelfState>,
+    #[serde(default)]
+    pub frames: Vec<AutoDeployedFrame>,
+}
+
+/// Serializable snapshot of the shelf allocator cursor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShelfState {
+    pub origin_x: f64,
+    pub origin_y: f64,
+    pub cursor_x: f64,
+    pub cursor_y: f64,
+    pub row_height: f64,
+    pub row_max_width: f64,
+    pub gutter: f64,
+}
+
+impl ShelfState {
+    pub fn to_allocator(&self) -> crate::batbelt::miro::layout::ShelfAllocator {
+        crate::batbelt::miro::layout::ShelfAllocator {
+            origin_x: self.origin_x,
+            origin_y: self.origin_y,
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+            row_height: self.row_height,
+            row_max_width: self.row_max_width,
+            gutter: self.gutter,
+        }
+    }
+}
+
+impl From<&crate::batbelt::miro::layout::ShelfAllocator> for ShelfState {
+    fn from(allocator: &crate::batbelt::miro::layout::ShelfAllocator) -> Self {
+        Self {
+            origin_x: allocator.origin_x,
+            origin_y: allocator.origin_y,
+            cursor_x: allocator.cursor_x,
+            cursor_y: allocator.cursor_y,
+            row_height: allocator.row_height,
+            row_max_width: allocator.row_max_width,
+            gutter: allocator.gutter,
+        }
+    }
+}
+
+/// One entry point's frame, with every item it owns, so a re-deploy can update
+/// instead of duplicating.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoDeployedFrame {
+    pub entry_point: String,
+    pub frame_id: String,
+    pub frame_url: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// `(graph node id, miro image id)`
+    pub images: Vec<(String, String)>,
+    pub connector_ids: Vec<String>,
+    /// Invisible shapes used as connector endpoints, one per call site.
+    #[serde(default)]
+    pub marker_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

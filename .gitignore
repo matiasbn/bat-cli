@@ -7,3 +7,7 @@ assets/.DS_Store
 .vscode
 PACKAGE.md
 .env
+evm-deps-poc/
+# Miro screenshots dropped here while iterating on the layout
+/*.jpg
+/*.png
