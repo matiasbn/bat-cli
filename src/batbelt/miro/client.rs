@@ -433,6 +433,68 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// Whether an item is still on the board.
+    ///
+    /// The registry records what was deployed, but a board is edited by hand:
+    /// a frame deleted in Miro leaves an entry behind that points at nothing.
+    /// Trusting the registry alone means refusing to redeploy something that is
+    /// no longer there.
+    pub async fn item_exists(&self, item_id: &str) -> bool {
+        let url = format!("{}/{}", self.endpoint("items"), item_id);
+        self.execute(LEVEL_1_CREDITS, "item_exists", move |http| http.get(&url))
+            .await
+            .is_ok()
+    }
+
+    /// Create a card standing in for a function drawn elsewhere on the board.
+    ///
+    /// The link goes in the shape's `content` as an `<a href>`, because the REST
+    /// API rejects Miro's own `linkedTo` field outright — it answers
+    /// `Field [linkedTo] is not supported`. An anchor pointing at a
+    /// `?moveToWidget=` URL on the same board navigates there instead of opening
+    /// a tab, which is what makes this usable at all.
+    pub async fn create_link_card(
+        &self,
+        frame_id: &str,
+        title: &str,
+        target_url: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": {
+                "content": format!(
+                    "<p><a href=\"{target_url}\">{title}</a></p><p>see dependencies →</p>"
+                ),
+                "shape": "round_rectangle",
+            },
+            "style": {
+                "fillColor": "#fff9b1",
+                "borderColor": "#f24726",
+                "borderWidth": "2",
+                "fontSize": "36",
+                "textAlign": "center",
+                "textAlignVertical": "middle",
+            },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width, "height": height },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_link_card", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
     /// Connect two items, anchoring each end at an exact point of the item.
     ///
     /// Note that frames cannot be connector endpoints — the API only accepts
@@ -477,45 +539,6 @@ impl MiroClient {
             .await?;
 
         Ok(value["id"].as_str().unwrap_or_default().to_string())
-    }
-}
-
-impl MiroClient {
-    /// Delete one item. A missing item counts as success, so cleaning up after
-    /// a partial run is idempotent.
-    pub async fn delete_item(&self, item_id: &str) -> Result<(), MiroError> {
-        let url = format!("{}/{}", self.endpoint("items"), item_id);
-        match self
-            .execute(LEVEL_2_CREDITS, "delete_item", move |http| http.delete(&url))
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(report) => {
-                if format!("{report:?}").contains("HTTP 404") {
-                    return Ok(());
-                }
-                Err(report)
-            }
-        }
-    }
-
-    /// Delete one connector, tolerating one that is already gone.
-    pub async fn delete_connector(&self, connector_id: &str) -> Result<(), MiroError> {
-        let url = format!("{}/{}", self.endpoint("connectors"), connector_id);
-        match self
-            .execute(LEVEL_2_CREDITS, "delete_connector", move |http| {
-                http.delete(&url)
-            })
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(report) => {
-                if format!("{report:?}").contains("HTTP 404") {
-                    return Ok(());
-                }
-                Err(report)
-            }
-        }
     }
 }
 

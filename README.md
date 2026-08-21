@@ -4,76 +4,116 @@
 
 # bat-cli — Blockchain Auditor Toolkit
 
-A Rust CLI that performs full codebase analysis of blockchain projects by building AST-based metadata to extract function dependencies, access control patterns, and storage layouts. It also deploys annotated code screenshots to Miro boards for manual code review.
+A Rust CLI that draws the call graph of a smart contract onto a Miro board. It
+parses the codebase, renders every function it reaches as a syntax-highlighted
+screenshot, works out where each one goes, and uploads the whole diagram already
+laid out — with every arrow landing on the exact line that makes the call.
 
-Supports **Anchor**, **Pinocchio**, **vanilla Rust** (Solana), and **Foundry** (Solidity/EVM) projects.
+Nothing is dragged into place by hand.
+
+Supports **Foundry** (Solidity/EVM) today. The Solana parsers (Anchor,
+Pinocchio, vanilla Rust) still ship and still scan, but have no deploy path yet.
 
 ## Install
 
 ```bash
-cargo install bat-cli
+cargo install bat-cli --locked
 ```
 
-## Updating (`update`)
+`--locked` matters: without it cargo re-resolves the dependency graph and can
+pull crates needing a newer rustc than the published `Cargo.lock` pins.
+
+## Getting started
 
 ```bash
-bat-cli update           # install the latest version published to crates.io
-bat-cli update --check   # only report whether a newer version exists
-bat-cli update --force   # reinstall even when already up to date
+bat-cli login     # once per machine: browser, press Accept
+cd my-audit-repo
+bat-cli init      # detect the framework, create the board, scan the source
+bat-cli deploy    # pick a function, draw it
 ```
 
-It reads the latest version from the crates.io API, compares it numerically
-against the running binary, and shells out to
-`cargo install bat-cli --version X --force --locked`.
+A project is two files at the root of the repository being audited:
 
-## Authentication (`login`)
+| file | holds |
+|---|---|
+| `Bat.toml` | project type, program paths, the Miro board |
+| `BatMetadata.json` | the parsed codebase, and what has been deployed |
 
-Miro authorization happens once per machine, not once per project:
+Screenshots are rendered to the system temp directory and deleted once they are
+on the board, so nothing else is left behind. bat-cli creates no branches and no
+commits: what you do with version control is yours to decide.
+
+## Commands
+
+### `deploy`
+
+Run it with no arguments to pick a function from a fuzzy-searchable list — entry
+points first and marked, then every other function the project defines.
+
+For one function it renders the call graph, measures each screenshot, and lays
+the whole thing out:
+
+- **Layers** come from the longest path to the root, so no arrow ever points
+  backwards.
+- **Order within a layer** follows the line that makes the call, so a callee
+  invoked near the top of its caller is drawn above one invoked lower down.
+- **Every arrow lands on its calling line** — past the end of it when the line
+  makes one call, on the called token itself when it makes several, since then
+  the column is the only thing telling them apart.
+- **The entry point sits in the top-left corner**, so the frame reads as "the
+  calls start here".
+
+Then it uploads: one frame, one image per function already positioned, and one
+connector per call site.
+
+Useful flags, though none are needed:
+
+| flag | |
+|---|---|
+| `--dry-run` | print the computed layout without contacting Miro |
+| `--preview <path>` | compose the frame locally as a PNG |
+| `--max-depth` / `--max-nodes` | bound a graph by hand; unset draws all of it |
+| `--stroke-width` | connector thickness in dp |
+
+### `sonar`
+
+`init` scans once. Run `sonar` after the source changes to rebuild
+`BatMetadata.json`, which is what `deploy` reads. It extracts contracts,
+interfaces and libraries; functions with their visibility, mutability and
+modifiers; storage, events and modifier definitions; inheritance by C3
+linearization; imports through Foundry remappings, `lib/` and `node_modules/`;
+access control; and the call graph. Solidity is parsed with
+[solar-parse](https://github.com/paradigmxyz/solar).
+
+### `login` / `logout`
+
+Miro authorization happens once per machine, not once per project.
 
 ```bash
 bat-cli login --setup   # first time: register your Miro app credentials
 bat-cli login           # opens the browser, you press Accept
 bat-cli login --status  # who the token belongs to, and its scopes
-bat-cli logout          # revoke it
 ```
 
-`login` runs the OAuth 2.0 authorization code flow: it listens on
-`http://localhost:9871/callback`, opens Miro in your browser, and stores the
-resulting token in your user config directory. Every project picks it up
-automatically, so `miro_oauth_access_token` in `BatAuditor.toml` can stay empty
-(setting it still overrides the global token). Expiring tokens are refreshed
-transparently.
-
-`--setup` walks through creating the Miro app, including the redirect URI to
-register and the `boards:read` / `boards:write` scopes. Creating the Developer
-team itself has no public API, so that step stays manual — Miro offers it
-automatically the first time you create an app.
-
-### One app for everybody
+It runs the OAuth 2.0 authorization code flow, listening on
+`http://localhost:9871/callback`, and stores the token in your user config
+directory. Every project picks it up automatically.
 
 Only **one** Miro app is ever needed, no matter how many people use bat-cli.
-Fill its credentials into `src/batbelt/miro/app_credentials.rs` and every other
-user skips app creation entirely: `bat-cli login` opens Miro's consent page,
-they pick their own team, press Accept, and that is the whole flow.
+Fill its credentials into `src/batbelt/miro/app_credentials.rs` and everyone
+else skips app creation entirely: `bat-cli login` opens the consent page, they
+pick their team, press Accept. The setup screen only appears when no shared app
+is configured — Miro documents no PKCE and exposes no API to discover a user's
+apps, so without one there is nothing to authorize against.
 
-The setup screen only appears when no shared app is configured. Miro does not
-document PKCE and exposes no API to discover a user's apps, so without a
-configured app there is nothing for bat-cli to authorize against.
-
-The values are also read from `BAT_MIRO_CLIENT_ID` / `BAT_MIRO_CLIENT_SECRET`,
-at runtime or at build time — but note that `cargo install bat-cli` compiles on
-the user's machine, where those variables are not set, so only the constants
-travel with a published crate.
-
-## Preferences (`config`)
+### `config`
 
 Everything that belongs to you rather than to a project lives in
-`~/.config/bat-cli/` — `$XDG_CONFIG_HOME/bat-cli`, or wherever
-`BAT_CLI_CONFIG_DIR` points:
+`~/.config/bat-cli/` (or `$XDG_CONFIG_HOME/bat-cli`, or `BAT_CLI_CONFIG_DIR`):
 
 | file | holds |
 |---|---|
-| `config.toml` | `auditor_name`, `code_editor`, `use_code_editor` |
+| `config.toml` | `auditor_name`, `code_editor` |
 | `miro.toml` | the OAuth credentials (`0600`) |
 
 ```bash
@@ -81,115 +121,36 @@ bat-cli config          # show the effective preferences and where they live
 bat-cli config --edit   # re-answer them
 ```
 
-Your code editor is answered once per machine, not once per audit. A project's
-`BatAuditor.toml` still overrides any of these; whatever it leaves unset falls
-back to the global file. Project-scoped settings — `external_bat_metadata`, and
-everything in `Bat.toml` — stay with the project.
-
-## What it does
-
-### Initialize (`init`)
-
-Detects the project framework, creates the Miro board (or picks an existing
-one), writes `Bat.toml` and `BatMetadata.json` at the root of the audited
-repository, and runs the initial sonar analysis. bat-cli creates no branches and
-no commits.
-
-### Rescan (`sonar`)
-
-`init` scans once. Run `sonar` after the source changes to rebuild
-`BatMetadata.json`, which is what `deploy` reads. It parses the codebase via AST
-and extracts:
-
-**Solana (Anchor / Pinocchio / vanilla Rust):**
-- Functions, structs, traits, enums
-- Entry points and their context accounts
-- Recursive function dependency graphs (caller → callee resolution across files, impl blocks, and trait impls)
-- **Anchor**: account constraints and validations (`#[account(...)]`, `has_one`, `seeds`, `constraint`)
-- **Pinocchio**: heuristic-based check detection from `TryFrom` impls (signer, writable, program-owned, mint, token accounts)
-
-**EVM (Foundry / Solidity):**
-- Contracts, interfaces, libraries, abstract contracts
-- Functions with visibility, mutability, modifiers, and parameters
-- Storage variables, events, and modifier definitions
-- Inheritance resolution via C3 linearization
-- Recursive function dependency graphs (caller → callee resolution across contracts and inherited functions)
-- Import resolution with Foundry remappings, `lib/`, and `node_modules/` support
-- Access control detection (onlyOwner, role-based, custom modifiers)
-- Solidity parsing via [solar-parse](https://github.com/paradigmxyz/solar) — native Solidity lexer, no preprocessor workarounds
-
-### Code overhaul workflow (`code-overhaul`)
-
-Structured audit workflow per entry point:
-
-- `code-overhaul start` — generates a template with the entry point metadata (access control, parameters, contract info, validations). Optionally deploys screenshots to Miro
-- `code-overhaul finish` — marks an entry point as reviewed
-
-### Miro board visualization (`miro`)
-
-Deploys annotated code screenshots and dependency graphs to a Miro board for manual code analysis:
-
-- `miro code-overhaul-frames` — creates frames for each entry point
-- `miro code-overhaul-screenshots` — deploys entry point and dependency screenshots with caller→callee arrows
-- `miro entrypoint-screenshots` — deploys entry point and context accounts to a selected frame
-- `miro source-code-screenshots` — deploys arbitrary source code screenshots
-- `miro function-dependencies` — deploys a function and its dependency tree
-- `miro evm-auto-deploy` — **EVM**: fully automatic deployment of an entry
-  point's dependency graph. One frame per entry point, sized to the computed
-  layout, with each screenshot uploaded already positioned and one connector per
-  call site anchored to the exact calling line. Run it without arguments to pick
-  an entry point from a list; `--dry-run` prints the layout without contacting
-  Miro. Deployment is on demand by design — `--all` exists but a real project
-  would put thousands of objects on one board
-- Interactive BFS deployment of dependency screenshots with caller→callee arrows
-- Screenshots use Dracula theme with syntax highlighting via [silicon](https://github.com/Aloxaf/silicon)
-- Board URL is validated against the Miro API during setup
-
-### Utilities (`tool`)
-
-- `tool open-source-code` — open any function, struct, trait, or enum directly in your editor from metadata
-- `tool open-code-overhaul-file` — open a started code-overhaul file and its entry point source
-- `tool get-metadata-by-id` — search and open source code by metadata ID
-- `tool count-code-overhaul` — count to-review, started, and finished code-overhaul files
-- `tool list-entry-points-path` — list entry points with file paths
-- `tool list-code-overhaul` — list code-overhaul files and their status
-- `tool customize-package-json` — configure package.json log level scripts
-
-## Project structure
-
-After `bat-cli init`, the audit workspace looks like:
-
-```
-bat-audit/
-├── Bat.toml                  # Project config
-├── BatMetadata.json          # Sonar analysis cache
-├── code-overhaul/
-│   ├── to-review/            # Pending entry points
-│   ├── started/              # In progress
-│   └── finished/             # Reviewed
-└── notes/
-    └── <auditor>-notes/
-        └── code-overhaul/    # Per-entry-point audit notes
-```
-
-## Quick start
+### `update`
 
 ```bash
-# Initialize a new audit project
-bat-cli init
-
-# Start reviewing an entry point (runs sonar + deploys to Miro)
-bat-cli code-overhaul start
-
-# Finish reviewing an entry point
-bat-cli code-overhaul finish
-
-# Deploy code-overhaul frames to Miro
-bat-cli miro code-overhaul-frames
-
-# Deploy screenshots to Miro
-bat-cli miro code-overhaul-screenshots
+bat-cli update           # install the latest version from crates.io
+bat-cli update --check   # only report whether a newer one exists
 ```
+
+## How the diagram stays readable
+
+Three problems show up as soon as a graph is more than a handful of functions,
+and each is handled by measuring rather than guessing.
+
+**A helper called from several places.** Drawing a copy per call site was tried:
+`Vault.depositWithReferral` came to 77 screenshots for 27 distinct functions,
+with a three-line arithmetic helper repeated fourteen times. So functions are
+shared — except **leaves**, where a copy costs one small screenshot and no
+subtree, and buys a short arrow instead of a long one.
+
+**Arrows crossing the code.** An edge between adjacent layers runs down the empty
+corridor between them; one that skips a layer has to cross the column of
+screenshots living there. Layering inserts a placeholder in each skipped layer
+([Sugiyama's dummy nodes](https://en.wikipedia.org/wiki/Layered_graph_drawing)),
+which claims a slot in the ordering and pushes the columns apart, so the corridor
+is reserved rather than hoped for.
+
+**A call reaching too far.** When an edge still skips layers and its target has
+dependencies of its own, that one call — not the whole function — is replaced by
+a card linking to the target's own frame. The near caller keeps the screenshot;
+only the far one clicks through. One frame per function board-wide, reused by
+every diagram that needs it, so the fan-in stays answerable.
 
 ## License
 

@@ -317,7 +317,18 @@ impl EvmSonar {
         let pb = Self::create_spinner();
         pb.set_message("Building entry points...");
 
-        let mut metadata = EvmBatMetadata::from_contracts(self.contracts.clone(), self.file_items.clone());
+        let mut metadata =
+            EvmBatMetadata::from_contracts(self.contracts.clone(), self.file_items.clone());
+
+        // A rescan rebuilds the metadata from the source, but what is already on
+        // the Miro board is not derived from the source: the frames deployed,
+        // the items they own, and the region reserved on the board. Losing them
+        // would leave every deployed frame unowned, so `--replace` could no
+        // longer clean one up and the allocator would reserve a second region
+        // underneath the first.
+        if let Ok(previous) = EvmBatMetadata::read_metadata() {
+            metadata.miro = previous.miro;
+        }
         metadata.function_dependencies = deps;
         metadata.save_metadata()?;
 

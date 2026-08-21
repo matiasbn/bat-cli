@@ -120,6 +120,10 @@ pub enum BatFolder {
     /// Directory of the program or contracts being audited.
     ProgramPath,
     /// Where silicon writes the screenshots before they are uploaded.
+    ///
+    /// Under the system temp directory, not the project: they are deleted as
+    /// soon as they are on the board, so leaving them in the repository being
+    /// audited would only be litter to gitignore.
     Figures,
 }
 
@@ -128,7 +132,16 @@ impl BatEnumerator for BatFolder {}
 impl BatFolder {
     pub fn get_path(&self, canonicalize: bool) -> BatPathResult<String> {
         let path = match self {
-            BatFolder::Figures => "figures".to_string(),
+            BatFolder::Figures => {
+                let project = BatConfig::get_config()
+                    .map(|config| config.project_name)
+                    .unwrap_or_else(|_| "bat-cli".to_string());
+                std::env::temp_dir()
+                    .join("bat-cli")
+                    .join(project)
+                    .to_string_lossy()
+                    .to_string()
+            }
             BatFolder::ProgramPath => BatConfig::get_config()
                 .change_context(BatPathError)?
                 .program_lib_path

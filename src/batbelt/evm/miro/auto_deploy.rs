@@ -44,6 +44,10 @@ const PATH_HEADER_LINES: usize = 2;
 /// reserve for automatic deployments.
 const REGION_MARGIN: f64 = 5_000.0;
 
+/// How many times to cut and re-lay out before giving up. Each pass removes at
+/// least one edge, so this only guards against a pathological graph.
+const MAX_CUT_PASSES: usize = 5;
+
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
 const ANCHOR_MARKER_SIZE: f64 = 24.0;
@@ -86,8 +90,6 @@ pub struct AutoDeployOptions {
     pub dry_run: bool,
     /// Include contracts coming from `lib/`.
     pub include_external: bool,
-    /// Delete the previous deployment of this entry point before redeploying.
-    pub replace: bool,
     /// Compose a local preview PNG of the frame at this path.
     pub preview: Option<String>,
     /// Connector thickness in dp, 1 to 24. Miro's UI snaps this to its own
@@ -104,18 +106,32 @@ impl Default for AutoDeployOptions {
             max_nodes: None,
             dry_run: false,
             include_external: false,
-            replace: false,
             preview: None,
             stroke_width: 8,
         }
     }
 }
 
-/// One rendered function in the graph.
+/// What a node stands for.
+#[derive(Debug, Clone, PartialEq)]
+enum NodeKind {
+    /// A screenshot of the function's source.
+    Screenshot,
+    /// A card standing in for a function drawn in its own frame, holding a link
+    /// that navigates there.
+    Link { target: String },
+}
+
+/// A card is small and fixed: it carries a name and a link, nothing to measure.
+const LINK_CARD_WIDTH: f64 = 900.0;
+const LINK_CARD_HEIGHT: f64 = 240.0;
+
+/// One function in the graph.
 #[derive(Debug, Clone)]
 struct GraphNode {
     id: String,
     label: String,
+    kind: NodeKind,
     file_path: String,
     /// 1-based, inclusive, in the source file.
     start_line: usize,
@@ -178,7 +194,7 @@ fn font_for_depth(depth: usize) -> usize {
 pub async fn run(options: AutoDeployOptions) -> Result<()> {
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
 
-    let targets = select_entry_points(&metadata, &options)?;
+    let targets = select_targets(&metadata, &options)?;
     if targets.is_empty() {
         return Err(Report::new(EvmMiroError)
             .attach_printable("no entry point matched; run `bat-cli sonar` first"));
@@ -233,6 +249,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             &options,
             client.as_ref(),
             &mut allocator,
+            true,
         )
         .await?;
 
@@ -249,19 +266,23 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     Ok(())
 }
 
-/// Which entry points to deploy.
+/// What to deploy.
 ///
-/// Deploying a whole project at once is deliberately not the default: an audit
-/// is reviewed one entry point at a time, and a project of any size would put
-/// thousands of objects on a board that Miro starts to slow down past a
-/// thousand. With no `--entry-point` and no `--all`, ask.
-fn select_entry_points(
+/// Any function can be deployed, not just an entry point: a shared helper needs
+/// a frame of its own for anything else to be able to point at it, and it is
+/// worth looking at on its own terms too.
+///
+/// Deploying a whole project at once is deliberately not the default. An audit
+/// is read one function at a time, and a project of any size would put thousands
+/// of objects on a board that Miro starts to slow down past a thousand — so with
+/// nothing named, ask.
+fn select_targets(
     metadata: &EvmBatMetadata,
     options: &AutoDeployOptions,
 ) -> Result<Vec<(String, String)>> {
     // `EntryPointMetadata::name` is stored as `Contract.function`, so strip the
     // prefix to get the bare function name used to look it up in the contract.
-    let mut all: Vec<(String, String)> = metadata
+    let mut entry_points: Vec<(String, String)> = metadata
         .entry_points
         .iter()
         .map(|ep| {
@@ -273,28 +294,46 @@ fn select_entry_points(
             (ep.contract_name.clone(), function)
         })
         .collect();
-    all.sort();
-    all.dedup();
+    entry_points.sort();
+    entry_points.dedup();
 
     if options.all {
-        return Ok(all);
+        return Ok(entry_points);
     }
 
+    // Everything the project defines, minus the constructors and minus `lib/`,
+    // which is dependency code nobody deploys on purpose.
+    let is_entry_point: HashSet<(String, String)> = entry_points.iter().cloned().collect();
+    let mut others: Vec<(String, String)> = metadata
+        .contracts
+        .iter()
+        .filter(|contract| !contract.external)
+        .flat_map(|contract| {
+            contract
+                .functions
+                .iter()
+                .filter(|function| !function.is_constructor)
+                .map(|function| (contract.name.clone(), function.name.clone()))
+        })
+        .filter(|target| !is_entry_point.contains(target))
+        .collect();
+    others.sort();
+    others.dedup();
+
     if let Some(wanted) = &options.entry_point {
-        return Ok(all
+        return Ok(entry_points
             .into_iter()
+            .chain(others)
             .filter(|(contract, function)| {
                 *function == *wanted || format!("{contract}.{function}") == *wanted
             })
+            .take(1)
             .collect());
     }
 
-    if all.is_empty() {
-        return Ok(all);
-    }
-
-    // Mark the ones already on the board, so a long list still shows what is
-    // left to do.
+    // Entry points first, since that is where reading usually starts, then
+    // everything else. One flat list, because it is fuzzy-searchable: typing
+    // `feeOf` reaches a helper as fast as an entry point.
     let deployed: HashSet<String> = metadata
         .miro
         .auto
@@ -302,23 +341,37 @@ fn select_entry_points(
         .iter()
         .map(|frame| frame.entry_point.clone())
         .collect();
+
+    let all: Vec<(String, String)> = entry_points
+        .iter()
+        .cloned()
+        .chain(others.iter().cloned())
+        .collect();
+    if all.is_empty() {
+        return Ok(all);
+    }
+
+    let entry_point_count = entry_points.len();
     let labels: Vec<String> = all
         .iter()
-        .map(|(contract, function)| {
+        .enumerate()
+        .map(|(index, (contract, function))| {
             let title = format!("{contract}.{function}");
-            if deployed.contains(&title) {
-                format!("{title} {}", "(deployed)".green())
+            let mut label = if index < entry_point_count {
+                format!("{title}  {}", "[entry point]".blue())
             } else {
-                title
+                title.clone()
+            };
+            if deployed.contains(&title) {
+                label = format!("{label} {}", "(deployed)".green());
             }
+            label
         })
         .collect();
 
-    let selection = BatDialoguer::fuzzy_select(
-        "Select the entry point to deploy:".to_string(),
-        labels,
-    )
-    .change_context(EvmMiroError)?;
+    let selection =
+        BatDialoguer::fuzzy_select("Select what to deploy:".to_string(), labels)
+            .change_context(EvmMiroError)?;
 
     Ok(vec![all[selection].clone()])
 }
@@ -359,11 +412,37 @@ async fn deploy_one(
     options: &AutoDeployOptions,
     client: Option<&MiroClient>,
     allocator: &mut ShelfAllocator,
+    // True when the user named this function, false when it is being built only
+    // because a card needs somewhere to point.
+    is_primary: bool,
 ) -> Result<()> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
 
-    let (mut nodes, edges, truncated) = build_graph(metadata, contract_name, function_name, options)?;
+    // One frame per function, board-wide. Asked for as a link target, a function
+    // already on the board is pointed at rather than drawn again — that is what
+    // lets several diagrams share a helper's frame and keeps the fan-in
+    // readable. Asked for directly, it is the user's call.
+    if !options.dry_run {
+        if let Some(url) = live_frame_url(&title, client).await? {
+            if !is_primary {
+                return Ok(());
+            }
+            println!("  already on the board: {}", url.blue());
+            println!(
+                "  {} deploying again builds a second frame; the one above stays\n  where it is, to be deleted by hand if it is no longer wanted.",
+                "note:".yellow()
+            );
+            if !BatDialoguer::select_yes_or_no("Deploy it again anyway?".to_string())
+                .change_context(EvmMiroError)?
+            {
+                return Ok(());
+            }
+        }
+    }
+
+    let (mut nodes, mut edges, truncated) =
+        build_graph(metadata, contract_name, function_name, options)?;
     if nodes.is_empty() {
         println!("  no function metadata found, skipping");
         return Ok(());
@@ -385,7 +464,7 @@ async fn deploy_one(
     }
 
 
-    render_and_measure(&mut nodes)?;
+    render_and_measure(&mut nodes, &title)?;
 
     let layout_nodes: Vec<LayoutNode> = nodes
         .iter()
@@ -396,7 +475,6 @@ async fn deploy_one(
         })
         .collect();
 
-    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     let anchors = compute_anchors(&nodes, &edges);
     let layout_edges: Vec<LayoutEdge> = edges
         .iter()
@@ -409,7 +487,51 @@ async fn deploy_one(
         .collect();
 
     let root_id = nodes[0].id.clone();
-    let layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+    let mut layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+
+    // Only cut when the frame is too big to read, and only a cut that measurably
+    // shrinks it. Arrows reaching across layers are not by themselves a reason:
+    // the layout already reserves a corridor for them, so they cross nothing.
+    // What a card buys is space, and it only buys space when the call it
+    // replaces was the last reference to a branch.
+    let mut anchors = anchors;
+    for _ in 0..MAX_CUT_PASSES {
+        if screenshot_count(&nodes) <= READABLE_SCREENSHOTS {
+            break;
+        }
+        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges) else {
+            // Too big, but nothing left that cutting would shrink.
+            break;
+        };
+        println!(
+            "  {} {} screenshots is more than reads well; linking a branch out to\n  its own frame instead",
+            "note:".yellow(),
+            screenshot_count(&nodes)
+        );
+        nodes = cut_nodes;
+        edges = cut_edges;
+
+        anchors = compute_anchors(&nodes, &edges);
+        let layout_nodes: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|node| LayoutNode {
+                id: node.id.clone(),
+                width: node.board_width(),
+                height: node.board_height(),
+            })
+            .collect();
+        let layout_edges: Vec<LayoutEdge> = edges
+            .iter()
+            .zip(anchors.iter())
+            .map(|(edge, anchor)| LayoutEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                from_line_fraction: anchor.y_fraction,
+            })
+            .collect();
+        layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+    }
+    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
     // board positions instead of repeating the first one.
@@ -433,10 +555,6 @@ async fn deploy_one(
     }
 
     let client = client.expect("client is present when not in dry-run mode");
-
-    if options.replace {
-        remove_previous_deployment(client, &title).await?;
-    }
     let frame_id = client
         .create_frame(
             &format!("auto: {title}"),
@@ -456,9 +574,14 @@ async fn deploy_one(
         frame_y.round()
     );
 
-    // Record the frame before filling it. If the run dies partway through, the
-    // frame is still registered and `--replace` can clean it up; recording only
-    // on success would leave an orphan nothing knows about.
+    // Every card needs somewhere to go. One frame per function, board-wide: two
+    // cards for the same helper resolve to the same frame, and a helper already
+    // deployed is reused rather than drawn again. That is what keeps the fan-in
+    // answerable — one frame with several references, not a copy per caller.
+    let target_frames = ensure_target_frames(&nodes, options, client, allocator).await?;
+
+    // Record the frame before filling it, so a run that dies partway through
+    // still leaves something that names what is on the board.
     let frame_url = client.frame_url(&frame_id);
     let mut record = AutoDeployedFrame {
         entry_point: title.clone(),
@@ -489,12 +612,24 @@ async fn deploy_one(
         let node_id = node.id.clone();
         let png_path = node.png_path.clone();
         let label = node.label.clone();
-        let (x, y, width) = (placed.x, placed.y, placed.width);
+        let kind = node.kind.clone();
+        let target_url = match &node.kind {
+            NodeKind::Link { target } => target_frames.get(target).cloned().unwrap_or_default(),
+            NodeKind::Screenshot => String::new(),
+        };
+        let (x, y, width, height) = (placed.x, placed.y, placed.width, placed.height);
         let bar = bar.clone();
         upload_tasks.spawn(async move {
-            let result = client
-                .create_image_in_frame(&png_path, &frame_id, &label, x, y, width)
-                .await;
+            let result = match kind {
+                NodeKind::Link { .. } => {
+                    client
+                        .create_link_card(&frame_id, &label, &target_url, x, y, width, height)
+                        .await
+                }
+                NodeKind::Screenshot => client
+                    .create_image_in_frame(&png_path, &frame_id, &label, x, y, width)
+                    .await,
+            };
             bar.inc(1);
             result.map(|image_id| (node_id, image_id))
         });
@@ -548,7 +683,6 @@ async fn deploy_one(
             continue;
         };
 
-        let source_line = caller.start_line + edge.line_in_slice - 1;
         pending.push(PendingConnector {
             marker_x: caller_placed.x - caller_placed.width / 2.0
                 + caller_placed.width * start_anchor.x_fraction,
@@ -577,7 +711,11 @@ async fn deploy_one(
                 stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
                 stroke_width: options.stroke_width.to_string(),
                 dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
-                caption: Some(format!("<p>L{source_line}</p>")),
+                // No caption. It carried the line number back when the arrow
+                // could only reach the border of a screenshot; now the head
+                // lands on the calling line itself, so the label repeats what
+                // the picture already says.
+                caption: None,
                 arrow: ArrowEnd::Start,
             },
         });
@@ -670,60 +808,6 @@ fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
     .change_context(EvmMiroError)
 }
 
-/// Delete the frame, images and connectors left by an earlier run, so iterating
-/// on the layout does not pile up duplicates on the board.
-///
-/// Connectors go first: deleting an item its connector still points at leaves
-/// the connector dangling.
-async fn remove_previous_deployment(client: &MiroClient, entry_point: &str) -> Result<()> {
-    let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-    let Some(previous) = metadata
-        .miro
-        .auto
-        .frames
-        .iter()
-        .find(|frame| frame.entry_point == entry_point)
-        .cloned()
-    else {
-        return Ok(());
-    };
-
-    println!(
-        "  replacing the previous deployment ({} image(s), {} connector(s), {} marker(s))",
-        previous.images.len(),
-        previous.connector_ids.len(),
-        previous.marker_ids.len()
-    );
-    for connector_id in &previous.connector_ids {
-        client
-            .delete_connector(connector_id)
-            .await
-            .change_context(EvmMiroError)?;
-    }
-    for marker_id in &previous.marker_ids {
-        client
-            .delete_item(marker_id)
-            .await
-            .change_context(EvmMiroError)?;
-    }
-    for (_, image_id) in &previous.images {
-        client
-            .delete_item(image_id)
-            .await
-            .change_context(EvmMiroError)?;
-    }
-    client
-        .delete_item(&previous.frame_id)
-        .await
-        .change_context(EvmMiroError)?;
-
-    EvmBatMetadata::update_metadata(|m| {
-        m.miro.auto.frames.retain(|f| f.entry_point != entry_point);
-    })
-    .change_context(EvmMiroError)?;
-    Ok(())
-}
-
 /// Anchors for every edge, in the same order as `edges`.
 ///
 /// Call sites that share a line would otherwise start from the exact same
@@ -734,9 +818,15 @@ fn compute_anchors(nodes: &[GraphNode], edges: &[GraphEdge]) -> Vec<RelativeAnch
     // Keyed by line *and* column: two calls on one line now land on their own
     // tokens, so only genuinely identical positions need fanning out.
     let mut occurrences: HashMap<(&str, usize, usize), usize> = HashMap::new();
+    // How many calls share a line, which decides whether an anchor can sit past
+    // the end of it or has to sit on its own token.
+    let mut per_line: HashMap<(&str, usize), usize> = HashMap::new();
     for edge in edges {
         *occurrences
             .entry((edge.from.as_str(), edge.line_in_slice, edge.column))
+            .or_insert(0) += 1;
+        *per_line
+            .entry((edge.from.as_str(), edge.line_in_slice))
             .or_insert(0) += 1;
     }
 
@@ -753,7 +843,12 @@ fn compute_anchors(nodes: &[GraphNode], edges: &[GraphEdge]) -> Vec<RelativeAnch
             *index += 1;
             let total = occurrences.get(&key).copied().unwrap_or(1);
 
-            let mut anchor = caller_anchor(node, edge);
+            let alone_on_line = per_line
+                .get(&(edge.from.as_str(), edge.line_in_slice))
+                .copied()
+                .unwrap_or(1)
+                == 1;
+            let mut anchor = caller_anchor(node, edge, alone_on_line);
             if total > 1 && node.png_height > 0 {
                 // Spread the siblings across the line's own height, so each
                 // connector still visibly belongs to that line.
@@ -768,13 +863,19 @@ fn compute_anchors(nodes: &[GraphNode], edges: &[GraphEdge]) -> Vec<RelativeAnch
         .collect()
 }
 
-/// Anchor for the connector's caller end: on the token that makes the call.
+/// Anchor for the connector's caller end, on the line that makes the call.
 ///
-/// The AST gives the column of the callee's own name, so the anchor lands on
-/// `wadMul` in `MathLib.wadMul(amount, price(asset))` and on `price` a few
-/// columns later — two calls on one line get two distinct anchors with no
-/// guessing involved.
-fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
+/// Where on that line depends on whether it is the only call there:
+///
+/// - Alone, the anchor goes past the end of the line, so the arrow head sits on
+///   empty background instead of covering the code it points at.
+/// - Sharing the line, it goes on the callee's own token, which the AST gives
+///   the column of. `MathLib.wadMul(amount, price(asset))` produces one anchor
+///   on `wadMul` and another a few columns later on `price`, with no guessing.
+///
+/// The end of the line is the nicer place to land, so it is used whenever
+/// telling two calls apart does not require otherwise.
+fn caller_anchor(node: &GraphNode, edge: &GraphEdge, alone_on_line: bool) -> RelativeAnchor {
     let line_index = edge.line_in_slice - 1 + PATH_HEADER_LINES;
     let geometry = silicon::line_geometry(Some(node.font_size));
     let y_fraction = geometry.line_center_fraction(line_index, node.png_height);
@@ -797,17 +898,24 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
         line_text.find(&edge.symbol)
     };
 
+    let text_width = |text: &str| {
+        silicon::line_end_x(
+            Some(node.font_size),
+            true,
+            node.rendered_lines.len(),
+            node.line_offset,
+            text,
+        ) as f64
+    };
+
     let x_fraction = match (start, node.png_width) {
+        (_, width) if alone_on_line && width > 0 => {
+            // One call on the line: land just past the last character, clear of
+            // the code.
+            let gap = (text_width("a") - text_width("")) * ANCHOR_GAP_CHARS;
+            (text_width(&line_text) + gap) / width as f64
+        }
         (Some(column), width) if width > 0 => {
-            let text_width = |text: &str| {
-                silicon::line_end_x(
-                    Some(node.font_size),
-                    true,
-                    node.rendered_lines.len(),
-                    node.line_offset,
-                    text,
-                ) as f64
-            };
             // Aim at the middle of the token so the head visibly sits on it.
             let before = text_width(&line_text[..column]);
             let through = text_width(&line_text[..column + edge.symbol.len()]);
@@ -843,10 +951,9 @@ fn build_graph(
     function_name: &str,
     options: &AutoDeployOptions,
 ) -> Result<(Vec<GraphNode>, Vec<GraphEdge>, usize)> {
-    let Some(root_function) = find_function(metadata, contract_name, function_name) else {
-        return Ok((Vec::new(), Vec::new(), 0));
-    };
-    let Some(root_contract) = metadata.get_contract_by_name(contract_name) else {
+    let Some((root_contract, root_function)) =
+        find_function(metadata, contract_name, function_name)
+    else {
         return Ok((Vec::new(), Vec::new(), 0));
     };
 
@@ -887,10 +994,10 @@ fn build_graph(
         if options.max_depth.is_some_and(|limit| current.depth >= limit) {
             continue;
         }
-        let Some(contract) = metadata.get_contract_by_name(&current.contract) else {
-            continue;
-        };
-        let Some(function) = find_function(metadata, &current.contract, &current.function) else {
+        // The contract that defines the function, which is where its source is.
+        let Some((contract, function)) =
+            find_function(metadata, &current.contract, &current.function)
+        else {
             continue;
         };
         let slice = read_slice(
@@ -1016,6 +1123,7 @@ fn make_node(
     depth: usize,
 ) -> GraphNode {
     GraphNode {
+        kind: NodeKind::Screenshot,
         id,
         label,
         file_path: contract.file_path.clone(),
@@ -1040,6 +1148,7 @@ fn make_modifier_node(
     depth: usize,
 ) -> GraphNode {
     GraphNode {
+        kind: NodeKind::Screenshot,
         id,
         label: format!("{}.{} (modifier)", contract.name, name),
         file_path: contract.file_path.clone(),
@@ -1082,16 +1191,21 @@ fn function_end(function: &FunctionMetadata, contract: &ContractMetadata) -> usi
     function.line
 }
 
-fn find_function(
-    metadata: &EvmBatMetadata,
+/// Find a function, and the contract that actually **defines** it.
+///
+/// Returning the contract it was reached through instead is wrong for anything
+/// inherited: `Settlement.settle` is defined in `Pipeline`, so reading its source
+/// out of `Settlement.sol` lands on unrelated lines, and the screenshot comes out
+/// empty. That silently truncated every diagram at the first inherited call.
+fn find_function<'a>(
+    metadata: &'a EvmBatMetadata,
     contract_name: &str,
     function_name: &str,
-) -> Option<FunctionMetadata> {
+) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
     let contract = metadata.get_contract_by_name(contract_name)?;
     if let Some(function) = contract.functions.iter().find(|f| f.name == function_name) {
-        return Some(function.clone());
+        return Some((contract, function.clone()));
     }
-    // Inherited function.
     for base in &contract.base_contracts {
         if let Some(found) = find_function(metadata, base, function_name) {
             return Some(found);
@@ -1175,8 +1289,8 @@ fn resolve_call<'a>(
                     if !keep(target) {
                         continue;
                     }
-                    if let Some(function) = find_function(metadata, &target.name, method) {
-                        return Some((target, function));
+                    if let Some(found) = find_function(metadata, &target.name, method) {
+                        return Some(found);
                     }
                 }
             }
@@ -1185,9 +1299,9 @@ fn resolve_call<'a>(
         if !keep(contract) {
             continue;
         }
-        if let Some(function) = find_function(metadata, &contract.name, method) {
+        if let Some(found) = find_function(metadata, &contract.name, method) {
             // Skip interface-only declarations with no body.
-            return Some((contract, function));
+            return Some(found);
         }
     }
     None
@@ -1227,7 +1341,13 @@ fn read_slice(file_path: &str, start_line: usize, end_line: usize) -> Vec<String
 }
 
 /// Render every node and read back its pixel size, without uploading anything.
-fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
+fn render_and_measure(nodes: &mut [GraphNode], owner: &str) -> Result<()> {
+    // Screenshots are scratch: they are deleted once uploaded, so the directory
+    // is often not there. Create it rather than treating its absence as an
+    // error the user has to fix.
+    BatFolder::Figures
+        .create_folder()
+        .change_context(EvmMiroError)?;
     let destination = BatFolder::Figures
         .get_path(true)
         .change_context(EvmMiroError)?;
@@ -1250,7 +1370,16 @@ fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
         node.line_offset = node.start_line.saturating_sub(PATH_HEADER_LINES);
 
         // `.js` gives Solidity the best Dracula colors available in syntect.
-        let file_name = format!("{}.js", node.id.replace([':', '.', '/'], "_"));
+        // Named after the deployment as well as the node. The same function
+        // appears in several graphs, and a deployment deletes its own files when
+        // it finishes: without the prefix, building a helper's frame partway
+        // through a bigger one would delete the screenshot that bigger one is
+        // still waiting to upload.
+        let file_name = format!(
+            "{}__{}.js",
+            owner.replace([':', '.', '/'], "_"),
+            node.id.replace([':', '.', '/'], "_")
+        );
         let png_path = silicon::create_figure(
             &rendered.join("\n"),
             &destination,
@@ -1647,6 +1776,7 @@ mod split_shared_leaves_test {
 
     fn node(id: &str) -> GraphNode {
         GraphNode {
+            kind: NodeKind::Screenshot,
             id: id.to_string(),
             label: id.to_string(),
             file_path: String::new(),
@@ -1711,4 +1841,383 @@ mod split_shared_leaves_test {
         assert_eq!(nodes.len(), 2);
         assert_eq!(edges[0].to, "leaf");
     }
+}
+
+/// How many screenshots a frame can hold and still be read in one sitting.
+///
+/// Measured rather than chosen: `Vault.depositWithReferral` at 32 screenshots
+/// and 14874x2894 is comfortable, so the limit sits above what has been seen to
+/// work. Below it nothing is cut, and the diagram shows the code.
+const READABLE_SCREENSHOTS: usize = 45;
+
+/// Replace one call with a card linking to the callee's own frame.
+///
+/// The decision is per **edge**, not per function. `FeeLib.feeOf` is called from
+/// layer 1 and from layer 2 and lays out on layer 3: the arrow from layer 2 is
+/// fine, the one from layer 1 reaches further. Moving the whole function out
+/// would take away the arrow that was already fine, so only the far call is
+/// replaced — the near caller keeps the screenshot.
+fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize) {
+    let Some(label) = nodes
+        .iter()
+        .find(|node| node.id == edges[index].to)
+        .map(|node| node.label.clone())
+    else {
+        return;
+    };
+
+    let card_id = format!("\u{0}link{index}");
+    nodes.push(GraphNode {
+        id: card_id.clone(),
+        label: label.clone(),
+        kind: NodeKind::Link { target: label },
+        file_path: String::new(),
+        start_line: 0,
+        end_line: 0,
+        depth: 0,
+        font_size: 22,
+        png_path: String::new(),
+        png_width: LINK_CARD_WIDTH as u32,
+        png_height: LINK_CARD_HEIGHT as u32,
+        rendered_lines: Vec::new(),
+        line_offset: 0,
+    });
+    edges[index].to = card_id;
+    prune_unreachable(nodes, edges);
+}
+
+/// Screenshots only: a card is a reference, not something to read.
+fn screenshot_count(nodes: &[GraphNode]) -> usize {
+    nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Screenshot)
+        .count()
+}
+
+/// The cut that removes the most screenshots, if any removes one at all.
+///
+/// A cut has to earn its place. Replacing a call to a shared function takes
+/// nothing off the frame, because the other caller still needs the function and
+/// everything under it: the card is added and no screenshot leaves. It only pays
+/// when the call was the last reference, so the subtree becomes unreachable and
+/// goes with it.
+///
+/// Any call is a candidate, not only the ones reaching across layers. A call
+/// spanning layers can never strand anything — the longer path that put its
+/// target down there arrives through a nearer caller, which keeps holding it up.
+/// The calls that free space are the ordinary ones: the single call into a deep
+/// branch, whose removal takes the branch with it.
+///
+/// Leaves are never candidates: a copy costs one small screenshot and
+/// [`split_shared_leaves`] has already made those, so a card would be a click in
+/// exchange for nothing.
+fn best_cut(
+    nodes: &[GraphNode],
+    edges: &[GraphEdge],
+) -> Option<(Vec<GraphNode>, Vec<GraphEdge>)> {
+    let has_children: HashSet<&str> = edges.iter().map(|edge| edge.from.as_str()).collect();
+
+    let before = screenshot_count(nodes);
+    let mut best: Option<(usize, Vec<GraphNode>, Vec<GraphEdge>)> = None;
+
+    for (index, edge) in edges.iter().enumerate() {
+        if !has_children.contains(edge.to.as_str()) {
+            continue;
+        }
+
+        let mut candidate_nodes = nodes.to_vec();
+        let mut candidate_edges = edges.to_vec();
+        cut_edge(&mut candidate_nodes, &mut candidate_edges, index);
+
+        let saved = before.saturating_sub(screenshot_count(&candidate_nodes));
+        if saved == 0 {
+            continue;
+        }
+        if best.as_ref().map(|(most, _, _)| saved > *most).unwrap_or(true) {
+            best = Some((saved, candidate_nodes, candidate_edges));
+        }
+    }
+
+    best.map(|(_, nodes, edges)| (nodes, edges))
+}
+
+/// Drop nodes no longer reachable from the root, and the edges into them.
+fn prune_unreachable(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>) {
+    let Some(root) = nodes.first().map(|node| node.id.clone()) else {
+        return;
+    };
+    let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+    for edge in edges.iter() {
+        adjacency
+            .entry(edge.from.as_str())
+            .or_default()
+            .push(edge.to.as_str());
+    }
+
+    let mut reachable: HashSet<String> = HashSet::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if !reachable.insert(id.clone()) {
+            continue;
+        }
+        for next in adjacency.get(id.as_str()).cloned().unwrap_or_default() {
+            stack.push(next.to_string());
+        }
+    }
+    nodes.retain(|node| reachable.contains(&node.id));
+    edges.retain(|edge| reachable.contains(&edge.from) && reachable.contains(&edge.to));
+}
+
+#[cfg(test)]
+mod cut_test {
+    use super::*;
+    use crate::batbelt::miro::layout::{layout_graph, LayoutConfig, LayoutEdge, LayoutNode};
+
+    fn node(id: &str) -> GraphNode {
+        GraphNode {
+            id: id.to_string(),
+            label: id.to_string(),
+            kind: NodeKind::Screenshot,
+            file_path: String::new(),
+            start_line: 1,
+            end_line: 2,
+            depth: 0,
+            font_size: 22,
+            png_path: String::new(),
+            png_width: 1000,
+            png_height: 300,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+        }
+    }
+
+    fn edge(from: &str, to: &str) -> GraphEdge {
+        GraphEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            line_in_slice: 1,
+            column: 0,
+            symbol: to.to_string(),
+        }
+    }
+
+    fn lay(nodes: &[GraphNode], edges: &[GraphEdge]) -> GraphLayout {
+        let layout_nodes: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|n| LayoutNode {
+                id: n.id.clone(),
+                width: n.board_width(),
+                height: n.board_height(),
+            })
+            .collect();
+        let layout_edges: Vec<LayoutEdge> = edges
+            .iter()
+            .map(|e| LayoutEdge {
+                from: e.from.clone(),
+                to: e.to.clone(),
+                from_line_fraction: 0.5,
+            })
+            .collect();
+        layout_graph(
+            &nodes[0].id,
+            &layout_nodes,
+            &layout_edges,
+            LayoutConfig::default(),
+        )
+    }
+
+    /// The case that made the rule necessary. `shared` is reached from far away
+    /// *and* from next door, so cutting the far call leaves it drawn for the
+    /// near one and takes nothing off the frame. A card would be added for
+    /// nothing.
+    #[test]
+    fn test_a_cut_that_saves_nothing_is_refused() {
+        let nodes = vec![
+            node("root"),
+            node("far"),
+            node("near"),
+            node("shared"),
+            node("child"),
+        ];
+        let edges = vec![
+            edge("root", "far"),
+            edge("far", "near"),
+            edge("near", "shared"),
+            edge("far", "shared"),
+            edge("shared", "child"),
+        ];
+
+        if let Some((cut_nodes, _)) = best_cut(&nodes, &edges) {
+            assert!(
+                screenshot_count(&cut_nodes) < screenshot_count(&nodes),
+                "a cut that is taken has to free something"
+            );
+        }
+    }
+
+    /// Cutting one long call can never take a screenshot off the frame, and the
+    /// layering is why.
+    ///
+    /// A call spans layers only because a longer path reaches the same function,
+    /// and that path arrives through a different caller one layer above it. Cut
+    /// the long call and the function still hangs off that other caller, with
+    /// everything under it. There is no graph where this comes out otherwise, so
+    /// there is no graph where a single cut pays for itself in space.
+    #[test]
+    fn test_a_long_call_always_has_a_nearer_caller() {
+        for extra in 0..4 {
+            let mut nodes = vec![node("root"), node("mid"), node("target"), node("child")];
+            let mut edges = vec![
+                edge("root", "mid"),
+                edge("root", "target"),
+                edge("mid", "target"),
+                edge("target", "child"),
+            ];
+            // Lengthen the path a few different ways; the property holds anyway.
+            for step in 0..extra {
+                let id = format!("step{step}");
+                nodes.push(node(&id));
+                edges.push(edge("mid", &id));
+                edges.push(edge(&id, "target"));
+            }
+
+            // Cut the long call specifically, rather than whichever cut is
+            // best overall, since the claim is about that one.
+            let long = edges
+                .iter()
+                .position(|e| e.from == "root" && e.to == "target")
+                .expect("the long call");
+            let mut cut_nodes = nodes.clone();
+            let mut cut_edges = edges.clone();
+            cut_edge(&mut cut_nodes, &mut cut_edges, long);
+
+            assert_eq!(
+                screenshot_count(&cut_nodes),
+                screenshot_count(&nodes),
+                "with {extra} extra hops, cutting the long call freed a screenshot"
+            );
+        }
+    }
+
+    /// Nothing to consider when every call reaches the next layer along.
+    #[test]
+    fn test_a_clean_graph_has_no_candidate() {
+        let nodes = vec![node("root"), node("a"), node("b")];
+        let edges = vec![edge("root", "a"), edge("a", "b")];
+
+        // `a` holds `b` up on its own, so cutting root→a frees both.
+        let (cut_nodes, _) = best_cut(&nodes, &edges).expect("cutting root->a strands b");
+        assert!(screenshot_count(&cut_nodes) < screenshot_count(&nodes));
+    }
+}
+
+/// Frame URL for every function a card in this graph points at.
+///
+/// A function that already has a frame is reused; one that does not is deployed
+/// first, so the card has somewhere to go. Distinct cards for the same function
+/// collapse to one lookup, which is what makes several diagrams share a helper's
+/// frame instead of each building its own.
+async fn ensure_target_frames(
+    nodes: &[GraphNode],
+    options: &AutoDeployOptions,
+    client: &MiroClient,
+    allocator: &mut ShelfAllocator,
+) -> Result<HashMap<String, String>> {
+    let wanted: Vec<String> = {
+        let mut seen = HashSet::new();
+        nodes
+            .iter()
+            .filter_map(|node| match &node.kind {
+                NodeKind::Link { target } => Some(target.clone()),
+                NodeKind::Screenshot => None,
+            })
+            .filter(|target| seen.insert(target.clone()))
+            .collect()
+    };
+    if wanted.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut resolved = HashMap::new();
+    for target in wanted {
+        if let Some(url) = live_frame_url(&target, Some(client)).await? {
+            println!("  {} reuses its frame", target.blue());
+            resolved.insert(target, url);
+            continue;
+        }
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+
+        let Some((contract, function)) = target.split_once('.') else {
+            continue;
+        };
+        println!("  {} needs a frame of its own, deploying it first", target.blue());
+        // Boxed because this is the recursive step: the frame being built for a
+        // helper can itself need cards, and those need frames.
+        Box::pin(deploy_one(
+            &metadata,
+            contract,
+            function,
+            options,
+            Some(client),
+            allocator,
+            false,
+        ))
+        .await?;
+
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        if let Some(created) = metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == target)
+        {
+            resolved.insert(target, created.frame_url.clone());
+        }
+    }
+    Ok(resolved)
+}
+
+/// The frame URL for a function, if it is registered **and** still on the board.
+///
+/// A registry entry outlives the frame it names: boards are edited by hand, and
+/// deleting a frame in Miro leaves the entry behind. Checking the board costs
+/// one read and turns "you already deployed this" into something true, rather
+/// than a refusal to redeploy what is no longer there. A stale entry is dropped
+/// on the way past, so the question is only asked once.
+async fn live_frame_url(title: &str, client: Option<&MiroClient>) -> Result<Option<String>> {
+    let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+    let Some(record) = metadata
+        .miro
+        .auto
+        .frames
+        .iter()
+        .find(|frame| frame.entry_point == title)
+    else {
+        return Ok(None);
+    };
+    let (frame_id, url) = (record.frame_id.clone(), record.frame_url.clone());
+
+    let Some(client) = client else {
+        return Ok(Some(url));
+    };
+    if client.item_exists(&frame_id).await {
+        return Ok(Some(url));
+    }
+
+    println!(
+        "  {} the frame recorded for {} is gone from the board; forgetting it",
+        "note:".yellow(),
+        title
+    );
+    let owner = title.to_string();
+    EvmBatMetadata::update_metadata(move |metadata| {
+        metadata
+            .miro
+            .auto
+            .frames
+            .retain(|frame| frame.entry_point != owner);
+    })
+    .change_context(EvmMiroError)?;
+    Ok(None)
 }
