@@ -456,14 +456,15 @@ async fn deploy_one(
         let connector_id = client
             .create_connector(
                 &marker_id,
-                // Right edge, not the centre: it makes the last segment run
-                // horizontally, so the arrow head lies along the calling line.
-                // Approaching the marker from above instead would point the head
-                // downwards, and at this stroke width the head is about as long
-                // as a line is tall — it would cover the line above the call.
-                // Every callee sits to the right, so the right edge is always
-                // the side the connector comes from.
-                RelativeAnchor::new(1.0, 0.5),
+                // Centre, so Miro routes into the marker from above and the
+                // connector keeps its elbowed look. The head then points down
+                // at the token: its tip is exact, but its body is roughly as
+                // long as a line is tall at this stroke width, so it reads as
+                // sitting slightly high. Anchoring on the right edge would lay
+                // the head along the line instead, at the cost of a straight
+                // horizontal run into the token, which reads worse.
+                // `--stroke-width` shrinks the head if the offset matters more.
+                RelativeAnchor::new(0.5, 0.5),
                 end_id,
                 end_anchor,
                 style,
