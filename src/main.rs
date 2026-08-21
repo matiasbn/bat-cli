@@ -89,12 +89,13 @@ enum BatCommands {
         /// point at a time.
         #[arg(long)]
         all: bool,
-        /// Stop expanding the call graph past this depth
-        #[arg(long, default_value_t = 4)]
-        max_depth: usize,
-        /// Cap on screenshots per frame
-        #[arg(long, default_value_t = 60)]
-        max_nodes: usize,
+        /// Stop expanding the call graph past this depth. Unset follows it to
+        /// the end
+        #[arg(long)]
+        max_depth: Option<usize>,
+        /// Cap the screenshots per frame. Unset draws the whole tree
+        #[arg(long)]
+        max_nodes: Option<usize>,
         /// Print the computed layout without sending anything to Miro
         #[arg(long)]
         dry_run: bool,

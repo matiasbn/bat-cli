@@ -44,6 +44,9 @@ const PATH_HEADER_LINES: usize = 2;
 /// reserve for automatic deployments.
 const REGION_MARGIN: f64 = 5_000.0;
 
+/// Above this many screenshots, confirm before deploying.
+const LARGE_TREE_WARNING: usize = 120;
+
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
 const ANCHOR_MARKER_SIZE: f64 = 24.0;
@@ -76,10 +79,12 @@ pub struct AutoDeployOptions {
     pub entry_point: Option<String>,
     /// Deploy every entry point in the project.
     pub all: bool,
-    /// Stop expanding the call graph past this depth.
-    pub max_depth: usize,
-    /// Hard cap on the number of screenshots per frame.
-    pub max_nodes: usize,
+    /// Optional depth limit. Unset follows the tree until it ends, which it
+    /// does on its own: recursion is cut per path and the leaves are functions
+    /// that call nothing.
+    pub max_depth: Option<usize>,
+    /// Optional cap on screenshots per frame. Unset means draw the whole tree.
+    pub max_nodes: Option<usize>,
     /// Compute and print the layout without touching Miro.
     pub dry_run: bool,
     /// Include contracts coming from `lib/`.
@@ -98,8 +103,8 @@ impl Default for AutoDeployOptions {
         Self {
             entry_point: None,
             all: false,
-            max_depth: 4,
-            max_nodes: 60,
+            max_depth: None,
+            max_nodes: None,
             dry_run: false,
             include_external: false,
             replace: false,
@@ -366,14 +371,37 @@ async fn deploy_one(
         println!("  no function metadata found, skipping");
         return Ok(());
     }
+    let depth = nodes.iter().map(|node| node.depth).max().unwrap_or(0);
+    println!(
+        "  {} screenshots, {} connectors, {} levels deep",
+        nodes.len().to_string().green(),
+        edges.len().to_string().green(),
+        (depth + 1).to_string().green()
+    );
     if truncated > 0 {
         println!(
-            "  {} {} node(s) not expanded (max-depth {} / max-nodes {})",
+            "  {} {} call site(s) left out by --max-nodes {}",
             "note:".yellow(),
             truncated,
-            options.max_depth,
-            options.max_nodes
+            options.max_nodes.unwrap_or_default()
         );
+    }
+
+    // A big tree is a lot of API calls and a lot of objects on the board, so
+    // give the chance to back out rather than discovering it halfway through.
+    if !options.dry_run && nodes.len() > LARGE_TREE_WARNING {
+        let approximate_calls = nodes.len() + edges.len() * 2 + 1;
+        println!(
+            "  {} that is roughly {} API calls",
+            "note:".yellow(),
+            approximate_calls
+        );
+        if !BatDialoguer::select_yes_or_no("Continue?".to_string())
+            .change_context(EvmMiroError)?
+        {
+            cleanup(&nodes);
+            return Ok(());
+        }
     }
 
     render_and_measure(&mut nodes)?;
@@ -830,7 +858,7 @@ fn build_graph(
     }];
 
     while let Some(current) = stack.pop() {
-        if current.depth >= options.max_depth {
+        if options.max_depth.is_some_and(|limit| current.depth >= limit) {
             continue;
         }
         let Some(contract) = metadata.get_contract_by_name(&current.contract) else {
@@ -855,7 +883,7 @@ fn build_graph(
             else {
                 continue;
             };
-            if nodes.len() >= options.max_nodes {
+            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
                 truncated += 1;
                 continue;
             }
@@ -896,7 +924,7 @@ fn build_graph(
                 continue;
             };
             let key = node_key(&target_contract.name, &target_function.name);
-            if nodes.len() >= options.max_nodes {
+            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
                 truncated += 1;
                 continue;
             }
