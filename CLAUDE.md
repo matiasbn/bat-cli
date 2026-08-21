@@ -85,14 +85,29 @@ Config is loaded with `figment` from those TOMLs; `BatConfig::get_config()` is c
 
 ### Miro integration
 
-`batbelt/miro/` wraps the Miro REST API (frames, images, shapes, connectors, sticky notes) with the OAuth token from `BatAuditor.toml`; `src/commands/miro_commands.rs` orchestrates deployments. Screenshots are rendered locally by `batbelt/silicon.rs` (silicon + syntect, Dracula theme, background `#282a36`). Frame geometry constants live in `batbelt/miro/frame.rs` (`MIRO_FRAME_WIDTH = 5600`, `MIRO_FRAME_HEIGHT = 2600`, `MIRO_BOARD_COLUMNS = 5`, `MIRO_INITIAL_X = 4800`). Dependency screenshots are deployed by an interactive BFS over the dependency graph (`VecDeque` + `HashSet<MetadataId>`), prompting per function and drawing caller→callee arrows as it goes.
+`batbelt/miro/client.rs` wraps the Miro REST API (frames, images, shapes, connectors) with the machine-wide OAuth token from `~/.config/bat-cli/`. It carries a credit budget, a concurrency semaphore, and retries on 429/5xx. Screenshots are rendered locally by `batbelt/silicon.rs` (silicon + syntect, Dracula theme, background `#282a36`) into the system temp dir, uploaded, then deleted.
 
-### Git side effects
+`batbelt/evm/miro/auto_deploy.rs` orchestrates a deploy; `batbelt/miro/layout.rs` holds the pure, testable layout (Sugiyama for graphs, Reingold–Tilford for trees, shelf packing for board-level frame placement).
 
-Most commands end by creating a commit through the `GitCommit` enum (`batbelt/git/git_commit.rs`) — e.g. `UpdateMetadataJson`, `StartCO`, `FinishCO`. Commit messages are generated, not free-form; add a variant instead of shelling out to `git commit`.
+Connectors anchor to invisible 24×24 marker shapes rather than to the screenshots, because Miro clips a connector endpoint to the item's border — the marker is what lets an arrow land on an exact line and column, computed from `silicon::line_geometry` plus the call site's AST span.
+
+#### `linkedTo` is not reachable from the REST API
+
+When a branch is too large to draw inline, `auto_deploy` emits a **link card** pointing at a separate frame. That card carries an `<a href="…moveToWidget…">` inside its text rather than Miro's native item link, and this is deliberate — the REST API rejects the field outright:
+
+```
+400  Field [linkedTo] is not supported
+400  Field [data.linkedTo] is not supported
+```
+
+`linkedTo` exists only in the Web SDK, which runs inside a board. Investigated in August 2026 whether the browser call could be replayed from the terminal; it cannot. The editor sends every board mutation over `wss://miro.com/rtc-gateway/mux` as opaque binary frames (`permessage-deflate`), authenticated with a **session cookie** rather than the OAuth token. Nothing about a link appears in Fetch/XHR — only account metadata, JS chunks, Segment analytics, and a favicon fetch for the link target. Reproducing it would mean reversing an undocumented binary protocol and holding a browser session.
+
+**Decision: keep the `<a href>`.** It navigates correctly; it just renders as a text link instead of showing Miro's arrow affordance. Link cards are rare by design — only a branch too big to draw inline produces one, typically one to three per diagram — so the manual alternative is a few seconds of "Link to" per diagram.
+
+`miro-app/` holds a small Web SDK app that converts those anchors into native `linkedTo` in one click. It works, but it needs to be hosted (localhost during development, or GitHub Pages for a permanent URL) and installed per user, which was judged more ceremony than the problem warrants. Left in the tree as an escape hatch, not part of the flow.
 
 ## Conventions
 
 - Enums that back CLI choices implement `BatEnumerator` (via `strum` `Display`/`EnumIter`), which provides `get_type_vec`, `from_index`, snake/sentence-case conversions and drives the `dialoguer` prompts in `batbelt/bat_dialoguer.rs`. Command enums additionally implement `BatCommandEnumerator` (`execute_command`, `check_metadata_is_initialized`, `check_correct_branch`), and that same enum shape is reflected into generated `package.json` scripts.
 - Several modules are dormant behind `#[allow(dead_code, unused_imports)]` (`analytics`, `finding_commands`, `repository_commands`) and are commented out of `BatCommands` — leave them unless asked.
-- Logging goes to `Batlog.log` via `log4rs` (level from `-v` flags); `println!` is reserved for user-facing CLI output, colored with `colored`.
+- Logging goes to stderr via `env_logger` (level from `-v` flags); `println!` is reserved for user-facing CLI output, colored with `colored`.
