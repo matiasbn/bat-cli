@@ -26,6 +26,7 @@ use crate::batbelt::miro::client::{ConnectorStyle, MiroClient, RelativeAnchor};
 use crate::batbelt::miro::layout::{
     layout_graph, GraphLayout, LayoutConfig, LayoutEdge, LayoutNode, ShelfAllocator,
 };
+use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::silicon;
 
@@ -163,6 +164,19 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             .attach_printable("no entry point matched; run `bat-cli sonar` first"));
     }
 
+    if options.all && !options.dry_run && targets.len() > 1 {
+        println!(
+            "{} deploying {} entry points at once puts thousands of objects on the\nboard, which Miro starts to slow down past a thousand. Reviewing happens one\nentry point at a time, so consider deploying on demand instead.",
+            "warning:".yellow(),
+            targets.len()
+        );
+        if !BatDialoguer::select_yes_or_no("Deploy all of them anyway?".to_string())
+            .change_context(EvmMiroError)?
+        {
+            return Ok(());
+        }
+    }
+
     println!(
         "Auto-deploying {} entry point(s){}",
         targets.len().to_string().green(),
@@ -201,17 +215,26 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             &mut allocator,
         )
         .await?;
-    }
 
-    if !options.dry_run {
-        let state = ShelfState::from(&allocator);
-        EvmBatMetadata::update_metadata(|m| m.miro.auto.region = Some(state.clone()))
-            .change_context(EvmMiroError)?;
+        // Persist the cursor after every entry point, not once at the end: a run
+        // over a whole project is long enough to be interrupted, and a lost
+        // cursor would place the next batch on top of the frames already there.
+        if !options.dry_run {
+            let state = ShelfState::from(&allocator);
+            EvmBatMetadata::update_metadata(|m| m.miro.auto.region = Some(state.clone()))
+                .change_context(EvmMiroError)?;
+        }
     }
 
     Ok(())
 }
 
+/// Which entry points to deploy.
+///
+/// Deploying a whole project at once is deliberately not the default: an audit
+/// is reviewed one entry point at a time, and a project of any size would put
+/// thousands of objects on a board that Miro starts to slow down past a
+/// thousand. With no `--entry-point` and no `--all`, ask.
 fn select_entry_points(
     metadata: &EvmBatMetadata,
     options: &AutoDeployOptions,
@@ -236,19 +259,48 @@ fn select_entry_points(
     if options.all {
         return Ok(all);
     }
-    let wanted = match &options.entry_point {
-        Some(name) => name.clone(),
-        None => {
-            return Err(Report::new(EvmMiroError)
-                .attach_printable("pass --entry-point <name> or --all"))
-        }
-    };
-    Ok(all
-        .into_iter()
-        .filter(|(contract, function)| {
-            *function == wanted || format!("{contract}.{function}") == wanted
+
+    if let Some(wanted) = &options.entry_point {
+        return Ok(all
+            .into_iter()
+            .filter(|(contract, function)| {
+                *function == *wanted || format!("{contract}.{function}") == *wanted
+            })
+            .collect());
+    }
+
+    if all.is_empty() {
+        return Ok(all);
+    }
+
+    // Mark the ones already on the board, so a long list still shows what is
+    // left to do.
+    let deployed: HashSet<String> = metadata
+        .miro
+        .auto
+        .frames
+        .iter()
+        .map(|frame| frame.entry_point.clone())
+        .collect();
+    let labels: Vec<String> = all
+        .iter()
+        .map(|(contract, function)| {
+            let title = format!("{contract}.{function}");
+            if deployed.contains(&title) {
+                format!("{title} {}", "(deployed)".green())
+            } else {
+                title
+            }
         })
-        .collect())
+        .collect();
+
+    let selection = BatDialoguer::fuzzy_select(
+        "Select the entry point to deploy:".to_string(),
+        labels,
+    )
+    .change_context(EvmMiroError)?;
+
+    Ok(vec![all[selection].clone()])
 }
 
 /// Reserve (or recover) the board region the automatic frames live in.

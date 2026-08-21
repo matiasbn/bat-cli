@@ -63,10 +63,13 @@ pub enum MiroCommand {
     /// one frame per entry point, screenshots already positioned, and one
     /// connector per call site anchored to the exact calling line.
     EvmAutoDeploy {
-        /// Entry point to deploy, as `name` or `Contract.name`
+        /// Entry point to deploy, as `name` or `Contract.name`. Omit to pick
+        /// one from a list.
         #[arg(long)]
         entry_point: Option<String>,
-        /// Deploy every entry point in the project
+        /// Deploy every entry point at once. Not recommended: a real project
+        /// puts thousands of objects on the board, and review happens one entry
+        /// point at a time.
         #[arg(long)]
         all: bool,
         /// Stop expanding the call graph past this depth

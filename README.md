@@ -117,11 +117,13 @@ Deploys annotated code screenshots and dependency graphs to a Miro board for man
 - `miro entrypoint-screenshots` — deploys entry point and context accounts to a selected frame
 - `miro source-code-screenshots` — deploys arbitrary source code screenshots
 - `miro function-dependencies` — deploys a function and its dependency tree
-- `miro evm-auto-deploy` — **EVM**: fully automatic deployment of every entry
+- `miro evm-auto-deploy` — **EVM**: fully automatic deployment of an entry
   point's dependency graph. One frame per entry point, sized to the computed
   layout, with each screenshot uploaded already positioned and one connector per
-  call site anchored to the exact calling line. `--dry-run` prints the layout
-  without contacting Miro
+  call site anchored to the exact calling line. Run it without arguments to pick
+  an entry point from a list; `--dry-run` prints the layout without contacting
+  Miro. Deployment is on demand by design — `--all` exists but a real project
+  would put thousands of objects on one board
 - Interactive BFS deployment of dependency screenshots with caller→callee arrows
 - Screenshots use Dracula theme with syntax highlighting via [silicon](https://github.com/Aloxaf/silicon)
 - Board URL is validated against the Miro API during setup
