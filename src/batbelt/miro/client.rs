@@ -467,7 +467,7 @@ impl MiroClient {
         let body = json!({
             "data": {
                 "content": format!(
-                    "<p><a href=\"{target_url}\">{title}</a></p><p>ver dependencias →</p>"
+                    "<p><a href=\"{target_url}\">{title}</a></p><p>see dependencies →</p>"
                 ),
                 "shape": "round_rectangle",
             },
