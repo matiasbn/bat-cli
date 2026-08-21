@@ -81,6 +81,9 @@ pub enum MiroCommand {
         /// Include contracts coming from lib/
         #[arg(long)]
         include_external: bool,
+        /// Delete the previous deployment of this entry point first
+        #[arg(long)]
+        replace: bool,
     },
 }
 
@@ -122,6 +125,7 @@ impl MiroCommand {
                 max_nodes,
                 dry_run,
                 include_external,
+                replace,
             } => crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
@@ -130,6 +134,7 @@ impl MiroCommand {
                     max_nodes: *max_nodes,
                     dry_run: *dry_run,
                     include_external: *include_external,
+                    replace: *replace,
                 },
             )
             .await

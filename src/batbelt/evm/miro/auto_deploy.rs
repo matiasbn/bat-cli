@@ -61,6 +61,8 @@ pub struct AutoDeployOptions {
     pub dry_run: bool,
     /// Include contracts coming from `lib/`.
     pub include_external: bool,
+    /// Delete the previous deployment of this entry point before redeploying.
+    pub replace: bool,
 }
 
 impl Default for AutoDeployOptions {
@@ -72,6 +74,7 @@ impl Default for AutoDeployOptions {
             max_nodes: 60,
             dry_run: false,
             include_external: false,
+            replace: false,
         }
     }
 }
@@ -87,7 +90,6 @@ struct GraphNode {
     end_line: usize,
     depth: usize,
     font_size: usize,
-    target_width: f64,
     /// Filled in during the render phase.
     png_path: String,
     png_width: u32,
@@ -99,15 +101,12 @@ struct GraphNode {
 }
 
 impl GraphNode {
-    fn scale(&self) -> f64 {
-        if self.png_width == 0 {
-            return 1.0;
-        }
-        self.target_width / self.png_width as f64
+    fn board_width(&self) -> f64 {
+        self.png_width as f64 * BOARD_UNITS_PER_PIXEL
     }
 
     fn board_height(&self) -> f64 {
-        self.png_height as f64 * self.scale()
+        self.png_height as f64 * BOARD_UNITS_PER_PIXEL
     }
 }
 
@@ -120,13 +119,22 @@ struct GraphEdge {
     line_in_slice: usize,
 }
 
-/// Screenshot width and font per depth. The entry point is the biggest, leaves
-/// the smallest, so a deep graph stays readable without exploding the frame.
-fn style_for_depth(depth: usize) -> (usize, f64) {
+/// How many board units one rendered pixel becomes.
+///
+/// Constant on purpose. Forcing every screenshot to a fixed board width instead
+/// would blow up a narrow capture and shrink a wide one — a 530 px image
+/// stretched to 1200 and a 1468 px image squeezed to 1200 end up with nearly 3x
+/// difference in text size inside the same layer. Keeping the ratio fixed means
+/// the only thing that changes the text size is the font used to render it.
+const BOARD_UNITS_PER_PIXEL: f64 = 1.0;
+
+/// Font per depth: the entry point is rendered biggest and leaves smallest, so a
+/// deep graph stays readable. Width now follows from the code itself.
+fn font_for_depth(depth: usize) -> usize {
     match depth {
-        0 => (32, 1800.0),
-        1 => (26, 1500.0),
-        _ => (22, 1200.0),
+        0 => 32,
+        1 => 26,
+        _ => 22,
     }
 }
 
@@ -288,7 +296,7 @@ async fn deploy_one(
         .iter()
         .map(|node| LayoutNode {
             id: node.id.clone(),
-            width: node.target_width,
+            width: node.board_width(),
             height: node.board_height(),
         })
         .collect();
@@ -319,6 +327,10 @@ async fn deploy_one(
     }
 
     let client = client.expect("client is present when not in dry-run mode");
+
+    if options.replace {
+        remove_previous_deployment(client, &title).await?;
+    }
     let frame_id = client
         .create_frame(
             &format!("auto: {title}"),
@@ -420,6 +432,53 @@ async fn deploy_one(
 
     println!("  {}", frame_url.blue());
     cleanup(&nodes);
+    Ok(())
+}
+
+/// Delete the frame, images and connectors left by an earlier run, so iterating
+/// on the layout does not pile up duplicates on the board.
+///
+/// Connectors go first: deleting an item its connector still points at leaves
+/// the connector dangling.
+async fn remove_previous_deployment(client: &MiroClient, entry_point: &str) -> Result<()> {
+    let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+    let Some(previous) = metadata
+        .miro
+        .auto
+        .frames
+        .iter()
+        .find(|frame| frame.entry_point == entry_point)
+        .cloned()
+    else {
+        return Ok(());
+    };
+
+    println!(
+        "  replacing the previous deployment ({} image(s), {} connector(s))",
+        previous.images.len(),
+        previous.connector_ids.len()
+    );
+    for connector_id in &previous.connector_ids {
+        client
+            .delete_connector(connector_id)
+            .await
+            .change_context(EvmMiroError)?;
+    }
+    for (_, image_id) in &previous.images {
+        client
+            .delete_item(image_id)
+            .await
+            .change_context(EvmMiroError)?;
+    }
+    client
+        .delete_item(&previous.frame_id)
+        .await
+        .change_context(EvmMiroError)?;
+
+    EvmBatMetadata::update_metadata(|m| {
+        m.miro.auto.frames.retain(|f| f.entry_point != entry_point);
+    })
+    .change_context(EvmMiroError)?;
     Ok(())
 }
 
@@ -644,7 +703,6 @@ fn make_node(
     function: &FunctionMetadata,
     depth: usize,
 ) -> GraphNode {
-    let (font_size, target_width) = style_for_depth(depth);
     GraphNode {
         id,
         label,
@@ -652,8 +710,7 @@ fn make_node(
         start_line: function.line,
         end_line: function_end(function, contract),
         depth,
-        font_size,
-        target_width,
+        font_size: font_for_depth(depth),
         png_path: String::new(),
         png_width: 0,
         png_height: 0,
@@ -670,7 +727,6 @@ fn make_modifier_node(
     end_line: usize,
     depth: usize,
 ) -> GraphNode {
-    let (font_size, target_width) = style_for_depth(depth);
     GraphNode {
         id,
         label: format!("{}.{} (modifier)", contract.name, name),
@@ -678,8 +734,7 @@ fn make_modifier_node(
         start_line,
         end_line,
         depth,
-        font_size,
-        target_width,
+        font_size: font_for_depth(depth),
         png_path: String::new(),
         png_width: 0,
         png_height: 0,
