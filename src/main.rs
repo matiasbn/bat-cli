@@ -26,6 +26,7 @@ use regex::Regex;
 pub mod batbelt;
 pub mod commands;
 pub mod config;
+pub mod guide;
 
 // pub type BatDerive = #[derive(Debug, PartialEq, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
@@ -78,6 +79,13 @@ enum BatCommands {
     /// Rescan the source code after it changed, rebuilding the metadata that
     /// deploy reads
     Sonar,
+    /// Regenerate the machine-global AI guide and reinstall the assistant skills.
+    ///
+    /// Hidden because `main::run` already does this before every command; it exists
+    /// so a freshly installed binary can be asked to publish ITS OWN guide — see
+    /// `update_commands`, where the running process is the outgoing version.
+    #[command(name = "refresh-ai-guide", hide = true)]
+    RefreshAiGuide,
     /// Deploy an entry point's screenshots to a Miro board
     Deploy {
         /// Entry point to deploy, as `name` or `Contract.name`. Omit to pick
@@ -140,6 +148,8 @@ impl BatCommands {
                 ProjectCommands::show_global_config(*edit).change_context(CommandError)
             }
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
+            // The refresh already ran in `main::run`; nothing left to do.
+            BatCommands::RefreshAiGuide => Ok(()),
             BatCommands::Deploy {
                 entry_point,
                 all,
@@ -149,7 +159,8 @@ impl BatCommands {
                 include_external,
                 preview,
                 stroke_width,
-            } => crate::batbelt::evm::miro::auto_deploy::run(
+            } => {
+                crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
                     all: *all,
@@ -159,10 +170,11 @@ impl BatCommands {
                     include_external: *include_external,
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
-                },
-            )
-            .await
-            .change_context(CommandError),
+                    },
+                )
+                .await
+                .change_context(CommandError)
+            }
         }
     }
 
@@ -176,6 +188,7 @@ impl BatCommands {
             | BatCommands::Login { .. }
             | BatCommands::Logout
             | BatCommands::Config { .. }
+            | BatCommands::RefreshAiGuide
             | BatCommands::Update { .. } => return Ok(()),
             BatCommands::Sonar => false,
             BatCommands::Deploy { .. } => true,
@@ -237,6 +250,11 @@ async fn run() -> CommandResult<()> {
         .parse_default_env()
         .format_timestamp(None)
         .init();
+
+    // The AI guide describes the binary, so every command is a chance to make sure the one
+    // on disk is the one just installed — including `config` and `update`, which have no
+    // project at all. Best-effort by construction: it never fails the command.
+    crate::guide::refresh_ai_surface();
 
     cli.command.execute().await
 }

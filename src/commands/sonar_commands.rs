@@ -38,10 +38,12 @@ impl SonarCommand {
         let bat_config = BatConfig::get_config().change_context(CommandError)?;
 
         if bat_config.project_type == ProjectType::Foundry {
-            return self.execute_run_foundry();
+            self.execute_run_foundry()?;
+        } else {
+            self.execute_run_svm()?;
         }
 
-        self.execute_run_svm()
+        Ok(())
     }
 
     fn execute_run_foundry(&self) -> CommandResult<()> {

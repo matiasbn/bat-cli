@@ -139,6 +139,13 @@ pub struct BatConfig {
     pub program_name: String,
     #[serde(default)]
     pub project_type: ProjectType,
+    /// Version of bat-cli that last touched this project.
+    ///
+    /// Stamped on every command that reads or writes project state, so an AI assistant can
+    /// tell that the binary was upgraded since it last read `ai_context/` and go read the
+    /// changelog instead of re-reading the whole guide. See `crate::guide`.
+    #[serde(default)]
+    pub bat_cli_version: String,
 }
 
 impl BatConfig {
@@ -351,6 +358,7 @@ impl BatConfig {
             program_lib_path: normalized_program_lib_path,
             program_lib_paths: normalized_program_lib_paths,
             project_type,
+            bat_cli_version: env!("CARGO_PKG_VERSION").to_string(),
         };
         bat_config.save().change_context(BatConfigError)?;
         Ok(bat_config)
@@ -468,6 +476,7 @@ impl BatConfig {
             program_lib_path: src_path.clone(),
             program_lib_paths: vec![src_path],
             project_type: ProjectType::Foundry,
+            bat_cli_version: env!("CARGO_PKG_VERSION").to_string(),
         };
         bat_config.save().change_context(BatConfigError)?;
         Ok(bat_config)
