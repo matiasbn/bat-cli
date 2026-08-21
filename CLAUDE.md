@@ -23,6 +23,19 @@ cargo run package format    # clippy --fix + cargo fix + fmt + commit
 cargo run package release   # bump version, git flow release, tag, cargo publish, cargo install
 ```
 
+When cutting a release by hand (git-flow: branch off `develop`, bump `Cargo.toml`,
+`git flow release finish`, push `main`/`develop`/tags), always finish with **both** of these:
+
+```bash
+cargo publish
+cargo install --path . --force --locked
+```
+
+Installing from the local path rather than waiting for crates.io means the new version
+is usable immediately. `--locked` is required: without it `cargo install` re-resolves
+dependencies and pulls transitive crates needing a newer rustc than `Cargo.lock` pins.
+
+
 ## Architecture
 
 bat-cli is a single binary (`src/main.rs`) whose `BatCommands` clap enum dispatches to `src/commands/*`. Every non-`Init`/`Reload`/`Package` command first runs `validate_command()`, which enforces two invariants: the metadata cache is initialized, and the user is on the auditor branch (`{auditor_name}-{project_name}`, see `batbelt::git::get_auditor_branch_name`).
