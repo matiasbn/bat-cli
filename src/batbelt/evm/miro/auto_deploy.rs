@@ -774,6 +774,16 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
 }
 
 /// BFS over the call graph, keeping every call site with its line.
+/// Walk the call graph from an entry point, producing a **tree**.
+///
+/// A function called from three places gets three screenshots, not one shared
+/// node with three arrows coming into it. Sharing makes the picture smaller but
+/// unreadable: the shared node has to sit somewhere, so its incoming arrows
+/// come from several layers at once and cross everything in between. A tree
+/// costs more screenshots and reads at a glance.
+///
+/// Recursion is cut per path rather than globally: a callee already present in
+/// the current chain of callers is drawn once and not expanded again.
 fn build_graph(
     metadata: &EvmBatMetadata,
     contract_name: &str,
@@ -789,11 +799,9 @@ fn build_graph(
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
     let mut truncated = 0usize;
 
-    let root_id = node_id(contract_name, function_name);
-    seen.insert(root_id.clone());
+    let root_id = instance_id(&mut nodes, contract_name, function_name);
     nodes.push(make_node(
         root_id.clone(),
         format!("{contract_name}.{function_name}"),
@@ -802,66 +810,83 @@ fn build_graph(
         0,
     ));
 
-    let mut queue: VecDeque<(String, String, String, usize)> = VecDeque::new();
-    queue.push_back((
-        root_id,
-        contract_name.to_string(),
-        function_name.to_string(),
-        0,
-    ));
+    // Depth-first, so siblings stay in source order and each subtree is built
+    // before the next one starts — which is the order the layout wants.
+    struct Pending {
+        node_id: String,
+        contract: String,
+        function: String,
+        depth: usize,
+        /// Callers above this node, to cut recursion without deduping globally.
+        ancestors: Vec<String>,
+    }
 
-    while let Some((caller_id, caller_contract, caller_function, depth)) = queue.pop_front() {
-        if depth >= options.max_depth {
+    let mut stack = vec![Pending {
+        node_id: root_id,
+        contract: contract_name.to_string(),
+        function: function_name.to_string(),
+        depth: 0,
+        ancestors: vec![node_key(contract_name, function_name)],
+    }];
+
+    while let Some(current) = stack.pop() {
+        if current.depth >= options.max_depth {
             continue;
         }
-        let Some(contract) = metadata.get_contract_by_name(&caller_contract) else {
+        let Some(contract) = metadata.get_contract_by_name(&current.contract) else {
             continue;
         };
-        let Some(function) = find_function(metadata, &caller_contract, &caller_function) else {
+        let Some(function) = find_function(metadata, &current.contract, &current.function) else {
             continue;
         };
-        let slice = read_slice(&contract.file_path, function.line, function_end(&function, contract));
+        let slice = read_slice(
+            &contract.file_path,
+            function.line,
+            function_end(&function, contract),
+        );
 
-        // Modifiers count as dependencies; their call site is the signature line
-        // where the modifier name appears.
+        let mut children: Vec<Pending> = Vec::new();
+
+        // Modifiers count as dependencies; their call site is the line of the
+        // signature where the modifier name appears.
         for modifier_name in &function.modifiers {
-            if let Some((owner, definition)) = find_modifier(metadata, &caller_contract, modifier_name)
-            {
-                let target_id = format!("modifier:{}::{}", owner.name, definition.name);
-                let line_in_slice = slice
-                    .iter()
-                    .position(|line| line.contains(modifier_name))
-                    .map(|index| index + 1)
-                    .unwrap_or(1);
-                edges.push(GraphEdge {
-                    from: caller_id.clone(),
-                    to: target_id.clone(),
-                    line_in_slice,
-                    column: slice
-                        .get(line_in_slice - 1)
-                        .and_then(|line| line.find(modifier_name.as_str()))
-                        .unwrap_or(0),
-                    symbol: modifier_name.clone(),
-                });
-                if seen.insert(target_id.clone()) {
-                    if nodes.len() >= options.max_nodes {
-                        truncated += 1;
-                        continue;
-                    }
-                    nodes.push(make_modifier_node(
-                        target_id,
-                        owner,
-                        definition.name.clone(),
-                        definition.line,
-                        if definition.end_line > 0 {
-                            definition.end_line
-                        } else {
-                            definition.line + 6
-                        },
-                        depth + 1,
-                    ));
-                }
+            let Some((owner, definition)) =
+                find_modifier(metadata, &current.contract, modifier_name)
+            else {
+                continue;
+            };
+            if nodes.len() >= options.max_nodes {
+                truncated += 1;
+                continue;
             }
+            let line_in_slice = slice
+                .iter()
+                .position(|line| line.contains(modifier_name))
+                .map(|index| index + 1)
+                .unwrap_or(1);
+            let target_id = instance_id(&mut nodes, &owner.name, &definition.name);
+            edges.push(GraphEdge {
+                from: current.node_id.clone(),
+                to: target_id.clone(),
+                line_in_slice,
+                column: slice
+                    .get(line_in_slice - 1)
+                    .and_then(|line| line.find(modifier_name.as_str()))
+                    .unwrap_or(0),
+                symbol: modifier_name.clone(),
+            });
+            nodes.push(make_modifier_node(
+                target_id,
+                owner,
+                definition.name.clone(),
+                definition.line,
+                if definition.end_line > 0 {
+                    definition.end_line
+                } else {
+                    definition.line + 6
+                },
+                current.depth + 1,
+            ));
         }
 
         for call in extract_call_sites_from_source(&slice.join("\n")) {
@@ -870,45 +895,60 @@ fn build_graph(
             else {
                 continue;
             };
-            if target_contract.name == caller_contract && target_function.name == caller_function {
-                continue; // direct recursion on itself, nothing to draw
+            let key = node_key(&target_contract.name, &target_function.name);
+            if nodes.len() >= options.max_nodes {
+                truncated += 1;
+                continue;
             }
-            let target_id = node_id(&target_contract.name, &target_function.name);
+
+            let target_id = instance_id(&mut nodes, &target_contract.name, &target_function.name);
             edges.push(GraphEdge {
-                from: caller_id.clone(),
+                from: current.node_id.clone(),
                 to: target_id.clone(),
                 line_in_slice: call.line,
                 column: call.column,
                 symbol: call.symbol.clone(),
             });
+            nodes.push(make_node(
+                target_id.clone(),
+                format!("{}.{}", target_contract.name, target_function.name),
+                target_contract,
+                &target_function,
+                current.depth + 1,
+            ));
 
-            if seen.insert(target_id.clone()) {
-                if nodes.len() >= options.max_nodes {
-                    truncated += 1;
-                    continue;
-                }
-                nodes.push(make_node(
-                    target_id.clone(),
-                    format!("{}.{}", target_contract.name, target_function.name),
-                    target_contract,
-                    &target_function,
-                    depth + 1,
-                ));
-                queue.push_back((
-                    target_id,
-                    target_contract.name.clone(),
-                    target_function.name.clone(),
-                    depth + 1,
-                ));
+            // Already somewhere above us: draw it, do not descend into it again.
+            if current.ancestors.contains(&key) {
+                continue;
             }
+            let mut ancestors = current.ancestors.clone();
+            ancestors.push(key);
+            children.push(Pending {
+                node_id: target_id,
+                contract: target_contract.name.clone(),
+                function: target_function.name.clone(),
+                depth: current.depth + 1,
+                ancestors,
+            });
+        }
+
+        // Reversed, because popping a stack undoes the order.
+        for child in children.into_iter().rev() {
+            stack.push(child);
         }
     }
 
-    // Drop edges pointing at nodes that were cut by the caps.
-    let known: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
-    edges.retain(|edge| known.contains(edge.from.as_str()) && known.contains(edge.to.as_str()));
-
     Ok((nodes, edges, truncated))
+}
+
+/// Identity of a function, used to detect recursion along a path.
+fn node_key(contract: &str, function: &str) -> String {
+    format!("{contract}::{function}")
+}
+
+/// A unique id per *occurrence*, since the same function can appear many times.
+fn instance_id(nodes: &[GraphNode], contract: &str, function: &str) -> String {
+    format!("{}#{}", node_key(contract, function), nodes.len())
 }
 
 fn node_id(contract: &str, function: &str) -> String {
