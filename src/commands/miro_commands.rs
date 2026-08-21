@@ -85,7 +85,7 @@ pub enum MiroCommand {
         #[arg(long)]
         replace: bool,
         /// Connector path type
-        #[arg(long, default_value = "straight")]
+        #[arg(long, default_value = "elbowed")]
         connector_shape: String,
     },
 }

@@ -77,7 +77,7 @@ impl Default for AutoDeployOptions {
             dry_run: false,
             include_external: false,
             replace: false,
-            connector_shape: "straight".to_string(),
+            connector_shape: "elbowed".to_string(),
         }
     }
 }
@@ -406,6 +406,7 @@ async fn deploy_one(
             dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
             caption: Some(format!("<p>L{source_line}</p>")),
             shape: options.connector_shape.clone(),
+            arrow_at_start: true,
         };
 
         let connector_id = client

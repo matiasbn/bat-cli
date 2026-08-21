@@ -101,14 +101,15 @@ pub struct ConnectorStyle {
     pub stroke_width: String,
     pub dashed: bool,
     pub caption: Option<String>,
-    /// `straight`, `elbowed` or `curved`.
-    ///
-    /// `elbowed` is a poor fit for an anchor placed *inside* an item: Miro's
-    /// elbow router picks an exit side on its own and often leaves through the
-    /// left edge, looping all the way around before heading to the callee.
-    /// A straight line from the end of the calling line to the callee is both
-    /// shorter and easier to trace back to its line.
+    /// `straight`, `elbowed` or `curved`. Selectable with `--connector-shape`.
     pub shape: String,
+    /// Put the arrow head on `startItem` instead of `endItem`.
+    ///
+    /// The graph is built caller → callee, but the arrow reads better pointing
+    /// the other way: it lands on the exact line that makes the call, so the
+    /// picture says "this dependency is used *here*" rather than restating the
+    /// direction the reader already gets from the left-to-right layering.
+    pub arrow_at_start: bool,
 }
 
 impl Default for ConnectorStyle {
@@ -118,7 +119,8 @@ impl Default for ConnectorStyle {
             stroke_width: "3".to_string(),
             dashed: false,
             caption: None,
-            shape: "straight".to_string(),
+            shape: "elbowed".to_string(),
+            arrow_at_start: true,
         }
     }
 }
@@ -404,8 +406,8 @@ impl MiroClient {
                 "strokeColor": style.stroke_color,
                 "strokeWidth": style.stroke_width,
                 "strokeStyle": if style.dashed { "dashed" } else { "normal" },
-                "endStrokeCap": "stealth",
-                "startStrokeCap": "none",
+                "startStrokeCap": if style.arrow_at_start { "stealth" } else { "none" },
+                "endStrokeCap": if style.arrow_at_start { "none" } else { "stealth" },
             },
         });
         if let Some(caption) = style.caption {
