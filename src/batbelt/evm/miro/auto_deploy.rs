@@ -23,7 +23,7 @@ use crate::batbelt::evm::metadata::bat_metadata::{
 use crate::batbelt::evm::miro::EvmMiroError;
 use crate::batbelt::evm::parser::call_resolver::{body_only, extract_call_sites_from_source};
 use crate::batbelt::evm::types::EvmContractType;
-use crate::batbelt::miro::client::{ConnectorStyle, MiroClient, RelativeAnchor};
+use crate::batbelt::miro::client::{ArrowEnd, ConnectorStyle, MiroClient, RelativeAnchor};
 use crate::batbelt::miro::layout::{
     layout_graph, GraphLayout, LayoutConfig, LayoutEdge, LayoutNode, ShelfAllocator,
 };
@@ -523,10 +523,8 @@ async fn deploy_one(
     struct PendingConnector {
         marker_x: f64,
         marker_y: f64,
-        /// Points the edge has to pass through, one per layer it skips.
-        bends: Vec<(f64, f64)>,
         /// Where the line meets the callee, in frame coordinates. Needed to
-        /// decide which side of the previous point it should leave through.
+        /// decide which side of the marker it should leave through.
         end_point: (f64, f64),
         start_id: String,
         end_id: String,
@@ -556,7 +554,6 @@ async fn deploy_one(
                 + caller_placed.width * start_anchor.x_fraction,
             marker_y: caller_placed.y - caller_placed.height / 2.0
                 + caller_placed.height * start_anchor.y_fraction,
-            bends: layout.routes.get(index).cloned().unwrap_or_default(),
             end_point: {
                 let placed = layout.node(&edge.to);
                 let fraction = silicon::line_geometry(Some(callee.font_size))
@@ -581,7 +578,7 @@ async fn deploy_one(
                 stroke_width: options.stroke_width.to_string(),
                 dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
                 caption: Some(format!("<p>L{source_line}</p>")),
-                arrow_at_start: true,
+                arrow: ArrowEnd::Start,
             },
         });
     }
@@ -601,69 +598,33 @@ async fn deploy_one(
                 .await?;
             markers.push(anchor_marker.clone());
 
-            // One invisible point per layer the edge skips, so it travels down
-            // the corridors instead of over the screenshots living in between.
-            for (x, y) in &item.bends {
-                markers.push(
-                    client
-                        .create_anchor_marker(&frame_id, *x, *y, ANCHOR_MARKER_SIZE)
-                        .await?,
-                );
-            }
 
-            // Every point the line passes through, in order: the calling token,
-            // then each bend, then the callee.
-            let mut points = vec![(item.marker_x, item.marker_y)];
-            points.extend(item.bends.iter().copied());
-            points.push(item.end_point);
-
-            // The head belongs on the first hop, the one that lands on the
-            // calling token; the rest of the chain is plain line.
-            for hop in 0..points.len() - 1 {
-                let here = points[hop];
-                let next = points[hop + 1];
-
-                let mut style = item.style.clone();
-                style.arrow_at_start = hop == 0;
-                style.caption = if hop == 0 {
-                    item.style.caption.clone()
-                } else {
-                    None
-                };
-
-                // Leave through the side that faces where the line is going.
-                // Anchoring at the centre instead lets Miro pick, and it always
-                // picks the same one, so every arrow ended up approaching from
-                // above however the boxes were arranged.
-                let leaving = facing_anchor(here, next);
-
-                if hop + 1 < markers.len() {
-                    connectors.push(
-                        client
-                            .create_connector(
-                                &markers[hop],
-                                leaving,
-                                &markers[hop + 1],
-                                facing_anchor(next, here),
-                                style,
-                            )
-                            .await?,
-                    );
-                } else {
-                    // The last hop lands on the callee's own signature line.
-                    connectors.push(
-                        client
-                            .create_connector(
-                                &markers[hop],
-                                leaving,
-                                &item.end_id,
-                                item.end_anchor,
-                                style,
-                            )
-                            .await?,
-                    );
-                }
-            }
+            // One connector per call, screenshot to screenshot.
+            //
+            // Routing a long edge as a chain through the bend points would keep
+            // it off the screenshots it crosses, but the result is several
+            // linked connectors rather than one line, and a composite like that
+            // cannot be dragged into a better position by hand. Reordering by
+            // hand matters more than the guarantee, so the bends are left to the
+            // layout, where they still push the columns apart and leave the
+            // corridor free.
+            let mut style = item.style.clone();
+            style.arrow = ArrowEnd::Start;
+            connectors.push(
+                client
+                    .create_connector(
+                        &anchor_marker,
+                        // Leave through the side that faces the callee. Anchoring
+                        // at the centre lets Miro pick, and it picks the same
+                        // side every time, so every arrow approached from above
+                        // however the boxes were arranged.
+                        facing_anchor((item.marker_x, item.marker_y), item.end_point),
+                        &item.end_id,
+                        item.end_anchor,
+                        style,
+                    )
+                    .await?,
+            );
 
             let _ = item.start_id;
             bar.inc(1);
