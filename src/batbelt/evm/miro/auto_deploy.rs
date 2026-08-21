@@ -734,9 +734,15 @@ fn compute_anchors(nodes: &[GraphNode], edges: &[GraphEdge]) -> Vec<RelativeAnch
     // Keyed by line *and* column: two calls on one line now land on their own
     // tokens, so only genuinely identical positions need fanning out.
     let mut occurrences: HashMap<(&str, usize, usize), usize> = HashMap::new();
+    // How many calls share a line, which decides whether an anchor can sit past
+    // the end of it or has to sit on its own token.
+    let mut per_line: HashMap<(&str, usize), usize> = HashMap::new();
     for edge in edges {
         *occurrences
             .entry((edge.from.as_str(), edge.line_in_slice, edge.column))
+            .or_insert(0) += 1;
+        *per_line
+            .entry((edge.from.as_str(), edge.line_in_slice))
             .or_insert(0) += 1;
     }
 
@@ -753,7 +759,12 @@ fn compute_anchors(nodes: &[GraphNode], edges: &[GraphEdge]) -> Vec<RelativeAnch
             *index += 1;
             let total = occurrences.get(&key).copied().unwrap_or(1);
 
-            let mut anchor = caller_anchor(node, edge);
+            let alone_on_line = per_line
+                .get(&(edge.from.as_str(), edge.line_in_slice))
+                .copied()
+                .unwrap_or(1)
+                == 1;
+            let mut anchor = caller_anchor(node, edge, alone_on_line);
             if total > 1 && node.png_height > 0 {
                 // Spread the siblings across the line's own height, so each
                 // connector still visibly belongs to that line.
@@ -768,13 +779,19 @@ fn compute_anchors(nodes: &[GraphNode], edges: &[GraphEdge]) -> Vec<RelativeAnch
         .collect()
 }
 
-/// Anchor for the connector's caller end: on the token that makes the call.
+/// Anchor for the connector's caller end, on the line that makes the call.
 ///
-/// The AST gives the column of the callee's own name, so the anchor lands on
-/// `wadMul` in `MathLib.wadMul(amount, price(asset))` and on `price` a few
-/// columns later — two calls on one line get two distinct anchors with no
-/// guessing involved.
-fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
+/// Where on that line depends on whether it is the only call there:
+///
+/// - Alone, the anchor goes past the end of the line, so the arrow head sits on
+///   empty background instead of covering the code it points at.
+/// - Sharing the line, it goes on the callee's own token, which the AST gives
+///   the column of. `MathLib.wadMul(amount, price(asset))` produces one anchor
+///   on `wadMul` and another a few columns later on `price`, with no guessing.
+///
+/// The end of the line is the nicer place to land, so it is used whenever
+/// telling two calls apart does not require otherwise.
+fn caller_anchor(node: &GraphNode, edge: &GraphEdge, alone_on_line: bool) -> RelativeAnchor {
     let line_index = edge.line_in_slice - 1 + PATH_HEADER_LINES;
     let geometry = silicon::line_geometry(Some(node.font_size));
     let y_fraction = geometry.line_center_fraction(line_index, node.png_height);
@@ -797,17 +814,24 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge) -> RelativeAnchor {
         line_text.find(&edge.symbol)
     };
 
+    let text_width = |text: &str| {
+        silicon::line_end_x(
+            Some(node.font_size),
+            true,
+            node.rendered_lines.len(),
+            node.line_offset,
+            text,
+        ) as f64
+    };
+
     let x_fraction = match (start, node.png_width) {
+        (_, width) if alone_on_line && width > 0 => {
+            // One call on the line: land just past the last character, clear of
+            // the code.
+            let gap = (text_width("a") - text_width("")) * ANCHOR_GAP_CHARS;
+            (text_width(&line_text) + gap) / width as f64
+        }
         (Some(column), width) if width > 0 => {
-            let text_width = |text: &str| {
-                silicon::line_end_x(
-                    Some(node.font_size),
-                    true,
-                    node.rendered_lines.len(),
-                    node.line_offset,
-                    text,
-                ) as f64
-            };
             // Aim at the middle of the token so the head visibly sits on it.
             let before = text_width(&line_text[..column]);
             let through = text_width(&line_text[..column + edge.symbol.len()]);
