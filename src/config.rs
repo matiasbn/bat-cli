@@ -11,11 +11,11 @@ use std::{error::Error, fmt, fs, str};
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::command_line::CodeEditor;
 use crate::batbelt::path::BatFile;
+use normalize_url::normalizer;
 use crate::batbelt::{bat_dialoguer, BatEnumerator};
 
 use colored::Colorize;
 use error_stack::{IntoReport, Report, Result, ResultExt};
-use normalize_url::normalizer;
 use walkdir::WalkDir;
 
 /// Overrides the machine-wide config directory, mostly for tests and CI.
@@ -127,12 +127,9 @@ pub enum ProjectType {
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct BatConfig {
     pub initialized: bool,
+    /// Name of the directory being audited; also the suggested Miro board name.
     pub project_name: String,
-    pub client_name: String,
-    pub commit_hash_url: String,
-    pub starting_date: String,
     pub miro_board_url: String,
-    pub auditor_names: Vec<String>,
     /// Primary program lib path (first selected, used by Anchor entrypoint detection).
     pub program_lib_path: String,
     /// All selected program lib paths (for multi-program scanning).
@@ -140,12 +137,20 @@ pub struct BatConfig {
     pub program_lib_paths: Vec<String>,
     #[serde(default)]
     pub program_name: String,
-    pub project_repository_url: String,
     #[serde(default)]
     pub project_type: ProjectType,
 }
 
 impl BatConfig {
+    /// The directory being audited. bat-cli lives at the project root, so this
+    /// is the project's name.
+    fn current_directory_name() -> String {
+        std::env::current_dir()
+            .ok()
+            .and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "bat-project".to_string())
+    }
+
     pub fn new_with_prompt() -> BatConfigResult<Self> {
         let new = Self::create_bat_config_file()?;
         Ok(new)
@@ -173,13 +178,9 @@ impl BatConfig {
             );
         }
 
-        // Auto-detect git remote info
-        let (remote_https_url, owner_name, commit_hash) = Self::detect_remote_info(".")
-            .unwrap_or(("".to_string(), "".to_string(), "".to_string()));
-
         // Foundry projects: scan .sol files instead of Cargo.toml
         if project_type == ProjectType::Foundry {
-            return Self::create_foundry_config(remote_https_url, owner_name, commit_hash);
+            return Self::create_foundry_config();
         }
 
         // Step 1: List root-level directories that contain at least one Cargo.toml
@@ -337,104 +338,16 @@ impl BatConfig {
             .replace('_', "-");
         log::debug!("program_lib_paths: {:#?}", normalized_program_lib_paths);
 
-        // Project name is always bat-audit
-        let project_name = "bat-audit".to_string();
+        let project_name = Self::current_directory_name();
 
-        // Auditor names - always manual input
-        let auditor_names_prompt: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input("Auditor names (comma separated, example: alice,bob):")
-                .change_context(BatConfigError)?
-        } else {
-            "test_user".to_string()
-        };
-        let auditor_names: Vec<String> = auditor_names_prompt
-            .split(',')
-            .map(|l| l.trim().to_string())
-            .collect();
-
-        // Client name - default to repo owner
-        let client_name: String = if !cfg!(debug_assertions) {
-            if owner_name.is_empty() {
-                bat_dialoguer::input("Client name:").change_context(BatConfigError)?
-            } else {
-                bat_dialoguer::input_with_default("Client name:", &owner_name)
-                    .change_context(BatConfigError)?
-            }
-        } else {
-            "test_client".to_string()
-        };
-
-        // Commit hash URL - auto-detect from git
-        let default_commit_url = if !remote_https_url.is_empty() && !commit_hash.is_empty() {
-            format!("{}/commit/{}", remote_https_url, commit_hash)
-        } else {
-            String::new()
-        };
-
-        let mut commit_hash_url: String = if !cfg!(debug_assertions) {
-            if default_commit_url.is_empty() {
-                bat_dialoguer::input("Commit hash url:").change_context(BatConfigError)?
-            } else {
-                bat_dialoguer::input_with_default("Commit hash url:", &default_commit_url)
-                    .change_context(BatConfigError)?
-            }
-        } else {
-            "https://github.com/test_repo/test_program/commit/641bdb72210edcafe555102f2ecd2952a7b60722"
-                .to_string()
-        };
-
-        commit_hash_url = Self::normalize_commit_hash_url(&commit_hash_url)?;
-
-        // Starting date - default to today
-        let today = {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            let days = now / 86400;
-            let years = (days * 4 + 2) / 1461;
-            let day_of_year = days - (365 * years + years / 4 - years / 100 + years / 400);
-            let month_days: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            let year = 1970 + years;
-            let is_leap =
-                (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
-            let mut remaining = day_of_year;
-            let mut month = 0u64;
-            for (i, &d) in month_days.iter().enumerate() {
-                let d = if i == 1 && is_leap { d + 1 } else { d };
-                if remaining < d {
-                    month = i as u64 + 1;
-                    break;
-                }
-                remaining -= d;
-            }
-            let day = remaining + 1;
-            format!("{:02}/{:02}/{}", day, month, year)
-        };
-
-        let starting_date: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input_with_default("Starting date:", &today)
-                .change_context(BatConfigError)?
-        } else {
-            today
-        };
-
-        // Miro board URL - set to "none" by default (configured later in new_bat_project if user wants Miro)
-        let miro_board_url = "none".to_string();
-
-        // Project repository URL - auto-detect from git remote
-        let project_repository_url = remote_https_url.clone();
+        // Filled in by `init` once a board is created or chosen.
+        let miro_board_url = String::new();
 
         let bat_config = BatConfig {
             initialized: true,
             program_name,
-            auditor_names,
             project_name,
-            client_name,
             miro_board_url,
-            starting_date,
-            commit_hash_url,
-            project_repository_url,
             program_lib_path: normalized_program_lib_path,
             program_lib_paths: normalized_program_lib_paths,
             project_type,
@@ -443,47 +356,6 @@ impl BatConfig {
         Ok(bat_config)
     }
 
-    /// Detects remote URL, owner name, and latest commit hash from a git repo
-    fn detect_remote_info(repo_path: &str) -> Option<(String, String, String)> {
-        let remote_output = Command::new("git")
-            .args(["-C", repo_path, "remote", "get-url", "origin"])
-            .output()
-            .ok()?;
-        let remote_raw = String::from_utf8(remote_output.stdout)
-            .ok()?
-            .trim()
-            .to_string();
-
-        // Convert SSH URL to HTTPS if needed
-        // git@github.com:owner/repo.git -> https://github.com/owner/repo
-        let remote_https = if remote_raw.starts_with("git@") {
-            let without_prefix = remote_raw.trim_start_matches("git@");
-            // Replace the first ":" (host:path separator) with "/"
-            let converted = without_prefix.replacen(":", "/", 1);
-            format!("https://{}", converted.trim_end_matches(".git"))
-        } else {
-            remote_raw.trim_end_matches(".git").to_string()
-        };
-
-        // Extract owner from URL: https://github.com/owner/repo -> owner
-        let parts: Vec<&str> = remote_https.split('/').collect();
-        let owner = if parts.len() >= 4 {
-            parts[parts.len() - 2].to_string()
-        } else {
-            String::new()
-        };
-
-        let hash_output = Command::new("git")
-            .args(["-C", repo_path, "log", "-1", "--format=%H"])
-            .output()
-            .ok()?;
-        let commit_hash = String::from_utf8(hash_output.stdout)
-            .ok()?
-            .trim()
-            .to_string();
-
-        Some((remote_https, owner, commit_hash))
-    }
 
     pub fn normalize_miro_board_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
         let _normalized = normalizer::UrlNormalizer::new(url_to_normalize)
@@ -508,59 +380,29 @@ impl BatConfig {
         Ok(format!("https://miro.com/app/board/{}/", board_id))
     }
 
-    fn normalize_commit_hash_url(url_to_normalize: &str) -> Result<String, BatConfigError> {
-        let url = normalizer::UrlNormalizer::new(url_to_normalize)
-            .into_report()
-            .attach_printable(format!(
-                "Error normalizing commit hash url, got {}",
-                url_to_normalize
-            ))
-            .change_context(BatConfigError)?
-            .normalize(None)
-            .into_report()
-            .attach_printable(format!(
-                "Error normalizing commit hash url, got {}",
-                url_to_normalize
-            ))
-            .change_context(BatConfigError)?;
-        Ok(url)
-    }
 
-    /// Read the project config out of `BatMetadata.json`.
-    ///
-    /// A bat project is a single file: the config used to live in its own
-    /// `Bat.toml`, but two files to describe one project is one more than
-    /// necessary. This reads the raw JSON rather than going through
-    /// `BatMetadata`, because `BatMetadata` itself asks for the config while
-    /// loading and would recurse.
+    /// Read `Bat.toml` from the project root.
     pub fn get_config() -> Result<Self, BatConfigError> {
-        let path = BatFile::BatMetadataFile
-            .get_path(false)
-            .change_context(BatConfigError)?;
-        if !Path::new(&path).exists() {
+        if !Path::new("Bat.toml").exists() {
             let working_directory = std::env::current_dir()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|_| ".".to_string());
             return Err(Report::new(BatConfigError)
-                .attach_printable(format!("no BatMetadata.json in {working_directory}"))
+                .attach_printable(format!("no Bat.toml in {working_directory}"))
                 .attach(crate::Suggestion(
                     "run `bat-cli init` in the project root".to_string(),
                 )));
         }
 
-        let content = fs::read_to_string(&path)
+        let path = BatFile::BatToml
+            .get_path(true)
+            .change_context(BatConfigError)?;
+        let mut bat_config: BatConfig = Figment::new()
+            .merge(Toml::file(path))
+            .extract()
             .into_report()
             .change_context(BatConfigError)
-            .attach_printable_lazy(|| format!("cannot read {path}"))?;
-        let value: serde_json::Value = serde_json::from_str(&content)
-            .into_report()
-            .change_context(BatConfigError)
-            .attach_printable_lazy(|| format!("cannot parse {path}"))?;
-
-        let mut bat_config: BatConfig = serde_json::from_value(value["config"].clone())
-            .into_report()
-            .change_context(BatConfigError)
-            .attach_printable("BatMetadata.json has no usable `config` section")?;
+            .attach_printable("cannot parse Bat.toml")?;
 
         if bat_config.program_name.is_empty() {
             bat_config.program_name = bat_config
@@ -574,36 +416,17 @@ impl BatConfig {
         Ok(bat_config)
     }
 
-    /// Write the config back into `BatMetadata.json`, leaving the rest of the
-    /// file untouched.
     pub fn save(&self) -> Result<(), BatConfigError> {
-        let path = BatFile::BatMetadataFile
+        let path = BatFile::BatToml
             .get_path(false)
             .change_context(BatConfigError)?;
-        let mut value: serde_json::Value = fs::read_to_string(&path)
-            .ok()
-            .and_then(|content| serde_json::from_str(&content).ok())
-            .unwrap_or_else(|| serde_json::json!({}));
-
-        value["config"] = serde_json::to_value(self)
-            .into_report()
-            .change_context(BatConfigError)?;
-
-        let serialized = serde_json::to_string_pretty(&value)
-            .into_report()
-            .change_context(BatConfigError)?;
-        fs::write(&path, serialized)
+        confy::store_path(path, self)
             .into_report()
             .change_context(BatConfigError)
-            .attach_printable_lazy(|| format!("cannot write {path}"))
     }
 
     /// Create BatConfig for a Foundry/Solidity project.
-    fn create_foundry_config(
-        remote_https_url: String,
-        owner_name: String,
-        commit_hash: String,
-    ) -> Result<BatConfig, BatConfigError> {
+    fn create_foundry_config() -> Result<BatConfig, BatConfigError> {
         // Detect src directory from foundry.toml
         let foundry_content = fs::read_to_string("foundry.toml").unwrap_or_default();
         let src_dir = foundry_content
@@ -633,101 +456,15 @@ impl BatConfig {
 
         // For Foundry, program_lib_path points to the src directory.
         // Sonar will scan all .sol files; contract selection happens post-sonar.
-        let src_path = format!("../{}", src_dir.trim_start_matches("./"));
+        let src_path = src_dir.trim_start_matches("./").to_string();
         let program_name = "solidity-contracts".to_string();
-        let project_name = "bat-audit".to_string();
-
-        // Auditor names
-        let auditor_names_prompt: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input("Auditor names (comma separated, example: alice,bob):")
-                .change_context(BatConfigError)?
-        } else {
-            "test_user".to_string()
-        };
-        let auditor_names: Vec<String> = auditor_names_prompt
-            .split(',')
-            .map(|l| l.trim().to_string())
-            .collect();
-
-        // Client name
-        let client_name: String = if !cfg!(debug_assertions) {
-            if owner_name.is_empty() {
-                bat_dialoguer::input("Client name:").change_context(BatConfigError)?
-            } else {
-                bat_dialoguer::input_with_default("Client name:", &owner_name)
-                    .change_context(BatConfigError)?
-            }
-        } else {
-            "test_client".to_string()
-        };
-
-        // Commit hash URL
-        let default_commit_url = if !remote_https_url.is_empty() && !commit_hash.is_empty() {
-            format!("{}/commit/{}", remote_https_url, commit_hash)
-        } else {
-            String::new()
-        };
-
-        let mut commit_hash_url: String = if !cfg!(debug_assertions) {
-            if default_commit_url.is_empty() {
-                bat_dialoguer::input("Commit hash url:").change_context(BatConfigError)?
-            } else {
-                bat_dialoguer::input_with_default("Commit hash url:", &default_commit_url)
-                    .change_context(BatConfigError)?
-            }
-        } else {
-            "https://github.com/test_repo/test_program/commit/abc123".to_string()
-        };
-
-        commit_hash_url = Self::normalize_commit_hash_url(&commit_hash_url)?;
-
-        // Starting date
-        let today = {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            let days = now / 86400;
-            let years = (days * 4 + 2) / 1461;
-            let day_of_year = days - (365 * years + years / 4 - years / 100 + years / 400);
-            let month_days: [u64; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            let year = 1970 + years;
-            let is_leap =
-                (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
-            let mut remaining = day_of_year;
-            let mut month = 0u64;
-            for (i, &d) in month_days.iter().enumerate() {
-                let d = if i == 1 && is_leap { d + 1 } else { d };
-                if remaining < d {
-                    month = i as u64 + 1;
-                    break;
-                }
-                remaining -= d;
-            }
-            let day = remaining + 1;
-            format!("{:02}/{:02}/{}", day, month, year)
-        };
-
-        let starting_date: String = if !cfg!(debug_assertions) {
-            bat_dialoguer::input_with_default("Starting date:", &today)
-                .change_context(BatConfigError)?
-        } else {
-            today
-        };
-
-        let miro_board_url = "none".to_string();
-        let project_repository_url = remote_https_url;
+        let project_name = Self::current_directory_name();
 
         let bat_config = BatConfig {
             initialized: true,
             program_name,
-            auditor_names,
             project_name,
-            client_name,
-            miro_board_url,
-            starting_date,
-            commit_hash_url,
-            project_repository_url,
+            miro_board_url: String::new(),
             program_lib_path: src_path.clone(),
             program_lib_paths: vec![src_path],
             project_type: ProjectType::Foundry,
