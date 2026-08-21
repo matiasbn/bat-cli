@@ -101,6 +101,14 @@ pub struct ConnectorStyle {
     pub stroke_width: String,
     pub dashed: bool,
     pub caption: Option<String>,
+    /// `straight`, `elbowed` or `curved`.
+    ///
+    /// `elbowed` is a poor fit for an anchor placed *inside* an item: Miro's
+    /// elbow router picks an exit side on its own and often leaves through the
+    /// left edge, looping all the way around before heading to the callee.
+    /// A straight line from the end of the calling line to the callee is both
+    /// shorter and easier to trace back to its line.
+    pub shape: String,
 }
 
 impl Default for ConnectorStyle {
@@ -110,6 +118,7 @@ impl Default for ConnectorStyle {
             stroke_width: "3".to_string(),
             dashed: false,
             caption: None,
+            shape: "straight".to_string(),
         }
     }
 }
@@ -390,7 +399,7 @@ impl MiroClient {
         let mut body = json!({
             "startItem": { "id": start_item_id, "position": start_anchor.to_json() },
             "endItem": { "id": end_item_id, "position": end_anchor.to_json() },
-            "shape": "elbowed",
+            "shape": style.shape,
             "style": {
                 "strokeColor": style.stroke_color,
                 "strokeWidth": style.stroke_width,

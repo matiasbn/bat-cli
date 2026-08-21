@@ -63,6 +63,8 @@ pub struct AutoDeployOptions {
     pub include_external: bool,
     /// Delete the previous deployment of this entry point before redeploying.
     pub replace: bool,
+    /// Connector path type: `straight`, `elbowed` or `curved`.
+    pub connector_shape: String,
 }
 
 impl Default for AutoDeployOptions {
@@ -75,6 +77,7 @@ impl Default for AutoDeployOptions {
             dry_run: false,
             include_external: false,
             replace: false,
+            connector_shape: "straight".to_string(),
         }
     }
 }
@@ -402,6 +405,7 @@ async fn deploy_one(
             stroke_width: "3".to_string(),
             dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
             caption: Some(format!("<p>L{source_line}</p>")),
+            shape: options.connector_shape.clone(),
         };
 
         let connector_id = client

@@ -84,6 +84,9 @@ pub enum MiroCommand {
         /// Delete the previous deployment of this entry point first
         #[arg(long)]
         replace: bool,
+        /// Connector path type
+        #[arg(long, default_value = "straight")]
+        connector_shape: String,
     },
 }
 
@@ -126,6 +129,7 @@ impl MiroCommand {
                 dry_run,
                 include_external,
                 replace,
+                connector_shape,
             } => crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
@@ -135,6 +139,7 @@ impl MiroCommand {
                     dry_run: *dry_run,
                     include_external: *include_external,
                     replace: *replace,
+                    connector_shape: connector_shape.clone(),
                 },
             )
             .await
