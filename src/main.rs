@@ -26,6 +26,7 @@ use regex::Regex;
 pub mod batbelt;
 pub mod commands;
 pub mod config;
+pub mod guide;
 
 // pub type BatDerive = #[derive(Debug, PartialEq, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
@@ -149,7 +150,11 @@ impl BatCommands {
                 include_external,
                 preview,
                 stroke_width,
-            } => crate::batbelt::evm::miro::auto_deploy::run(
+            } => {
+                // Deploy reads project state, so it is also a moment to make sure the AI
+                // guide next to Bat.toml matches the binary drawing the board.
+                crate::guide::refresh_project_ai_surface();
+                crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
                     all: *all,
@@ -159,10 +164,11 @@ impl BatCommands {
                     include_external: *include_external,
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
-                },
-            )
-            .await
-            .change_context(CommandError),
+                    },
+                )
+                .await
+                .change_context(CommandError)
+            }
         }
     }
 

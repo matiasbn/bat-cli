@@ -14,25 +14,106 @@ cargo test -- --nocapture some_test_name
 
 The dev profile uses `lto = true` and `codegen-units = 1`; builds are expensive. Do not chain multiple build invocations or `touch` files to force rebuilds.
 
-Running the CLI against a real project: the binary must be executed from inside the audited project's audit workspace (or a directory whose child `bat-audit/` holds `Bat.toml` — `auto_detect_bat_audit_dir()` in `src/main.rs` will `cd` into it). Test projects are kept in a gitignored `test-workspace/` and driven via each project's `package.json` scripts (`cargo run --manifest-path ../../Cargo.toml -- init`); see `PACKAGE.md` for the template.
+Running the CLI against a real project: the binary must be executed from the root of the audited repository, where `Bat.toml` and `BatMetadata.json` live. Test projects are kept in a gitignored `test-workspace/` and driven via each project's `package.json` scripts (`cargo run --manifest-path ../../Cargo.toml -- init`); see `PACKAGE.md` for the template.
 
-Releases are cut by hand with git-flow; the CLI no longer carries its own release
-tooling (branch off `develop`, bump `Cargo.toml`,
-`git flow release finish`, push `main`/`develop`/tags). Always finish with **both** of these:
+## Releasing (git-flow)
+
+The repo uses **git-flow** (`main` = master, `develop` = develop, tags carry **no `v`
+prefix**, e.g. `0.17.1`). The CLI carries no release tooling of its own. To cut `X.Y.Z`:
+
+1. `git flow release start X.Y.Z` — branches off `develop`.
+   - Confirm the top `## X.Y.Z` heading of the `CHANGELOG` const (see "Telling the AI what
+     changed" below) matches the version actually being cut, and fix it if the guess was off.
+2. Bump `version` in `Cargo.toml`, then `cargo build` so `Cargo.lock` updates. Commit both
+   with the message `version bump`.
+3. `git flow release finish X.Y.Z` — merges into `main` and back into `develop` and tags.
+   Supply a **one-line release description** as the tag message. Non-interactively on macOS,
+   where git-flow's `getopt` rejects `-m "with spaces"`, pass it through the editor:
+   ```bash
+   printf '%s\n' "<desc>" > /tmp/tagmsg && \
+     GIT_MERGE_AUTOEDIT=no GIT_EDITOR='cp /tmp/tagmsg' git flow release finish X.Y.Z
+   ```
+4. `git push origin main develop --tags`.
+5. Publish and install — **both**, always, as the last step, without being asked:
+   ```bash
+   cargo publish                              # run in a background agent, it takes minutes
+   cargo install --path . --force --locked
+   bat-cli --version                          # must print the X.Y.Z just released
+   ```
+   Installing from the local path rather than waiting for crates.io means the new version is
+   usable immediately. `--locked` is required: without it `cargo install` re-resolves
+   dependencies and pulls transitive crates needing a newer rustc than `Cargo.lock` pins.
+   If the install fails or `--version` does not match the tag, surface it before moving on.
+
+**Changelog convention — 1 PR = 1 release.** Every PR with code changes results in its own
+release, so each PR owns exactly one `## X.Y.Z` heading and there is never contention over a
+shared version. Write the entry under your **best guess of the next version** (usually the
+next patch); whoever cuts the release fixes the heading if the ordering changed.
+
+### Doc-only changes → hotfix, do NOT advance the version
+
+When a change touches **only non-compiled files** — `README.md`, `CLAUDE.md`, `PACKAGE.md` —
+ship it as a hotfix that keeps the current version: no `Cargo.toml` bump, no tag, no publish.
+Just get the commit onto `main` and `develop`:
 
 ```bash
-cargo publish                              # run this in a background agent, it takes minutes
-cargo install --path . --force --locked
+git checkout main && GIT_MERGE_AUTOEDIT=no git merge develop && \
+  git push origin main develop && git checkout develop
 ```
 
-Installing from the local path rather than waiting for crates.io means the new version
-is usable immediately. `--locked` is required: without it `cargo install` re-resolves
-dependencies and pulls transitive crates needing a newer rustc than `Cargo.lock` pins.
+Reserve version bumps and git-flow releases for changes under `src/` — anything compiled into
+the binary.
 
+## Telling the AI what changed
+
+An auditor drives bat-cli by talking to an assistant, not by reading `--help`. So a new
+capability is only half-shipped when it compiles: the assistant-facing guide has to learn it in
+the same change. `src/guide.rs` owns that surface (the design is borrowed from `rover`,
+`~/rover/src/guide.rs`), and it has two halves that are deliberately different:
+
+- **`ai_context/`, per project and version-stamped.** `ensure_ai_guide` writes `README.md`,
+  `workflow.md`, `metadata.md` and `changelog.md` next to `Bat.toml`, from consts in
+  `src/guide.rs`, replacing `{BAT_CLI_VERSION}` with the running version. Because the binary
+  generates them, the guide cannot drift from the code that wrote it.
+- **The global routers, version-agnostic and byte-stable.** `ensure_global_ai_skills` installs
+  `~/.claude/skills/bat-cli/SKILL.md`, `~/.agents/skills/bat-cli/SKILL.md` and a managed block
+  in `~/.gemini/GEMINI.md`. They carry **no instructions** — they only tell an assistant to find
+  the nearest `Bat.toml` and read that project's `ai_context/`. Keeping them byte-stable is the
+  point: upgrading bat-cli never rewrites them, so a running session never needs a second
+  restart. Do not put version-specific content in `GLOBAL_SKILL_MD`/`GLOBAL_AGENTS_BODY`.
+
+`refresh_project_ai_surface()` does both plus the version stamp, and runs on `sonar` (which
+`init` finishes with) and on `deploy`. Every write goes through `write_if_changed`, so a
+no-op run leaves the audited repo's git tree alone; `write_managed_block` appends to a
+`GEMINI.md` the user already wrote rather than clobbering it.
+
+`Bat.toml` carries `bat_cli_version`, re-stamped on those same commands. That is the signal
+the whole scheme rests on: an assistant notes it when it loads the guide, and when it later
+rises it reads `changelog.md` instead of re-reading everything.
+
+**So, when you change user-facing behaviour:**
+
+1. Update the matching const in `src/guide.rs` (`WORKFLOW` for commands and flags, `METADATA`
+   for the `BatMetadata.json` shape and its `jq` recipes, `README` for the golden rules).
+2. Add a `CHANGELOG` entry at the top, newest first, under your best guess of the next version,
+   ending in a `_Re-read: …_` line naming exactly which docs the entry invalidates. That line
+   is the whole point — it is what lets an assistant learn what is new from one short file.
+3. Ship both in the same commit as the code. Treat it like the README: not optional.
+
+Note `src/guide.rs` is compiled into the binary, so changing the guide is a normal versioned
+release, **not** a doc-only hotfix.
+
+## Commit after each successful change
+
+After a change builds, commit it without being asked, with a concise message, keeping the
+doc updates in the same commit as the code they document. Commit to the working branch
+(normally `develop`), never straight to `main`.
 
 ## Architecture
 
-bat-cli is a single binary (`src/main.rs`) whose `BatCommands` clap enum dispatches to `src/commands/*`. Every non-`Init`/`Reload`/`Package` command first runs `validate_command()`, which enforces two invariants: the metadata cache is initialized, and the user is on the auditor branch (`{auditor_name}-{project_name}`, see `batbelt::git::get_auditor_branch_name`).
+bat-cli is a single binary (`src/main.rs`) whose `BatCommands` clap enum dispatches to `src/commands/*`. Every command first runs `validate_command()`, which only checks that the metadata cache exists for the commands that read it (`deploy`). There is no branch check: bat-cli creates no commits and manages no git.
+
+`src/guide.rs` owns the AI-facing surface — see "Telling the AI what changed" above.
 
 `src/batbelt/` is the library ("bat belt") holding everything else. Errors use `error_stack` throughout: each module defines a unit error struct (`ParserError`, `MetadataError`, `MiroError`, …) plus a `XResult<T>` alias, and calls `.change_context(...)` when crossing module boundaries.
 
