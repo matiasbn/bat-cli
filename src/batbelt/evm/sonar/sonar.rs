@@ -2,8 +2,6 @@ use colored::Colorize;
 use dialoguer::console::Emoji;
 use error_stack::{Report, ResultExt};
 use indicatif::{ProgressBar, ProgressStyle};
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::time::Duration;
 use walkdir::WalkDir;
 
@@ -49,13 +47,10 @@ impl EvmSonar {
         pb
     }
 
-    /// Append an error line to Batlog.log immediately.
+    /// Record a parse failure. Visible with `-v`; nothing is written to disk.
     fn log_error(&mut self, msg: &str) {
         self.error_count += 1;
-        let log_path = "Batlog.log";
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
-            let _ = writeln!(file, "[EvmSonar] {}", msg);
-        }
+        log::warn!("[EvmSonar] {}", msg);
     }
 
     fn sonar_start_animation(&self) {
@@ -84,8 +79,6 @@ impl EvmSonar {
 
     /// Run all 5 phases of the EVM sonar scan.
     pub fn run(&mut self) -> EvmMetadataResult<EvmBatMetadata> {
-        // Clear previous log
-        let _ = std::fs::write("Batlog.log", "");
         self.sonar_start_animation();
 
         self.phase_1_source_scan()?;
@@ -96,10 +89,10 @@ impl EvmSonar {
 
         if self.error_count > 0 {
             println!(
-                "  {} {} parse errors written to {}",
+                "  {} {} parse errors; rerun with {} to see them",
                 "⚠".bright_yellow(),
                 self.error_count,
-                "Batlog.log".bright_cyan()
+                "-v".bright_cyan()
             );
         }
 

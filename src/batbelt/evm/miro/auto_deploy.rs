@@ -1072,7 +1072,7 @@ fn read_slice(file_path: &str, start_line: usize, end_line: usize) -> Vec<String
 
 /// Render every node and read back its pixel size, without uploading anything.
 fn render_and_measure(nodes: &mut [GraphNode]) -> Result<()> {
-    let destination = BatFolder::AuditorFigures
+    let destination = BatFolder::Figures
         .get_path(true)
         .change_context(EvmMiroError)?;
 

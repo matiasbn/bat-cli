@@ -13,7 +13,6 @@ use crate::batbelt::command_line::CodeEditor;
 use crate::batbelt::path::BatFile;
 use crate::batbelt::{bat_dialoguer, BatEnumerator};
 
-use crate::batbelt::git::git_commit::GitCommit;
 use colored::Colorize;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use normalize_url::normalizer;
@@ -114,184 +113,6 @@ impl Error for BatConfigError {}
 
 pub type BatConfigResult<T> = Result<T, BatConfigError>;
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone, PartialOrd, PartialEq)]
-pub struct BatAuditorConfig {
-    pub auditor_name: String,
-    pub miro_oauth_access_token: String,
-    #[serde(default)]
-    pub use_code_editor: bool,
-    #[serde(default)]
-    pub code_editor: CodeEditor,
-    #[serde(default)]
-    pub external_bat_metadata: Vec<String>,
-}
-
-impl BatAuditorConfig {
-    pub fn new_with_prompt() -> BatConfigResult<Self> {
-        let mut bat_auditor_config = BatAuditorConfig {
-            auditor_name: "".to_string(),
-            miro_oauth_access_token: "".to_string(),
-            use_code_editor: false,
-            code_editor: Default::default(),
-            external_bat_metadata: vec![],
-        };
-        bat_auditor_config.prompt_auditor_name()?;
-        bat_auditor_config.prompt_code_editor_integration()?;
-        bat_auditor_config.get_external_bat_metadata()?;
-        bat_auditor_config.save()?;
-        Ok(bat_auditor_config)
-    }
-
-    pub fn get_external_bat_metadata(&mut self) -> BatConfigResult<()> {
-        let BatConfig { project_name, .. } =
-            BatConfig::get_config().change_context(BatConfigError)?;
-        println!(
-            "Looking for {} files on the parent directory (..) \n",
-            "BatMetadata.json".bright_green()
-        );
-        let bat_metadata_folders = WalkDir::new("..")
-            .into_iter()
-            .map(|f| f.unwrap())
-            .filter(|f| {
-                f.file_type().is_dir()
-                    && ![".", "target", &project_name]
-                        .iter()
-                        .any(|y| f.file_name().to_str().unwrap().contains(y))
-            })
-            .filter(|f| {
-                let path = f.path();
-                let dir = fs::read_dir(path).unwrap();
-                let file_names = dir
-                    .map(|f| f.unwrap().file_name().to_str().unwrap().to_string())
-                    .collect::<Vec<_>>();
-
-                file_names.contains(&"BatMetadata.json".to_string())
-            })
-            .map(|f| format!("{}/BatMetadata.json", f.path().to_str().unwrap()))
-            .collect::<Vec<_>>();
-        if bat_metadata_folders.is_empty() {
-            println!(
-                "0 folders with {} file were found on the parent directory (..) \n",
-                "BatMetadata.json".bright_green()
-            );
-            println!(
-                "You can add folders with {} manually on BatAuditor.toml, section {}",
-                "BatMetadata.json".bright_green(),
-                "external_bat_metadata".bright_blue()
-            );
-            return Ok(());
-        }
-        println!(
-            "Adding these {} files to external_bat_metadata :\n{:#?}",
-            "BatMetadata.json".bright_green(),
-            bat_metadata_folders
-        );
-        self.external_bat_metadata = bat_metadata_folders;
-        Ok(())
-    }
-
-    fn prompt_auditor_name(&mut self) -> BatConfigResult<()> {
-        let bat_config = BatConfig::get_config()?;
-        let auditor_names = bat_config.auditor_names;
-
-        // Preselect whatever this user picked in previous audits.
-        let global = BatGlobalConfig::load()?;
-        let default_index = auditor_names
-            .iter()
-            .position(|name| *name == global.auditor_name);
-
-        let prompt_text = "Select your name:".to_string();
-        let selection = BatDialoguer::select(prompt_text, auditor_names.clone(), None)
-            .change_context(BatConfigError)?;
-        let auditor_name = auditor_names.get(selection).unwrap().clone();
-        let _ = default_index;
-        self.auditor_name = auditor_name.clone();
-
-        let mut global = global;
-        if global.auditor_name != auditor_name {
-            global.auditor_name = auditor_name;
-            global.save()?;
-        }
-        Ok(())
-    }
-
-    fn prompt_code_editor_integration(&mut self) -> BatConfigResult<()> {
-        // The editor is a user preference, not a project setting: if it was
-        // already answered on this machine, reuse it instead of asking again.
-        let mut global = BatGlobalConfig::load()?;
-        if global.code_editor != CodeEditor::None || global.use_code_editor {
-            self.code_editor = global.code_editor.clone();
-            self.use_code_editor = global.use_code_editor;
-            println!(
-                "Using {} from {}",
-                self.code_editor.get_colored_name(false),
-                BatGlobalConfig::path().display()
-            );
-            return Ok(());
-        }
-
-        let prompt_text = format!(
-            "Select a code editor, choose {} to disable:",
-            CodeEditor::None.get_colored_name(false)
-        );
-        let editor_colorized_vec = CodeEditor::get_colorized_type_vec(false);
-        let editor_integration = BatDialoguer::select(prompt_text, editor_colorized_vec, None)
-            .change_context(BatConfigError)?;
-        self.code_editor = CodeEditor::from_index(editor_integration);
-        self.use_code_editor = self.code_editor != CodeEditor::None;
-
-        global.code_editor = self.code_editor.clone();
-        global.use_code_editor = self.use_code_editor;
-        global.save()?;
-        Ok(())
-    }
-
-    pub fn get_config() -> Result<Self, BatConfigError> {
-        let path = BatFile::BatAuditorToml
-            .get_path(true)
-            .change_context(BatConfigError)?;
-        let bat_auditor_config: BatAuditorConfig = Figment::new()
-            .merge(Toml::file(path))
-            .extract()
-            .into_report()
-            .change_context(BatConfigError)
-            .attach_printable("Error parsing BatAuditor.toml")?;
-        bat_auditor_config.save()?;
-
-        // Fall back to the machine-wide preferences for anything the project
-        // file leaves unset. Applied after `save` on purpose, so the fallback is
-        // not frozen into the project file and later global edits still apply.
-        Ok(bat_auditor_config.with_global_defaults())
-    }
-
-    pub fn save(&self) -> Result<(), BatConfigError> {
-        let path = BatFile::BatAuditorToml
-            .get_path(false)
-            .change_context(BatConfigError)?;
-        confy::store_path(path, self)
-            .into_report()
-            .change_context(BatConfigError)
-    }
-
-    /// Fill in the user-level preferences the project file does not set.
-    ///
-    /// A code editor of `None` with `use_code_editor` off is treated as unset,
-    /// which is why explicitly disabling the editor for a single project means
-    /// also clearing it globally.
-    fn with_global_defaults(mut self) -> Self {
-        let Ok(global) = BatGlobalConfig::load() else {
-            return self;
-        };
-        if self.auditor_name.trim().is_empty() {
-            self.auditor_name = global.auditor_name;
-        }
-        if self.code_editor == CodeEditor::None && !self.use_code_editor {
-            self.code_editor = global.code_editor;
-            self.use_code_editor = global.use_code_editor;
-        }
-        self
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub enum ProjectType {
@@ -705,56 +526,76 @@ impl BatConfig {
         Ok(url)
     }
 
+    /// Read the project config out of `BatMetadata.json`.
+    ///
+    /// A bat project is a single file: the config used to live in its own
+    /// `Bat.toml`, but two files to describe one project is one more than
+    /// necessary. This reads the raw JSON rather than going through
+    /// `BatMetadata`, because `BatMetadata` itself asks for the config while
+    /// loading and would recurse.
     pub fn get_config() -> Result<Self, BatConfigError> {
-        // Say plainly that this is not a bat project. Without this the failure
-        // surfaces as "Error canonicalization path: Bat.toml", which does not
-        // tell the user what to do about it.
-        if !Path::new("Bat.toml").exists() {
+        let path = BatFile::BatMetadataFile
+            .get_path(false)
+            .change_context(BatConfigError)?;
+        if !Path::new(&path).exists() {
             let working_directory = std::env::current_dir()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|_| ".".to_string());
             return Err(Report::new(BatConfigError)
-                .attach_printable(format!("no Bat.toml in {working_directory}"))
+                .attach_printable(format!("no BatMetadata.json in {working_directory}"))
                 .attach(crate::Suggestion(
-                    "cd into an audit project (the directory containing Bat.toml, or its \
-                     parent containing bat-audit/), or run `bat-cli init` to create one"
-                        .to_string(),
+                    "run `bat-cli init` in the project root".to_string(),
                 )));
         }
-        let path = BatFile::BatToml
-            .get_path(true)
-            .change_context(BatConfigError)?;
-        let mut bat_config: BatConfig = Figment::new()
-            .merge(Toml::file(path))
-            .extract()
+
+        let content = fs::read_to_string(&path)
             .into_report()
             .change_context(BatConfigError)
-            .attach_printable("Error parsing Bat.toml")?;
+            .attach_printable_lazy(|| format!("cannot read {path}"))?;
+        let value: serde_json::Value = serde_json::from_str(&content)
+            .into_report()
+            .change_context(BatConfigError)
+            .attach_printable_lazy(|| format!("cannot parse {path}"))?;
+
+        let mut bat_config: BatConfig = serde_json::from_value(value["config"].clone())
+            .into_report()
+            .change_context(BatConfigError)
+            .attach_printable("BatMetadata.json has no usable `config` section")?;
+
         if bat_config.program_name.is_empty() {
             bat_config.program_name = bat_config
                 .program_lib_path
-                .clone()
                 .trim_end_matches("/src/lib.rs")
-                .split("/")
-                .last()
-                .unwrap()
+                .split('/')
+                .next_back()
+                .unwrap_or_default()
                 .to_string();
-            bat_config.save()?;
-
-            GitCommit::UpdateBatToml
-                .create_commit(true)
-                .change_context(BatConfigError)?;
         }
         Ok(bat_config)
     }
 
+    /// Write the config back into `BatMetadata.json`, leaving the rest of the
+    /// file untouched.
     pub fn save(&self) -> Result<(), BatConfigError> {
-        let path = BatFile::BatToml
+        let path = BatFile::BatMetadataFile
             .get_path(false)
             .change_context(BatConfigError)?;
-        confy::store_path(path, self)
+        let mut value: serde_json::Value = fs::read_to_string(&path)
+            .ok()
+            .and_then(|content| serde_json::from_str(&content).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+
+        value["config"] = serde_json::to_value(self)
+            .into_report()
+            .change_context(BatConfigError)?;
+
+        let serialized = serde_json::to_string_pretty(&value)
+            .into_report()
+            .change_context(BatConfigError)?;
+        fs::write(&path, serialized)
             .into_report()
             .change_context(BatConfigError)
+            .attach_printable_lazy(|| format!("cannot write {path}"))
     }
 
     /// Create BatConfig for a Foundry/Solidity project.
@@ -952,7 +793,7 @@ mod global_config_test {
     /// One test because these mutate process-wide environment variables and
     /// `cargo test` runs tests in parallel threads.
     #[test]
-    fn test_global_config_round_trip_and_fallbacks() {
+    fn test_global_config_round_trips() {
         let _guard = CONFIG_ENV_GUARD.lock().unwrap_or_else(|error| error.into_inner());
         let directory = std::env::temp_dir().join("bat_cli_global_config_test");
         let _ = fs::remove_dir_all(&directory);
@@ -969,23 +810,6 @@ mod global_config_test {
         };
         global.save().unwrap();
         assert_eq!(BatGlobalConfig::load().unwrap(), global);
-
-        // An auditor config that sets nothing inherits the user preferences.
-        let empty = BatAuditorConfig::default().with_global_defaults();
-        assert_eq!(empty.auditor_name, "matiasbn");
-        assert_eq!(empty.code_editor, CodeEditor::VSCode);
-        assert!(empty.use_code_editor);
-
-        // A project that sets them keeps its own values.
-        let overridden = BatAuditorConfig {
-            auditor_name: "someone_else".to_string(),
-            code_editor: CodeEditor::CLion,
-            use_code_editor: true,
-            ..Default::default()
-        }
-        .with_global_defaults();
-        assert_eq!(overridden.auditor_name, "someone_else");
-        assert_eq!(overridden.code_editor, CodeEditor::CLion);
 
         match previous {
             Some(previous) => std::env::set_var(CONFIG_DIR_ENV, previous),

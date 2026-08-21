@@ -1,14 +1,21 @@
-use crate::batbelt::command_line::{execute_command, CodeEditor};
+//! Paths inside a bat project.
+//!
+//! Everything lives at the root of the audited project rather than under a
+//! `bat-audit/` subfolder, so a checkout that contains `Bat.toml` is visibly a
+//! bat project. The audit-report tree this module used to describe —
+//! code-overhaul stages, finding folders, per-auditor notes — is gone along
+//! with the workflow that produced it.
 
-use crate::config::{BatAuditorConfig, BatConfig};
+use std::error::Error;
+use std::path::Path;
+use std::{fmt, fs};
 
-use crate::batbelt::BatEnumerator;
-use error_stack::{IntoReport, Report, Result, ResultExt};
-
-use crate::batbelt::git::git_commit::GitCommit;
+use error_stack::{IntoReport, Result, ResultExt};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt, fs, path::Path};
-use walkdir::{DirEntry, WalkDir};
+
+use crate::batbelt::command_line::{execute_command, CodeEditor};
+use crate::batbelt::BatEnumerator;
+use crate::config::BatConfig;
 
 #[derive(Debug)]
 pub struct BatPathError;
@@ -21,55 +28,17 @@ impl fmt::Display for BatPathError {
 
 impl Error for BatPathError {}
 
-type BatPathResult<T> = Result<T, BatPathError>;
+pub type BatPathResult<T> = Result<T, BatPathError>;
 
 #[derive(
     Debug, PartialEq, Clone, strum_macros::Display, strum_macros::EnumIter, Serialize, Deserialize,
 )]
 pub enum BatFile {
     BatToml,
-    BatAuditorToml,
-    Batlog,
     BatMetadataFile,
-    BatAnalyticsFile,
-    ThreatModeling,
-    FindingCandidates,
-    OpenQuestions,
-    ProgramLib,
-    Readme,
     GitIgnore,
-    PackageJson,
-    RobotFile,
-    ProgramAccountsMetadataFile,
-    CodeOverhaulSummaryFile,
-    CodeOverhaulToReview {
-        file_name: String,
-        program_name: Option<String>,
-    },
-    CodeOverhaulStarted {
-        file_name: String,
-        program_name: Option<String>,
-    },
-    CodeOverhaulFinished {
-        file_name: String,
-        program_name: Option<String>,
-    },
-    CodeOverhaulDeprecated {
-        file_name: String,
-        program_name: Option<String>,
-    },
-    FindingToReview {
-        file_name: String,
-    },
-    FindingAccepted {
-        file_name: String,
-    },
-    FindingRejected {
-        file_name: String,
-    },
-    Generic {
-        file_path: String,
-    },
+    ProgramLib,
+    Generic { file_path: String },
 }
 
 impl BatEnumerator for BatFile {}
@@ -78,129 +47,12 @@ impl BatFile {
     pub fn get_path(&self, canonicalize: bool) -> BatPathResult<String> {
         let path = match self {
             BatFile::BatToml => "Bat.toml".to_string(),
-            BatFile::BatAuditorToml => "BatAuditor.toml".to_string(),
-            BatFile::Batlog => "Batlog.log".to_string(),
-            BatFile::PackageJson => "./package.json".to_string(),
+            BatFile::BatMetadataFile => "BatMetadata.json".to_string(),
             BatFile::GitIgnore => "./.gitignore".to_string(),
             BatFile::ProgramLib => {
                 BatConfig::get_config()
                     .change_context(BatPathError)?
                     .program_lib_path
-            }
-            BatFile::Readme => "./README.md".to_string(),
-            BatFile::RobotFile => format!(
-                "{}/robot.md",
-                BatFolder::AuditorNotes.get_path(canonicalize)?
-            ),
-            BatFile::FindingCandidates => {
-                format!(
-                    "{}/finding_candidates.md",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFile::OpenQuestions => {
-                format!(
-                    "{}/open_questions.md",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFile::ThreatModeling => {
-                format!(
-                    "{}/threat_modeling.md",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFile::ProgramAccountsMetadataFile => {
-                format!(
-                    "{}/program_accounts_metadata.json",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFile::CodeOverhaulSummaryFile => {
-                format!(
-                    "{}/code_overhaul_summary.md",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFile::CodeOverhaulToReview {
-                file_name,
-                program_name,
-            } => {
-                let entrypoint_name = file_name.trim_end_matches(".md");
-                format!(
-                    "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulToReview {
-                        program_name: program_name.clone()
-                    }
-                    .get_path(canonicalize)?
-                )
-            }
-            BatFile::CodeOverhaulStarted {
-                file_name,
-                program_name,
-            } => {
-                let entrypoint_name = file_name.trim_end_matches(".md");
-                format!(
-                    "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulStarted {
-                        program_name: program_name.clone()
-                    }
-                    .get_path(canonicalize)?
-                )
-            }
-            BatFile::CodeOverhaulFinished {
-                file_name,
-                program_name,
-            } => {
-                let entrypoint_name = file_name.trim_end_matches(".md");
-                format!(
-                    "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulFinished {
-                        program_name: program_name.clone()
-                    }
-                    .get_path(canonicalize)?
-                )
-            }
-            BatFile::CodeOverhaulDeprecated {
-                file_name,
-                program_name,
-            } => {
-                let entrypoint_name = file_name.trim_end_matches(".md");
-                format!(
-                    "{}/{entrypoint_name}.md",
-                    BatFolder::CodeOverhaulDeprecated {
-                        program_name: program_name.clone()
-                    }
-                    .get_path(canonicalize)?
-                )
-            }
-            BatFile::FindingToReview { file_name } => {
-                let entrypoint_name = file_name.trim_end_matches(".md");
-                format!(
-                    "{}/{entrypoint_name}.md",
-                    BatFolder::FindingsToReview.get_path(canonicalize)?
-                )
-            }
-            BatFile::FindingAccepted { file_name } => {
-                let entrypoint_name = file_name.trim_end_matches(".md");
-                format!(
-                    "{}/{entrypoint_name}.md",
-                    BatFolder::FindingsAccepted.get_path(canonicalize)?
-                )
-            }
-            BatFile::FindingRejected { file_name } => {
-                let entrypoint_name = file_name.trim_end_matches(".md");
-                format!(
-                    "{}/{entrypoint_name}.md",
-                    BatFolder::FindingsRejected.get_path(canonicalize)?
-                )
-            }
-            BatFile::BatMetadataFile => "./BatMetadata.json".to_string(),
-            BatFile::BatAnalyticsFile => {
-                format!(
-                    "{}/BatAnalytics.json",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
             }
             BatFile::Generic { file_path } => file_path.clone(),
         };
@@ -208,62 +60,42 @@ impl BatFile {
         if canonicalize {
             return canonicalize_path(path);
         }
-
         Ok(path)
     }
 
     pub fn read_content(&self, canonicalize: bool) -> BatPathResult<String> {
-        fs::read_to_string(self.get_path(canonicalize)?)
+        let path = self.get_path(canonicalize)?;
+        fs::read_to_string(&path)
             .into_report()
             .change_context(BatPathError)
-            .attach_printable(format!(
-                "Error reading content for file in path:\n {}",
-                self.get_path(canonicalize)?
-            ))
+            .attach_printable_lazy(|| format!("cannot read {path}"))
     }
 
     pub fn write_content(&self, canonicalize: bool, content: &str) -> BatPathResult<()> {
-        log::debug!("{}.write_content:\n{} ", self, content);
-        fs::write(self.get_path(canonicalize)?, content)
+        let path = self.get_path(canonicalize)?;
+        log::debug!("{}.write_content:\n{}", self, content);
+        fs::write(&path, content)
             .into_report()
             .change_context(BatPathError)
-            .attach_printable(format!(
-                "Error writing content for file in path:\n {}",
-                self.get_path(canonicalize)?
-            ))
+            .attach_printable_lazy(|| format!("cannot write {path}"))
     }
 
     pub fn remove_file(&self) -> BatPathResult<()> {
         if self.file_exists()? {
-            fs::remove_file(self.get_path(false)?)
+            let path = self.get_path(false)?;
+            fs::remove_file(&path)
                 .into_report()
                 .change_context(BatPathError)
-                .attach_printable(format!(
-                    "Error removing file in path:\n {}",
-                    self.get_path(false)?
-                ))?;
+                .attach_printable_lazy(|| format!("cannot remove {path}"))?;
         }
         Ok(())
     }
 
     pub fn create_empty(&self, canonicalize: bool) -> BatPathResult<()> {
-        execute_command("touch", &[&self.get_path(canonicalize)?], false)
+        let path = self.get_path(canonicalize)?;
+        execute_command("touch", &[&path], false)
             .change_context(BatPathError)
-            .attach_printable(format!(
-                "Error creating empty file in path:\n {}",
-                self.get_path(canonicalize)?
-            ))?;
-        Ok(())
-    }
-
-    pub fn move_file(&self, destination_path: &str) -> BatPathResult<()> {
-        execute_command("mv", &[&self.get_path(true)?, destination_path], false)
-            .change_context(BatPathError)
-            .attach_printable(format!(
-                "Error moving file :\n{} \nto path:\n {}",
-                self.get_path(true)?,
-                destination_path
-            ))?;
+            .attach_printable_lazy(|| format!("cannot create {path}"))?;
         Ok(())
     }
 
@@ -279,269 +111,54 @@ impl BatFile {
     pub fn file_exists(&self) -> BatPathResult<bool> {
         Ok(Path::new(&self.get_path(false)?).is_file())
     }
-
-    pub fn get_file_name(&self) -> BatPathResult<String> {
-        Ok(Path::new(&self.get_path(false)?)
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string())
-    }
-    pub fn commit_file(&self, commit_message: Option<String>) -> BatPathResult<()> {
-        let commit_message = commit_message.unwrap_or(self.default_commit_message()?);
-        GitCommit::BatFileCommit {
-            bat_file: self.clone(),
-            commit_message,
-        }
-        .create_commit(true)
-        .change_context(BatPathError)?;
-        Ok(())
-    }
-
-    pub fn default_commit_message(&self) -> BatPathResult<String> {
-        let message = match self {
-            BatFile::BatAnalyticsFile => "cache: BatAnalytics.json updated".to_string(),
-            _ => {
-                return Err(Report::new(BatPathError).attach_printable(format!(
-                    "{} does not implement default commit message",
-                    self
-                )));
-            }
-        };
-        Ok(message)
-    }
 }
 
 #[derive(
     Debug, PartialEq, Clone, strum_macros::Display, strum_macros::EnumIter, Serialize, Deserialize,
 )]
 pub enum BatFolder {
+    /// Directory of the program or contracts being audited.
     ProgramPath,
-    ProjectFolderPath,
-    FindingsFolderPath,
-    FindingsToReview,
-    FindingsAccepted,
-    FindingsRejected,
-    CodeOverhaulFolderPath { program_name: Option<String> },
-    CodeOverhaulToReview { program_name: Option<String> },
-    CodeOverhaulStarted { program_name: Option<String> },
-    CodeOverhaulFinished { program_name: Option<String> },
-    CodeOverhaulDeprecated { program_name: Option<String> },
-    AuditorNotes,
-    AuditorFigures,
-    Notes,
+    /// Where silicon writes the screenshots before they are uploaded.
+    Figures,
 }
 
 impl BatEnumerator for BatFolder {}
 
 impl BatFolder {
-    pub fn get_path(&self, canonicalize: bool) -> Result<String, BatPathError> {
-        let bat_config = BatConfig::get_config().change_context(BatPathError)?;
-
+    pub fn get_path(&self, canonicalize: bool) -> BatPathResult<String> {
         let path = match self {
-            BatFolder::Notes => "notes".to_string(),
-            BatFolder::ProjectFolderPath => bat_config.project_name.to_string(),
-            BatFolder::AuditorNotes => {
-                let bat_auditor_config =
-                    BatAuditorConfig::get_config().change_context(BatPathError)?;
-
-                let auditor_notes_folder_path = format!(
-                    "{}/{}-notes",
-                    Self::Notes.get_path(canonicalize)?,
-                    bat_auditor_config.auditor_name
-                );
-                auditor_notes_folder_path
-            }
-            BatFolder::AuditorFigures => {
-                format!(
-                    "{}/figures",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                )
-            }
-            BatFolder::ProgramPath => bat_config
+            BatFolder::Figures => "figures".to_string(),
+            BatFolder::ProgramPath => BatConfig::get_config()
+                .change_context(BatPathError)?
                 .program_lib_path
                 .trim_end_matches("/src/lib.rs")
                 .trim_end_matches("/src/main.rs")
                 .to_string(),
-            BatFolder::FindingsFolderPath => {
-                format!("{}/findings", BatFolder::AuditorNotes.get_path(true)?)
-            }
-            BatFolder::FindingsToReview => {
-                format!(
-                    "{}/to-review",
-                    BatFolder::FindingsFolderPath.get_path(canonicalize)?
-                )
-            }
-            BatFolder::FindingsAccepted => {
-                format!(
-                    "{}/accepted",
-                    BatFolder::FindingsFolderPath.get_path(canonicalize)?
-                )
-            }
-            BatFolder::FindingsRejected => {
-                format!(
-                    "{}/rejected",
-                    BatFolder::FindingsFolderPath.get_path(canonicalize)?
-                )
-            }
-            BatFolder::CodeOverhaulFolderPath { program_name } => {
-                let base = format!(
-                    "{}/code-overhaul",
-                    BatFolder::AuditorNotes.get_path(canonicalize)?
-                );
-                match program_name {
-                    Some(name) => format!("{}/{}", base, name),
-                    None => base,
-                }
-            }
-            BatFolder::CodeOverhaulToReview { program_name } => {
-                format!(
-                    "{}/to-review",
-                    BatFolder::CodeOverhaulFolderPath {
-                        program_name: program_name.clone()
-                    }
-                    .get_path(canonicalize)?
-                )
-            }
-            BatFolder::CodeOverhaulStarted { program_name } => {
-                format!(
-                    "{}/started",
-                    BatFolder::CodeOverhaulFolderPath {
-                        program_name: program_name.clone()
-                    }
-                    .get_path(canonicalize)?
-                )
-            }
-            BatFolder::CodeOverhaulDeprecated { program_name } => {
-                format!(
-                    "{}/deprecated",
-                    BatFolder::CodeOverhaulFolderPath {
-                        program_name: program_name.clone()
-                    }
-                    .get_path(canonicalize)?
-                )
-            }
-            BatFolder::CodeOverhaulFinished { program_name } => {
-                format!(
-                    "{}/finished",
-                    BatFolder::CodeOverhaulFolderPath {
-                        program_name: program_name.clone()
-                    }
-                    .get_path(canonicalize)?
-                )
-            }
         };
 
         if canonicalize {
             return canonicalize_path(path);
         }
-
         Ok(path)
     }
 
-    /// Returns all program directory paths from config (for multi-program scanning).
-    pub fn get_all_program_paths() -> Result<Vec<String>, BatPathError> {
+    /// Every program directory to scan. Multi-program projects list them all.
+    pub fn get_all_program_paths() -> BatPathResult<Vec<String>> {
         let bat_config = BatConfig::get_config().change_context(BatPathError)?;
-        let paths = if bat_config.program_lib_paths.is_empty() {
-            // Backwards compatibility: use single program_lib_path
-            vec![bat_config
-                .program_lib_path
-                .trim_end_matches("/src/lib.rs")
+        let trim = |path: &str| {
+            path.trim_end_matches("/src/lib.rs")
                 .trim_end_matches("/src/main.rs")
-                .to_string()]
-        } else {
-            bat_config
-                .program_lib_paths
-                .iter()
-                .map(|p| {
-                    p.trim_end_matches("/src/lib.rs")
-                        .trim_end_matches("/src/main.rs")
-                        .to_string()
-                })
-                .collect()
+                .to_string()
         };
-        Ok(paths)
-    }
-
-    pub fn get_all_files_dir_entries(
-        &self,
-        sorted: bool,
-        file_name_to_exclude_filters: Option<Vec<String>>,
-        file_extension_to_include_filters: Option<Vec<String>>,
-    ) -> Result<Vec<DirEntry>, BatPathError> {
-        let folder_path = self.get_path(false)?;
-        let mut dir_entries = WalkDir::new(folder_path)
-            .into_iter()
-            .filter_map(|f| {
-                let dir_entry = f.unwrap();
-                if !dir_entry.metadata().unwrap().is_file() || dir_entry.file_name() == ".gitkeep" {
-                    return None;
-                }
-                if file_name_to_exclude_filters.is_some()
-                    && file_name_to_exclude_filters
-                        .clone()
-                        .unwrap()
-                        .into_iter()
-                        .any(|filter| dir_entry.file_name().to_str().unwrap() == filter)
-                {
-                    return None;
-                }
-                if file_extension_to_include_filters.is_some()
-                    && !file_extension_to_include_filters
-                        .clone()
-                        .unwrap()
-                        .into_iter()
-                        .any(|filter| dir_entry.file_name().to_str().unwrap().ends_with(&filter))
-                {
-                    return None;
-                }
-                Some(dir_entry)
-            })
-            .collect::<Vec<_>>();
-        if sorted {
-            dir_entries.sort_by(|dir_entry_a, dir_entry_b| {
-                dir_entry_a.file_name().cmp(dir_entry_b.file_name())
-            });
+        if bat_config.program_lib_paths.is_empty() {
+            return Ok(vec![trim(&bat_config.program_lib_path)]);
         }
-        Ok(dir_entries)
-    }
-
-    pub fn get_all_files_names(
-        &self,
-        sorted: bool,
-        file_name_to_exclude_filters: Option<Vec<String>>,
-        file_extension_to_include_filters: Option<Vec<String>>,
-    ) -> Result<Vec<String>, BatPathError> {
-        let dir_entries = self.get_all_files_dir_entries(
-            sorted,
-            file_name_to_exclude_filters,
-            file_extension_to_include_filters,
-        )?;
-        Ok(dir_entries
-            .into_iter()
-            .map(|dir_entry| dir_entry.file_name().to_str().unwrap().to_string())
-            .collect::<Vec<_>>())
-    }
-
-    pub fn get_all_bat_files(
-        &self,
-        sorted: bool,
-        file_name_to_exclude_filters: Option<Vec<String>>,
-        file_extension_to_include_filters: Option<Vec<String>>,
-    ) -> BatPathResult<Vec<BatFile>> {
-        let generic_vec = self
-            .get_all_files_dir_entries(
-                sorted,
-                file_name_to_exclude_filters,
-                file_extension_to_include_filters,
-            )?
-            .into_iter()
-            .map(|entry| BatFile::Generic {
-                file_path: entry.path().to_str().unwrap().to_string(),
-            })
-            .collect::<Vec<_>>();
-        Ok(generic_vec)
+        Ok(bat_config
+            .program_lib_paths
+            .iter()
+            .map(|path| trim(path))
+            .collect())
     }
 
     pub fn folder_exists(&self) -> BatPathResult<bool> {
@@ -549,38 +166,31 @@ impl BatFolder {
     }
 
     pub fn create_folder(&self) -> BatPathResult<()> {
-        fs::create_dir_all(&self.get_path(false)?)
+        let path = self.get_path(false)?;
+        fs::create_dir_all(&path)
             .into_report()
             .change_context(BatPathError)
+            .attach_printable_lazy(|| format!("cannot create {path}"))
     }
 }
 
+/// Shorten a source path for display, dropping the prefix above the program.
 pub fn prettify_source_code_path(path: &str) -> BatPathResult<String> {
-    // EVM paths: strip leading "../" prefix
-    // e.g. "../src/DelegationManager.sol" → "src/DelegationManager.sol"
-    // e.g. "../lib/erc7579/src/Ownable.sol" → "lib/erc7579/src/Ownable.sol"
     if path.ends_with(".sol") {
-        return Ok(path.trim_start_matches("../").to_string());
+        return Ok(path.trim_start_matches("./").trim_start_matches("../").to_string());
     }
-
-    // SVM paths: original logic
     let mut path_split = path.split("/src/");
-    let prefix_with_program = path_split.next().unwrap();
-    let program_name = prefix_with_program.split("/").last().unwrap();
+    let prefix_with_program = path_split.next().unwrap_or("");
+    let program_name = prefix_with_program.split('/').next_back().unwrap_or("");
     let prefix = prefix_with_program.trim_end_matches(program_name);
-    let pretty_path = path.trim_start_matches(prefix);
-    Ok(pretty_path.to_string())
+    Ok(path.trim_start_matches(prefix).to_string())
 }
 
-pub fn canonicalize_path(path_to_canonicalize: String) -> Result<String, BatPathError> {
-    let error_message = format!("Error canonicalization path: {}", path_to_canonicalize);
-    let canonicalized_path = Path::new(&(path_to_canonicalize))
+pub fn canonicalize_path(path_to_canonicalize: String) -> BatPathResult<String> {
+    let canonicalized = Path::new(&path_to_canonicalize)
         .canonicalize()
         .into_report()
         .change_context(BatPathError)
-        .attach_printable(error_message)?
-        .into_os_string()
-        .into_string()
-        .unwrap();
-    Ok(canonicalized_path)
+        .attach_printable_lazy(|| format!("path does not exist: {path_to_canonicalize}"))?;
+    Ok(canonicalized.to_string_lossy().to_string())
 }

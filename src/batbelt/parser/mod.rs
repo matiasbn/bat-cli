@@ -5,7 +5,6 @@ use std::error::Error;
 use std::fmt;
 
 pub mod call_resolver;
-pub mod code_overhaul_parser;
 pub mod context_accounts_parser;
 pub mod entrypoint_parser;
 pub mod file_scope;

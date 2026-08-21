@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::batbelt::BatEnumerator;
 use crate::commands::{CommandError, CommandResult};
-use crate::config::BatAuditorConfig;
+use crate::config::BatGlobalConfig;
 
 #[derive(
     Default,
@@ -32,7 +32,7 @@ impl BatEnumerator for CodeEditor {}
 
 impl CodeEditor {
     pub fn open_file_in_editor(path: &str, line_index: Option<usize>) -> CommandResult<()> {
-        let bat_auditor_config = BatAuditorConfig::get_config().change_context(CommandError)?;
+        let bat_auditor_config = BatGlobalConfig::load().change_context(CommandError)?;
         if !bat_auditor_config.use_code_editor {
             log::warn!("Code editor disabled");
             println!("Path to file: {:#?}:{}", path, line_index.unwrap_or(0));

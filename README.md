@@ -90,7 +90,10 @@ everything in `Bat.toml` — stay with the project.
 
 ### Initialize (`init`)
 
-Sets up the audit workspace: detects the project framework (Anchor, Pinocchio, or Foundry), configures Miro integration (with API validation), and runs the initial sonar analysis.
+Detects the project framework, creates the Miro board (or picks an existing
+one), writes `Bat.toml` and `BatMetadata.json` at the root of the audited
+repository, and runs the initial sonar analysis. bat-cli creates no branches and
+no commits.
 
 ### Static analysis (`sonar`)
 
