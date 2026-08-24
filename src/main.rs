@@ -31,7 +31,14 @@ pub mod guide;
 // pub type BatDerive = #[derive(Debug, PartialEq, Copy, strum_macros::Display, strum_macros::EnumIter)];
 
 #[derive(Parser, Debug, Clone)]
-#[command(author, version, about = "Blockchain Auditor Toolkit (BAT) CLI")]
+#[command(
+    author,
+    version,
+    about = "Blockchain Auditor Toolkit (BAT) CLI",
+    after_help = "AI assistant setup: run `bat-cli refresh-ai-guide` — it installs the assistant \
+                  skill and prints how to point an AI (Claude, Codex, Gemini) at bat-cli's guide, \
+                  so you can just say \"use the bat-cli skill\"."
+)]
 struct Cli {
     #[clap(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
@@ -39,14 +46,21 @@ struct Cli {
     command: BatCommands,
 }
 
-#[derive(
-    Default, strum_macros::Display, Subcommand, Debug, PartialEq, Clone, strum_macros::EnumIter,
-)]
+#[derive(strum_macros::Display, Subcommand, Debug, PartialEq, Clone, strum_macros::EnumIter)]
 enum BatCommands {
+    // Init is the default command (run with no subcommand).
     /// Set up a bat project here: detect the framework, create the Miro board
     /// and scan the source code
-    #[default]
-    Init,
+    Init {
+        /// Run without any prompt (for scripts / AI): use the folder name for the
+        /// project and, when logged in to Miro, create a board named after it.
+        #[arg(long)]
+        yes: bool,
+        /// Attach this existing Miro board (URL) instead of creating one. Implies
+        /// a non-interactive board step.
+        #[arg(long = "board-url", value_name = "URL")]
+        board_url: Option<String>,
+    },
     /// Authorize bat-cli against Miro once, for every project on this machine
     Login {
         /// Register the Miro app credentials before authorizing
@@ -81,10 +95,9 @@ enum BatCommands {
     Sonar,
     /// Regenerate the machine-global AI guide and reinstall the assistant skills.
     ///
-    /// Hidden because `main::run` already does this before every command; it exists
-    /// so a freshly installed binary can be asked to publish ITS OWN guide — see
-    /// `update_commands`, where the running process is the outgoing version.
-    #[command(name = "refresh-ai-guide", hide = true)]
+    /// Install the AI-assistant skill + guide and print how to point an AI at bat-cli
+    /// (run this once right after installing). Needs no project.
+    #[command(name = "refresh-ai-guide")]
     RefreshAiGuide,
     /// Deploy an entry point's screenshots to a Miro board
     Deploy {
@@ -121,11 +134,24 @@ enum BatCommands {
 
 impl BatEnumerator for BatCommands {}
 
+impl Default for BatCommands {
+    fn default() -> Self {
+        BatCommands::Init {
+            yes: false,
+            board_url: None,
+        }
+    }
+}
+
 impl BatCommands {
     pub async fn execute(&self) -> Result<(), CommandError> {
         self.validate_command()?;
         match self {
-            BatCommands::Init => ProjectCommands::Init.init_bat_project().await,
+            BatCommands::Init { yes, board_url } => {
+                ProjectCommands::Init
+                    .init_bat_project(*yes, board_url.clone())
+                    .await
+            }
             BatCommands::Login {
                 setup,
                 status,
@@ -149,7 +175,12 @@ impl BatCommands {
             }
             BatCommands::Sonar => SonarCommand::Run.execute_command(),
             // The refresh already ran in `main::run`; nothing left to do.
-            BatCommands::RefreshAiGuide => Ok(()),
+            BatCommands::RefreshAiGuide => {
+                // refresh_ai_surface() already ran in main(); just show where the
+                // AI integration lives and how to point an assistant at it.
+                crate::guide::print_ai_setup_hint();
+                Ok(())
+            }
             BatCommands::Deploy {
                 entry_point,
                 all,
@@ -184,7 +215,7 @@ impl BatCommands {
     /// manage git, so it has no business dictating which branch you are on.
     fn validate_command(&self) -> CommandResult<()> {
         let check_metadata = match self {
-            BatCommands::Init
+            BatCommands::Init { .. }
             | BatCommands::Login { .. }
             | BatCommands::Logout
             | BatCommands::Config { .. }
