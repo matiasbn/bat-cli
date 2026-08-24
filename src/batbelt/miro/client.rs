@@ -433,6 +433,45 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// Draw a hollow rectangle (colored border, transparent fill) framing an item,
+    /// used to flag a node that writes contract storage. `x`/`y` are the center and
+    /// `width`/`height` the size of the item being framed, relative to the parent
+    /// frame's top-left; the border is drawn a touch larger so it reads as an outline
+    /// around the screenshot rather than over it.
+    pub async fn create_storage_border(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        let pad = 24.0;
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": {
+                "fillOpacity": "0.0",
+                "borderColor": "#f24726",
+                "borderWidth": "6",
+                "borderOpacity": "1.0",
+            },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width + pad, "height": height + pad },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_storage_border", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
     /// Whether an item is still on the board.
     ///
     /// The registry records what was deployed, but a board is edited by hand:

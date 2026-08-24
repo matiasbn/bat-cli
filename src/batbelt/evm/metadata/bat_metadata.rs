@@ -66,6 +66,11 @@ pub struct FunctionMetadata {
     #[serde(default)]
     pub end_line: usize,
     pub is_constructor: bool,
+    /// Storage locations this function writes (state vars / storage-pointer
+    /// paths). Empty for a function that mutates no storage. Drives the
+    /// "writes storage" marker on the diagram.
+    #[serde(default)]
+    pub storage_writes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,14 +276,49 @@ impl EvmBatMetadata {
         }
         metadata.file_items = file_items;
 
+        // Per contract: its own storage-variable names (excluding constants /
+        // immutables, which don't live in storage) and its base contracts — so a
+        // function's writes to inherited state variables resolve too.
+        let mut own_state_vars: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        let mut contract_bases: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for c in &contracts {
+            let names: Vec<String> = c
+                .storage_variables
+                .iter()
+                .filter(|v| !v.is_constant && !v.is_immutable)
+                .map(|v| v.name.clone())
+                .collect();
+            own_state_vars.insert(c.name.clone(), names);
+            contract_bases.insert(c.name.clone(), c.base_contracts.clone());
+        }
+
         for contract in &contracts {
             let contract_id = format!("{}_{}", contract.file_path, contract.name);
+
+            // State variables visible to every function in this contract.
+            let mut state_vars: Vec<String> = Vec::new();
+            let mut seen_contracts: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            resolve_state_vars(
+                &contract.name,
+                &own_state_vars,
+                &contract_bases,
+                &mut seen_contracts,
+                &mut state_vars,
+            );
 
             let functions: Vec<FunctionMetadata> = contract
                 .functions
                 .iter()
                 .map(|f| {
                     let func_id = format!("{}_{}_{}", contract.file_path, contract.name, f.name);
+                    let storage_writes =
+                        crate::batbelt::evm::parser::call_resolver::extract_storage_writes_from_source(
+                            &f.body_source,
+                            &state_vars,
+                        );
                     FunctionMetadata {
                         metadata_id: func_id,
                         name: f.name.clone(),
@@ -291,6 +331,7 @@ impl EvmBatMetadata {
                         line: f.line,
                         end_line: f.end_line,
                         is_constructor: f.is_constructor,
+                        storage_writes,
                     }
                 })
                 .collect();
@@ -363,7 +404,7 @@ impl EvmBatMetadata {
                     function_metadata_id: func.metadata_id.clone(),
                     access_control: detect_access_control(&func.modifiers),
                     storage_reads: vec![],
-                    storage_writes: vec![],
+                    storage_writes: func.storage_writes.clone(),
                     external_calls: vec![],
                     events_emitted: vec![],
                     modifiers: func.modifiers.clone(),
@@ -374,6 +415,28 @@ impl EvmBatMetadata {
         }
 
         metadata
+    }
+}
+
+/// Collect a contract's effective storage-variable names: its own plus every
+/// inherited one, walking base contracts transitively (guarded against cycles).
+fn resolve_state_vars(
+    name: &str,
+    own: &std::collections::HashMap<String, Vec<String>>,
+    bases: &std::collections::HashMap<String, Vec<String>>,
+    seen: &mut std::collections::HashSet<String>,
+    out: &mut Vec<String>,
+) {
+    if !seen.insert(name.to_string()) {
+        return;
+    }
+    if let Some(vars) = own.get(name) {
+        out.extend(vars.iter().cloned());
+    }
+    if let Some(base_names) = bases.get(name) {
+        for base in base_names {
+            resolve_state_vars(base, own, bases, seen, out);
+        }
     }
 }
 

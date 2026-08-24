@@ -197,6 +197,28 @@ pub fn refresh_ai_surface() {
     record_bat_cli_version();
 }
 
+/// Print where the AI assistant integration lives and the one line a user can say
+/// to their assistant to start driving bat-cli. Shown by `bat-cli refresh-ai-guide`
+/// so, right after `cargo install`, the setup is discoverable in one command.
+pub fn print_ai_setup_hint() {
+    let home = home_dir().ok();
+    let claude = home
+        .as_ref()
+        .map(|h| h.join(".claude/skills/bat-cli").display().to_string())
+        .unwrap_or_else(|| "~/.claude/skills/bat-cli".to_string());
+    println!("{} bat-cli AI assistant is set up.", "✓".green());
+    println!("  skill:  {claude}");
+    println!("          (Codex: ~/.agents/skills/bat-cli · Gemini: ~/.gemini/GEMINI.md)");
+    println!("  guide:  {} (README, workflow, metadata, changelog)", ai_context_dir().display());
+    println!(
+        "\n  Tell your AI assistant: {} — it will read the guide and drive bat-cli for you.",
+        "\"use the bat-cli skill\"".green()
+    );
+    println!(
+        "  (If your assistant just installed the skill, restart it once — e.g. `claude --continue`.)"
+    );
+}
+
 /// Stamps the running version into `Bat.toml` when one exists here and it differs from what
 /// is stored. The guide itself is global, so this is not what tells an assistant the guide
 /// moved — it records **which binary last scanned this project**, which is what says whether
@@ -362,20 +384,24 @@ what tells you so.
 
 ## Interactive prompts — you cannot answer them
 
-`init`, `login`, `config --edit` and a bare `deploy` use `dialoguer` prompts (select,
-multiselect, fuzzy-select, yes/no). Do not launch them and hope. Ask the auditor to run them
+`login`, `config --edit`, a bare `deploy`, and a bare `init` use `dialoguer` prompts (select,
+multiselect, fuzzy-select, yes/no). Do not launch those and hope. Ask the auditor to run them
 in-session with the `!` prefix:
 
-> Run `! bat-cli init` and pick the folders and the board when it asks.
+> Run `! bat-cli login` and press Accept in the browser (it also prints the URL to paste).
 
-What `init` asks: the folders to scan → the programs to analyze (SVM only; a Foundry project
-derives `src` from `foundry.toml` with no prompt) → the Miro board (create a new one named
-after the directory, pick one the token can already see, or paste a URL). A bare `deploy`
-shows a fuzzy list: entry points first and marked `[entry point]`, then every other function,
-with `(deployed)` on what is already on the board.
+**`init --yes` runs with NO prompt — you can run it yourself.** The project name is the folder
+name, and the Miro board is resolved without asking: it reuses an existing board with the same
+name as the folder, or creates one, or attaches `--board-url <URL>`. (A Foundry project already
+derives `src` from `foundry.toml`; only a bare `init` on an SVM project still asks which folders
+to scan.) So the AI-drivable setup is: the auditor runs `! bat-cli login` ONCE, then you run
+`bat-cli init --yes` → `bat-cli sonar` → `bat-cli deploy --entry-point <X>`.
 
-Safe to run unattended: `sonar`, `config` (no flag), `update --check`, `login --status`, and
-`deploy --entry-point <X> --dry-run`.
+A bare `deploy` shows a fuzzy list: entry points first and marked `[entry point]`, then every
+other function, with `(deployed)` on what is already on the board — pass `--entry-point` to skip it.
+
+Safe to run unattended: `init --yes`, `sonar`, `config` (no flag), `update --check`,
+`login --status`, `deploy --entry-point <X>` (and `--dry-run`).
 
 ## deploy
 
@@ -409,6 +435,10 @@ and one connector per call site anchored to the exact line — past the end of t
 makes one call, on the called token itself when it makes several, since then the column is the
 only thing telling them apart. The entry point sits in the top-left, layers run downward, and
 no arrow points backwards.
+
+**Storage-write markers.** Every node whose function mutates contract storage is drawn inside a
+hollow red rectangle, so state-changing functions stand out at a glance. This is derived from
+each function's `storage_writes` in the metadata (see `metadata.md`); nothing to configure.
 
 ## Failure modes
 
@@ -449,6 +479,12 @@ Top level: `contracts`, `entry_points`, `function_dependencies`, `interfaces`, `
   `external_calls`, `events_emitted`, `modifiers`, `dependencies`.
 - **`function_dependencies[]`** — the call graph, as `function_metadata_id` → `callees[]`.
 - **`interfaces[]`** — `name`, `implemented_by`, `functions`.
+
+**`storage_writes`** is populated (empty = writes no storage) on BOTH `entry_points[]` and every
+`contracts[].functions[]`. It lists the written storage locations as readable paths — a state
+var (`totalSupply`), an index/mapping (`balances[]`), a storage-pointer field (`$.reserveStable`),
+or an accessor path (`_s().paused`). The Miro deploy rings storage-writing nodes in red from this.
+Match the exact string (the recipe below finds writers of one var).
 - **`miro`** — what is already on the board; `miro.auto.frames[]` holds `entry_point` and
   `frame_url` per deployed frame.
 
@@ -520,6 +556,18 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.19.0
+- **Storage-write detection + diagram markers.** Each function now records the contract storage
+  it writes in `storage_writes` (state vars, `mapping[k]=`, storage-pointer `$.x`, accessor
+  `_s().x`, `++`/`--`, `delete`, `.push`/`.pop`; inherited state vars resolved). On the Miro
+  board, every node whose function mutates storage is drawn inside a hollow red rectangle, so
+  state changes stand out. Regenerate with `sonar`, then `deploy`. _Re-read: metadata.md, workflow.md._
+- **`init --yes` is fully non-interactive** (for scripts / AI): project name = folder name, and
+  the Miro board is resolved with no prompt — it reuses an existing board named after the folder,
+  else creates one, else `--board-url <URL>` attaches a specific board. The AI-drivable setup is
+  now `! bat-cli login` (once, human) → `bat-cli init --yes` → `sonar` → `deploy --entry-point`.
+  _Re-read: workflow.md._
 
 ## 0.18.1
 - The generated docs' header said they are regenerated on `init`/`sonar`/`deploy`; every

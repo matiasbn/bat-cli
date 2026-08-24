@@ -44,7 +44,11 @@ impl BatCommandEnumerator for ProjectCommands {
 impl ProjectCommands {
     /// Create `Bat.toml`, the workspace directories and the metadata cache, then
     /// scan the code.
-    pub async fn init_bat_project(&self) -> Result<(), CommandError> {
+    pub async fn init_bat_project(
+        &self,
+        non_interactive: bool,
+        board_url: Option<String>,
+    ) -> Result<(), CommandError> {
         if BatFile::BatToml.file_exists().change_context(CommandError)? {
             return Err(Report::new(CommandError)
                 .attach_printable("this is already a bat project")
@@ -59,7 +63,7 @@ impl ProjectCommands {
             .create_metadata_json()
             .change_context(CommandError)?;
 
-        Self::configure_miro_board().await?;
+        Self::configure_miro_board(non_interactive, board_url).await?;
 
         println!("\nScanning the source code...");
         SonarCommand::Run.execute_command()?;
@@ -83,22 +87,76 @@ impl ProjectCommands {
     ///
     /// The token itself is machine-wide and comes from `bat-cli login`; only the
     /// board belongs to the project.
-    async fn configure_miro_board() -> CommandResult<()> {
+    async fn configure_miro_board(
+        non_interactive: bool,
+        board_url_arg: Option<String>,
+    ) -> CommandResult<()> {
         let token = auth::stored_access_token();
         if token.trim().is_empty() {
             println!(
-                "\n{} not logged in to Miro. Run {} before deploying.",
+                "\n{} not logged in to Miro. Run {}, then {} to attach a board.",
                 "note:".yellow(),
-                "bat-cli login".yellow()
+                "bat-cli login".yellow(),
+                "bat-cli init --yes".yellow()
             );
             return Ok(());
         }
 
-        let board_url = Self::prompt_miro_board_url(&token).await?;
+        // Non-interactive (scripts / AI): use the board URL if given, otherwise
+        // create one named after the folder — no prompts.
+        let board_url = if let Some(url) = board_url_arg {
+            match MiroConfig::validate_board(&token, url.trim()).await {
+                Ok(name) => {
+                    println!("{} board \"{}\"", "✓".green(), name);
+                    url.trim().to_string()
+                }
+                Err(report) => {
+                    return Err(Report::new(CommandError)
+                        .attach_printable(format!("could not use --board-url: {report:?}")));
+                }
+            }
+        } else if non_interactive {
+            let name = Self::suggested_board_name();
+            // Reuse an existing board with the SAME name (the intended target)
+            // rather than creating a duplicate; only create when none matches.
+            let existing = MiroConfig::list_boards(&token)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .find(|(board_name, _)| board_name == &name);
+            if let Some((board_name, url)) = existing {
+                println!("{} using existing board \"{}\"\n  {}", "✓".green(), board_name, url.blue());
+                url
+            } else {
+                match MiroConfig::create_board(&token, &name).await {
+                    Ok((name, url)) => {
+                        println!("{} created board \"{}\"\n  {}", "✓".green(), name, url.blue());
+                        url
+                    }
+                    Err(report) => {
+                        // A board isn't required to finish init; deploy can attach one later.
+                        println!("{} could not create the board: {:?}", "warning:".yellow(), report);
+                        String::new()
+                    }
+                }
+            }
+        } else {
+            Self::prompt_miro_board_url(&token).await?
+        };
+
         let mut bat_config = BatConfig::get_config().change_context(CommandError)?;
         bat_config.miro_board_url = board_url;
         bat_config.save().change_context(CommandError)?;
         Ok(())
+    }
+
+    /// The board name to default to: the folder being audited.
+    fn suggested_board_name() -> String {
+        std::env::current_dir()
+            .ok()
+            .and_then(|path| path.file_name().map(|name| name.to_string_lossy().to_string()))
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| "bat-cli".to_string())
     }
 
     /// Get a board without sending the user to the browser: offer to create one

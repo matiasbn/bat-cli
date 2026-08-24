@@ -632,6 +632,378 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
     }
 }
 
+/// Extract the storage locations WRITTEN by a function body, from its source text.
+///
+/// Fully generic — no library/framework assumptions. A "storage write" is any
+/// assignment (`x = …`, `x += …`), `delete x`, `++`/`--`, or `.push()`/`.pop()`
+/// whose lvalue's ROOT is either a declared state variable (`state_vars`) OR a
+/// local declared with `storage` data location — a storage pointer, e.g. the
+/// diamond-storage `MyStruct storage $ = _get();` then `$.field = …`. Resolving
+/// the root through `Member`/`Index` is what makes `$.reserveStable += r0` and
+/// `balances[user] = v` count, on any codebase.
+///
+/// Returns readable lvalue paths (e.g. `"reserveStable"`, `"$.reserveStable"`,
+/// `"balances[]"`), sorted and deduped. Empty when the body doesn't parse.
+pub fn extract_storage_writes_from_source(source: &str, state_vars: &[String]) -> Vec<String> {
+    // `body_source` is inconsistent across sonar's parse: sometimes the inner
+    // statements, sometimes the WHOLE function (`function f() { … }`, signature
+    // and braces included). Wrapping a whole function inside a dummy `_f` would
+    // make an illegal nested function and fail to parse. So try both shapes —
+    // a contract holding the source as-is (whole-function case) and the source
+    // as a dummy function body (bare-statements case) — and union whatever parses.
+    let mut writes = Vec::new();
+    for wrapped in [
+        format!("contract _C {{ {} }}", source),
+        format!("contract _C {{ function _f() {{ {} }} }}", source),
+    ] {
+        if let Some(w) = collect_writes_in_wrapped(&wrapped, state_vars) {
+            writes.extend(w);
+        }
+    }
+    writes.sort();
+    writes.dedup();
+    writes
+}
+
+/// Parse one wrapped snippet and collect storage writes from every function it
+/// contains. `None` when the snippet doesn't parse (so the caller can try the
+/// other wrapping).
+fn collect_writes_in_wrapped(wrapped: &str, state_vars: &[String]) -> Option<Vec<String>> {
+    let sess = Session::builder().with_silent_emitter(None).build();
+    sess.enter(|| -> Option<Vec<String>> {
+        let arena = ast::Arena::new();
+        let mut parser = Parser::from_source_code(
+            &sess,
+            &arena,
+            FileName::Custom("storage_writes".into()),
+            wrapped.to_string(),
+        )
+        .ok()?;
+        let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
+
+        let mut writes = Vec::new();
+        let mut found_fn = false;
+        for item in file.items.iter() {
+            if let ast::ItemKind::Contract(c) = &item.kind {
+                for body_item in c.body.iter() {
+                    if let ast::ItemKind::Function(f) = &body_item.kind {
+                        if let Some(block) = &f.body {
+                            found_fn = true;
+                            // Pass 1: every local declared with `storage` location
+                            // (a storage pointer) — writes through it hit storage.
+                            let mut storage_locals: Vec<String> = Vec::new();
+                            for stmt in block.stmts.iter() {
+                                collect_storage_locals(&stmt.kind, &mut storage_locals);
+                            }
+                            // Pass 2: the actual writes.
+                            for stmt in block.stmts.iter() {
+                                collect_writes_from_stmt(
+                                    &stmt.kind,
+                                    state_vars,
+                                    &storage_locals,
+                                    &mut writes,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Treat "parsed but no function with a body" as a miss, so the caller
+        // falls through to the other wrapping instead of accepting an empty set.
+        if found_fn {
+            Some(writes)
+        } else {
+            None
+        }
+    })
+}
+
+/// Collect the names of locals declared with `storage` data location (storage
+/// pointers), recursing through nested blocks/control-flow.
+fn collect_storage_locals(kind: &ast::StmtKind<'_>, out: &mut Vec<String>) {
+    match kind {
+        ast::StmtKind::DeclSingle(var) => {
+            if var.data_location == Some(ast::DataLocation::Storage) {
+                if let Some(name) = var.name {
+                    out.push(name.as_str().to_string());
+                }
+            }
+        }
+        ast::StmtKind::Block(b) | ast::StmtKind::UncheckedBlock(b) => {
+            for s in b.stmts.iter() {
+                collect_storage_locals(&s.kind, out);
+            }
+        }
+        ast::StmtKind::If(_, t, e) => {
+            collect_storage_locals(&t.kind, out);
+            if let Some(e) = e {
+                collect_storage_locals(&e.kind, out);
+            }
+        }
+        ast::StmtKind::For {
+            init, body, ..
+        } => {
+            if let Some(i) = init {
+                collect_storage_locals(&i.kind, out);
+            }
+            collect_storage_locals(&body.kind, out);
+        }
+        ast::StmtKind::While(_, body) | ast::StmtKind::DoWhile(body, _) => {
+            collect_storage_locals(&body.kind, out);
+        }
+        ast::StmtKind::Try(t) => {
+            for clause in t.clauses.iter() {
+                for s in clause.block.stmts.iter() {
+                    collect_storage_locals(&s.kind, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The leftmost base of an lvalue: a plain identifier, or a call (a storage
+/// accessor like `_s()` in the diamond-storage pattern — `_s().field = …`).
+enum LvalueRoot {
+    Ident(String),
+    Call,
+}
+
+/// The `(root, rendered_path)` of an lvalue expression, walking through
+/// member/index access to the leftmost base. `None` for a non-lvalue base
+/// (a literal, an unsupported form, …).
+fn lvalue_path(kind: &ast::ExprKind<'_>) -> Option<(LvalueRoot, String)> {
+    match kind {
+        ast::ExprKind::Ident(id) => {
+            let n = id.as_str().to_string();
+            Some((LvalueRoot::Ident(n.clone()), n))
+        }
+        ast::ExprKind::Member(obj, field) => {
+            let (root, path) = lvalue_path(&obj.kind)?;
+            Some((root, format!("{}.{}", path, field.as_str())))
+        }
+        ast::ExprKind::Index(obj, _) => {
+            let (root, path) = lvalue_path(&obj.kind)?;
+            Some((root, format!("{}[]", path)))
+        }
+        // A call at the base of an lvalue — you can only meaningfully assign
+        // THROUGH a call result if it returns a storage reference, so a
+        // `getter().field = …` is a storage write. Render the callee for context.
+        ast::ExprKind::Call(callee, _) => {
+            let name = match &callee.kind {
+                ast::ExprKind::Ident(id) => id.as_str().to_string(),
+                ast::ExprKind::Member(_, m) => m.as_str().to_string(),
+                _ => "call".to_string(),
+            };
+            Some((LvalueRoot::Call, format!("{name}()")))
+        }
+        _ => None,
+    }
+}
+
+/// Record `lval` as a storage write iff its root is a state variable, a
+/// storage-pointer local, or a storage accessor call.
+fn record_write(
+    lval: &ast::ExprKind<'_>,
+    state_vars: &[String],
+    storage_locals: &[String],
+    out: &mut Vec<String>,
+) {
+    if let Some((root, path)) = lvalue_path(lval) {
+        let is_storage = match root {
+            LvalueRoot::Call => true,
+            LvalueRoot::Ident(name) => {
+                state_vars.iter().any(|s| *s == name) || storage_locals.iter().any(|s| *s == name)
+            }
+        };
+        if is_storage {
+            out.push(path);
+        }
+    }
+}
+
+/// AST walk: record storage writes from a statement.
+fn collect_writes_from_stmt(
+    kind: &ast::StmtKind<'_>,
+    sv: &[String],
+    sl: &[String],
+    out: &mut Vec<String>,
+) {
+    match kind {
+        ast::StmtKind::Expr(expr) => collect_writes_from_expr(&expr.kind, sv, sl, out),
+        ast::StmtKind::Block(b) | ast::StmtKind::UncheckedBlock(b) => {
+            for s in b.stmts.iter() {
+                collect_writes_from_stmt(&s.kind, sv, sl, out);
+            }
+        }
+        ast::StmtKind::If(cond, t, e) => {
+            collect_writes_from_expr(&cond.kind, sv, sl, out);
+            collect_writes_from_stmt(&t.kind, sv, sl, out);
+            if let Some(e) = e {
+                collect_writes_from_stmt(&e.kind, sv, sl, out);
+            }
+        }
+        ast::StmtKind::For {
+            init,
+            cond,
+            next,
+            body,
+        } => {
+            if let Some(i) = init {
+                collect_writes_from_stmt(&i.kind, sv, sl, out);
+            }
+            if let Some(c) = cond {
+                collect_writes_from_expr(&c.kind, sv, sl, out);
+            }
+            if let Some(n) = next {
+                collect_writes_from_expr(&n.kind, sv, sl, out);
+            }
+            collect_writes_from_stmt(&body.kind, sv, sl, out);
+        }
+        ast::StmtKind::While(cond, body) => {
+            collect_writes_from_expr(&cond.kind, sv, sl, out);
+            collect_writes_from_stmt(&body.kind, sv, sl, out);
+        }
+        ast::StmtKind::DoWhile(body, cond) => {
+            collect_writes_from_stmt(&body.kind, sv, sl, out);
+            collect_writes_from_expr(&cond.kind, sv, sl, out);
+        }
+        ast::StmtKind::DeclSingle(var) => {
+            if let Some(init) = &var.initializer {
+                collect_writes_from_expr(&init.kind, sv, sl, out);
+            }
+        }
+        ast::StmtKind::DeclMulti(_, expr) => collect_writes_from_expr(&expr.kind, sv, sl, out),
+        ast::StmtKind::Try(t) => {
+            collect_writes_from_expr(&t.expr.kind, sv, sl, out);
+            for clause in t.clauses.iter() {
+                for s in clause.block.stmts.iter() {
+                    collect_writes_from_stmt(&s.kind, sv, sl, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// AST walk: record storage writes from an expression.
+fn collect_writes_from_expr(
+    kind: &ast::ExprKind<'_>,
+    sv: &[String],
+    sl: &[String],
+    out: &mut Vec<String>,
+) {
+    match kind {
+        ast::ExprKind::Assign(left, _op, right) => {
+            record_write(&left.kind, sv, sl, out);
+            collect_writes_from_expr(&left.kind, sv, sl, out);
+            collect_writes_from_expr(&right.kind, sv, sl, out);
+        }
+        ast::ExprKind::Delete(inner) => {
+            record_write(&inner.kind, sv, sl, out);
+            collect_writes_from_expr(&inner.kind, sv, sl, out);
+        }
+        ast::ExprKind::Unary(op, inner) => {
+            if matches!(
+                op.kind,
+                ast::UnOpKind::PreInc
+                    | ast::UnOpKind::PreDec
+                    | ast::UnOpKind::PostInc
+                    | ast::UnOpKind::PostDec
+            ) {
+                record_write(&inner.kind, sv, sl, out);
+            }
+            collect_writes_from_expr(&inner.kind, sv, sl, out);
+        }
+        ast::ExprKind::Call(callee, args) => {
+            // `.push(...)` / `.pop()` mutate the storage array they target.
+            if let ast::ExprKind::Member(base, method) = &callee.kind {
+                let m = method.as_str();
+                if m == "push" || m == "pop" {
+                    record_write(&base.kind, sv, sl, out);
+                }
+            }
+            collect_writes_from_expr(&callee.kind, sv, sl, out);
+            for arg in args.exprs() {
+                collect_writes_from_expr(&arg.kind, sv, sl, out);
+            }
+        }
+        ast::ExprKind::Binary(l, _, r) => {
+            collect_writes_from_expr(&l.kind, sv, sl, out);
+            collect_writes_from_expr(&r.kind, sv, sl, out);
+        }
+        ast::ExprKind::Ternary(c, a, b) => {
+            collect_writes_from_expr(&c.kind, sv, sl, out);
+            collect_writes_from_expr(&a.kind, sv, sl, out);
+            collect_writes_from_expr(&b.kind, sv, sl, out);
+        }
+        ast::ExprKind::Index(e, _) => collect_writes_from_expr(&e.kind, sv, sl, out),
+        ast::ExprKind::Member(e, _) => collect_writes_from_expr(&e.kind, sv, sl, out),
+        ast::ExprKind::Tuple(elems) => {
+            for el in elems.iter() {
+                if let solar_parse::interface::SpannedOption::Some(e) = el {
+                    collect_writes_from_expr(&e.kind, sv, sl, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod storage_write_test {
+    use super::extract_storage_writes_from_source;
+
+    #[test]
+    fn detects_direct_pointer_index_and_ignores_locals() {
+        let src = r#"
+            Layout storage $ = _layout();
+            uint256 memTotal = 0;      // local, NOT storage
+            $.reserveStable += r0;     // storage pointer write
+            totalSupply = memTotal;    // direct state-var write
+            balances[user] = 5;        // mapping/index write
+            paused = true;             // direct state-var write
+            memTotal = 7;              // local write — must be ignored
+            counter++;                 // unary state-var write
+            delete lastActor;          // delete state-var
+            _s().kappa = 3;            // storage accessor call write
+        "#;
+        let state_vars = vec![
+            "totalSupply".to_string(),
+            "balances".to_string(),
+            "paused".to_string(),
+            "counter".to_string(),
+            "lastActor".to_string(),
+        ];
+        let w = extract_storage_writes_from_source(src, &state_vars);
+        assert!(w.contains(&"$.reserveStable".to_string()), "pointer: {w:?}");
+        assert!(w.contains(&"totalSupply".to_string()), "direct: {w:?}");
+        assert!(w.contains(&"balances[]".to_string()), "index: {w:?}");
+        assert!(w.contains(&"paused".to_string()), "bool: {w:?}");
+        assert!(w.contains(&"counter".to_string()), "unary: {w:?}");
+        assert!(w.contains(&"lastActor".to_string()), "delete: {w:?}");
+        assert!(w.contains(&"_s().kappa".to_string()), "accessor call: {w:?}");
+        assert!(!w.contains(&"memTotal".to_string()), "local leaked: {w:?}");
+    }
+
+    #[test]
+    fn detects_accessor_write_in_a_real_setter_shape() {
+        // The exact shape of CvammALM.setPaused: guard branches, then an
+        // accessor-call storage write. No state_vars needed (call-rooted).
+        let src = r#"
+            if (p) {
+                if (msg.sender != owner() && msg.sender != guardian()) revert NotPauser();
+            } else if (msg.sender != owner()) {
+                revert NotOwner();
+            }
+            _s().paused = p;
+        "#;
+        let w = extract_storage_writes_from_source(src, &[]);
+        assert_eq!(w, vec!["_s().paused".to_string()], "got {w:?}");
+    }
+}
+
 #[cfg(test)]
 mod call_site_test {
     use super::*;

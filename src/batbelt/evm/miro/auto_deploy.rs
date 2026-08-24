@@ -146,6 +146,9 @@ struct GraphNode {
     rendered_lines: Vec<String>,
     /// `line_offset` handed to silicon, needed to reproduce the line-number gutter.
     line_offset: usize,
+    /// This function writes contract storage — drawn with a colored border so an
+    /// auditor can spot the state-mutating nodes at a glance.
+    writes_storage: bool,
 }
 
 impl GraphNode {
@@ -646,6 +649,39 @@ async fn deploy_one(
     bar.finish_and_clear();
     println!("    {} {} screenshots uploaded", "✓".green(), image_ids.len());
 
+    // Storage-write markers: a hollow colored rectangle around every node whose
+    // function mutates contract storage, so state changes stand out on the board.
+    let borders: Vec<(f64, f64, f64, f64)> = nodes
+        .iter()
+        .filter(|n| n.writes_storage)
+        .filter_map(|n| layout.node(&n.id).map(|p| (p.x, p.y, p.width, p.height)))
+        .collect();
+    if !borders.is_empty() {
+        let n_borders = borders.len();
+        let bar = phase_bar("storage markers", n_borders);
+        let mut border_tasks = tokio::task::JoinSet::new();
+        for (x, y, width, height) in borders {
+            let client = client.clone();
+            let frame_id = frame_id.clone();
+            let bar = bar.clone();
+            border_tasks.spawn(async move {
+                let result = client
+                    .create_storage_border(&frame_id, x, y, width, height)
+                    .await;
+                bar.inc(1);
+                result
+            });
+        }
+        while let Some(joined) = border_tasks.join_next().await {
+            joined
+                .into_report()
+                .change_context(EvmMiroError)?
+                .change_context(EvmMiroError)?;
+        }
+        bar.finish_and_clear();
+        println!("    {} {} storage markers", "✓".green(), n_borders);
+    }
+
     // Connectors, one per call site. Each starts on an invisible marker sitting
     // on the called token, because Miro clips a connector at the boundary of the
     // item it attaches to: anchoring inside the screenshot itself would push the
@@ -1136,6 +1172,7 @@ fn make_node(
         png_height: 0,
         rendered_lines: Vec::new(),
         line_offset: 0,
+        writes_storage: !function.storage_writes.is_empty(),
     }
 }
 
@@ -1161,6 +1198,7 @@ fn make_modifier_node(
         png_height: 0,
         rendered_lines: Vec::new(),
         line_offset: 0,
+        writes_storage: false,
     }
 }
 
@@ -1789,6 +1827,7 @@ mod split_shared_leaves_test {
             png_height: 0,
             rendered_lines: Vec::new(),
             line_offset: 0,
+            writes_storage: false,
         }
     }
 
@@ -1881,6 +1920,7 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         png_height: LINK_CARD_HEIGHT as u32,
         rendered_lines: Vec::new(),
         line_offset: 0,
+        writes_storage: false,
     });
     edges[index].to = card_id;
     prune_unreachable(nodes, edges);
@@ -1988,6 +2028,7 @@ mod cut_test {
             png_height: 300,
             rendered_lines: Vec::new(),
             line_offset: 0,
+            writes_storage: false,
         }
     }
 
