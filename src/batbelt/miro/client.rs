@@ -446,14 +446,14 @@ impl MiroClient {
         width: f64,
         height: f64,
     ) -> Result<String, MiroError> {
-        let pad = 24.0;
+        let pad = 60.0;
         let url = self.endpoint("shapes");
         let body = json!({
             "data": { "shape": "rectangle" },
             "style": {
                 "fillOpacity": "0.0",
                 "borderColor": "#f24726",
-                "borderWidth": "6",
+                "borderWidth": "24",
                 "borderOpacity": "1.0",
             },
             "position": { "x": x, "y": y },

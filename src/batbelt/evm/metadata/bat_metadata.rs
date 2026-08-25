@@ -314,10 +314,21 @@ impl EvmBatMetadata {
                 .iter()
                 .map(|f| {
                     let func_id = format!("{}_{}_{}", contract.file_path, contract.name, f.name);
+                    // Parameters passed as `storage` references (e.g. a library's
+                    // `execute(CvammStorage storage $, …)`) are storage pointers too;
+                    // pass them so writes through `$` are caught even when body_source
+                    // is only the inner statements (no signature to read them from).
+                    let storage_params: Vec<String> = f
+                        .params
+                        .iter()
+                        .filter(|p| p.storage_location.as_deref() == Some("storage"))
+                        .map(|p| p.name.clone())
+                        .collect();
                     let storage_writes =
                         crate::batbelt::evm::parser::call_resolver::extract_storage_writes_from_source(
                             &f.body_source,
                             &state_vars,
+                            &storage_params,
                         );
                     FunctionMetadata {
                         metadata_id: func_id,
