@@ -579,7 +579,9 @@ so you re-open only the docs that actually changed — not everything.
   "know every storage change reachable from an entry point": static analysis is exact for a
   function's own writes and concrete calls; the interface hops are handed to you, narrowed to a
   short candidate list, to resolve from the wiring. See the `unresolved_calls` section for the
-  walk. _Re-read: metadata.md._
+  walk. Each entry also carries `inferred_type`: the receiver's declared interface, resolved
+  through struct-field and local-variable types (so `$.borrowerOps` → `IBorrowerOperations`),
+  which tells you exactly which interface to pin. _Re-read: metadata.md._
 
 ## 0.19.1
 - **Storage-write detection now covers writes through `storage` PARAMETERS** — a library that

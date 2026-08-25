@@ -368,6 +368,22 @@ impl EvmBatMetadata {
             own_var_types.insert(c.name.clone(), vt);
         }
 
+        // struct name → (field name → declared type), for typing `$.field` receivers.
+        let mut struct_fields: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, String>,
+        > = std::collections::HashMap::new();
+        for c in &contracts {
+            for s in &c.structs {
+                let fields: std::collections::HashMap<String, String> = s
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.clone(), f.type_name.clone()))
+                    .collect();
+                struct_fields.insert(s.name.clone(), fields);
+            }
+        }
+
         for contract in &contracts {
             let contract_id = format!("{}_{}", contract.file_path, contract.name);
 
@@ -426,9 +442,23 @@ impl EvmBatMetadata {
                             &state_vars,
                             &storage_params,
                         );
+                    // Receiver types visible here: state vars (inherited) + params +
+                    // body locals — so a `$.field` receiver can be typed.
+                    let mut local_var_types = var_types.clone();
+                    for p in &f.params {
+                        local_var_types.insert(p.name.clone(), p.type_name.clone());
+                    }
+                    for (n, t) in
+                        crate::batbelt::evm::parser::call_resolver::extract_local_types(
+                            &f.body_source,
+                        )
+                    {
+                        local_var_types.insert(n, t);
+                    }
                     let unresolved_calls = compute_unresolved_calls(
                         &f.body_source,
-                        &var_types,
+                        &local_var_types,
+                        &struct_fields,
                         &contract_names,
                         &is_interface,
                         &external_contracts,
@@ -561,9 +591,11 @@ fn resolve_state_vars(
 /// a unique in-scope target — the AI-resolution work-list. A `receiver.method` call
 /// is emitted when it is NOT already resolved to a single concrete contract via the
 /// receiver's declared type; each carries best-effort candidates.
+#[allow(clippy::too_many_arguments)]
 fn compute_unresolved_calls(
     body: &str,
     var_types: &std::collections::HashMap<String, String>,
+    struct_fields: &std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     contract_names: &std::collections::HashSet<String>,
     is_interface: &std::collections::HashSet<String>,
     external_contracts: &std::collections::HashSet<String>,
@@ -581,42 +613,45 @@ fn compute_unresolved_calls(
             continue;
         }
 
-        // A bare receiver may be a state variable whose declared type we know.
-        let inferred_type = if receiver.contains('.') || receiver.contains('[') {
-            String::new()
-        } else {
-            var_types.get(&receiver).cloned().unwrap_or_default()
-        };
+        let inferred_type = receiver_type(&receiver, var_types, struct_fields);
 
-        // Candidates: implementers of the interface type that define the method,
-        // else any in-scope concrete contract defining the method (name-inferred).
-        let mut candidates: Vec<String> = Vec::new();
-        if !inferred_type.is_empty() {
-            if let Some(impls) = impl_map.get(&inferred_type) {
-                let with_method: Vec<String> = impls
-                    .iter()
-                    .filter(|c| {
-                        method_map
-                            .get(&method)
-                            .is_some_and(|v| v.contains(c))
-                    })
-                    .cloned()
-                    .collect();
-                candidates = with_method;
-            }
+        // Implementers of the receiver's declared interface type that define the
+        // method — a STATIC, type-proven resolution.
+        let typed_impls: Vec<String> = if inferred_type.is_empty() {
+            Vec::new()
+        } else {
+            impl_map
+                .get(&inferred_type)
+                .map(|impls| {
+                    impls
+                        .iter()
+                        .filter(|c| {
+                            !is_interface.contains(*c)
+                                && !external_contracts.contains(*c)
+                                && method_map.get(&method).is_some_and(|v| v.contains(c))
+                        })
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        // Exactly one type-proven implementer → unambiguous; the deploy graph follows
+        // it. Not AI work.
+        if typed_impls.len() == 1 {
+            continue;
         }
-        if candidates.is_empty() {
-            candidates = method_map.get(&method).cloned().unwrap_or_default();
-        }
+
+        // Otherwise: candidates are the type-proven impls if any, else any in-scope
+        // concrete contract defining the method (name-inferred, for the AI to confirm).
+        let mut candidates: Vec<String> = if !typed_impls.is_empty() {
+            typed_impls
+        } else {
+            method_map.get(&method).cloned().unwrap_or_default()
+        };
         candidates.retain(|c| !is_interface.contains(c) && !external_contracts.contains(c));
         candidates.sort();
         candidates.dedup();
 
-        // A single implementer inferred from a REAL type is unambiguous — the deploy
-        // graph already follows it; not AI work. Everything else is emitted.
-        if candidates.len() == 1 && !inferred_type.is_empty() {
-            continue;
-        }
         // No plausible in-scope target (builtin / external library) — nothing to resolve.
         if candidates.is_empty() {
             continue;
@@ -631,6 +666,36 @@ fn compute_unresolved_calls(
         }
     }
     out
+}
+
+/// The declared type of a call receiver expression: a bare variable (`positionManager`)
+/// via `var_types`, or a one-level struct-pointer field (`$.borrowerOps`) via the base
+/// variable's struct type and its field types. Empty when it can't be typed.
+fn receiver_type(
+    receiver: &str,
+    var_types: &std::collections::HashMap<String, String>,
+    struct_fields: &std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+) -> String {
+    if let Some((base, field)) = receiver.split_once('.') {
+        let field = field.trim_end_matches("[]");
+        // Only a single field hop is resolved (covers `$.borrowerOps`); deeper chains
+        // stay untyped.
+        if field.contains('.') || field.contains('[') {
+            return String::new();
+        }
+        if let Some(base_type) = var_types.get(base) {
+            if let Some(fields) = struct_fields.get(base_type) {
+                if let Some(field_type) = fields.get(field) {
+                    return field_type.clone();
+                }
+            }
+        }
+        return String::new();
+    }
+    if receiver.contains('[') {
+        return String::new();
+    }
+    var_types.get(receiver).cloned().unwrap_or_default()
 }
 
 fn detect_access_control(modifiers: &[String]) -> Vec<AccessControlType> {

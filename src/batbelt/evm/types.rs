@@ -115,6 +115,18 @@ pub struct EvmContract {
     pub line: usize,
     /// true if the contract comes from lib/ (external dependency)
     pub external: bool,
+    /// Struct types declared inside this contract/library (with field types), used
+    /// to resolve the type of a `structPointer.field` call receiver.
+    #[serde(default)]
+    pub structs: Vec<EvmStruct>,
+}
+
+/// A struct type and its fields (name + declared type), used for type inference of
+/// storage-pointer field accesses like `$.borrowerOps`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EvmStruct {
+    pub name: String,
+    pub fields: Vec<EvmParam>,
 }
 
 /// Kinds of file-level declarations (not inside a contract).

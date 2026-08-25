@@ -782,6 +782,106 @@ fn collect_storage_locals(kind: &ast::StmtKind<'_>, out: &mut Vec<String>) {
     }
 }
 
+/// Extract the declared types of a function body's LOCAL variables as
+/// `(name, type)` — e.g. `CollateralRebalancerStorage storage $ = _s();` →
+/// `("$", "CollateralRebalancerStorage")`. Combined with struct field types this
+/// resolves the type of a `$.field` call receiver. Dual-wrapped like the others.
+pub fn extract_local_types(source: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for wrapped in [
+        format!("contract _C {{ {} }}", source),
+        format!("contract _C {{ function _f() {{ {} }} }}", source),
+    ] {
+        if let Some(v) = local_types_in_wrapped(&wrapped) {
+            out.extend(v);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn local_types_in_wrapped(wrapped: &str) -> Option<Vec<(String, String)>> {
+    let sess = Session::builder().with_silent_emitter(None).build();
+    sess.enter(|| -> Option<Vec<(String, String)>> {
+        let arena = ast::Arena::new();
+        let mut parser = Parser::from_source_code(
+            &sess,
+            &arena,
+            FileName::Custom("local_types".into()),
+            wrapped.to_string(),
+        )
+        .ok()?;
+        let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
+        let mut out = Vec::new();
+        let mut found_fn = false;
+        for item in file.items.iter() {
+            if let ast::ItemKind::Contract(c) = &item.kind {
+                for body_item in c.body.iter() {
+                    if let ast::ItemKind::Function(f) = &body_item.kind {
+                        if let Some(block) = &f.body {
+                            found_fn = true;
+                            for stmt in block.stmts.iter() {
+                                collect_local_types_from_stmt(&sess, &stmt.kind, &mut out);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if found_fn {
+            Some(out)
+        } else {
+            None
+        }
+    })
+}
+
+fn collect_local_types_from_stmt(
+    sess: &Session,
+    kind: &ast::StmtKind<'_>,
+    out: &mut Vec<(String, String)>,
+) {
+    match kind {
+        ast::StmtKind::DeclSingle(var) => {
+            if let Some(name) = var.name {
+                out.push((
+                    name.as_str().to_string(),
+                    crate::batbelt::evm::parser::evm_file_parser::type_to_string(sess, &var.ty),
+                ));
+            }
+        }
+        ast::StmtKind::Block(b) | ast::StmtKind::UncheckedBlock(b) => {
+            for s in b.stmts.iter() {
+                collect_local_types_from_stmt(sess, &s.kind, out);
+            }
+        }
+        ast::StmtKind::If(_, t, e) => {
+            collect_local_types_from_stmt(sess, &t.kind, out);
+            if let Some(e) = e {
+                collect_local_types_from_stmt(sess, &e.kind, out);
+            }
+        }
+        ast::StmtKind::For { init, body, .. } => {
+            if let Some(i) = init {
+                collect_local_types_from_stmt(sess, &i.kind, out);
+            }
+            collect_local_types_from_stmt(sess, &body.kind, out);
+        }
+        ast::StmtKind::While(_, b) | ast::StmtKind::DoWhile(b, _) => {
+            collect_local_types_from_stmt(sess, &b.kind, out);
+        }
+        ast::StmtKind::Try(t) => {
+            for clause in t.clauses.iter() {
+                for s in clause.block.stmts.iter() {
+                    collect_local_types_from_stmt(sess, &s.kind, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Extract the EXTERNAL call targets of a function body as `(receiver, method)`
 /// pairs — a call `x.foo(…)` on some receiver expression. The receiver is rendered
 /// as a path (`positionManager`, `$.borrowerOps`, `arr[]`), so a caller can try to
@@ -1137,7 +1237,20 @@ fn collect_writes_from_expr(
 mod storage_write_test {
 
 
-    use super::{extract_external_call_targets, extract_storage_writes_from_source};
+    use super::{
+        extract_external_call_targets, extract_local_types, extract_storage_writes_from_source,
+    };
+
+    #[test]
+    fn local_types_capture_storage_pointer_and_casts() {
+        let src = "\
+            CollateralRebalancerStorage storage $ = _s();\n\
+            IERC20 collToken = IERC20(address($.collVault));\n\
+            uint256 x = 1;\n";
+        let t = extract_local_types(src);
+        assert!(t.contains(&("$".to_string(), "CollateralRebalancerStorage".to_string())), "{t:?}");
+        assert!(t.iter().any(|(n, _)| n == "collToken"), "{t:?}");
+    }
 
     #[test]
     fn external_call_targets_capture_member_chains() {
