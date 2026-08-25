@@ -330,6 +330,9 @@ impl EvmSonar {
             metadata.miro = previous.miro;
         }
         metadata.function_dependencies = deps;
+        // Trim each function's `unresolved_calls` to the hops that can actually reach a
+        // storage write (needs the call graph above), so the AI work-list isn't noise.
+        crate::batbelt::evm::metadata::bat_metadata::prune_unresolved_noise(&mut metadata);
         metadata.save_metadata()?;
 
         pb.finish_with_message(format!(

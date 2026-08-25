@@ -603,6 +603,125 @@ fn resolve_state_vars(
     }
 }
 
+/// Drop the "noise" from every function's `unresolved_calls`: an interface call is
+/// only worth resolving if it can REACH a storage write. We taint every function
+/// that can reach a write — over the static call graph PLUS the unresolved→candidate
+/// edges, seeded by the direct writers — then keep an unresolved call only when one
+/// of its candidates is tainted. So `stable.balanceOf` (a read whose candidates never
+/// mutate) is dropped, while `$.borrowerOps.adjustPosition` (which reaches a write
+/// several hops down) is kept.
+pub fn prune_unresolved_noise(metadata: &mut EvmBatMetadata) {
+    use std::collections::{HashMap, HashSet};
+    // Lookups from the metadata (no re-parsing: reuse `function_dependencies`).
+    let contract_names: HashSet<String> =
+        metadata.contracts.iter().map(|c| c.name.clone()).collect();
+    let contract_file: HashMap<String, String> = metadata
+        .contracts
+        .iter()
+        .map(|c| (c.name.clone(), c.file_path.clone()))
+        .collect();
+    let mut method_map: HashMap<String, Vec<String>> = HashMap::new();
+    let mut bases: HashMap<String, Vec<String>> = HashMap::new();
+    let mut caller_contract: HashMap<String, String> = HashMap::new();
+    for c in &metadata.contracts {
+        bases.insert(c.name.clone(), c.base_contracts.clone());
+        for f in &c.functions {
+            method_map
+                .entry(f.name.clone())
+                .or_default()
+                .push(c.name.clone());
+            caller_contract.insert(f.metadata_id.clone(), c.name.clone());
+        }
+    }
+    let fid = |contract: &str, method: &str| -> Option<String> {
+        contract_file
+            .get(contract)
+            .map(|fp| format!("{fp}_{contract}_{method}"))
+    };
+
+    // Edges: static callees (from function_dependencies) + unresolved candidates.
+    let mut edges: HashMap<String, Vec<String>> = HashMap::new();
+    for dep in &metadata.function_dependencies {
+        let Some(cname) = caller_contract.get(&dep.function_metadata_id) else {
+            continue;
+        };
+        let out = edges.entry(dep.function_metadata_id.clone()).or_default();
+        for callee in &dep.callees {
+            if let Some((tgt, method)) = callee.split_once('.') {
+                if contract_names.contains(tgt) {
+                    if let Some(id) = fid(tgt, method) {
+                        out.push(id);
+                    }
+                }
+                // `var.method` (interface) flows through unresolved candidates below.
+            } else {
+                // Internal call: the caller's contract or a base that defines it.
+                let mut chain = vec![cname.clone()];
+                if let Some(bs) = bases.get(cname) {
+                    chain.extend(bs.iter().cloned());
+                }
+                for cand in chain {
+                    if method_map.get(callee).is_some_and(|v| v.contains(&cand)) {
+                        if let Some(id) = fid(&cand, callee) {
+                            out.push(id);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    // Seed = direct writers; add the unresolved→candidate edges.
+    let mut taint: HashSet<String> = HashSet::new();
+    for c in &metadata.contracts {
+        for f in &c.functions {
+            if !f.storage_writes.is_empty() {
+                taint.insert(f.metadata_id.clone());
+            }
+            let out = edges.entry(f.metadata_id.clone()).or_default();
+            for u in &f.unresolved_calls {
+                for cand in &u.candidates {
+                    if let Some(id) = fid(cand, &u.method) {
+                        out.push(id);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fixpoint by worklist over reverse edges (a caller taints when a callee does).
+    let mut rev: HashMap<String, Vec<String>> = HashMap::new();
+    for (caller, outs) in &edges {
+        for o in outs {
+            rev.entry(o.clone()).or_default().push(caller.clone());
+        }
+    }
+    let mut work: Vec<String> = taint.iter().cloned().collect();
+    while let Some(t) = work.pop() {
+        if let Some(callers) = rev.get(&t) {
+            for caller in callers.clone() {
+                if taint.insert(caller.clone()) {
+                    work.push(caller);
+                }
+            }
+        }
+    }
+
+    // Keep an unresolved call only if a candidate can reach a write.
+    for c in &mut metadata.contracts {
+        for f in &mut c.functions {
+            if f.unresolved_calls.is_empty() {
+                continue;
+            }
+            f.unresolved_calls.retain(|u| {
+                u.candidates
+                    .iter()
+                    .any(|cand| fid(cand, &u.method).is_some_and(|id| taint.contains(&id)))
+            });
+        }
+    }
+}
+
 /// Compute the external calls a function makes that static analysis cannot pin to
 /// a unique in-scope target — the AI-resolution work-list. A `receiver.method` call
 /// is emitted when it is NOT already resolved to a single concrete contract via the
