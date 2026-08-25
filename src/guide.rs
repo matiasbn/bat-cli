@@ -586,27 +586,25 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.21.0
-- **Deploy follows AI-resolved interface calls, and STOPS to ask for the rest.** `deploy` now
-  walks an entry point's cross-contract tree: for each interface call it hits, if you've recorded
-  the concrete target it follows through (drawing the downstream function and its red storage
-  markers); if not, it stops with the list and exits non-zero. Resolve each with
-  `bat-cli resolve <INTERFACE> <CONTRACT>` (stored in the metadata's `resolutions`, preserved
-  across `sonar`), then deploy again — the frontier deepens each round until the whole tree is
-  drawn. `--allow-unresolved` draws the partial graph instead. This is the loop that makes
-  "deploy an entry point → see every storage change it causes, across contracts" work. Cast
-  receivers (`IFace(addr).m()`) are typed too. _Re-read: workflow.md._
-
-## 0.20.0
-- **Cross-contract storage coverage — the AI resolution work-list (`unresolved_calls`).** Every
-  `contracts[].functions[]` now carries `unresolved_calls`: external calls on interface-typed
-  receivers (`$.borrowerOps.adjustPosition`) whose concrete target is bound at runtime and so
-  cannot be pinned statically, each with best-effort in-scope `candidates`. This is Phase 1 of
-  "know every storage change reachable from an entry point": static analysis is exact for a
-  function's own writes and concrete calls; the interface hops are handed to you, narrowed to a
-  short candidate list, to resolve from the wiring. See the `unresolved_calls` section for the
-  walk. Each entry also carries `inferred_type`: the receiver's declared interface, resolved
-  through struct-field and local-variable types (so `$.borrowerOps` → `IBorrowerOperations`),
-  which tells you exactly which interface to pin. _Re-read: metadata.md._
+- **Cross-contract storage coverage — deploy an entry point, see EVERY storage change it causes,
+  across contracts.** A call on an interface-typed receiver (`$.borrowerOps.adjustPosition`) has a
+  concrete target bound at runtime that static analysis can't pin, so those hops used to be
+  dropped and their downstream writes invisible. Now:
+  - Each `contracts[].functions[]` carries **`unresolved_calls`** — the interface hops that need
+    resolving, each with `inferred_type` (the receiver's interface, resolved through struct-field,
+    local, parameter and accessor-return types, following field chains of any depth like
+    `_s().CORE.owner`), in-scope `candidates`, and `assigned_in` (the functions that WRITE the
+    receiver — where its address is wired, so you know which candidate is real). The list is
+    pruned to only the hops that can actually reach a storage write.
+  - **`deploy` walks the whole tree and STOPS** listing the unresolved hops (transitively — the
+    entire tree at once) instead of drawing a partial graph. Record each with
+    `bat-cli resolve <INTERFACE> <CONTRACT>` (stored in the metadata's `resolutions`, preserved
+    across `sonar` like `miro`); deploy follows them, drawing the concrete downstream functions
+    with their red storage markers. `--allow-unresolved` draws the partial graph as-is.
+- **Storage-write recall fix.** Functions with a MULTI-LINE signature were parsed from the wrong
+  line and silently lost their writes/calls; the whole function is parsed now, so their storage
+  writes (and everything above) are detected. Also a large internal speedup — one parse per
+  function instead of several. _Re-read: metadata.md, workflow.md._
 
 ## 0.19.1
 - **Storage-write detection now covers writes through `storage` PARAMETERS** — a library that
