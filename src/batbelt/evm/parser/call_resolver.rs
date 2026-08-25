@@ -644,7 +644,11 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
 ///
 /// Returns readable lvalue paths (e.g. `"reserveStable"`, `"$.reserveStable"`,
 /// `"balances[]"`), sorted and deduped. Empty when the body doesn't parse.
-pub fn extract_storage_writes_from_source(source: &str, state_vars: &[String]) -> Vec<String> {
+pub fn extract_storage_writes_from_source(
+    source: &str,
+    state_vars: &[String],
+    storage_params: &[String],
+) -> Vec<String> {
     // `body_source` is inconsistent across sonar's parse: sometimes the inner
     // statements, sometimes the WHOLE function (`function f() { … }`, signature
     // and braces included). Wrapping a whole function inside a dummy `_f` would
@@ -656,7 +660,7 @@ pub fn extract_storage_writes_from_source(source: &str, state_vars: &[String]) -
         format!("contract _C {{ {} }}", source),
         format!("contract _C {{ function _f() {{ {} }} }}", source),
     ] {
-        if let Some(w) = collect_writes_in_wrapped(&wrapped, state_vars) {
+        if let Some(w) = collect_writes_in_wrapped(&wrapped, state_vars, storage_params) {
             writes.extend(w);
         }
     }
@@ -668,7 +672,11 @@ pub fn extract_storage_writes_from_source(source: &str, state_vars: &[String]) -
 /// Parse one wrapped snippet and collect storage writes from every function it
 /// contains. `None` when the snippet doesn't parse (so the caller can try the
 /// other wrapping).
-fn collect_writes_in_wrapped(wrapped: &str, state_vars: &[String]) -> Option<Vec<String>> {
+fn collect_writes_in_wrapped(
+    wrapped: &str,
+    state_vars: &[String],
+    storage_params: &[String],
+) -> Option<Vec<String>> {
     let sess = Session::builder().with_silent_emitter(None).build();
     sess.enter(|| -> Option<Vec<String>> {
         let arena = ast::Arena::new();
@@ -689,9 +697,20 @@ fn collect_writes_in_wrapped(wrapped: &str, state_vars: &[String]) -> Option<Vec
                     if let ast::ItemKind::Function(f) = &body_item.kind {
                         if let Some(block) = &f.body {
                             found_fn = true;
-                            // Pass 1: every local declared with `storage` location
-                            // (a storage pointer) — writes through it hit storage.
-                            let mut storage_locals: Vec<String> = Vec::new();
+                            // Pass 1: every storage pointer in scope — writes through
+                            // it hit storage. Two sources:
+                            // (a) `storage` PARAMETERS, e.g. a library taking the
+                            //     storage struct: `execute(CvammStorage storage $, …)`
+                            //     then `$.reserveStable += …`;
+                            // (b) `storage` LOCALS, e.g. `CvammStorage storage $ = _s();`.
+                            let mut storage_locals: Vec<String> = storage_params.to_vec();
+                            for p in f.header.parameters.iter() {
+                                if p.data_location == Some(ast::DataLocation::Storage) {
+                                    if let Some(name) = p.name {
+                                        storage_locals.push(name.as_str().to_string());
+                                    }
+                                }
+                            }
                             for stmt in block.stmts.iter() {
                                 collect_storage_locals(&stmt.kind, &mut storage_locals);
                             }
@@ -976,7 +995,7 @@ mod storage_write_test {
             "counter".to_string(),
             "lastActor".to_string(),
         ];
-        let w = extract_storage_writes_from_source(src, &state_vars);
+        let w = extract_storage_writes_from_source(src, &state_vars, &[]);
         assert!(w.contains(&"$.reserveStable".to_string()), "pointer: {w:?}");
         assert!(w.contains(&"totalSupply".to_string()), "direct: {w:?}");
         assert!(w.contains(&"balances[]".to_string()), "index: {w:?}");
@@ -985,6 +1004,24 @@ mod storage_write_test {
         assert!(w.contains(&"lastActor".to_string()), "delete: {w:?}");
         assert!(w.contains(&"_s().kappa".to_string()), "accessor call: {w:?}");
         assert!(!w.contains(&"memTotal".to_string()), "local leaked: {w:?}");
+    }
+
+    #[test]
+    fn detects_write_through_a_storage_parameter() {
+        // A library that takes the storage struct as a `storage` PARAMETER and
+        // writes through it — the CvammSwapLib.execute shape. Whole-function body.
+        let src = r#"
+            function execute(CvammStore.CvammStorage storage $, SwapVars memory v)
+                internal
+                returns (uint256)
+            {
+                uint256 k = $.kappa;
+                $.reserveStable += v.amountInUsed;
+                return k;
+            }
+        "#;
+        let w = extract_storage_writes_from_source(src, &[], &[]);
+        assert!(w.contains(&"$.reserveStable".to_string()), "got {w:?}");
     }
 
     #[test]
@@ -999,7 +1036,7 @@ mod storage_write_test {
             }
             _s().paused = p;
         "#;
-        let w = extract_storage_writes_from_source(src, &[]);
+        let w = extract_storage_writes_from_source(src, &[], &[]);
         assert_eq!(w, vec!["_s().paused".to_string()], "got {w:?}");
     }
 }

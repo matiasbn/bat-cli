@@ -557,6 +557,13 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.19.1
+- **Storage-write detection now covers writes through `storage` PARAMETERS** — a library that
+  takes the storage struct as a reference (`execute(CvammStorage storage $, …)` then
+  `$.reserveStable += …`) is the common EVM pattern and was previously missed. The red
+  storage-write marker on the board is also thicker/more prominent. _Re-read: nothing (metadata
+  shape unchanged; just more complete)._
+
 ## 0.19.0
 - **Storage-write detection + diagram markers.** Each function now records the contract storage
   it writes in `storage_writes` (state vars, `mapping[k]=`, storage-pointer `$.x`, accessor
