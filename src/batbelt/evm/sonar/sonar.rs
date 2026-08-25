@@ -84,8 +84,9 @@ impl EvmSonar {
         self.phase_1_source_scan()?;
         self.phase_2_imports_and_inheritance()?;
         self.phase_3_access_control()?;
-        let deps = self.phase_4_function_dependencies()?;
-        let metadata = self.phase_5_entry_points(deps)?;
+        // The call graph (`function_dependencies`) is now produced inside phase 5's
+        // single per-function parse, so there is no separate dependency pass.
+        let metadata = self.phase_5_entry_points()?;
 
         if self.error_count > 0 {
             println!(
@@ -270,50 +271,9 @@ impl EvmSonar {
         Ok(())
     }
 
-    /// Phase 4: Resolve function call dependencies using AST.
-    /// Returns a Vec of FunctionDependency to be persisted in metadata.
-    fn phase_4_function_dependencies(&self) -> EvmMetadataResult<Vec<FunctionDependency>> {
-        let total_functions: usize = self.contracts.iter().map(|c| c.functions.len()).sum();
-        let pb = Self::create_spinner();
-        pb.set_message(format!("Function dependencies [0/{}]", total_functions));
-
-        let mut all_deps: Vec<FunctionDependency> = Vec::new();
-        let mut count = 0usize;
-        let mut total_calls = 0usize;
-
-        for contract in &self.contracts {
-            for function in &contract.functions {
-                count += 1;
-                pb.set_message(format!(
-                    "Function dependencies [{}/{}]: {}.{}",
-                    count, total_functions, contract.name, function.name
-                ));
-
-                // Use AST-based call extraction on the function body
-                let callees = extract_calls_from_source(&function.body_source);
-                total_calls += callees.len();
-
-                let func_id = format!("{}_{}_{}", contract.file_path, contract.name, function.name);
-                all_deps.push(FunctionDependency {
-                    function_metadata_id: func_id,
-                    callees,
-                });
-            }
-        }
-
-        pb.finish_with_message(format!(
-            "{} Function dependencies: {} functions, {} calls resolved",
-            SPARKLE, total_functions, total_calls
-        ));
-
-        Ok(all_deps)
-    }
 
     /// Phase 5: Build entry points and generate final metadata.
-    fn phase_5_entry_points(
-        &self,
-        deps: Vec<FunctionDependency>,
-    ) -> EvmMetadataResult<EvmBatMetadata> {
+    fn phase_5_entry_points(&self) -> EvmMetadataResult<EvmBatMetadata> {
         let pb = Self::create_spinner();
         pb.set_message("Building entry points...");
 
@@ -329,7 +289,7 @@ impl EvmSonar {
         if let Ok(previous) = EvmBatMetadata::read_metadata() {
             metadata.miro = previous.miro;
         }
-        metadata.function_dependencies = deps;
+        // `function_dependencies` is already set by `from_contracts`.
         // Trim each function's `unresolved_calls` to the hops that can actually reach a
         // storage write (needs the call graph above), so the AI work-list isn't noise.
         crate::batbelt::evm::metadata::bat_metadata::prune_unresolved_noise(&mut metadata);

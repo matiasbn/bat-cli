@@ -400,6 +400,9 @@ impl EvmBatMetadata {
             }
         }
 
+        // Callee graph, built from the same single parse per function (no separate pass).
+        let mut all_deps: Vec<FunctionDependency> = Vec::new();
+
         for contract in &contracts {
             let contract_id = format!("{}_{}", contract.file_path, contract.name);
 
@@ -437,67 +440,60 @@ impl EvmBatMetadata {
                 &mut state_vars,
             );
 
-            let functions: Vec<FunctionMetadata> = contract
-                .functions
-                .iter()
-                .map(|f| {
-                    let func_id = format!("{}_{}_{}", contract.file_path, contract.name, f.name);
-                    // Parameters passed as `storage` references (e.g. a library's
-                    // `execute(CvammStorage storage $, …)`) are storage pointers too;
-                    // pass them so writes through `$` are caught even when body_source
-                    // is only the inner statements (no signature to read them from).
-                    let storage_params: Vec<String> = f
-                        .params
-                        .iter()
-                        .filter(|p| p.storage_location.as_deref() == Some("storage"))
-                        .map(|p| p.name.clone())
-                        .collect();
-                    let storage_writes =
-                        crate::batbelt::evm::parser::call_resolver::extract_storage_writes_from_source(
-                            &f.body_source,
-                            &state_vars,
-                            &storage_params,
-                        );
-                    // Receiver types visible here: state vars (inherited) + params +
-                    // body locals — so a `$.field` receiver can be typed.
-                    let mut local_var_types = var_types.clone();
-                    for p in &f.params {
-                        local_var_types.insert(p.name.clone(), p.type_name.clone());
-                    }
-                    for (n, t) in
-                        crate::batbelt::evm::parser::call_resolver::extract_local_types(
-                            &f.body_source,
-                        )
-                    {
-                        local_var_types.insert(n, t);
-                    }
-                    let unresolved_calls = compute_unresolved_calls(
-                        &f.body_source,
-                        &local_var_types,
-                        &struct_fields,
-                        &contract_names,
-                        &is_interface,
-                        &external_contracts,
-                        &impl_map,
-                        &method_map,
-                    );
-                    FunctionMetadata {
-                        metadata_id: func_id,
-                        name: f.name.clone(),
-                        contract_name: contract.name.clone(),
-                        visibility: f.visibility.clone(),
-                        mutability: f.mutability.clone(),
-                        modifiers: f.modifiers.clone(),
-                        params: f.params.clone(),
-                        returns: f.returns.clone(),
-                        line: f.line,
-                        end_line: f.end_line,
-                        is_constructor: f.is_constructor,
-                        storage_writes,
-                        unresolved_calls,
-                    }
-                })
-                .collect();
+            let mut functions: Vec<FunctionMetadata> = Vec::new();
+            for f in &contract.functions {
+                let func_id = format!("{}_{}_{}", contract.file_path, contract.name, f.name);
+                // Parameters passed as `storage` references (e.g. a library's
+                // `execute(CvammStorage storage $, …)`) are storage pointers too.
+                let storage_params: Vec<String> = f
+                    .params
+                    .iter()
+                    .filter(|p| p.storage_location.as_deref() == Some("storage"))
+                    .map(|p| p.name.clone())
+                    .collect();
+                // ONE parse per function: storage writes, external call targets,
+                // local/param types AND callee names, all from a single AST walk.
+                let analysis = crate::batbelt::evm::parser::call_resolver::analyze_body(
+                    &f.body_source,
+                    &state_vars,
+                    &storage_params,
+                );
+                let storage_writes = analysis.storage_writes;
+                // Receiver types visible here: state vars (inherited) + params + locals.
+                let mut local_var_types = var_types.clone();
+                for (n, t) in &analysis.local_types {
+                    local_var_types.insert(n.clone(), t.clone());
+                }
+                let unresolved_calls = compute_unresolved_calls(
+                    &analysis.call_targets,
+                    &local_var_types,
+                    &struct_fields,
+                    &contract_names,
+                    &is_interface,
+                    &external_contracts,
+                    &impl_map,
+                    &method_map,
+                );
+                all_deps.push(FunctionDependency {
+                    function_metadata_id: func_id.clone(),
+                    callees: analysis.call_names,
+                });
+                functions.push(FunctionMetadata {
+                    metadata_id: func_id,
+                    name: f.name.clone(),
+                    contract_name: contract.name.clone(),
+                    visibility: f.visibility.clone(),
+                    mutability: f.mutability.clone(),
+                    modifiers: f.modifiers.clone(),
+                    params: f.params.clone(),
+                    returns: f.returns.clone(),
+                    line: f.line,
+                    end_line: f.end_line,
+                    is_constructor: f.is_constructor,
+                    storage_writes,
+                    unresolved_calls,
+                });
+            }
 
             let contract_metadata = ContractMetadata {
                 metadata_id: contract_id,
@@ -515,6 +511,7 @@ impl EvmBatMetadata {
 
             metadata.contracts.push(contract_metadata);
         }
+        metadata.function_dependencies = all_deps;
 
         // Build entry points from external/public functions (skip external/lib contracts)
         for contract in &metadata.contracts.clone() {
@@ -728,7 +725,7 @@ pub fn prune_unresolved_noise(metadata: &mut EvmBatMetadata) {
 /// receiver's declared type; each carries best-effort candidates.
 #[allow(clippy::too_many_arguments)]
 fn compute_unresolved_calls(
-    body: &str,
+    targets: &[(String, String)],
     var_types: &std::collections::HashMap<String, String>,
     struct_fields: &std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     contract_names: &std::collections::HashSet<String>,
@@ -737,12 +734,11 @@ fn compute_unresolved_calls(
     impl_map: &std::collections::HashMap<String, Vec<String>>,
     method_map: &std::collections::HashMap<String, Vec<String>>,
 ) -> Vec<UnresolvedCall> {
-    let targets =
-        crate::batbelt::evm::parser::call_resolver::extract_external_call_targets(body);
     let mut out: Vec<UnresolvedCall> = Vec::new();
     let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
 
     for (receiver, method) in targets {
+        let (receiver, method) = (receiver.clone(), method.clone());
         // Internal dispatch, or a call by contract name (already resolved).
         if receiver == "this" || receiver == "super" || contract_names.contains(&receiver) {
             continue;

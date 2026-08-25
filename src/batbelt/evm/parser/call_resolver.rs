@@ -644,52 +644,55 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
 ///
 /// Returns readable lvalue paths (e.g. `"reserveStable"`, `"$.reserveStable"`,
 /// `"balances[]"`), sorted and deduped. Empty when the body doesn't parse.
-pub fn extract_storage_writes_from_source(
-    source: &str,
-    state_vars: &[String],
-    storage_params: &[String],
-) -> Vec<String> {
-    // `body_source` is inconsistent across sonar's parse: sometimes the inner
-    // statements, sometimes the WHOLE function (`function f() { … }`, signature
-    // and braces included). Wrapping a whole function inside a dummy `_f` would
-    // make an illegal nested function and fail to parse. So try both shapes —
-    // a contract holding the source as-is (whole-function case) and the source
-    // as a dummy function body (bare-statements case) — and union whatever parses.
-    let mut writes = Vec::new();
+/// Everything the metadata needs from a function body, from ONE parse + walk.
+#[derive(Default)]
+pub struct BodyAnalysis {
+    /// Storage locations written (state vars / storage-pointer paths).
+    pub storage_writes: Vec<String>,
+    /// External call targets as `(receiver, method)`.
+    pub call_targets: Vec<(String, String)>,
+    /// Local (and parameter) variable declared types, `(name, type)`.
+    pub local_types: Vec<(String, String)>,
+    /// Callee names for the dependency graph (`foo`, `obj.method`), same format as
+    /// `extract_calls_from_source`.
+    pub call_names: Vec<String>,
+}
+
+/// Parse a function body ONCE and extract storage writes, external call targets,
+/// and local/parameter types together. This is what sonar calls per function —
+/// replacing three separate parses. `body_source` is normally the whole function
+/// (so the first wrapping parses and we short-circuit); the bare-statements wrapping
+/// is a fallback for snippets.
+pub fn analyze_body(source: &str, state_vars: &[String], storage_params: &[String]) -> BodyAnalysis {
     for wrapped in [
         format!("contract _C {{ {} }}", source),
         format!("contract _C {{ function _f() {{ {} }} }}", source),
     ] {
-        if let Some(w) = collect_writes_in_wrapped(&wrapped, state_vars, storage_params) {
-            writes.extend(w);
+        if let Some(a) = analyze_in_wrap(&wrapped, state_vars, storage_params) {
+            return a;
         }
     }
-    writes.sort();
-    writes.dedup();
-    writes
+    BodyAnalysis::default()
 }
 
-/// Parse one wrapped snippet and collect storage writes from every function it
-/// contains. `None` when the snippet doesn't parse (so the caller can try the
-/// other wrapping).
-fn collect_writes_in_wrapped(
+fn analyze_in_wrap(
     wrapped: &str,
     state_vars: &[String],
     storage_params: &[String],
-) -> Option<Vec<String>> {
+) -> Option<BodyAnalysis> {
     let sess = Session::builder().with_silent_emitter(None).build();
-    sess.enter(|| -> Option<Vec<String>> {
+    sess.enter(|| -> Option<BodyAnalysis> {
         let arena = ast::Arena::new();
         let mut parser = Parser::from_source_code(
             &sess,
             &arena,
-            FileName::Custom("storage_writes".into()),
+            FileName::Custom("analyze".into()),
             wrapped.to_string(),
         )
         .ok()?;
         let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
 
-        let mut writes = Vec::new();
+        let mut a = BodyAnalysis::default();
         let mut found_fn = false;
         for item in file.items.iter() {
             if let ast::ItemKind::Contract(c) = &item.kind {
@@ -697,12 +700,8 @@ fn collect_writes_in_wrapped(
                     if let ast::ItemKind::Function(f) = &body_item.kind {
                         if let Some(block) = &f.body {
                             found_fn = true;
-                            // Pass 1: every storage pointer in scope — writes through
-                            // it hit storage. Two sources:
-                            // (a) `storage` PARAMETERS, e.g. a library taking the
-                            //     storage struct: `execute(CvammStorage storage $, …)`
-                            //     then `$.reserveStable += …`;
-                            // (b) `storage` LOCALS, e.g. `CvammStorage storage $ = _s();`.
+                            // Pass 1: storage pointers (params + locals) and the types
+                            // of every parameter and local.
                             let mut storage_locals: Vec<String> = storage_params.to_vec();
                             for p in f.header.parameters.iter() {
                                 if p.data_location == Some(ast::DataLocation::Storage) {
@@ -710,32 +709,58 @@ fn collect_writes_in_wrapped(
                                         storage_locals.push(name.as_str().to_string());
                                     }
                                 }
+                                if let Some(name) = p.name {
+                                    a.local_types.push((
+                                        name.as_str().to_string(),
+                                        crate::batbelt::evm::parser::evm_file_parser::type_to_string(
+                                            &sess, &p.ty,
+                                        ),
+                                    ));
+                                }
                             }
                             for stmt in block.stmts.iter() {
                                 collect_storage_locals(&stmt.kind, &mut storage_locals);
+                                collect_local_types_from_stmt(&sess, &stmt.kind, &mut a.local_types);
                             }
-                            // Pass 2: the actual writes.
+                            // Pass 2: writes, external call targets, and callee names.
                             for stmt in block.stmts.iter() {
                                 collect_writes_from_stmt(
                                     &stmt.kind,
                                     state_vars,
                                     &storage_locals,
-                                    &mut writes,
+                                    &mut a.storage_writes,
                                 );
+                                collect_targets_from_stmt(&stmt.kind, &mut a.call_targets);
+                                extract_calls_from_stmt(&stmt.kind, &mut a.call_names);
                             }
                         }
                     }
                 }
             }
         }
-        // Treat "parsed but no function with a body" as a miss, so the caller
-        // falls through to the other wrapping instead of accepting an empty set.
-        if found_fn {
-            Some(writes)
-        } else {
-            None
+        if !found_fn {
+            return None;
         }
+        a.storage_writes.sort();
+        a.storage_writes.dedup();
+        a.call_targets.sort();
+        a.call_targets.dedup();
+        a.local_types.sort();
+        a.local_types.dedup();
+        a.call_names.sort();
+        a.call_names.dedup();
+        Some(a)
     })
+}
+
+/// Storage locations written by a function body. Thin wrapper over `analyze_body`
+/// (kept for tests); sonar uses `analyze_body` directly to parse once.
+pub fn extract_storage_writes_from_source(
+    source: &str,
+    state_vars: &[String],
+    storage_params: &[String],
+) -> Vec<String> {
+    analyze_body(source, state_vars, storage_params).storage_writes
 }
 
 /// Collect the names of locals declared with `storage` data location (storage
@@ -782,59 +807,10 @@ fn collect_storage_locals(kind: &ast::StmtKind<'_>, out: &mut Vec<String>) {
     }
 }
 
-/// Extract the declared types of a function body's LOCAL variables as
-/// `(name, type)` — e.g. `CollateralRebalancerStorage storage $ = _s();` →
-/// `("$", "CollateralRebalancerStorage")`. Combined with struct field types this
-/// resolves the type of a `$.field` call receiver. Dual-wrapped like the others.
+/// Declared types of a function body's local variables + parameters, `(name, type)`.
+/// Thin wrapper over `analyze_body` (kept for tests).
 pub fn extract_local_types(source: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for wrapped in [
-        format!("contract _C {{ {} }}", source),
-        format!("contract _C {{ function _f() {{ {} }} }}", source),
-    ] {
-        if let Some(v) = local_types_in_wrapped(&wrapped) {
-            out.extend(v);
-        }
-    }
-    out.sort();
-    out.dedup();
-    out
-}
-
-fn local_types_in_wrapped(wrapped: &str) -> Option<Vec<(String, String)>> {
-    let sess = Session::builder().with_silent_emitter(None).build();
-    sess.enter(|| -> Option<Vec<(String, String)>> {
-        let arena = ast::Arena::new();
-        let mut parser = Parser::from_source_code(
-            &sess,
-            &arena,
-            FileName::Custom("local_types".into()),
-            wrapped.to_string(),
-        )
-        .ok()?;
-        let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
-        let mut out = Vec::new();
-        let mut found_fn = false;
-        for item in file.items.iter() {
-            if let ast::ItemKind::Contract(c) = &item.kind {
-                for body_item in c.body.iter() {
-                    if let ast::ItemKind::Function(f) = &body_item.kind {
-                        if let Some(block) = &f.body {
-                            found_fn = true;
-                            for stmt in block.stmts.iter() {
-                                collect_local_types_from_stmt(&sess, &stmt.kind, &mut out);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if found_fn {
-            Some(out)
-        } else {
-            None
-        }
-    })
+    analyze_body(source, &[], &[]).local_types
 }
 
 fn collect_local_types_from_stmt(
@@ -891,54 +867,7 @@ fn collect_local_types_from_stmt(
 /// Builtins (`require`, `.call`, …) are skipped. Dual-wrapped for the same
 /// whole-function-vs-bare-statements `body_source` inconsistency as the write scan.
 pub fn extract_external_call_targets(source: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for wrapped in [
-        format!("contract _C {{ {} }}", source),
-        format!("contract _C {{ function _f() {{ {} }} }}", source),
-    ] {
-        if let Some(v) = call_targets_in_wrapped(&wrapped) {
-            out.extend(v);
-        }
-    }
-    out.sort();
-    out.dedup();
-    out
-}
-
-fn call_targets_in_wrapped(wrapped: &str) -> Option<Vec<(String, String)>> {
-    let sess = Session::builder().with_silent_emitter(None).build();
-    sess.enter(|| -> Option<Vec<(String, String)>> {
-        let arena = ast::Arena::new();
-        let mut parser = Parser::from_source_code(
-            &sess,
-            &arena,
-            FileName::Custom("call_targets".into()),
-            wrapped.to_string(),
-        )
-        .ok()?;
-        let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
-        let mut out = Vec::new();
-        let mut found_fn = false;
-        for item in file.items.iter() {
-            if let ast::ItemKind::Contract(c) = &item.kind {
-                for body_item in c.body.iter() {
-                    if let ast::ItemKind::Function(f) = &body_item.kind {
-                        if let Some(block) = &f.body {
-                            found_fn = true;
-                            for stmt in block.stmts.iter() {
-                                collect_targets_from_stmt(&stmt.kind, &mut out);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if found_fn {
-            Some(out)
-        } else {
-            None
-        }
-    })
+    analyze_body(source, &[], &[]).call_targets
 }
 
 fn collect_targets_from_stmt(kind: &ast::StmtKind<'_>, out: &mut Vec<(String, String)>) {
