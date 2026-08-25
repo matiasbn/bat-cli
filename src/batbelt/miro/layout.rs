@@ -36,7 +36,11 @@ impl Default for LayoutConfig {
             padding_x: 250.0,
             padding_y: 200.0,
             title_band: 150.0,
-            gutter_x: 450.0,
+            // A modest horizontal corridor: enough that Miro's elbow turns in the
+            // gutter (clear of the screenshots) now that forward connectors leave
+            // horizontally, without wasting frame space. The crossing-minimisation
+            // and exit-side changes do the rest at no space cost.
+            gutter_x: 550.0,
             gutter_y: 120.0,
             max_layer_height: 12_000.0,
         }
@@ -570,6 +574,12 @@ fn order_layers(layers: &mut [Vec<String>], edges: &[LayoutEdge]) {
         outgoing.entry(edge.from.as_str()).or_default().push(edge);
     }
 
+    // Keep the fewest-crossings ordering seen across the sweeps, so a sweep can
+    // never leave the layout worse than it started. Ties keep the current one (a
+    // downward sweep, which honours the call-line order).
+    let mut best = layers.to_vec();
+    let mut best_crossings = count_crossings(layers, edges);
+
     for sweep in 0..SWEEPS {
         let downward = sweep % 2 == 0;
         if downward {
@@ -611,7 +621,56 @@ fn order_layers(layers: &mut [Vec<String>], edges: &[LayoutEdge]) {
                 });
             }
         }
+        // A downward sweep is the one that honours the call-line order; prefer it on
+        // ties by only replacing the best when this ordering is strictly better,
+        // except accept an equal downward sweep so the final order stays call-ordered.
+        let crossings = count_crossings(layers, edges);
+        if crossings < best_crossings || (crossings == best_crossings && downward) {
+            best_crossings = crossings;
+            best = layers.to_vec();
+        }
     }
+
+    layers.clone_from_slice(&best);
+}
+
+/// Total edge crossings between all adjacent layer pairs, given the current order
+/// within each layer. Standard layered-graph count: two edges cross when their
+/// endpoints are in opposite order on the two layers.
+fn count_crossings(layers: &[Vec<String>], edges: &[LayoutEdge]) -> usize {
+    let mut pos: HashMap<&str, (usize, usize)> = HashMap::new();
+    for (layer_index, layer) in layers.iter().enumerate() {
+        for (order, id) in layer.iter().enumerate() {
+            pos.insert(id.as_str(), (layer_index, order));
+        }
+    }
+    // Group edges by the (upper) layer they leave, keeping (from_order, to_order).
+    let mut per_gap: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
+    for edge in edges {
+        let (Some(&(fl, fo)), Some(&(tl, to))) =
+            (pos.get(edge.from.as_str()), pos.get(edge.to.as_str()))
+        else {
+            continue;
+        };
+        // Only count strictly adjacent forward edges; bend points make long edges
+        // adjacent, so this covers the whole routed graph.
+        if tl == fl + 1 {
+            per_gap.entry(fl).or_default().push((fo, to));
+        }
+    }
+    let mut total = 0usize;
+    for pairs in per_gap.values() {
+        for i in 0..pairs.len() {
+            for j in (i + 1)..pairs.len() {
+                let (a1, a2) = pairs[i];
+                let (b1, b2) = pairs[j];
+                if (a1 < b1 && a2 > b2) || (a1 > b1 && a2 < b2) {
+                    total += 1;
+                }
+            }
+        }
+    }
+    total
 }
 
 fn mean(values: &[f64]) -> Option<f64> {

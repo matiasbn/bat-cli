@@ -773,9 +773,22 @@ async fn deploy_one(
             continue;
         };
 
+        // Put the marker on the caller's EDGE (the side facing the callee), at the
+        // call line's height — not on the interior token. Anchored inside, Miro bends
+        // the connector *into* the screenshot to reach it; anchored at the edge, the
+        // arrow still lands on the calling line (same Y) but the elbow turns out in
+        // the gutter, clear of the code.
+        let callee_x = layout
+            .node(&edge.to)
+            .map(|placed| placed.x)
+            .unwrap_or(caller_placed.x + 1.0);
+        let exit_right = callee_x >= caller_placed.x;
         pending.push(PendingConnector {
-            marker_x: caller_placed.x - caller_placed.width / 2.0
-                + caller_placed.width * start_anchor.x_fraction,
+            marker_x: if exit_right {
+                caller_placed.x + caller_placed.width / 2.0
+            } else {
+                caller_placed.x - caller_placed.width / 2.0
+            },
             marker_y: caller_placed.y - caller_placed.height / 2.0
                 + caller_placed.height * start_anchor.y_fraction,
             end_point: {
@@ -783,8 +796,14 @@ async fn deploy_one(
                 let fraction = silicon::line_geometry(Some(callee.font_size))
                     .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height);
                 match placed {
+                    // Meet the callee on the side facing the caller: its left edge
+                    // when it's to the right, its right edge when it's to the left.
                     Some(placed) => (
-                        placed.x - placed.width / 2.0,
+                        if exit_right {
+                            placed.x - placed.width / 2.0
+                        } else {
+                            placed.x + placed.width / 2.0
+                        },
                         placed.y - placed.height / 2.0 + placed.height * fraction,
                     ),
                     None => (0.0, 0.0),
@@ -793,7 +812,7 @@ async fn deploy_one(
             start_id: start_id.clone(),
             end_id: end_id.clone(),
             end_anchor: RelativeAnchor::new(
-                0.0,
+                if exit_right { 0.0 } else { 1.0 },
                 silicon::line_geometry(Some(callee.font_size))
                     .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height),
             ),
@@ -1860,18 +1879,34 @@ fn facing_anchor(from: (f64, f64), toward: (f64, f64)) -> RelativeAnchor {
     let dx = toward.0 - from.0;
     let dy = toward.1 - from.1;
 
-    // Whichever axis dominates decides the side; a tie is treated as horizontal
-    // because the layout runs left to right.
-    if dy.abs() > dx.abs() {
-        if dy > 0.0 {
-            RelativeAnchor::new(0.5, 1.0)
+    if dx > 0.0 {
+        // Forward edge (callee is to the right, the layout's flow). Leave
+        // HORIZONTALLY so the connector starts at its own call-line height and
+        // Miro turns it in the gutter — instead of leaving top/bottom and hugging
+        // the source's edge, which bundles many calls into one overlapping trunk.
+        // Only a near-vertical edge (callee almost directly above/below) leaves
+        // top/bottom.
+        if dy.abs() > dx.abs() * 3.0 {
+            if dy > 0.0 {
+                RelativeAnchor::new(0.5, 1.0)
+            } else {
+                RelativeAnchor::new(0.5, 0.0)
+            }
         } else {
-            RelativeAnchor::new(0.5, 0.0)
+            RelativeAnchor::new(1.0, 0.5)
         }
-    } else if dx >= 0.0 {
-        RelativeAnchor::new(1.0, 0.5)
     } else {
-        RelativeAnchor::new(0.0, 0.5)
+        // Back / same-column edge: the dominant axis decides; horizontal ties go
+        // left (away from the flow).
+        if dy.abs() > dx.abs() {
+            if dy > 0.0 {
+                RelativeAnchor::new(0.5, 1.0)
+            } else {
+                RelativeAnchor::new(0.5, 0.0)
+            }
+        } else {
+            RelativeAnchor::new(0.0, 0.5)
+        }
     }
 }
 
