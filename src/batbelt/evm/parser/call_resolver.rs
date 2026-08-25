@@ -782,6 +782,169 @@ fn collect_storage_locals(kind: &ast::StmtKind<'_>, out: &mut Vec<String>) {
     }
 }
 
+/// Extract the EXTERNAL call targets of a function body as `(receiver, method)`
+/// pairs — a call `x.foo(…)` on some receiver expression. The receiver is rendered
+/// as a path (`positionManager`, `$.borrowerOps`, `arr[]`), so a caller can try to
+/// resolve it to a concrete contract (a state var's interface type, a struct field's
+/// type, …). Captures member/index chains that the deploy-time call-site extractor
+/// drops, which is what lets `$.borrowerOps.adjustPosition` be surfaced at all.
+/// Builtins (`require`, `.call`, …) are skipped. Dual-wrapped for the same
+/// whole-function-vs-bare-statements `body_source` inconsistency as the write scan.
+pub fn extract_external_call_targets(source: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for wrapped in [
+        format!("contract _C {{ {} }}", source),
+        format!("contract _C {{ function _f() {{ {} }} }}", source),
+    ] {
+        if let Some(v) = call_targets_in_wrapped(&wrapped) {
+            out.extend(v);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn call_targets_in_wrapped(wrapped: &str) -> Option<Vec<(String, String)>> {
+    let sess = Session::builder().with_silent_emitter(None).build();
+    sess.enter(|| -> Option<Vec<(String, String)>> {
+        let arena = ast::Arena::new();
+        let mut parser = Parser::from_source_code(
+            &sess,
+            &arena,
+            FileName::Custom("call_targets".into()),
+            wrapped.to_string(),
+        )
+        .ok()?;
+        let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
+        let mut out = Vec::new();
+        let mut found_fn = false;
+        for item in file.items.iter() {
+            if let ast::ItemKind::Contract(c) = &item.kind {
+                for body_item in c.body.iter() {
+                    if let ast::ItemKind::Function(f) = &body_item.kind {
+                        if let Some(block) = &f.body {
+                            found_fn = true;
+                            for stmt in block.stmts.iter() {
+                                collect_targets_from_stmt(&stmt.kind, &mut out);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if found_fn {
+            Some(out)
+        } else {
+            None
+        }
+    })
+}
+
+fn collect_targets_from_stmt(kind: &ast::StmtKind<'_>, out: &mut Vec<(String, String)>) {
+    match kind {
+        ast::StmtKind::Expr(e) => collect_targets_from_expr(&e.kind, out),
+        ast::StmtKind::Return(Some(e)) => collect_targets_from_expr(&e.kind, out),
+        ast::StmtKind::Block(b) | ast::StmtKind::UncheckedBlock(b) => {
+            for s in b.stmts.iter() {
+                collect_targets_from_stmt(&s.kind, out);
+            }
+        }
+        ast::StmtKind::If(cond, t, e) => {
+            collect_targets_from_expr(&cond.kind, out);
+            collect_targets_from_stmt(&t.kind, out);
+            if let Some(e) = e {
+                collect_targets_from_stmt(&e.kind, out);
+            }
+        }
+        ast::StmtKind::For {
+            init,
+            cond,
+            next,
+            body,
+        } => {
+            if let Some(i) = init {
+                collect_targets_from_stmt(&i.kind, out);
+            }
+            if let Some(c) = cond {
+                collect_targets_from_expr(&c.kind, out);
+            }
+            if let Some(n) = next {
+                collect_targets_from_expr(&n.kind, out);
+            }
+            collect_targets_from_stmt(&body.kind, out);
+        }
+        ast::StmtKind::While(c, b) => {
+            collect_targets_from_expr(&c.kind, out);
+            collect_targets_from_stmt(&b.kind, out);
+        }
+        ast::StmtKind::DoWhile(b, c) => {
+            collect_targets_from_stmt(&b.kind, out);
+            collect_targets_from_expr(&c.kind, out);
+        }
+        ast::StmtKind::DeclSingle(var) => {
+            if let Some(init) = &var.initializer {
+                collect_targets_from_expr(&init.kind, out);
+            }
+        }
+        ast::StmtKind::DeclMulti(_, e) => collect_targets_from_expr(&e.kind, out),
+        ast::StmtKind::Try(t) => {
+            collect_targets_from_expr(&t.expr.kind, out);
+            for clause in t.clauses.iter() {
+                for s in clause.block.stmts.iter() {
+                    collect_targets_from_stmt(&s.kind, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_targets_from_expr(kind: &ast::ExprKind<'_>, out: &mut Vec<(String, String)>) {
+    match kind {
+        ast::ExprKind::Call(callee, args) => {
+            if let ast::ExprKind::Member(recv, method) = &callee.kind {
+                let m = method.as_str().to_string();
+                if !is_builtin(&m) {
+                    if let Some((_, recv_path)) = lvalue_path(&recv.kind) {
+                        out.push((recv_path, m));
+                    }
+                }
+            }
+            collect_targets_from_expr(&callee.kind, out);
+            for arg in args.exprs() {
+                collect_targets_from_expr(&arg.kind, out);
+            }
+        }
+        ast::ExprKind::Assign(l, _, r) => {
+            collect_targets_from_expr(&l.kind, out);
+            collect_targets_from_expr(&r.kind, out);
+        }
+        ast::ExprKind::Binary(l, _, r) => {
+            collect_targets_from_expr(&l.kind, out);
+            collect_targets_from_expr(&r.kind, out);
+        }
+        ast::ExprKind::Unary(_, e) | ast::ExprKind::Delete(e) => {
+            collect_targets_from_expr(&e.kind, out)
+        }
+        ast::ExprKind::Ternary(c, a, b) => {
+            collect_targets_from_expr(&c.kind, out);
+            collect_targets_from_expr(&a.kind, out);
+            collect_targets_from_expr(&b.kind, out);
+        }
+        ast::ExprKind::Index(e, _) => collect_targets_from_expr(&e.kind, out),
+        ast::ExprKind::Member(e, _) => collect_targets_from_expr(&e.kind, out),
+        ast::ExprKind::Tuple(elems) => {
+            for el in elems.iter() {
+                if let solar_parse::interface::SpannedOption::Some(e) = el {
+                    collect_targets_from_expr(&e.kind, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// The leftmost base of an lvalue: a plain identifier, or a call (a storage
 /// accessor like `_s()` in the diamond-storage pattern — `_s().field = …`).
 enum LvalueRoot {
@@ -972,7 +1135,26 @@ fn collect_writes_from_expr(
 
 #[cfg(test)]
 mod storage_write_test {
-    use super::extract_storage_writes_from_source;
+
+
+    use super::{extract_external_call_targets, extract_storage_writes_from_source};
+
+    #[test]
+    fn external_call_targets_capture_member_chains() {
+        let src = "\
+            $.borrowerOps.adjustPosition(a, b);\n\
+            positionManager.setX(1);\n\
+            uint256 x = oracle.price();\n\
+            require(ok, \"e\");\n\
+            token.safeTransfer(to, amt);\n";
+        let t = extract_external_call_targets(src);
+        assert!(t.contains(&("$.borrowerOps".to_string(), "adjustPosition".to_string())), "{t:?}");
+        assert!(t.contains(&("positionManager".to_string(), "setX".to_string())), "{t:?}");
+        assert!(t.contains(&("oracle".to_string(), "price".to_string())), "{t:?}");
+        assert!(t.contains(&("token".to_string(), "safeTransfer".to_string())), "{t:?}");
+        // `require` is a builtin, never a call target.
+        assert!(!t.iter().any(|(_, m)| m == "require"), "{t:?}");
+    }
 
     #[test]
     fn detects_direct_pointer_index_and_ignores_locals() {

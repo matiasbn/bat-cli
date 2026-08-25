@@ -485,6 +485,20 @@ Top level: `contracts`, `entry_points`, `function_dependencies`, `interfaces`, `
 var (`totalSupply`), an index/mapping (`balances[]`), a storage-pointer field (`$.reserveStable`),
 or an accessor path (`_s().paused`). The Miro deploy rings storage-writing nodes in red from this.
 Match the exact string (the recipe below finds writers of one var).
+
+**`unresolved_calls`** (on every `contracts[].functions[]`) is the AI-resolution work-list for
+FULL cross-contract storage coverage. Static analysis marks a function's own `storage_writes`
+exactly, and follows calls to concrete contracts — but a call on an **interface-typed** receiver
+(`$.borrowerOps.adjustPosition(…)`) has a target that is only bound at runtime, so it cannot be
+pinned statically. Each entry is `{receiver, method, inferred_type, candidates}` — `candidates`
+are the in-scope concrete contracts that plausibly implement it. **To answer "what does entry
+point X change?" completely:** (1) collect `storage_writes` across X's statically-resolved call
+tree, then (2) for each `unresolved_calls` entry on the way, read the WIRING (where `receiver` is
+assigned — the constructor, config setter, factory, deploy script) to pick the real contract from
+`candidates`, look up that method there, and recurse into ITS `storage_writes` / `unresolved_calls`.
+That's the only irreducibly-dynamic step, and it's yours: static analysis narrows it to a short
+candidate list; you decide the actual target from the evidence. To surface it visually, deploy the
+resolved writer (`bat-cli deploy --entry-point <Contract.method>`) — its node is ringed red.
 - **`miro`** — what is already on the board; `miro.auto.frames[]` holds `entry_point` and
   `frame_url` per deployed frame.
 
@@ -556,6 +570,16 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.20.0
+- **Cross-contract storage coverage — the AI resolution work-list (`unresolved_calls`).** Every
+  `contracts[].functions[]` now carries `unresolved_calls`: external calls on interface-typed
+  receivers (`$.borrowerOps.adjustPosition`) whose concrete target is bound at runtime and so
+  cannot be pinned statically, each with best-effort in-scope `candidates`. This is Phase 1 of
+  "know every storage change reachable from an entry point": static analysis is exact for a
+  function's own writes and concrete calls; the interface hops are handed to you, narrowed to a
+  short candidate list, to resolve from the wiring. See the `unresolved_calls` section for the
+  walk. _Re-read: metadata.md._
 
 ## 0.19.1
 - **Storage-write detection now covers writes through `storage` PARAMETERS** — a library that

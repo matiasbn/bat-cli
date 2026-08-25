@@ -71,6 +71,33 @@ pub struct FunctionMetadata {
     /// "writes storage" marker on the diagram.
     #[serde(default)]
     pub storage_writes: Vec<String>,
+    /// External calls that could NOT be statically resolved to a unique in-scope
+    /// function — a call on an interface-typed receiver whose concrete target is a
+    /// runtime property. An AI resolves these against the wiring to complete the
+    /// cross-contract storage-change picture; each carries best-effort candidates.
+    #[serde(default)]
+    pub unresolved_calls: Vec<UnresolvedCall>,
+}
+
+/// An external call whose concrete target static analysis cannot pin down (the
+/// receiver is an interface-typed variable — the implementation is bound at
+/// runtime). Surfaced so an AI can resolve it from the deploy/wiring.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnresolvedCall {
+    /// The call receiver as written, e.g. `positionManager`, `$.borrowerOps`.
+    pub receiver: String,
+    /// The method invoked, e.g. `adjustPosition`.
+    pub method: String,
+    /// The receiver's declared type when known (an interface, e.g.
+    /// `IBorrowerOperations`); empty when it couldn't be typed (a struct field or
+    /// local — resolved in a later phase).
+    #[serde(default)]
+    pub inferred_type: String,
+    /// In-scope concrete contracts that plausibly implement this call (implementers
+    /// of `inferred_type` that define `method`, else any in-scope contract defining
+    /// `method`). The AI picks the real one from the wiring.
+    #[serde(default)]
+    pub candidates: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -294,8 +321,77 @@ impl EvmBatMetadata {
             contract_bases.insert(c.name.clone(), c.base_contracts.clone());
         }
 
+        // Cross-contract call resolution lookups (Phase 1):
+        //  - known contract names (a `Contract.method` call is already resolved),
+        //  - impl_map: interface/base name → contracts declaring `is <name>`,
+        //  - method_map: method name → concrete contracts that define it,
+        //  - own_var_types: contract → (state-var name → declared type).
+        let contract_names: std::collections::HashSet<String> =
+            contracts.iter().map(|c| c.name.clone()).collect();
+        let is_interface: std::collections::HashSet<String> = contracts
+            .iter()
+            .filter(|c| c.contract_type == EvmContractType::Interface)
+            .map(|c| c.name.clone())
+            .collect();
+        // Vendored (`lib/`) contracts — a call resolving only to these (SafeERC20,
+        // mocks, OZ tokens) is not an in-scope storage change worth chasing.
+        let external_contracts: std::collections::HashSet<String> = contracts
+            .iter()
+            .filter(|c| c.external)
+            .map(|c| c.name.clone())
+            .collect();
+        let mut impl_map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        let mut method_map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        let mut own_var_types: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, String>,
+        > = std::collections::HashMap::new();
+        for c in &contracts {
+            for b in &c.base_contracts {
+                impl_map.entry(b.clone()).or_default().push(c.name.clone());
+            }
+            if c.contract_type != EvmContractType::Interface {
+                for f in &c.functions {
+                    method_map
+                        .entry(f.name.clone())
+                        .or_default()
+                        .push(c.name.clone());
+                }
+            }
+            let vt: std::collections::HashMap<String, String> = c
+                .storage_variables
+                .iter()
+                .map(|v| (v.name.clone(), v.type_name.clone()))
+                .collect();
+            own_var_types.insert(c.name.clone(), vt);
+        }
+
         for contract in &contracts {
             let contract_id = format!("{}_{}", contract.file_path, contract.name);
+
+            // State-variable name → type, visible to this contract (own + inherited).
+            let mut var_types: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
+            {
+                let mut seen: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                let mut stack = vec![contract.name.clone()];
+                while let Some(name) = stack.pop() {
+                    if !seen.insert(name.clone()) {
+                        continue;
+                    }
+                    if let Some(vt) = own_var_types.get(&name) {
+                        for (k, v) in vt {
+                            var_types.entry(k.clone()).or_insert_with(|| v.clone());
+                        }
+                    }
+                    if let Some(bases) = contract_bases.get(&name) {
+                        stack.extend(bases.iter().cloned());
+                    }
+                }
+            }
 
             // State variables visible to every function in this contract.
             let mut state_vars: Vec<String> = Vec::new();
@@ -330,6 +426,15 @@ impl EvmBatMetadata {
                             &state_vars,
                             &storage_params,
                         );
+                    let unresolved_calls = compute_unresolved_calls(
+                        &f.body_source,
+                        &var_types,
+                        &contract_names,
+                        &is_interface,
+                        &external_contracts,
+                        &impl_map,
+                        &method_map,
+                    );
                     FunctionMetadata {
                         metadata_id: func_id,
                         name: f.name.clone(),
@@ -343,6 +448,7 @@ impl EvmBatMetadata {
                         end_line: f.end_line,
                         is_constructor: f.is_constructor,
                         storage_writes,
+                        unresolved_calls,
                     }
                 })
                 .collect();
@@ -449,6 +555,82 @@ fn resolve_state_vars(
             resolve_state_vars(base, own, bases, seen, out);
         }
     }
+}
+
+/// Compute the external calls a function makes that static analysis cannot pin to
+/// a unique in-scope target — the AI-resolution work-list. A `receiver.method` call
+/// is emitted when it is NOT already resolved to a single concrete contract via the
+/// receiver's declared type; each carries best-effort candidates.
+fn compute_unresolved_calls(
+    body: &str,
+    var_types: &std::collections::HashMap<String, String>,
+    contract_names: &std::collections::HashSet<String>,
+    is_interface: &std::collections::HashSet<String>,
+    external_contracts: &std::collections::HashSet<String>,
+    impl_map: &std::collections::HashMap<String, Vec<String>>,
+    method_map: &std::collections::HashMap<String, Vec<String>>,
+) -> Vec<UnresolvedCall> {
+    let targets =
+        crate::batbelt::evm::parser::call_resolver::extract_external_call_targets(body);
+    let mut out: Vec<UnresolvedCall> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+
+    for (receiver, method) in targets {
+        // Internal dispatch, or a call by contract name (already resolved).
+        if receiver == "this" || receiver == "super" || contract_names.contains(&receiver) {
+            continue;
+        }
+
+        // A bare receiver may be a state variable whose declared type we know.
+        let inferred_type = if receiver.contains('.') || receiver.contains('[') {
+            String::new()
+        } else {
+            var_types.get(&receiver).cloned().unwrap_or_default()
+        };
+
+        // Candidates: implementers of the interface type that define the method,
+        // else any in-scope concrete contract defining the method (name-inferred).
+        let mut candidates: Vec<String> = Vec::new();
+        if !inferred_type.is_empty() {
+            if let Some(impls) = impl_map.get(&inferred_type) {
+                let with_method: Vec<String> = impls
+                    .iter()
+                    .filter(|c| {
+                        method_map
+                            .get(&method)
+                            .is_some_and(|v| v.contains(c))
+                    })
+                    .cloned()
+                    .collect();
+                candidates = with_method;
+            }
+        }
+        if candidates.is_empty() {
+            candidates = method_map.get(&method).cloned().unwrap_or_default();
+        }
+        candidates.retain(|c| !is_interface.contains(c) && !external_contracts.contains(c));
+        candidates.sort();
+        candidates.dedup();
+
+        // A single implementer inferred from a REAL type is unambiguous — the deploy
+        // graph already follows it; not AI work. Everything else is emitted.
+        if candidates.len() == 1 && !inferred_type.is_empty() {
+            continue;
+        }
+        // No plausible in-scope target (builtin / external library) — nothing to resolve.
+        if candidates.is_empty() {
+            continue;
+        }
+        if seen.insert((receiver.clone(), method.clone())) {
+            out.push(UnresolvedCall {
+                receiver,
+                method,
+                inferred_type,
+                candidates,
+            });
+        }
+    }
+    out
 }
 
 fn detect_access_control(modifiers: &[String]) -> Vec<AccessControlType> {
