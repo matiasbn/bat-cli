@@ -129,6 +129,10 @@ enum BatCommands {
         /// Connector thickness in dp (1-24)
         #[arg(long, default_value_t = 8)]
         stroke_width: u32,
+        /// Answer the "already on the board — deploy again?" prompt with yes, so a
+        /// redeploy runs non-interactively (for scripts / AI). Builds a second frame.
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -190,6 +194,7 @@ impl BatCommands {
                 include_external,
                 preview,
                 stroke_width,
+                yes,
             } => {
                 crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
@@ -201,6 +206,7 @@ impl BatCommands {
                     include_external: *include_external,
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
+                    assume_yes: *yes,
                     },
                 )
                 .await

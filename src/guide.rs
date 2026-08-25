@@ -398,10 +398,12 @@ to scan.) So the AI-drivable setup is: the auditor runs `! bat-cli login` ONCE, 
 `bat-cli init --yes` → `bat-cli sonar` → `bat-cli deploy --entry-point <X>`.
 
 A bare `deploy` shows a fuzzy list: entry points first and marked `[entry point]`, then every
-other function, with `(deployed)` on what is already on the board — pass `--entry-point` to skip it.
+other function, with `(deployed)` on what is already on the board — pass `--entry-point` to skip
+it. If that entry point is ALREADY on the board, `deploy` asks a yes/no before drawing a second
+frame — pass `--yes` to answer it and redeploy non-interactively.
 
 Safe to run unattended: `init --yes`, `sonar`, `config` (no flag), `update --check`,
-`login --status`, `deploy --entry-point <X>` (and `--dry-run`).
+`login --status`, `deploy --entry-point <X>` (add `--yes` to redeploy, or `--dry-run`).
 
 ## deploy
 
@@ -421,6 +423,7 @@ bat-cli deploy --entry-point Vault.deposit --preview /tmp/frame.png
 | `--include-external` | include contracts coming from `lib/` |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
 | `--all` | every entry point at once — **discouraged**; it warns and asks first |
+| `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; builds a second frame) |
 
 **Any function can be deployed, not just an entry point.** A shared helper needs a frame of
 its own for anything else to point at, and is worth reading on its own terms.

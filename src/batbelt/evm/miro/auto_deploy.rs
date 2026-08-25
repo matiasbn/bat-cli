@@ -95,6 +95,9 @@ pub struct AutoDeployOptions {
     /// Connector thickness in dp, 1 to 24. Miro's UI snaps this to its own
     /// preset levels, so 12 lands on roughly "level 5".
     pub stroke_width: u32,
+    /// Skip the "already on the board — deploy again?" confirmation (assume yes),
+    /// so a redeploy runs non-interactively.
+    pub assume_yes: bool,
 }
 
 impl Default for AutoDeployOptions {
@@ -108,6 +111,7 @@ impl Default for AutoDeployOptions {
             include_external: false,
             preview: None,
             stroke_width: 8,
+            assume_yes: false,
         }
     }
 }
@@ -436,8 +440,10 @@ async fn deploy_one(
                 "  {} deploying again builds a second frame; the one above stays\n  where it is, to be deleted by hand if it is no longer wanted.",
                 "note:".yellow()
             );
-            if !BatDialoguer::select_yes_or_no("Deploy it again anyway?".to_string())
-                .change_context(EvmMiroError)?
+            // `--yes` (scripts / AI) skips the confirmation and redeploys.
+            if !options.assume_yes
+                && !BatDialoguer::select_yes_or_no("Deploy it again anyway?".to_string())
+                    .change_context(EvmMiroError)?
             {
                 return Ok(());
             }
