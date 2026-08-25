@@ -70,22 +70,20 @@ pub fn parse_function_definition(
         .map(|r| r.iter().map(|p| parse_parameter(sess, p)).collect())
         .unwrap_or_default();
 
-    let body_source = func
-        .body
-        .as_ref()
-        .map(|block| {
-            extract_source_by_lines(
-                source,
-                span_to_line(sess, block.span),
-                span_to_end_line(sess, block.span),
-            )
-        })
-        .unwrap_or_default();
-
-    // Use full function span: from header start to body end
+    // Use full function span: from header start to body end.
     let full_span = func.header.span.to(func.body_span);
     let line = span_to_line(sess, full_span);
     let end_line = span_to_end_line(sess, full_span);
+
+    // `body_source` is the WHOLE function (signature + body). Extracting from the
+    // body block's opening-brace line instead would, for a MULTI-LINE signature,
+    // start mid-signature (e.g. `) internal {`) and fail to parse — silently losing
+    // that function's storage writes and calls. The whole-function text always parses.
+    let body_source = if func.body.is_some() {
+        extract_source_by_lines(source, line, end_line)
+    } else {
+        String::new()
+    };
 
     EvmFunction {
         name,

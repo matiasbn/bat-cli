@@ -644,52 +644,55 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
 ///
 /// Returns readable lvalue paths (e.g. `"reserveStable"`, `"$.reserveStable"`,
 /// `"balances[]"`), sorted and deduped. Empty when the body doesn't parse.
-pub fn extract_storage_writes_from_source(
-    source: &str,
-    state_vars: &[String],
-    storage_params: &[String],
-) -> Vec<String> {
-    // `body_source` is inconsistent across sonar's parse: sometimes the inner
-    // statements, sometimes the WHOLE function (`function f() { … }`, signature
-    // and braces included). Wrapping a whole function inside a dummy `_f` would
-    // make an illegal nested function and fail to parse. So try both shapes —
-    // a contract holding the source as-is (whole-function case) and the source
-    // as a dummy function body (bare-statements case) — and union whatever parses.
-    let mut writes = Vec::new();
+/// Everything the metadata needs from a function body, from ONE parse + walk.
+#[derive(Default)]
+pub struct BodyAnalysis {
+    /// Storage locations written (state vars / storage-pointer paths).
+    pub storage_writes: Vec<String>,
+    /// External call targets as `(receiver, method)`.
+    pub call_targets: Vec<(String, String)>,
+    /// Local (and parameter) variable declared types, `(name, type)`.
+    pub local_types: Vec<(String, String)>,
+    /// Callee names for the dependency graph (`foo`, `obj.method`), same format as
+    /// `extract_calls_from_source`.
+    pub call_names: Vec<String>,
+}
+
+/// Parse a function body ONCE and extract storage writes, external call targets,
+/// and local/parameter types together. This is what sonar calls per function —
+/// replacing three separate parses. `body_source` is normally the whole function
+/// (so the first wrapping parses and we short-circuit); the bare-statements wrapping
+/// is a fallback for snippets.
+pub fn analyze_body(source: &str, state_vars: &[String], storage_params: &[String]) -> BodyAnalysis {
     for wrapped in [
         format!("contract _C {{ {} }}", source),
         format!("contract _C {{ function _f() {{ {} }} }}", source),
     ] {
-        if let Some(w) = collect_writes_in_wrapped(&wrapped, state_vars, storage_params) {
-            writes.extend(w);
+        if let Some(a) = analyze_in_wrap(&wrapped, state_vars, storage_params) {
+            return a;
         }
     }
-    writes.sort();
-    writes.dedup();
-    writes
+    BodyAnalysis::default()
 }
 
-/// Parse one wrapped snippet and collect storage writes from every function it
-/// contains. `None` when the snippet doesn't parse (so the caller can try the
-/// other wrapping).
-fn collect_writes_in_wrapped(
+fn analyze_in_wrap(
     wrapped: &str,
     state_vars: &[String],
     storage_params: &[String],
-) -> Option<Vec<String>> {
+) -> Option<BodyAnalysis> {
     let sess = Session::builder().with_silent_emitter(None).build();
-    sess.enter(|| -> Option<Vec<String>> {
+    sess.enter(|| -> Option<BodyAnalysis> {
         let arena = ast::Arena::new();
         let mut parser = Parser::from_source_code(
             &sess,
             &arena,
-            FileName::Custom("storage_writes".into()),
+            FileName::Custom("analyze".into()),
             wrapped.to_string(),
         )
         .ok()?;
         let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
 
-        let mut writes = Vec::new();
+        let mut a = BodyAnalysis::default();
         let mut found_fn = false;
         for item in file.items.iter() {
             if let ast::ItemKind::Contract(c) = &item.kind {
@@ -697,12 +700,8 @@ fn collect_writes_in_wrapped(
                     if let ast::ItemKind::Function(f) = &body_item.kind {
                         if let Some(block) = &f.body {
                             found_fn = true;
-                            // Pass 1: every storage pointer in scope — writes through
-                            // it hit storage. Two sources:
-                            // (a) `storage` PARAMETERS, e.g. a library taking the
-                            //     storage struct: `execute(CvammStorage storage $, …)`
-                            //     then `$.reserveStable += …`;
-                            // (b) `storage` LOCALS, e.g. `CvammStorage storage $ = _s();`.
+                            // Pass 1: storage pointers (params + locals) and the types
+                            // of every parameter and local.
                             let mut storage_locals: Vec<String> = storage_params.to_vec();
                             for p in f.header.parameters.iter() {
                                 if p.data_location == Some(ast::DataLocation::Storage) {
@@ -710,32 +709,58 @@ fn collect_writes_in_wrapped(
                                         storage_locals.push(name.as_str().to_string());
                                     }
                                 }
+                                if let Some(name) = p.name {
+                                    a.local_types.push((
+                                        name.as_str().to_string(),
+                                        crate::batbelt::evm::parser::evm_file_parser::type_to_string(
+                                            &sess, &p.ty,
+                                        ),
+                                    ));
+                                }
                             }
                             for stmt in block.stmts.iter() {
                                 collect_storage_locals(&stmt.kind, &mut storage_locals);
+                                collect_local_types_from_stmt(&sess, &stmt.kind, &mut a.local_types);
                             }
-                            // Pass 2: the actual writes.
+                            // Pass 2: writes, external call targets, and callee names.
                             for stmt in block.stmts.iter() {
                                 collect_writes_from_stmt(
                                     &stmt.kind,
                                     state_vars,
                                     &storage_locals,
-                                    &mut writes,
+                                    &mut a.storage_writes,
                                 );
+                                collect_targets_from_stmt(&stmt.kind, &mut a.call_targets);
+                                extract_calls_from_stmt(&stmt.kind, &mut a.call_names);
                             }
                         }
                     }
                 }
             }
         }
-        // Treat "parsed but no function with a body" as a miss, so the caller
-        // falls through to the other wrapping instead of accepting an empty set.
-        if found_fn {
-            Some(writes)
-        } else {
-            None
+        if !found_fn {
+            return None;
         }
+        a.storage_writes.sort();
+        a.storage_writes.dedup();
+        a.call_targets.sort();
+        a.call_targets.dedup();
+        a.local_types.sort();
+        a.local_types.dedup();
+        a.call_names.sort();
+        a.call_names.dedup();
+        Some(a)
     })
+}
+
+/// Storage locations written by a function body. Thin wrapper over `analyze_body`
+/// (kept for tests); sonar uses `analyze_body` directly to parse once.
+pub fn extract_storage_writes_from_source(
+    source: &str,
+    state_vars: &[String],
+    storage_params: &[String],
+) -> Vec<String> {
+    analyze_body(source, state_vars, storage_params).storage_writes
 }
 
 /// Collect the names of locals declared with `storage` data location (storage
@@ -775,6 +800,173 @@ fn collect_storage_locals(kind: &ast::StmtKind<'_>, out: &mut Vec<String>) {
             for clause in t.clauses.iter() {
                 for s in clause.block.stmts.iter() {
                     collect_storage_locals(&s.kind, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Declared types of a function body's local variables + parameters, `(name, type)`.
+/// Thin wrapper over `analyze_body` (kept for tests).
+pub fn extract_local_types(source: &str) -> Vec<(String, String)> {
+    analyze_body(source, &[], &[]).local_types
+}
+
+fn collect_local_types_from_stmt(
+    sess: &Session,
+    kind: &ast::StmtKind<'_>,
+    out: &mut Vec<(String, String)>,
+) {
+    match kind {
+        ast::StmtKind::DeclSingle(var) => {
+            if let Some(name) = var.name {
+                out.push((
+                    name.as_str().to_string(),
+                    crate::batbelt::evm::parser::evm_file_parser::type_to_string(sess, &var.ty),
+                ));
+            }
+        }
+        ast::StmtKind::Block(b) | ast::StmtKind::UncheckedBlock(b) => {
+            for s in b.stmts.iter() {
+                collect_local_types_from_stmt(sess, &s.kind, out);
+            }
+        }
+        ast::StmtKind::If(_, t, e) => {
+            collect_local_types_from_stmt(sess, &t.kind, out);
+            if let Some(e) = e {
+                collect_local_types_from_stmt(sess, &e.kind, out);
+            }
+        }
+        ast::StmtKind::For { init, body, .. } => {
+            if let Some(i) = init {
+                collect_local_types_from_stmt(sess, &i.kind, out);
+            }
+            collect_local_types_from_stmt(sess, &body.kind, out);
+        }
+        ast::StmtKind::While(_, b) | ast::StmtKind::DoWhile(b, _) => {
+            collect_local_types_from_stmt(sess, &b.kind, out);
+        }
+        ast::StmtKind::Try(t) => {
+            for clause in t.clauses.iter() {
+                for s in clause.block.stmts.iter() {
+                    collect_local_types_from_stmt(sess, &s.kind, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Extract the EXTERNAL call targets of a function body as `(receiver, method)`
+/// pairs — a call `x.foo(…)` on some receiver expression. The receiver is rendered
+/// as a path (`positionManager`, `$.borrowerOps`, `arr[]`), so a caller can try to
+/// resolve it to a concrete contract (a state var's interface type, a struct field's
+/// type, …). Captures member/index chains that the deploy-time call-site extractor
+/// drops, which is what lets `$.borrowerOps.adjustPosition` be surfaced at all.
+/// Builtins (`require`, `.call`, …) are skipped. Dual-wrapped for the same
+/// whole-function-vs-bare-statements `body_source` inconsistency as the write scan.
+pub fn extract_external_call_targets(source: &str) -> Vec<(String, String)> {
+    analyze_body(source, &[], &[]).call_targets
+}
+
+fn collect_targets_from_stmt(kind: &ast::StmtKind<'_>, out: &mut Vec<(String, String)>) {
+    match kind {
+        ast::StmtKind::Expr(e) => collect_targets_from_expr(&e.kind, out),
+        ast::StmtKind::Return(Some(e)) => collect_targets_from_expr(&e.kind, out),
+        ast::StmtKind::Block(b) | ast::StmtKind::UncheckedBlock(b) => {
+            for s in b.stmts.iter() {
+                collect_targets_from_stmt(&s.kind, out);
+            }
+        }
+        ast::StmtKind::If(cond, t, e) => {
+            collect_targets_from_expr(&cond.kind, out);
+            collect_targets_from_stmt(&t.kind, out);
+            if let Some(e) = e {
+                collect_targets_from_stmt(&e.kind, out);
+            }
+        }
+        ast::StmtKind::For {
+            init,
+            cond,
+            next,
+            body,
+        } => {
+            if let Some(i) = init {
+                collect_targets_from_stmt(&i.kind, out);
+            }
+            if let Some(c) = cond {
+                collect_targets_from_expr(&c.kind, out);
+            }
+            if let Some(n) = next {
+                collect_targets_from_expr(&n.kind, out);
+            }
+            collect_targets_from_stmt(&body.kind, out);
+        }
+        ast::StmtKind::While(c, b) => {
+            collect_targets_from_expr(&c.kind, out);
+            collect_targets_from_stmt(&b.kind, out);
+        }
+        ast::StmtKind::DoWhile(b, c) => {
+            collect_targets_from_stmt(&b.kind, out);
+            collect_targets_from_expr(&c.kind, out);
+        }
+        ast::StmtKind::DeclSingle(var) => {
+            if let Some(init) = &var.initializer {
+                collect_targets_from_expr(&init.kind, out);
+            }
+        }
+        ast::StmtKind::DeclMulti(_, e) => collect_targets_from_expr(&e.kind, out),
+        ast::StmtKind::Try(t) => {
+            collect_targets_from_expr(&t.expr.kind, out);
+            for clause in t.clauses.iter() {
+                for s in clause.block.stmts.iter() {
+                    collect_targets_from_stmt(&s.kind, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_targets_from_expr(kind: &ast::ExprKind<'_>, out: &mut Vec<(String, String)>) {
+    match kind {
+        ast::ExprKind::Call(callee, args) => {
+            if let ast::ExprKind::Member(recv, method) = &callee.kind {
+                let m = method.as_str().to_string();
+                if !is_builtin(&m) {
+                    if let Some((_, recv_path)) = lvalue_path(&recv.kind) {
+                        out.push((recv_path, m));
+                    }
+                }
+            }
+            collect_targets_from_expr(&callee.kind, out);
+            for arg in args.exprs() {
+                collect_targets_from_expr(&arg.kind, out);
+            }
+        }
+        ast::ExprKind::Assign(l, _, r) => {
+            collect_targets_from_expr(&l.kind, out);
+            collect_targets_from_expr(&r.kind, out);
+        }
+        ast::ExprKind::Binary(l, _, r) => {
+            collect_targets_from_expr(&l.kind, out);
+            collect_targets_from_expr(&r.kind, out);
+        }
+        ast::ExprKind::Unary(_, e) | ast::ExprKind::Delete(e) => {
+            collect_targets_from_expr(&e.kind, out)
+        }
+        ast::ExprKind::Ternary(c, a, b) => {
+            collect_targets_from_expr(&c.kind, out);
+            collect_targets_from_expr(&a.kind, out);
+            collect_targets_from_expr(&b.kind, out);
+        }
+        ast::ExprKind::Index(e, _) => collect_targets_from_expr(&e.kind, out),
+        ast::ExprKind::Member(e, _) => collect_targets_from_expr(&e.kind, out),
+        ast::ExprKind::Tuple(elems) => {
+            for el in elems.iter() {
+                if let solar_parse::interface::SpannedOption::Some(e) = el {
+                    collect_targets_from_expr(&e.kind, out);
                 }
             }
         }
@@ -972,7 +1164,39 @@ fn collect_writes_from_expr(
 
 #[cfg(test)]
 mod storage_write_test {
-    use super::extract_storage_writes_from_source;
+
+
+    use super::{
+        extract_external_call_targets, extract_local_types, extract_storage_writes_from_source,
+    };
+
+    #[test]
+    fn local_types_capture_storage_pointer_and_casts() {
+        let src = "\
+            CollateralRebalancerStorage storage $ = _s();\n\
+            IERC20 collToken = IERC20(address($.collVault));\n\
+            uint256 x = 1;\n";
+        let t = extract_local_types(src);
+        assert!(t.contains(&("$".to_string(), "CollateralRebalancerStorage".to_string())), "{t:?}");
+        assert!(t.iter().any(|(n, _)| n == "collToken"), "{t:?}");
+    }
+
+    #[test]
+    fn external_call_targets_capture_member_chains() {
+        let src = "\
+            $.borrowerOps.adjustPosition(a, b);\n\
+            positionManager.setX(1);\n\
+            uint256 x = oracle.price();\n\
+            require(ok, \"e\");\n\
+            token.safeTransfer(to, amt);\n";
+        let t = extract_external_call_targets(src);
+        assert!(t.contains(&("$.borrowerOps".to_string(), "adjustPosition".to_string())), "{t:?}");
+        assert!(t.contains(&("positionManager".to_string(), "setX".to_string())), "{t:?}");
+        assert!(t.contains(&("oracle".to_string(), "price".to_string())), "{t:?}");
+        assert!(t.contains(&("token".to_string(), "safeTransfer".to_string())), "{t:?}");
+        // `require` is a builtin, never a call target.
+        assert!(!t.iter().any(|(_, m)| m == "require"), "{t:?}");
+    }
 
     #[test]
     fn detects_direct_pointer_index_and_ignores_locals() {

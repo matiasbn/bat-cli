@@ -129,6 +129,30 @@ enum BatCommands {
         /// Connector thickness in dp (1-24)
         #[arg(long, default_value_t = 8)]
         stroke_width: u32,
+        /// Answer the "already on the board — deploy again?" prompt with yes, so a
+        /// redeploy runs non-interactively (for scripts / AI). Builds a second frame.
+        #[arg(long)]
+        yes: bool,
+        /// Draw the frame even if some interface calls in the tree are unresolved,
+        /// instead of stopping to list them. Downstream nodes behind those calls are
+        /// simply omitted.
+        #[arg(long)]
+        allow_unresolved: bool,
+    },
+    /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
+    /// interface call to its concrete implementation. `deploy` stops and lists what to
+    /// resolve; add them here, then deploy again. Stored in the metadata.
+    Resolve {
+        /// Interface type to resolve, e.g. `IBorrowerOperations`.
+        interface: Option<String>,
+        /// The concrete in-scope contract it points to, e.g. `BorrowerOperations`.
+        contract: Option<String>,
+        /// List the current resolutions instead of adding one.
+        #[arg(long)]
+        list: bool,
+        /// Remove the resolution for <interface>.
+        #[arg(long)]
+        remove: bool,
     },
 }
 
@@ -190,6 +214,8 @@ impl BatCommands {
                 include_external,
                 preview,
                 stroke_width,
+                yes,
+                allow_unresolved,
             } => {
                 crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
@@ -201,11 +227,19 @@ impl BatCommands {
                     include_external: *include_external,
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
+                    assume_yes: *yes,
+                    allow_unresolved: *allow_unresolved,
                     },
                 )
                 .await
                 .change_context(CommandError)
             }
+            BatCommands::Resolve {
+                interface,
+                contract,
+                list,
+                remove,
+            } => run_resolve(interface.clone(), contract.clone(), *list, *remove),
         }
     }
 
@@ -222,7 +256,7 @@ impl BatCommands {
             | BatCommands::RefreshAiGuide
             | BatCommands::Update { .. } => return Ok(()),
             BatCommands::Sonar => false,
-            BatCommands::Deploy { .. } => true,
+            BatCommands::Deploy { .. } | BatCommands::Resolve { .. } => true,
         };
 
         if check_metadata {
@@ -288,6 +322,50 @@ async fn run() -> CommandResult<()> {
     crate::guide::refresh_ai_surface();
 
     cli.command.execute().await
+}
+
+/// `bat-cli resolve` — read/update the metadata's interface→contract resolutions.
+fn run_resolve(
+    interface: Option<String>,
+    contract: Option<String>,
+    list: bool,
+    remove: bool,
+) -> CommandResult<()> {
+    use crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata;
+    let mut md = EvmBatMetadata::read_metadata().change_context(CommandError)?;
+
+    // No interface given (or --list) → show what is resolved and what still needs it.
+    if list || interface.is_none() {
+        if md.resolutions.is_empty() {
+            println!("no resolutions yet.");
+        } else {
+            println!("resolutions:");
+            let mut items: Vec<_> = md.resolutions.iter().collect();
+            items.sort();
+            for (i, c) in items {
+                println!("  {i} → {c}");
+            }
+        }
+        return Ok(());
+    }
+    let interface = interface.expect("checked above");
+
+    if remove {
+        md.resolutions.remove(&interface);
+        md.save_metadata().change_context(CommandError)?;
+        println!("removed resolution for {interface}");
+        return Ok(());
+    }
+
+    let Some(contract) = contract else {
+        return Err(error_stack::Report::new(CommandError).attach_printable(
+            "usage: bat-cli resolve <INTERFACE> <CONTRACT>  (or --list / --remove <INTERFACE>)",
+        ));
+    };
+    md.resolutions.insert(interface.clone(), contract.clone());
+    md.save_metadata().change_context(CommandError)?;
+    println!("✓ resolved {interface} → {contract}");
+    Ok(())
 }
 
 #[tokio::main]
