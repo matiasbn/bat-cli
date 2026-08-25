@@ -398,10 +398,12 @@ to scan.) So the AI-drivable setup is: the auditor runs `! bat-cli login` ONCE, 
 `bat-cli init --yes` → `bat-cli sonar` → `bat-cli deploy --entry-point <X>`.
 
 A bare `deploy` shows a fuzzy list: entry points first and marked `[entry point]`, then every
-other function, with `(deployed)` on what is already on the board — pass `--entry-point` to skip it.
+other function, with `(deployed)` on what is already on the board — pass `--entry-point` to skip
+it. If that entry point is ALREADY on the board, `deploy` asks a yes/no before drawing a second
+frame — pass `--yes` to answer it and redeploy non-interactively.
 
 Safe to run unattended: `init --yes`, `sonar`, `config` (no flag), `update --check`,
-`login --status`, `deploy --entry-point <X>` (and `--dry-run`).
+`login --status`, `deploy --entry-point <X>` (add `--yes` to redeploy, or `--dry-run`).
 
 ## deploy
 
@@ -421,6 +423,18 @@ bat-cli deploy --entry-point Vault.deposit --preview /tmp/frame.png
 | `--include-external` | include contracts coming from `lib/` |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
 | `--all` | every entry point at once — **discouraged**; it warns and asks first |
+| `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; builds a second frame) |
+
+**Cross-contract resolution loop.** `deploy` follows the tree into other contracts, but a call on
+an interface-typed receiver (`$.borrowerOps.adjustPosition`) has a runtime-bound target it can't
+pin. So it STOPS and lists them (each with `[InterfaceType]` and in-scope candidates) rather than
+silently dropping them. To include those downstream functions (and their storage markers): read
+the wiring, pick the real contract, `bat-cli resolve <INTERFACE> <CONTRACT>`, and deploy again.
+Each round follows what you resolved and surfaces the next layer, until the tree is complete —
+resolutions live in the metadata and persist across `sonar`. `bat-cli resolve --list` shows them;
+`--allow-unresolved` draws the partial graph without stopping. Standard-token interfaces
+(`IERC20.balanceOf`, …) surface as name-collision candidates — those are reads, safe to skip with
+`--allow-unresolved` once the real state-changing hops are resolved.
 
 **Any function can be deployed, not just an entry point.** A shared helper needs a frame of
 its own for anything else to point at, and is worth reading on its own terms.
@@ -485,6 +499,20 @@ Top level: `contracts`, `entry_points`, `function_dependencies`, `interfaces`, `
 var (`totalSupply`), an index/mapping (`balances[]`), a storage-pointer field (`$.reserveStable`),
 or an accessor path (`_s().paused`). The Miro deploy rings storage-writing nodes in red from this.
 Match the exact string (the recipe below finds writers of one var).
+
+**`unresolved_calls`** (on every `contracts[].functions[]`) is the AI-resolution work-list for
+FULL cross-contract storage coverage. Static analysis marks a function's own `storage_writes`
+exactly, and follows calls to concrete contracts — but a call on an **interface-typed** receiver
+(`$.borrowerOps.adjustPosition(…)`) has a target that is only bound at runtime, so it cannot be
+pinned statically. Each entry is `{receiver, method, inferred_type, candidates}` — `candidates`
+are the in-scope concrete contracts that plausibly implement it. **To answer "what does entry
+point X change?" completely:** (1) collect `storage_writes` across X's statically-resolved call
+tree, then (2) for each `unresolved_calls` entry on the way, read the WIRING (where `receiver` is
+assigned — the constructor, config setter, factory, deploy script) to pick the real contract from
+`candidates`, look up that method there, and recurse into ITS `storage_writes` / `unresolved_calls`.
+That's the only irreducibly-dynamic step, and it's yours: static analysis narrows it to a short
+candidate list; you decide the actual target from the evidence. To surface it visually, deploy the
+resolved writer (`bat-cli deploy --entry-point <Contract.method>`) — its node is ringed red.
 - **`miro`** — what is already on the board; `miro.auto.frames[]` holds `entry_point` and
   `frame_url` per deployed frame.
 
@@ -556,6 +584,27 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.21.0
+- **Cross-contract storage coverage — deploy an entry point, see EVERY storage change it causes,
+  across contracts.** A call on an interface-typed receiver (`$.borrowerOps.adjustPosition`) has a
+  concrete target bound at runtime that static analysis can't pin, so those hops used to be
+  dropped and their downstream writes invisible. Now:
+  - Each `contracts[].functions[]` carries **`unresolved_calls`** — the interface hops that need
+    resolving, each with `inferred_type` (the receiver's interface, resolved through struct-field,
+    local, parameter and accessor-return types, following field chains of any depth like
+    `_s().CORE.owner`), in-scope `candidates`, and `assigned_in` (the functions that WRITE the
+    receiver — where its address is wired, so you know which candidate is real). The list is
+    pruned to only the hops that can actually reach a storage write.
+  - **`deploy` walks the whole tree and STOPS** listing the unresolved hops (transitively — the
+    entire tree at once) instead of drawing a partial graph. Record each with
+    `bat-cli resolve <INTERFACE> <CONTRACT>` (stored in the metadata's `resolutions`, preserved
+    across `sonar` like `miro`); deploy follows them, drawing the concrete downstream functions
+    with their red storage markers. `--allow-unresolved` draws the partial graph as-is.
+- **Storage-write recall fix.** Functions with a MULTI-LINE signature were parsed from the wrong
+  line and silently lost their writes/calls; the whole function is parsed now, so their storage
+  writes (and everything above) are detected. Also a large internal speedup — one parse per
+  function instead of several. _Re-read: metadata.md, workflow.md._
 
 ## 0.19.1
 - **Storage-write detection now covers writes through `storage` PARAMETERS** — a library that

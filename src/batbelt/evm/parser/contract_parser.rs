@@ -1,11 +1,12 @@
 use solar_parse::{ast, interface::Session};
 
 use crate::batbelt::evm::types::{
-    EvmContract, EvmContractType, EvmEvent, EvmFunction, EvmModifierDef, StorageVariable,
+    EvmContract, EvmContractType, EvmEvent, EvmFunction, EvmModifierDef, EvmParam, EvmStruct,
+    StorageVariable,
 };
 
 use super::event_parser::parse_event_definition;
-use super::evm_file_parser::span_to_line;
+use super::evm_file_parser::{span_to_line, type_to_string};
 use super::function_parser::parse_function_definition;
 use super::modifier_parser::parse_modifier_definition;
 use super::storage_parser::parse_variable_definition;
@@ -36,6 +37,7 @@ pub fn parse_contract_definition(
     let mut modifiers: Vec<EvmModifierDef> = Vec::new();
     let mut storage_variables: Vec<StorageVariable> = Vec::new();
     let mut events: Vec<EvmEvent> = Vec::new();
+    let mut structs: Vec<EvmStruct> = Vec::new();
 
     for item in contract.body.iter() {
         match &item.kind {
@@ -53,6 +55,23 @@ pub fn parse_contract_definition(
             }
             ast::ItemKind::Event(event) => {
                 events.push(parse_event_definition(sess, event));
+            }
+            ast::ItemKind::Struct(s) => {
+                let fields: Vec<EvmParam> = s
+                    .fields
+                    .iter()
+                    .filter_map(|f| {
+                        f.name.map(|n| EvmParam {
+                            name: n.as_str().to_string(),
+                            type_name: type_to_string(sess, &f.ty),
+                            storage_location: None,
+                        })
+                    })
+                    .collect();
+                structs.push(EvmStruct {
+                    name: s.name.as_str().to_string(),
+                    fields,
+                });
             }
             _ => {}
         }
@@ -73,5 +92,6 @@ pub fn parse_contract_definition(
         file_path: file_path.to_string(),
         line,
         external,
+        structs,
     }
 }
