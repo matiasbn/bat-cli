@@ -488,6 +488,9 @@ async fn deploy_one(
                     u.candidates.join(", ")
                 }
             );
+            if !u.assigned_in.is_empty() {
+                println!("        wired in: {}", u.assigned_in.join(", ").dimmed());
+            }
         }
         println!(
             "\n  Resolve each interface to its concrete contract, then deploy again:\n    {}\n  (or pass {} to draw the partial graph as-is.)",
@@ -1258,12 +1261,56 @@ fn build_graph(
         }
     }
 
-    // Dedup the unresolved list by (receiver, method).
-    unresolved.sort_by(|a, b| (&a.receiver, &a.method).cmp(&(&b.receiver, &b.method)));
-    unresolved.dedup_by(|a, b| a.receiver == b.receiver && a.method == b.method);
+    // Surface the WHOLE tree's unresolved calls at once (not just the drawn frontier):
+    // follow each unambiguous hop — a resolved interface, or a lone candidate — into
+    // its function and collect ITS unresolved too, so the AI can resolve in one pass.
+    let unresolved = expand_unresolved(metadata, unresolved);
 
     split_shared_leaves(&mut nodes, &mut edges);
     Ok((nodes, edges, truncated, unresolved))
+}
+
+/// Transitively collect every unresolved interface call reachable from `seed`,
+/// descending through the unambiguous hops (a resolution, or a single candidate).
+fn expand_unresolved(
+    metadata: &EvmBatMetadata,
+    seed: Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall>,
+) -> Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall> {
+    let mut out = Vec::new();
+    let mut seen_calls: HashSet<(String, String)> = HashSet::new();
+    let mut visited_fns: HashSet<(String, String)> = HashSet::new();
+    let mut frontier = seed;
+    while let Some(u) = frontier.pop() {
+        if !seen_calls.insert((u.receiver.clone(), u.method.clone())) {
+            continue;
+        }
+        // Pick a single target to descend into: a recorded resolution, else a lone
+        // candidate. Ambiguous (multi-candidate) calls are listed, not descended.
+        let target = if !u.inferred_type.is_empty() {
+            metadata.resolutions.get(&u.inferred_type).cloned()
+        } else {
+            None
+        }
+        .or_else(|| {
+            if u.candidates.len() == 1 {
+                Some(u.candidates[0].clone())
+            } else {
+                None
+            }
+        });
+        if let Some(contract) = target {
+            if visited_fns.insert((contract.clone(), u.method.clone())) {
+                if let Some((_, f)) = find_function(metadata, &contract, &u.method) {
+                    for du in &f.unresolved_calls {
+                        frontier.push(du.clone());
+                    }
+                }
+            }
+        }
+        out.push(u);
+    }
+    out.sort_by(|a, b| (&a.receiver, &a.method).cmp(&(&b.receiver, &b.method)));
+    out
 }
 
 /// Identity of a function, used to detect recursion along a path.

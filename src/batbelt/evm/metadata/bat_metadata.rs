@@ -105,6 +105,11 @@ pub struct UnresolvedCall {
     /// `method`). The AI picks the real one from the wiring.
     #[serde(default)]
     pub candidates: Vec<String>,
+    /// Functions (`Contract.function`) that WRITE this call's receiver — where its
+    /// concrete address is wired. Reading these tells the AI which candidate is the
+    /// real one. Empty when the receiver isn't a tracked storage location.
+    #[serde(default)]
+    pub assigned_in: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -364,6 +369,12 @@ impl EvmBatMetadata {
             String,
             std::collections::HashMap<String, String>,
         > = std::collections::HashMap::new();
+        // Per contract: single-return function → its return type (for accessor calls
+        // like `_s()` whose result is a storage struct, used to type `_s().field`).
+        let mut own_fn_returns: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, String>,
+        > = std::collections::HashMap::new();
         for c in &contracts {
             for b in &c.base_contracts {
                 impl_map.entry(b.clone()).or_default().push(c.name.clone());
@@ -382,6 +393,13 @@ impl EvmBatMetadata {
                 .map(|v| (v.name.clone(), v.type_name.clone()))
                 .collect();
             own_var_types.insert(c.name.clone(), vt);
+            let fr: std::collections::HashMap<String, String> = c
+                .functions
+                .iter()
+                .filter(|f| f.returns.len() == 1)
+                .map(|f| (f.name.clone(), f.returns[0].type_name.clone()))
+                .collect();
+            own_fn_returns.insert(c.name.clone(), fr);
         }
 
         // struct name → (field name → declared type), for typing `$.field` receivers.
@@ -420,6 +438,29 @@ impl EvmBatMetadata {
                     if let Some(vt) = own_var_types.get(&name) {
                         for (k, v) in vt {
                             var_types.entry(k.clone()).or_insert_with(|| v.clone());
+                        }
+                    }
+                    if let Some(bases) = contract_bases.get(&name) {
+                        stack.extend(bases.iter().cloned());
+                    }
+                }
+            }
+
+            // Function return types visible to this contract (own + inherited),
+            // for typing accessor-call receivers like `_s().field`.
+            let mut fn_returns: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
+            {
+                let mut seen: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                let mut stack = vec![contract.name.clone()];
+                while let Some(name) = stack.pop() {
+                    if !seen.insert(name.clone()) {
+                        continue;
+                    }
+                    if let Some(fr) = own_fn_returns.get(&name) {
+                        for (k, v) in fr {
+                            fn_returns.entry(k.clone()).or_insert_with(|| v.clone());
                         }
                     }
                     if let Some(bases) = contract_bases.get(&name) {
@@ -468,6 +509,7 @@ impl EvmBatMetadata {
                     &analysis.call_targets,
                     &local_var_types,
                     &struct_fields,
+                    &fn_returns,
                     &contract_names,
                     &is_interface,
                     &external_contracts,
@@ -717,6 +759,31 @@ pub fn prune_unresolved_noise(metadata: &mut EvmBatMetadata) {
             });
         }
     }
+
+    // Wiring hint: which functions WRITE each call's receiver (where its concrete
+    // address is set), so the AI can read those to pick the real candidate.
+    let mut write_sites: HashMap<String, Vec<String>> = HashMap::new();
+    for c in &metadata.contracts {
+        for f in &c.functions {
+            for w in &f.storage_writes {
+                write_sites
+                    .entry(w.clone())
+                    .or_default()
+                    .push(format!("{}.{}", c.name, f.name));
+            }
+        }
+    }
+    for c in &mut metadata.contracts {
+        for f in &mut c.functions {
+            for u in &mut f.unresolved_calls {
+                if let Some(sites) = write_sites.get(&u.receiver) {
+                    u.assigned_in = sites.clone();
+                    u.assigned_in.sort();
+                    u.assigned_in.dedup();
+                }
+            }
+        }
+    }
 }
 
 /// Compute the external calls a function makes that static analysis cannot pin to
@@ -728,6 +795,7 @@ fn compute_unresolved_calls(
     targets: &[(String, String)],
     var_types: &std::collections::HashMap<String, String>,
     struct_fields: &std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    fn_returns: &std::collections::HashMap<String, String>,
     contract_names: &std::collections::HashSet<String>,
     is_interface: &std::collections::HashSet<String>,
     external_contracts: &std::collections::HashSet<String>,
@@ -744,7 +812,7 @@ fn compute_unresolved_calls(
             continue;
         }
 
-        let inferred_type = receiver_type(&receiver, var_types, struct_fields);
+        let inferred_type = receiver_type(&receiver, var_types, struct_fields, fn_returns);
 
         // Implementers of the receiver's declared interface type that define the
         // method — a STATIC, type-proven resolution.
@@ -793,6 +861,7 @@ fn compute_unresolved_calls(
                 method,
                 inferred_type,
                 candidates,
+                assigned_in: Vec::new(),
             });
         }
     }
@@ -802,45 +871,61 @@ fn compute_unresolved_calls(
 /// The declared type of a call receiver expression: a bare variable (`positionManager`)
 /// via `var_types`, or a one-level struct-pointer field (`$.borrowerOps`) via the base
 /// variable's struct type and its field types. Empty when it can't be typed.
+/// The declared type of a call-receiver expression, following a chain of field
+/// accesses of ANY depth: `positionManager`, `$.borrowerOps`, `_s().CORE`,
+/// `_s().CORE.owner`. The base is a variable (`var_types`), a cast `IFace()`, or an
+/// accessor call `_s()` (its return type via `fn_returns`); each subsequent `.field`
+/// steps through the struct's field types. Empty when it can't be typed.
 fn receiver_type(
     receiver: &str,
     var_types: &std::collections::HashMap<String, String>,
     struct_fields: &std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    fn_returns: &std::collections::HashMap<String, String>,
 ) -> String {
-    if let Some((base, field)) = receiver.split_once('.') {
-        let field = field.trim_end_matches("[]");
-        // Only a single field hop is resolved (covers `$.borrowerOps`); deeper chains
-        // stay untyped.
-        if field.contains('.') || field.contains('[') {
-            return String::new();
-        }
-        if let Some(base_type) = var_types.get(base) {
-            if let Some(fields) = struct_fields.get(base_type) {
-                if let Some(field_type) = fields.get(field) {
-                    return field_type.clone();
-                }
-            }
-        }
-        return String::new();
-    }
-    if receiver.contains('[') {
-        return String::new();
-    }
-    // A cast receiver `IFace(addr)` renders as `IFace()` — its type is the cast
-    // target. Gate on a PascalCase base so a plain function call (`_s()`) isn't
-    // mistaken for a type.
-    if let Some(base) = receiver.strip_suffix("()") {
-        if base
+    // Strip a qualifier: `CvammStore.CvammStorage` → `CvammStorage`, so it matches the
+    // struct/interface names our maps are keyed by.
+    let unqualify = |t: &str| t.rsplit('.').next().unwrap_or(t).to_string();
+
+    let mut segments = receiver.split('.');
+    let base = match segments.next() {
+        Some(b) => b.trim_end_matches("[]"),
+        None => return String::new(),
+    };
+    // Resolve the base segment's type.
+    let mut current: Option<String> = if let Some(callee) = base.strip_suffix("()") {
+        if callee
             .chars()
             .next()
             .is_some_and(|c| c.is_ascii_uppercase())
-            && base.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && callee.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         {
-            return base.to_string();
+            // A cast `IFace(addr)` → the cast target type.
+            Some(callee.to_string())
+        } else {
+            // An accessor call `_s()` → its return type.
+            fn_returns.get(callee).cloned()
         }
-        return String::new();
+    } else if base.contains('(') {
+        // A more complex call base we don't model.
+        None
+    } else {
+        var_types.get(base).cloned()
+    };
+
+    // Walk each remaining `.field` through the struct's field types.
+    for seg in segments {
+        let field = seg.trim_end_matches("[]");
+        current = current.and_then(|t| {
+            struct_fields
+                .get(&unqualify(&t))
+                .and_then(|fields| fields.get(field))
+                .cloned()
+        });
+        if current.is_none() {
+            return String::new();
+        }
     }
-    var_types.get(receiver).cloned().unwrap_or_default()
+    current.map(|t| unqualify(&t)).unwrap_or_default()
 }
 
 fn detect_access_control(modifiers: &[String]) -> Vec<AccessControlType> {
