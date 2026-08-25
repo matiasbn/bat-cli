@@ -98,6 +98,9 @@ pub struct AutoDeployOptions {
     /// Skip the "already on the board — deploy again?" confirmation (assume yes),
     /// so a redeploy runs non-interactively.
     pub assume_yes: bool,
+    /// Draw the partial graph even when interface calls in the tree are unresolved,
+    /// instead of stopping to list them.
+    pub allow_unresolved: bool,
 }
 
 impl Default for AutoDeployOptions {
@@ -112,6 +115,7 @@ impl Default for AutoDeployOptions {
             preview: None,
             stroke_width: 8,
             assume_yes: false,
+            allow_unresolved: false,
         }
     }
 }
@@ -450,11 +454,52 @@ async fn deploy_one(
         }
     }
 
-    let (mut nodes, mut edges, truncated) =
+    let (mut nodes, mut edges, truncated, unresolved) =
         build_graph(metadata, contract_name, function_name, options)?;
     if nodes.is_empty() {
         println!("  no function metadata found, skipping");
         return Ok(());
+    }
+
+    // Cross-contract calls this tree reaches through an interface, whose concrete
+    // target static analysis cannot pin. By default STOP so the AI (or auditor) can
+    // resolve them and the downstream storage writers can be drawn; `--allow-unresolved`
+    // draws the partial graph instead.
+    if !unresolved.is_empty() && !options.allow_unresolved {
+        println!(
+            "\n  {} {} interface call(s) in this tree are unresolved — their downstream\n  functions (and any storage changes) are NOT in the graph yet:",
+            "⚠".yellow(),
+            unresolved.len()
+        );
+        for u in &unresolved {
+            let ty = if u.inferred_type.is_empty() {
+                String::new()
+            } else {
+                format!("  [{}]", u.inferred_type)
+            };
+            println!(
+                "    {}.{}{}  → candidates: {}",
+                u.receiver,
+                u.method,
+                ty,
+                if u.candidates.is_empty() {
+                    "(none in scope)".to_string()
+                } else {
+                    u.candidates.join(", ")
+                }
+            );
+        }
+        println!(
+            "\n  Resolve each interface to its concrete contract, then deploy again:\n    {}\n  (or pass {} to draw the partial graph as-is.)",
+            "bat-cli resolve <INTERFACE> <CONTRACT>".green(),
+            "--allow-unresolved".green()
+        );
+        return Err(Report::new(EvmMiroError).attach_printable(format!(
+            "{} unresolved interface call(s) in {}.{} — see the list above",
+            unresolved.len(),
+            contract_name,
+            function_name
+        )));
     }
     let depth = nodes.iter().map(|node| node.depth).max().unwrap_or(0);
     println!(
@@ -992,16 +1037,24 @@ fn build_graph(
     contract_name: &str,
     function_name: &str,
     options: &AutoDeployOptions,
-) -> Result<(Vec<GraphNode>, Vec<GraphEdge>, usize)> {
+) -> Result<(
+    Vec<GraphNode>,
+    Vec<GraphEdge>,
+    usize,
+    Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall>,
+)> {
     let Some((root_contract, root_function)) =
         find_function(metadata, contract_name, function_name)
     else {
-        return Ok((Vec::new(), Vec::new(), 0));
+        return Ok((Vec::new(), Vec::new(), 0, Vec::new()));
     };
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut truncated = 0usize;
+    // Interface calls in this tree still needing an AI resolution (see `resolve`).
+    let mut unresolved: Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall> =
+        Vec::new();
     // One node per function: a second call to the same function points at the
     // node that already exists.
     let mut drawn: HashMap<String, String> = HashMap::new();
@@ -1137,14 +1190,80 @@ fn build_graph(
             });
         }
 
+        // Cross-contract interface calls: follow the ones the AI has resolved (so the
+        // concrete downstream function — and its storage writes — appear and recurse),
+        // and collect the rest as needing a resolution.
+        for u in &function.unresolved_calls {
+            let concrete = if u.inferred_type.is_empty() {
+                None
+            } else {
+                metadata.resolutions.get(&u.inferred_type)
+            };
+            let Some(concrete) = concrete else {
+                unresolved.push(u.clone());
+                continue;
+            };
+            let Some((tc, tf)) = find_function(metadata, concrete, &u.method) else {
+                // A resolution is set but its method isn't there — still unresolved.
+                unresolved.push(u.clone());
+                continue;
+            };
+            if !options.include_external && tc.external {
+                continue;
+            }
+            let target_id = node_key(&tc.name, &tf.name);
+            if target_id == current.node_id {
+                continue;
+            }
+            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
+                truncated += 1;
+                continue;
+            }
+            let line_in_slice = slice
+                .iter()
+                .position(|l| l.contains(&u.method))
+                .map(|i| i + 1)
+                .unwrap_or(1);
+            edges.push(GraphEdge {
+                from: current.node_id.clone(),
+                to: target_id.clone(),
+                line_in_slice,
+                column: slice
+                    .get(line_in_slice - 1)
+                    .and_then(|l| l.find(u.method.as_str()))
+                    .unwrap_or(0),
+                symbol: u.method.clone(),
+            });
+            if drawn.insert(target_id.clone(), target_id.clone()).is_some() {
+                continue;
+            }
+            nodes.push(make_node(
+                target_id.clone(),
+                format!("{}.{}", tc.name, tf.name),
+                tc,
+                &tf,
+                current.depth + 1,
+            ));
+            children.push(Pending {
+                node_id: target_id,
+                contract: tc.name.clone(),
+                function: tf.name.clone(),
+                depth: current.depth + 1,
+            });
+        }
+
         // Reversed, because popping a stack undoes the order.
         for child in children.into_iter().rev() {
             stack.push(child);
         }
     }
 
+    // Dedup the unresolved list by (receiver, method).
+    unresolved.sort_by(|a, b| (&a.receiver, &a.method).cmp(&(&b.receiver, &b.method)));
+    unresolved.dedup_by(|a, b| a.receiver == b.receiver && a.method == b.method);
+
     split_shared_leaves(&mut nodes, &mut edges);
-    Ok((nodes, edges, truncated))
+    Ok((nodes, edges, truncated, unresolved))
 }
 
 /// Identity of a function, used to detect recursion along a path.

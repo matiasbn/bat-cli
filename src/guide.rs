@@ -425,6 +425,17 @@ bat-cli deploy --entry-point Vault.deposit --preview /tmp/frame.png
 | `--all` | every entry point at once — **discouraged**; it warns and asks first |
 | `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; builds a second frame) |
 
+**Cross-contract resolution loop.** `deploy` follows the tree into other contracts, but a call on
+an interface-typed receiver (`$.borrowerOps.adjustPosition`) has a runtime-bound target it can't
+pin. So it STOPS and lists them (each with `[InterfaceType]` and in-scope candidates) rather than
+silently dropping them. To include those downstream functions (and their storage markers): read
+the wiring, pick the real contract, `bat-cli resolve <INTERFACE> <CONTRACT>`, and deploy again.
+Each round follows what you resolved and surfaces the next layer, until the tree is complete —
+resolutions live in the metadata and persist across `sonar`. `bat-cli resolve --list` shows them;
+`--allow-unresolved` draws the partial graph without stopping. Standard-token interfaces
+(`IERC20.balanceOf`, …) surface as name-collision candidates — those are reads, safe to skip with
+`--allow-unresolved` once the real state-changing hops are resolved.
+
 **Any function can be deployed, not just an entry point.** A shared helper needs a frame of
 its own for anything else to point at, and is worth reading on its own terms.
 
@@ -573,6 +584,17 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.21.0
+- **Deploy follows AI-resolved interface calls, and STOPS to ask for the rest.** `deploy` now
+  walks an entry point's cross-contract tree: for each interface call it hits, if you've recorded
+  the concrete target it follows through (drawing the downstream function and its red storage
+  markers); if not, it stops with the list and exits non-zero. Resolve each with
+  `bat-cli resolve <INTERFACE> <CONTRACT>` (stored in the metadata's `resolutions`, preserved
+  across `sonar`), then deploy again — the frontier deepens each round until the whole tree is
+  drawn. `--allow-unresolved` draws the partial graph instead. This is the loop that makes
+  "deploy an entry point → see every storage change it causes, across contracts" work. Cast
+  receivers (`IFace(addr).m()`) are typed too. _Re-read: workflow.md._
 
 ## 0.20.0
 - **Cross-contract storage coverage — the AI resolution work-list (`unresolved_calls`).** Every

@@ -33,6 +33,13 @@ pub struct EvmBatMetadata {
     pub file_items: Vec<EvmFileItem>,
     #[serde(default)]
     pub miro: MiroMetadataRef,
+    /// AI-supplied resolutions for the runtime-dynamic interface→implementation
+    /// bindings that static analysis cannot pin (see `unresolved_calls`): interface
+    /// type name → the concrete in-scope contract it points to in this deployment.
+    /// The deploy graph follows these to reach downstream storage writers. Preserved
+    /// across `sonar` regeneration (like `miro`); written by `bat-cli resolve`.
+    #[serde(default)]
+    pub resolutions: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -297,6 +304,15 @@ impl EvmBatMetadata {
                 if let Some(miro_val) = json.get("miro") {
                     if let Ok(miro) = serde_json::from_value::<MiroMetadataRef>(miro_val.clone()) {
                         metadata.miro = miro;
+                    }
+                }
+                // Preserve AI-supplied interface resolutions across regeneration.
+                if let Some(res_val) = json.get("resolutions") {
+                    if let Ok(res) = serde_json::from_value::<
+                        std::collections::HashMap<String, String>,
+                    >(res_val.clone())
+                    {
+                        metadata.resolutions = res;
                     }
                 }
             }
@@ -693,6 +709,20 @@ fn receiver_type(
         return String::new();
     }
     if receiver.contains('[') {
+        return String::new();
+    }
+    // A cast receiver `IFace(addr)` renders as `IFace()` — its type is the cast
+    // target. Gate on a PascalCase base so a plain function call (`_s()`) isn't
+    // mistaken for a type.
+    if let Some(base) = receiver.strip_suffix("()") {
+        if base
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_uppercase())
+            && base.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return base.to_string();
+        }
         return String::new();
     }
     var_types.get(receiver).cloned().unwrap_or_default()
