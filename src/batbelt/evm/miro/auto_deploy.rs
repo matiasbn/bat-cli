@@ -1368,6 +1368,12 @@ fn build_graph(
             else {
                 continue;
             };
+            // A bodyless interface/abstract declaration or an empty `{}` virtual
+            // stub has nothing to screenshot — the real implementation is drawn
+            // via its own resolved call. Skip it (edge included).
+            if target_function.is_stub {
+                continue;
+            }
             let target_id = node_key(&target_contract.name, &target_function.name);
             if target_id == current.node_id {
                 continue; // a function calling itself needs no arrow
@@ -1424,6 +1430,10 @@ fn build_graph(
                 continue;
             };
             if !options.include_external && tc.external {
+                continue;
+            }
+            // A resolution that lands on a bodyless/empty stub has nothing to draw.
+            if tf.is_stub {
                 continue;
             }
             let target_id = node_key(&tc.name, &tf.name);

@@ -73,6 +73,12 @@ pub struct FunctionMetadata {
     #[serde(default)]
     pub end_line: usize,
     pub is_constructor: bool,
+    /// True when the function has no real implementation: a bodyless declaration
+    /// (interface / abstract method) or an empty `{}` body (an unoverridden
+    /// `virtual` stub). Nothing to screenshot, so the diagram skips it — the
+    /// concrete implementation is drawn via its own (resolved) call.
+    #[serde(default)]
+    pub is_stub: bool,
     /// Storage locations this function writes (state vars / storage-pointer
     /// paths). Empty for a function that mutates no storage. Drives the
     /// "writes storage" marker on the diagram.
@@ -558,6 +564,7 @@ impl EvmBatMetadata {
                     line: f.line,
                     end_line: f.end_line,
                     is_constructor: f.is_constructor,
+                    is_stub: is_stub_body(&f.body_source),
                     storage_writes,
                     storage_write_sites,
                     unresolved_calls,
@@ -645,6 +652,23 @@ impl EvmBatMetadata {
 
         metadata
     }
+}
+
+/// True when a function has no real implementation to screenshot: a bodyless
+/// declaration (interface / abstract method — `body_source` is empty) or an
+/// empty `{}` block (an unoverridden `virtual` stub).
+fn is_stub_body(body_source: &str) -> bool {
+    if body_source.trim().is_empty() {
+        return true;
+    }
+    // The first `{` opens the body; if only whitespace sits before the matching
+    // final `}`, the body is empty.
+    if let (Some(open), Some(close)) = (body_source.find('{'), body_source.rfind('}')) {
+        if open < close && body_source[open + 1..close].trim().is_empty() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Collect a contract's effective storage-variable names: its own plus every
