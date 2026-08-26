@@ -453,6 +453,19 @@ no arrow points backwards.
 **Storage-write markers.** Every node whose function mutates contract storage is drawn inside a
 hollow red rectangle, so state-changing functions stand out at a glance. This is derived from
 each function's `storage_writes` in the metadata (see `metadata.md`); nothing to configure.
+Inside the rectangle, a **translucent red band** covers each exact line that writes storage
+(from `storage_write_sites`), so you see WHICH state changes, statement by statement.
+
+**External-boundary markers.** A **dashed amber band** covers a line that calls an external
+contract with no in-scope source — an interface-typed receiver nothing in the repo implements
+(e.g. an ERC-20 by address), via a non-view method (from `unknown_external_calls`). It means the
+flow leaves the audited code and the callee MIGHT mutate its own state — unverified, so it is
+deliberately distinct from the solid-red proven write. `view`/`pure` calls are never flagged.
+
+**Frame recycling.** Redeploying a function reuses its existing frame (same id and position),
+wiping and redrawing the contents — so a diagram that links to the frame by URL keeps working,
+and no duplicate frames pile up. Interface/abstract stubs (bodyless declarations, empty
+`virtual {}`) are never drawn on their own: a stub is redirected to its concrete override.
 
 ## Failure modes
 
@@ -486,7 +499,9 @@ Top level: `contracts`, `entry_points`, `function_dependencies`, `interfaces`, `
   (`Contract` | `Interface` | `Abstract` | `Library`), `base_contracts`, `line`, `external`,
   and nested `functions`, `state_variables`, `events`, `modifiers`.
   - `functions[]` — `metadata_id`, `name`, `contract_name`, `visibility`, `mutability`,
-    `modifiers`, `params`, `returns`, `line`, `end_line`, `is_constructor`.
+    `modifiers`, `params`, `returns`, `line`, `end_line`, `is_constructor`, `is_stub` (bodyless
+    declaration or empty `virtual {}` — nothing to draw; redirected to its override on deploy),
+    `storage_writes`, `storage_write_sites`, `unresolved_calls`, `unknown_external_calls`.
   - `state_variables[]` — `name`, `type_name`, `visibility`, `is_constant`, `is_immutable`, `line`.
 - **`entry_points[]`** — the public/external surface: `name` (stored as `Contract.function`),
   `contract_name`, `function_metadata_id`, `access_control`, `storage_reads`, `storage_writes`,
@@ -498,7 +513,14 @@ Top level: `contracts`, `entry_points`, `function_dependencies`, `interfaces`, `
 `contracts[].functions[]`. It lists the written storage locations as readable paths — a state
 var (`totalSupply`), an index/mapping (`balances[]`), a storage-pointer field (`$.reserveStable`),
 or an accessor path (`_s().paused`). The Miro deploy rings storage-writing nodes in red from this.
-Match the exact string (the recipe below finds writers of one var).
+Match the exact string (the recipe below finds writers of one var). **`storage_write_sites`** is
+the same writes with the FILE `line` each sits on (`{name, line}`), driving the per-line red band.
+
+**`unknown_external_calls`** (on every `contracts[].functions[]`) lists calls on an interface-typed
+receiver with NO in-scope implementer — the callee's source is not in the repo (e.g. an ERC-20 by
+address), so its storage effect is unknowable. Each is `{receiver, method, inferred_type}`. The
+deploy flags non-view ones with a dashed amber band; unlike `unresolved_calls`, these have no
+in-scope target to `resolve`.
 
 **`unresolved_calls`** (on every `contracts[].functions[]`) is the AI-resolution work-list for
 FULL cross-contract storage coverage. Static analysis marks a function's own `storage_writes`
@@ -584,6 +606,28 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.22.0
+- **Exact storage-write lines on the board.** A red frame border said a function mutates state but
+  not WHICH. Each `contracts[].functions[]` now carries **`storage_write_sites`** — every write
+  with the `name` (lvalue path) and the FILE `line` it happens on. On the board, `deploy` draws a
+  translucent red band over each of those exact lines, so you read off precisely which state a
+  function changes, statement by statement. Regenerate with `sonar`, then `deploy`.
+  _Re-read: metadata.md, workflow.md._
+- **External-boundary markers — calls to contracts whose source you don't have.** A call on an
+  interface-typed receiver that NOTHING in the repo implements (an ERC-20 passed by address, say)
+  reaches a contract with no in-scope source, so its storage effect is unknowable. Each function
+  now carries **`unknown_external_calls`** (interface-typed receivers only), and `deploy` marks
+  each such line with a DASHED AMBER band — visually distinct from the solid-red proven write: it
+  means "unverified external state-change boundary", not a fact. A `view`/`pure` method is never
+  flagged (the compiler guarantees no mutation). _Re-read: metadata.md, workflow.md._
+- **No more duplicate interface/abstract screenshots.** A call resolving to a bodyless interface
+  declaration or an empty `virtual {}` stub was drawn as its own node next to the real one. Now a
+  stub is redirected to its single concrete override (`is_stub` on each function); a pure
+  declaration with no in-scope override is drawn as nothing. _Re-read: workflow.md._
+- **Redeploy recycles the frame in place.** Deploying a function again wipes its contents and
+  reflows them into the SAME frame (same id/position), instead of leaving a duplicate — so links
+  that point at a frame by URL keep working. _Re-read: workflow.md._
 
 ## 0.21.0
 - **Cross-contract storage coverage — deploy an entry point, see EVERY storage change it causes,

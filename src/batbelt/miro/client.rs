@@ -333,6 +333,115 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// A translucent red band over a single code line, marking the exact
+    /// statement that writes contract storage. `y` is the line centre and
+    /// `height` one line tall; the fill is semi-transparent so the code stays
+    /// readable underneath.
+    pub async fn create_line_highlight(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": {
+                "fillColor": "#f24726",
+                "fillOpacity": "0.30",
+                "borderColor": "#f24726",
+                "borderWidth": "2",
+                "borderOpacity": "0.9",
+            },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width, "height": height },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_line_highlight", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
+    /// A dashed amber band over a code line that calls an external contract with
+    /// no in-scope source. Distinct from the solid-red proven-write highlight: this
+    /// marks an UNVERIFIED external state-change boundary (a non-view call whose
+    /// concrete target — and its storage effect — is unknown).
+    pub async fn create_external_marker(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": {
+                "fillColor": "#ffcc00",
+                "fillOpacity": "0.18",
+                "borderColor": "#ff9900",
+                "borderWidth": "2",
+                "borderOpacity": "0.9",
+                "borderStyle": "dashed",
+            },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width, "height": height },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_external_marker", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
+    /// Reposition and resize an existing frame in place, keeping its id.
+    ///
+    /// Redeploying a function recycles its frame instead of deleting it, because
+    /// other diagrams may link to that frame by URL (`?moveToWidget=<frame_id>`)
+    /// and a fresh frame would break those links. We wipe the contents and reflow
+    /// them into the same frame, resized to the new layout.
+    pub async fn update_frame(
+        &self,
+        frame_id: &str,
+        title: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<(), MiroError> {
+        let url = self.endpoint(&format!("frames/{frame_id}"));
+        let body = json!({
+            "data": { "title": title },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width, "height": height },
+        })
+        .to_string();
+
+        self.execute(LEVEL_2_CREDITS, "update_frame", move |http| {
+            http.patch(&url)
+                .header(CONTENT_TYPE, "application/json")
+                .body(body.clone())
+        })
+        .await?;
+        Ok(())
+    }
+
     /// Upload a PNG **already positioned, sized and parented**.
     ///
     /// This is the call the previous implementation was missing: without the
@@ -483,6 +592,27 @@ impl MiroClient {
         self.execute(LEVEL_1_CREDITS, "item_exists", move |http| http.get(&url))
             .await
             .is_ok()
+    }
+
+    /// Delete an item (frame, image, shape, card) by id. Best-effort: a 404 (already
+    /// gone) is treated as success so recycling a partially hand-edited frame works.
+    pub async fn delete_item(&self, item_id: &str) -> Result<(), MiroError> {
+        let url = format!("{}/{}", self.endpoint("items"), item_id);
+        let _ = self
+            .execute(LEVEL_1_CREDITS, "delete_item", move |http| http.delete(&url))
+            .await;
+        Ok(())
+    }
+
+    /// Delete a connector by id. Best-effort, like `delete_item`.
+    pub async fn delete_connector(&self, connector_id: &str) -> Result<(), MiroError> {
+        let url = format!("{}/{}", self.endpoint("connectors"), connector_id);
+        let _ = self
+            .execute(LEVEL_1_CREDITS, "delete_connector", move |http| {
+                http.delete(&url)
+            })
+            .await;
+        Ok(())
     }
 
     /// Create a card standing in for a function drawn elsewhere on the board.
