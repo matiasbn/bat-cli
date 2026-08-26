@@ -371,6 +371,44 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// A hollow SOLID amber rectangle around a whole node whose function makes a
+    /// non-view call to an external contract with no in-scope source but writes no
+    /// storage of its own — so at a glance the board says "a state change PROBABLY
+    /// happens here", the amber counterpart of the solid-red storage border.
+    pub async fn create_external_border(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        let pad = 60.0;
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": {
+                "fillOpacity": "0.0",
+                "borderColor": "#ff9900",
+                "borderWidth": "24",
+                "borderOpacity": "1.0",
+            },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width + pad, "height": height + pad },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_external_border", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
     /// A dashed amber band over a code line that calls an external contract with
     /// no in-scope source. Distinct from the solid-red proven-write highlight: this
     /// marks an UNVERIFIED external state-change boundary (a non-view call whose
