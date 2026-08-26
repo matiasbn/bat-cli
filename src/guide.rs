@@ -461,6 +461,9 @@ contract with no in-scope source — an interface-typed receiver nothing in the 
 (e.g. an ERC-20 by address), via a non-view method (from `unknown_external_calls`). It means the
 flow leaves the audited code and the callee MIGHT mutate its own state — unverified, so it is
 deliberately distinct from the solid-red proven write. `view`/`pure` calls are never flagged.
+A function that makes such a call but writes no storage of its own also gets a **solid amber
+rectangle** around its whole node — the amber counterpart of the red storage border, so
+"probably a state change here" reads at a glance alongside the proven-write nodes.
 
 **Frame recycling.** Redeploying a function reuses its existing frame (same id and position),
 wiping and redrawing the contents — so a diagram that links to the frame by URL keeps working,
@@ -606,6 +609,13 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.22.2
+- **Node-level marker for probable external state changes.** A function that makes a non-view
+  call to a sourceless external contract but writes NO storage of its own now gets a hollow SOLID
+  amber rectangle around its whole screenshot — the amber counterpart of the solid-red storage
+  border. So at a glance: red border = proven storage write, amber border = a state change probably
+  happens here (unverified). _Re-read: workflow.md._
 
 ## 0.22.1
 - **External-boundary detection now catches interface CASTS.** A call like

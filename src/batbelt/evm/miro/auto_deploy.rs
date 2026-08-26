@@ -767,6 +767,42 @@ async fn deploy_one(
         println!("    {} {} storage markers", "✓".green(), n_borders);
     }
 
+    // External-boundary node borders: a hollow dashed amber rectangle around every
+    // node that makes a non-view call to a sourceless external contract but writes
+    // NO storage of its own — so it gets no red border, yet a state change probably
+    // happens through it. Skipped when the node is already ringed red.
+    let ext_borders: Vec<(f64, f64, f64, f64)> = nodes
+        .iter()
+        .filter(|n| !n.external_call_lines.is_empty() && !n.writes_storage)
+        .filter_map(|n| layout.node(&n.id).map(|p| (p.x, p.y, p.width, p.height)))
+        .collect();
+    if !ext_borders.is_empty() {
+        let n_ext_borders = ext_borders.len();
+        let bar = phase_bar("external markers", n_ext_borders);
+        let mut border_tasks = tokio::task::JoinSet::new();
+        for (x, y, width, height) in ext_borders {
+            let client = client.clone();
+            let frame_id = frame_id.clone();
+            let bar = bar.clone();
+            border_tasks.spawn(async move {
+                let result = client
+                    .create_external_border(&frame_id, x, y, width, height)
+                    .await;
+                bar.inc(1);
+                result
+            });
+        }
+        while let Some(joined) = border_tasks.join_next().await {
+            let id = joined
+                .into_report()
+                .change_context(EvmMiroError)?
+                .change_context(EvmMiroError)?;
+            record.border_ids.push(id);
+        }
+        bar.finish_and_clear();
+        println!("    {} {} external markers", "✓".green(), n_ext_borders);
+    }
+
     // Line highlights: a translucent red band over each exact statement that
     // writes storage, so an auditor sees WHICH state a function mutates (not just
     // that it does). Tracked as border ids so a recycle clears them too.
