@@ -78,12 +78,25 @@ pub struct FunctionMetadata {
     /// "writes storage" marker on the diagram.
     #[serde(default)]
     pub storage_writes: Vec<String>,
+    /// The same storage writes, each with the FILE line (1-based) it happens on,
+    /// so a diagram can point at the exact statement inside the function, not just
+    /// mark the whole function. Empty for a function that mutates no storage.
+    #[serde(default)]
+    pub storage_write_sites: Vec<StorageWriteSite>,
     /// External calls that could NOT be statically resolved to a unique in-scope
     /// function — a call on an interface-typed receiver whose concrete target is a
     /// runtime property. An AI resolves these against the wiring to complete the
     /// cross-contract storage-change picture; each carries best-effort candidates.
     #[serde(default)]
     pub unresolved_calls: Vec<UnresolvedCall>,
+}
+
+/// A single storage write located in the source: the lvalue path and the file
+/// line (1-based) it sits on.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageWriteSite {
+    pub name: String,
+    pub line: usize,
 }
 
 /// An external call whose concrete target static analysis cannot pin down (the
@@ -503,6 +516,16 @@ impl EvmBatMetadata {
                     &storage_params,
                 );
                 let storage_writes = analysis.storage_writes;
+                // body_source starts at the function's first file line, so a
+                // source-relative write line maps to a file line by that offset.
+                let storage_write_sites = analysis
+                    .storage_write_sites
+                    .iter()
+                    .map(|(name, src_line)| StorageWriteSite {
+                        name: name.clone(),
+                        line: f.line + src_line.saturating_sub(1),
+                    })
+                    .collect();
                 // Receiver types visible here: state vars (inherited) + params + locals.
                 let mut local_var_types = var_types.clone();
                 for (n, t) in &analysis.local_types {
@@ -536,6 +559,7 @@ impl EvmBatMetadata {
                     end_line: f.end_line,
                     is_constructor: f.is_constructor,
                     storage_writes,
+                    storage_write_sites,
                     unresolved_calls,
                 });
             }

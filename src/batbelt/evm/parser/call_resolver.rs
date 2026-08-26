@@ -649,6 +649,9 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
 pub struct BodyAnalysis {
     /// Storage locations written (state vars / storage-pointer paths).
     pub storage_writes: Vec<String>,
+    /// Every storage write with the 1-based line (relative to `source`) it sits
+    /// on — so a diagram can point at the exact statement, not just the function.
+    pub storage_write_sites: Vec<(String, usize)>,
     /// External call targets as `(receiver, method)`.
     pub call_targets: Vec<(String, String)>,
     /// Local (and parameter) variable declared types, `(name, type)`.
@@ -723,15 +726,26 @@ fn analyze_in_wrap(
                                 collect_local_types_from_stmt(&sess, &stmt.kind, &mut a.local_types);
                             }
                             // Pass 2: writes, external call targets, and callee names.
+                            let mut writes: Vec<(String, solar_parse::interface::Span)> =
+                                Vec::new();
                             for stmt in block.stmts.iter() {
                                 collect_writes_from_stmt(
                                     &stmt.kind,
                                     state_vars,
                                     &storage_locals,
-                                    &mut a.storage_writes,
+                                    &mut writes,
                                 );
                                 collect_targets_from_stmt(&stmt.kind, &mut a.call_targets);
                                 extract_calls_from_stmt(&stmt.kind, &mut a.call_names);
+                            }
+                            let source_map = sess.source_map();
+                            for (path, span) in writes {
+                                // analyze_body's wrapper prepends `contract _C { … `
+                                // with no newline, so `source` line 1 is wrapped
+                                // line 1: the reported line IS the source line.
+                                let line = source_map.lookup_char_pos(span.lo()).line.max(1);
+                                a.storage_writes.push(path.clone());
+                                a.storage_write_sites.push((path, line));
                             }
                         }
                     }
@@ -743,6 +757,8 @@ fn analyze_in_wrap(
         }
         a.storage_writes.sort();
         a.storage_writes.dedup();
+        a.storage_write_sites.sort();
+        a.storage_write_sites.dedup();
         a.call_targets.sort();
         a.call_targets.dedup();
         a.local_types.sort();
@@ -1017,9 +1033,10 @@ fn lvalue_path(kind: &ast::ExprKind<'_>) -> Option<(LvalueRoot, String)> {
 /// storage-pointer local, or a storage accessor call.
 fn record_write(
     lval: &ast::ExprKind<'_>,
+    span: solar_parse::interface::Span,
     state_vars: &[String],
     storage_locals: &[String],
-    out: &mut Vec<String>,
+    out: &mut Vec<(String, solar_parse::interface::Span)>,
 ) {
     if let Some((root, path)) = lvalue_path(lval) {
         let is_storage = match root {
@@ -1029,7 +1046,7 @@ fn record_write(
             }
         };
         if is_storage {
-            out.push(path);
+            out.push((path, span));
         }
     }
 }
@@ -1039,7 +1056,7 @@ fn collect_writes_from_stmt(
     kind: &ast::StmtKind<'_>,
     sv: &[String],
     sl: &[String],
-    out: &mut Vec<String>,
+    out: &mut Vec<(String, solar_parse::interface::Span)>,
 ) {
     match kind {
         ast::StmtKind::Expr(expr) => collect_writes_from_expr(&expr.kind, sv, sl, out),
@@ -1103,16 +1120,16 @@ fn collect_writes_from_expr(
     kind: &ast::ExprKind<'_>,
     sv: &[String],
     sl: &[String],
-    out: &mut Vec<String>,
+    out: &mut Vec<(String, solar_parse::interface::Span)>,
 ) {
     match kind {
         ast::ExprKind::Assign(left, _op, right) => {
-            record_write(&left.kind, sv, sl, out);
+            record_write(&left.kind, left.span, sv, sl, out);
             collect_writes_from_expr(&left.kind, sv, sl, out);
             collect_writes_from_expr(&right.kind, sv, sl, out);
         }
         ast::ExprKind::Delete(inner) => {
-            record_write(&inner.kind, sv, sl, out);
+            record_write(&inner.kind, inner.span, sv, sl, out);
             collect_writes_from_expr(&inner.kind, sv, sl, out);
         }
         ast::ExprKind::Unary(op, inner) => {
@@ -1123,7 +1140,7 @@ fn collect_writes_from_expr(
                     | ast::UnOpKind::PostInc
                     | ast::UnOpKind::PostDec
             ) {
-                record_write(&inner.kind, sv, sl, out);
+                record_write(&inner.kind, inner.span, sv, sl, out);
             }
             collect_writes_from_expr(&inner.kind, sv, sl, out);
         }
@@ -1132,7 +1149,7 @@ fn collect_writes_from_expr(
             if let ast::ExprKind::Member(base, method) = &callee.kind {
                 let m = method.as_str();
                 if m == "push" || m == "pop" {
-                    record_write(&base.kind, sv, sl, out);
+                    record_write(&base.kind, base.span, sv, sl, out);
                 }
             }
             collect_writes_from_expr(&callee.kind, sv, sl, out);

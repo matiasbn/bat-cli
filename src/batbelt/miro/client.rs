@@ -333,6 +333,44 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// A translucent red band over a single code line, marking the exact
+    /// statement that writes contract storage. `y` is the line centre and
+    /// `height` one line tall; the fill is semi-transparent so the code stays
+    /// readable underneath.
+    pub async fn create_line_highlight(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": {
+                "fillColor": "#f24726",
+                "fillOpacity": "0.30",
+                "borderColor": "#f24726",
+                "borderWidth": "2",
+                "borderOpacity": "0.9",
+            },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width, "height": height },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_line_highlight", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
     /// Reposition and resize an existing frame in place, keeping its id.
     ///
     /// Redeploying a function recycles its frame instead of deleting it, because

@@ -158,6 +158,9 @@ struct GraphNode {
     /// This function writes contract storage — drawn with a colored border so an
     /// auditor can spot the state-mutating nodes at a glance.
     writes_storage: bool,
+    /// File lines (1-based) inside this node's slice that write storage, each with
+    /// the lvalue path — used to highlight the exact mutating statements.
+    write_lines: Vec<(usize, String)>,
 }
 
 impl GraphNode {
@@ -758,6 +761,61 @@ async fn deploy_one(
         }
         bar.finish_and_clear();
         println!("    {} {} storage markers", "✓".green(), n_borders);
+    }
+
+    // Line highlights: a translucent red band over each exact statement that
+    // writes storage, so an auditor sees WHICH state a function mutates (not just
+    // that it does). Tracked as border ids so a recycle clears them too.
+    let mut highlights: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for node in nodes.iter() {
+        if node.write_lines.is_empty() || node.png_height == 0 {
+            continue;
+        }
+        let Some(p) = layout.node(&node.id) else {
+            continue;
+        };
+        let geom = silicon::line_geometry(Some(node.font_size));
+        let line_h = (p.height * geom.line_height as f64 / node.png_height as f64).max(1.0);
+        let mut lines: Vec<usize> = node
+            .write_lines
+            .iter()
+            .map(|(line, _)| *line)
+            .filter(|line| *line >= node.start_line && *line <= node.end_line)
+            .collect();
+        lines.sort_unstable();
+        lines.dedup();
+        for line in lines {
+            let rendered_index = PATH_HEADER_LINES + (line - node.start_line);
+            let y_fraction = geom.line_center_fraction(rendered_index, node.png_height);
+            let cy = p.y - p.height / 2.0 + p.height * y_fraction;
+            highlights.push((p.x, cy, p.width, line_h));
+        }
+    }
+    if !highlights.is_empty() {
+        let n_highlights = highlights.len();
+        let bar = phase_bar("storage lines", n_highlights);
+        let mut highlight_tasks = tokio::task::JoinSet::new();
+        for (x, y, width, height) in highlights {
+            let client = client.clone();
+            let frame_id = frame_id.clone();
+            let bar = bar.clone();
+            highlight_tasks.spawn(async move {
+                let result = client
+                    .create_line_highlight(&frame_id, x, y, width, height)
+                    .await;
+                bar.inc(1);
+                result
+            });
+        }
+        while let Some(joined) = highlight_tasks.join_next().await {
+            let id = joined
+                .into_report()
+                .change_context(EvmMiroError)?
+                .change_context(EvmMiroError)?;
+            record.border_ids.push(id);
+        }
+        bar.finish_and_clear();
+        println!("    {} {} storage lines", "✓".green(), n_highlights);
     }
 
     // Connectors, one per call site. Each starts on an invisible marker sitting
@@ -1499,6 +1557,11 @@ fn make_node(
         rendered_lines: Vec::new(),
         line_offset: 0,
         writes_storage: !function.storage_writes.is_empty(),
+        write_lines: function
+            .storage_write_sites
+            .iter()
+            .map(|s| (s.line, s.name.clone()))
+            .collect(),
     }
 }
 
@@ -1525,6 +1588,7 @@ fn make_modifier_node(
         rendered_lines: Vec::new(),
         line_offset: 0,
         writes_storage: false,
+            write_lines: Vec::new(),
     }
 }
 
@@ -2177,6 +2241,7 @@ mod split_shared_leaves_test {
             rendered_lines: Vec::new(),
             line_offset: 0,
             writes_storage: false,
+            write_lines: Vec::new(),
         }
     }
 
@@ -2270,6 +2335,7 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         rendered_lines: Vec::new(),
         line_offset: 0,
         writes_storage: false,
+            write_lines: Vec::new(),
     });
     edges[index].to = card_id;
     prune_unreachable(nodes, edges);
@@ -2378,6 +2444,7 @@ mod cut_test {
             rendered_lines: Vec::new(),
             line_offset: 0,
             writes_storage: false,
+            write_lines: Vec::new(),
         }
     }
 
