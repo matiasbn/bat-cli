@@ -95,6 +95,24 @@ pub struct FunctionMetadata {
     /// cross-contract storage-change picture; each carries best-effort candidates.
     #[serde(default)]
     pub unresolved_calls: Vec<UnresolvedCall>,
+    /// Calls on an interface-typed receiver with NO in-scope implementer — the
+    /// target contract's source is not in the repo (e.g. an ERC-20 passed by
+    /// address). We cannot know which storage they touch, only that a non-view one
+    /// MIGHT mutate the callee's state. The diagram flags these lines as an
+    /// unverified external state-change boundary.
+    #[serde(default)]
+    pub unknown_external_calls: Vec<ExternalUnknownCall>,
+}
+
+/// A call whose target contract has no in-scope source: an interface-typed
+/// receiver (`inferred_type`) that nothing in the repo implements. The concrete
+/// storage effect is unknowable statically.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalUnknownCall {
+    pub receiver: String,
+    pub method: String,
+    #[serde(default)]
+    pub inferred_type: String,
 }
 
 /// A single storage write located in the source: the lvalue path and the file
@@ -537,7 +555,7 @@ impl EvmBatMetadata {
                 for (n, t) in &analysis.local_types {
                     local_var_types.insert(n.clone(), t.clone());
                 }
-                let unresolved_calls = compute_unresolved_calls(
+                let (unresolved_calls, unknown_external_calls) = compute_unresolved_calls(
                     &analysis.call_targets,
                     &local_var_types,
                     &struct_fields,
@@ -568,6 +586,7 @@ impl EvmBatMetadata {
                     storage_writes,
                     storage_write_sites,
                     unresolved_calls,
+                    unknown_external_calls,
                 });
             }
 
@@ -852,9 +871,11 @@ fn compute_unresolved_calls(
     external_contracts: &std::collections::HashSet<String>,
     impl_map: &std::collections::HashMap<String, Vec<String>>,
     method_map: &std::collections::HashMap<String, Vec<String>>,
-) -> Vec<UnresolvedCall> {
+) -> (Vec<UnresolvedCall>, Vec<ExternalUnknownCall>) {
     let mut out: Vec<UnresolvedCall> = Vec::new();
+    let mut external: Vec<ExternalUnknownCall> = Vec::new();
     let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut seen_ext: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
 
     for (receiver, method) in targets {
         let (receiver, method) = (receiver.clone(), method.clone());
@@ -902,8 +923,24 @@ fn compute_unresolved_calls(
         candidates.sort();
         candidates.dedup();
 
-        // No plausible in-scope target (builtin / external library) — nothing to resolve.
+        // No plausible in-scope target. If the receiver is interface-typed, its
+        // implementation lives outside the repo (e.g. an ERC-20 passed by address):
+        // record it as an external unknown so the diagram can flag the line. A bare
+        // untyped receiver (a builtin like `abi.encode`) is just noise — skip it.
         if candidates.is_empty() {
+            // Only an INTERFACE-typed receiver with no in-scope implementer is a
+            // real external contract we lack source for (e.g. IERC20). This excludes
+            // value-type library calls (`uint256.mulDiv`), low-level `address.call`,
+            // and builtins — none of which are an external contract boundary.
+            if is_interface.contains(&inferred_type)
+                && seen_ext.insert((receiver.clone(), method.clone()))
+            {
+                external.push(ExternalUnknownCall {
+                    receiver,
+                    method,
+                    inferred_type,
+                });
+            }
             continue;
         }
         if seen.insert((receiver.clone(), method.clone())) {
@@ -916,7 +953,7 @@ fn compute_unresolved_calls(
             });
         }
     }
-    out
+    (out, external)
 }
 
 /// The declared type of a call receiver expression: a bare variable (`positionManager`)

@@ -161,6 +161,10 @@ struct GraphNode {
     /// File lines (1-based) inside this node's slice that write storage, each with
     /// the lvalue path — used to highlight the exact mutating statements.
     write_lines: Vec<(usize, String)>,
+    /// File lines (1-based) that call an external contract with no in-scope source
+    /// (an interface-typed receiver nothing in the repo implements) via a non-view
+    /// method — an unverified external state-change boundary, flagged distinctly.
+    external_call_lines: Vec<usize>,
 }
 
 impl GraphNode {
@@ -818,6 +822,57 @@ async fn deploy_one(
         println!("    {} {} storage lines", "✓".green(), n_highlights);
     }
 
+    // External-boundary markers: a dashed amber band over each line that calls an
+    // external contract with no in-scope source (a non-view method whose storage
+    // effect is unknowable). Unverified — visually distinct from the proven-write
+    // red. Tracked as border ids so a recycle clears them too.
+    let mut ext_bands: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for node in nodes.iter() {
+        if node.external_call_lines.is_empty() || node.png_height == 0 {
+            continue;
+        }
+        let Some(p) = layout.node(&node.id) else {
+            continue;
+        };
+        let geom = silicon::line_geometry(Some(node.font_size));
+        let line_h = (p.height * geom.line_height as f64 / node.png_height as f64).max(1.0);
+        for line in &node.external_call_lines {
+            if *line < node.start_line || *line > node.end_line {
+                continue;
+            }
+            let rendered_index = PATH_HEADER_LINES + (line - node.start_line);
+            let y_fraction = geom.line_center_fraction(rendered_index, node.png_height);
+            let cy = p.y - p.height / 2.0 + p.height * y_fraction;
+            ext_bands.push((p.x, cy, p.width, line_h));
+        }
+    }
+    if !ext_bands.is_empty() {
+        let n_ext = ext_bands.len();
+        let bar = phase_bar("external boundaries", n_ext);
+        let mut ext_tasks = tokio::task::JoinSet::new();
+        for (x, y, width, height) in ext_bands {
+            let client = client.clone();
+            let frame_id = frame_id.clone();
+            let bar = bar.clone();
+            ext_tasks.spawn(async move {
+                let result = client
+                    .create_external_marker(&frame_id, x, y, width, height)
+                    .await;
+                bar.inc(1);
+                result
+            });
+        }
+        while let Some(joined) = ext_tasks.join_next().await {
+            let id = joined
+                .into_report()
+                .change_context(EvmMiroError)?
+                .change_context(EvmMiroError)?;
+            record.border_ids.push(id);
+        }
+        bar.finish_and_clear();
+        println!("    {} {} external boundaries", "✓".green(), n_ext);
+    }
+
     // Connectors, one per call site. Each starts on an invisible marker sitting
     // on the called token, because Miro clips a connector at the boundary of the
     // item it attaches to: anchoring inside the screenshot itself would push the
@@ -1472,6 +1527,35 @@ fn build_graph(
             });
         }
 
+        // Calls to external contracts with no in-scope source: flag the lines that
+        // reach a non-view method (a `view`/`pure` one is compiler-guaranteed not to
+        // mutate, so it is never a state-change risk). Located on the caller's node.
+        let mut external_lines: Vec<usize> = Vec::new();
+        for uec in &function.unknown_external_calls {
+            let read_only = find_function(metadata, &uec.inferred_type, &uec.method)
+                .map(|(_, f)| {
+                    matches!(
+                        f.mutability,
+                        crate::batbelt::evm::types::EvmMutability::View
+                            | crate::batbelt::evm::types::EvmMutability::Pure
+                    )
+                })
+                .unwrap_or(false);
+            if read_only {
+                continue;
+            }
+            if let Some(pos) = slice.iter().position(|l| l.contains(&uec.method)) {
+                external_lines.push(function.line + pos);
+            }
+        }
+        if !external_lines.is_empty() {
+            external_lines.sort_unstable();
+            external_lines.dedup();
+            if let Some(node) = nodes.iter_mut().find(|n| n.id == current.node_id) {
+                node.external_call_lines = external_lines;
+            }
+        }
+
         // Reversed, because popping a stack undoes the order.
         for child in children.into_iter().rev() {
             stack.push(child);
@@ -1567,6 +1651,7 @@ fn make_node(
             .iter()
             .map(|s| (s.line, s.name.clone()))
             .collect(),
+        external_call_lines: Vec::new(),
     }
 }
 
@@ -1594,6 +1679,7 @@ fn make_modifier_node(
         line_offset: 0,
         writes_storage: false,
             write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
     }
 }
 
@@ -2282,6 +2368,7 @@ mod split_shared_leaves_test {
             line_offset: 0,
             writes_storage: false,
             write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
         }
     }
 
@@ -2376,6 +2463,7 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         line_offset: 0,
         writes_storage: false,
             write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
     });
     edges[index].to = card_id;
     prune_unreachable(nodes, edges);
@@ -2485,6 +2573,7 @@ mod cut_test {
             line_offset: 0,
             writes_storage: false,
             write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
         }
     }
 

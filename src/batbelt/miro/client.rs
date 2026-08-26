@@ -371,6 +371,45 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// A dashed amber band over a code line that calls an external contract with
+    /// no in-scope source. Distinct from the solid-red proven-write highlight: this
+    /// marks an UNVERIFIED external state-change boundary (a non-view call whose
+    /// concrete target — and its storage effect — is unknown).
+    pub async fn create_external_marker(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": {
+                "fillColor": "#ffcc00",
+                "fillOpacity": "0.18",
+                "borderColor": "#ff9900",
+                "borderWidth": "2",
+                "borderOpacity": "0.9",
+                "borderStyle": "dashed",
+            },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width, "height": height },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_external_marker", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
     /// Reposition and resize an existing frame in place, keeping its id.
     ///
     /// Redeploying a function recycles its frame instead of deleting it, because
