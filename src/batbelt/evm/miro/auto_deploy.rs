@@ -1013,7 +1013,7 @@ async fn deploy_one(
                 } else {
                     0.0
                 };
-                let edge_x = if exit_right {
+                let frame_edge = if exit_right {
                     caller_placed.x + caller_placed.width / 2.0
                 } else {
                     caller_placed.x - caller_placed.width / 2.0
@@ -1023,6 +1023,22 @@ async fn deploy_one(
                 // A minimum stub so the arrow head always renders (the widest line
                 // ends at the edge, which would make a zero-length stub otherwise).
                 let min_stub = 60.0_f64;
+                // The convergence point normally sits on the frame edge, giving a
+                // clear horizontal stub across most of a (shorter) line. But a
+                // FULL-WIDTH line — the signature line carrying modifiers, say —
+                // ends flush at the image boundary, so several dependencies fanning
+                // into it pile up right at the edge, indistinguishable. Detect that
+                // (the line reaches the exit edge) and, only then, push the
+                // convergence OUT into the gutter so the fan-out clears the
+                // screenshot and a single stub crosses in. Short lines and the
+                // whole left side are untouched.
+                let edge_gap = 200.0_f64;
+                let reaches_edge = exit_right && raw_token_x > frame_edge - min_stub * 2.0;
+                let edge_x = if reaches_edge {
+                    frame_edge + edge_gap
+                } else {
+                    frame_edge
+                };
                 let token_x = if exit_right {
                     raw_token_x.min(edge_x - min_stub)
                 } else {
