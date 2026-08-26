@@ -30,6 +30,7 @@ use crate::batbelt::miro::layout::{
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::silicon;
+use rayon::prelude::*;
 
 type Result<T> = error_stack::Result<T, EvmMiroError>;
 
@@ -1710,60 +1711,67 @@ fn render_and_measure(nodes: &mut [GraphNode], owner: &str) -> Result<()> {
         .change_context(EvmMiroError)?;
 
     let bar = phase_bar("rendering screenshots", nodes.len());
-    for node in nodes.iter_mut() {
-        bar.inc(1);
-        let code = read_slice(&node.file_path, node.start_line, node.end_line);
-        if code.is_empty() {
-            continue;
-        }
+    // Rendering is CPU-bound and every node is independent — each writes its own
+    // PNG and silicon only reads shared, read-only highlighting assets — so this
+    // fans out across cores. On a large diagram this is the dominant local cost.
+    let outcome: std::result::Result<(), String> = nodes
+        .par_iter_mut()
+        .map(|node| {
+            let code = read_slice(&node.file_path, node.start_line, node.end_line);
+            if code.is_empty() {
+                bar.inc(1);
+                return Ok(());
+            }
 
-        let pretty_path = crate::batbelt::path::prettify_source_code_path(&node.file_path)
-            .unwrap_or_else(|_| node.file_path.clone());
-        let mut rendered = vec![format!("// {pretty_path}"), String::new()];
-        rendered.extend(code.iter().cloned());
+            let pretty_path = crate::batbelt::path::prettify_source_code_path(&node.file_path)
+                .unwrap_or_else(|_| node.file_path.clone());
+            let mut rendered = vec![format!("// {pretty_path}"), String::new()];
+            rendered.extend(code.iter().cloned());
 
-        // silicon subtracts the two header lines from the offset so the printed
-        // line numbers still match the file.
-        node.line_offset = node.start_line.saturating_sub(PATH_HEADER_LINES);
+            // silicon subtracts the two header lines from the offset so the
+            // printed line numbers still match the file.
+            node.line_offset = node.start_line.saturating_sub(PATH_HEADER_LINES);
 
-        // `.js` gives Solidity the best Dracula colors available in syntect.
-        // Named after the deployment as well as the node. The same function
-        // appears in several graphs, and a deployment deletes its own files when
-        // it finishes: without the prefix, building a helper's frame partway
-        // through a bigger one would delete the screenshot that bigger one is
-        // still waiting to upload.
-        let file_name = format!(
-            "{}__{}.js",
-            owner.replace([':', '.', '/'], "_"),
-            node.id.replace([':', '.', '/'], "_")
-        );
-        let png_path = silicon::create_figure(
-            &rendered.join("\n"),
-            &destination,
-            &file_name,
-            node.line_offset,
-            Some(node.font_size),
-            true,
-        );
-        let (width, height) = image::image_dimensions(&png_path)
-            .into_report()
-            .change_context(EvmMiroError)
-            .attach_printable_lazy(|| format!("cannot measure {png_path}"))?;
-
-        if width > 8192 || height > 8192 {
-            log::warn!(
-                "{} renders to {}x{}, above Miro's 8192 px limit",
-                node.label,
-                width,
-                height
+            // `.js` gives Solidity the best Dracula colors available in syntect.
+            // Named after the deployment as well as the node. The same function
+            // appears in several graphs, and a deployment deletes its own files
+            // when it finishes: without the prefix, building a helper's frame
+            // partway through a bigger one would delete the screenshot that
+            // bigger one is still waiting to upload.
+            let file_name = format!(
+                "{}__{}.js",
+                owner.replace([':', '.', '/'], "_"),
+                node.id.replace([':', '.', '/'], "_")
             );
-        }
+            let png_path = silicon::create_figure(
+                &rendered.join("\n"),
+                &destination,
+                &file_name,
+                node.line_offset,
+                Some(node.font_size),
+                true,
+            );
+            let (width, height) = image::image_dimensions(&png_path)
+                .map_err(|e| format!("cannot measure {png_path}: {e}"))?;
 
-        node.png_path = png_path;
-        node.png_width = width;
-        node.png_height = height;
-        node.rendered_lines = rendered;
-    }
+            if width > 8192 || height > 8192 {
+                log::warn!(
+                    "{} renders to {}x{}, above Miro's 8192 px limit",
+                    node.label,
+                    width,
+                    height
+                );
+            }
+
+            node.png_path = png_path;
+            node.png_width = width;
+            node.png_height = height;
+            node.rendered_lines = rendered;
+            bar.inc(1);
+            Ok(())
+        })
+        .collect();
+    outcome.map_err(|message| Report::new(EvmMiroError).attach_printable(message))?;
     bar.finish_and_clear();
     println!("    {} {} screenshots rendered", "✓".green(), nodes.len());
     Ok(())
