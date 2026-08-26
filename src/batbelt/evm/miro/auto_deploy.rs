@@ -30,6 +30,7 @@ use crate::batbelt::miro::layout::{
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::silicon;
+use rayon::prelude::*;
 
 type Result<T> = error_stack::Result<T, EvmMiroError>;
 
@@ -157,6 +158,13 @@ struct GraphNode {
     /// This function writes contract storage — drawn with a colored border so an
     /// auditor can spot the state-mutating nodes at a glance.
     writes_storage: bool,
+    /// File lines (1-based) inside this node's slice that write storage, each with
+    /// the lvalue path — used to highlight the exact mutating statements.
+    write_lines: Vec<(usize, String)>,
+    /// File lines (1-based) that call an external contract with no in-scope source
+    /// (an interface-typed receiver nothing in the repo implements) via a non-view
+    /// method — an unverified external state-change boundary, flagged distinctly.
+    external_call_lines: Vec<usize>,
 }
 
 impl GraphNode {
@@ -432,24 +440,20 @@ async fn deploy_one(
 
     // One frame per function, board-wide. Asked for as a link target, a function
     // already on the board is pointed at rather than drawn again — that is what
-    // lets several diagrams share a helper's frame and keeps the fan-in
-    // readable. Asked for directly, it is the user's call.
+    // lets several diagrams share a helper's frame and keeps the fan-in readable.
+    // Asked for directly, RECYCLE it: delete the old frame and its items, then
+    // redraw — so a redeploy replaces the frame instead of piling up duplicates.
+    let mut reused_frame: Option<AutoDeployedFrame> = None;
     if !options.dry_run {
         if let Some(url) = live_frame_url(&title, client).await? {
             if !is_primary {
                 return Ok(());
             }
-            println!("  already on the board: {}", url.blue());
-            println!(
-                "  {} deploying again builds a second frame; the one above stays\n  where it is, to be deleted by hand if it is no longer wanted.",
-                "note:".yellow()
-            );
-            // `--yes` (scripts / AI) skips the confirmation and redeploys.
-            if !options.assume_yes
-                && !BatDialoguer::select_yes_or_no("Deploy it again anyway?".to_string())
-                    .change_context(EvmMiroError)?
-            {
-                return Ok(());
+            if let Some(client) = client {
+                println!("  {} recycling the existing frame", "↻".yellow());
+                reused_frame = recycle_recorded_frame(&title, client).await?;
+            } else {
+                let _ = url;
             }
         }
     }
@@ -592,7 +596,14 @@ async fn deploy_one(
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
     // board positions instead of repeating the first one.
-    let (frame_x, frame_y) = allocator.place(layout.frame_width, layout.frame_height);
+    // A recycled frame keeps its board position (other diagrams may point a
+    // viewport link at it); only a brand-new frame consumes a slot from the
+    // allocator. Item coordinates are relative to the frame, so reusing the
+    // same centre keeps the layout identical regardless of the new size.
+    let (frame_x, frame_y) = match &reused_frame {
+        Some(record) => (record.x, record.y),
+        None => allocator.place(layout.frame_width, layout.frame_height),
+    };
 
     if let Some(preview_path) = &options.preview {
         let path = if options.all {
@@ -612,16 +623,34 @@ async fn deploy_one(
     }
 
     let client = client.expect("client is present when not in dry-run mode");
-    let frame_id = client
-        .create_frame(
-            &format!("auto: {title}"),
-            frame_x,
-            frame_y,
-            layout.frame_width,
-            layout.frame_height,
-        )
-        .await
-        .change_context(EvmMiroError)?;
+    let frame_id = match &reused_frame {
+        Some(record) => {
+            // Keep the id (so viewport links survive) but resize to the new
+            // layout, so the frame always fits its fresh contents exactly.
+            client
+                .update_frame(
+                    &record.frame_id,
+                    &format!("auto: {title}"),
+                    frame_x,
+                    frame_y,
+                    layout.frame_width,
+                    layout.frame_height,
+                )
+                .await
+                .change_context(EvmMiroError)?;
+            record.frame_id.clone()
+        }
+        None => client
+            .create_frame(
+                &format!("auto: {title}"),
+                frame_x,
+                frame_y,
+                layout.frame_width,
+                layout.frame_height,
+            )
+            .await
+            .change_context(EvmMiroError)?,
+    };
     println!(
         "  frame {} ({}x{}) at ({}, {})",
         frame_id.green(),
@@ -651,6 +680,7 @@ async fn deploy_one(
         images: Vec::new(),
         connector_ids: Vec::new(),
         marker_ids: Vec::new(),
+        border_ids: Vec::new(),
     };
     save_frame_record(&record)?;
 
@@ -727,13 +757,120 @@ async fn deploy_one(
             });
         }
         while let Some(joined) = border_tasks.join_next().await {
-            joined
+            let id = joined
                 .into_report()
                 .change_context(EvmMiroError)?
                 .change_context(EvmMiroError)?;
+            record.border_ids.push(id);
         }
         bar.finish_and_clear();
         println!("    {} {} storage markers", "✓".green(), n_borders);
+    }
+
+    // Line highlights: a translucent red band over each exact statement that
+    // writes storage, so an auditor sees WHICH state a function mutates (not just
+    // that it does). Tracked as border ids so a recycle clears them too.
+    let mut highlights: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for node in nodes.iter() {
+        if node.write_lines.is_empty() || node.png_height == 0 {
+            continue;
+        }
+        let Some(p) = layout.node(&node.id) else {
+            continue;
+        };
+        let geom = silicon::line_geometry(Some(node.font_size));
+        let line_h = (p.height * geom.line_height as f64 / node.png_height as f64).max(1.0);
+        let mut lines: Vec<usize> = node
+            .write_lines
+            .iter()
+            .map(|(line, _)| *line)
+            .filter(|line| *line >= node.start_line && *line <= node.end_line)
+            .collect();
+        lines.sort_unstable();
+        lines.dedup();
+        for line in lines {
+            let rendered_index = PATH_HEADER_LINES + (line - node.start_line);
+            let y_fraction = geom.line_center_fraction(rendered_index, node.png_height);
+            let cy = p.y - p.height / 2.0 + p.height * y_fraction;
+            highlights.push((p.x, cy, p.width, line_h));
+        }
+    }
+    if !highlights.is_empty() {
+        let n_highlights = highlights.len();
+        let bar = phase_bar("storage lines", n_highlights);
+        let mut highlight_tasks = tokio::task::JoinSet::new();
+        for (x, y, width, height) in highlights {
+            let client = client.clone();
+            let frame_id = frame_id.clone();
+            let bar = bar.clone();
+            highlight_tasks.spawn(async move {
+                let result = client
+                    .create_line_highlight(&frame_id, x, y, width, height)
+                    .await;
+                bar.inc(1);
+                result
+            });
+        }
+        while let Some(joined) = highlight_tasks.join_next().await {
+            let id = joined
+                .into_report()
+                .change_context(EvmMiroError)?
+                .change_context(EvmMiroError)?;
+            record.border_ids.push(id);
+        }
+        bar.finish_and_clear();
+        println!("    {} {} storage lines", "✓".green(), n_highlights);
+    }
+
+    // External-boundary markers: a dashed amber band over each line that calls an
+    // external contract with no in-scope source (a non-view method whose storage
+    // effect is unknowable). Unverified — visually distinct from the proven-write
+    // red. Tracked as border ids so a recycle clears them too.
+    let mut ext_bands: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for node in nodes.iter() {
+        if node.external_call_lines.is_empty() || node.png_height == 0 {
+            continue;
+        }
+        let Some(p) = layout.node(&node.id) else {
+            continue;
+        };
+        let geom = silicon::line_geometry(Some(node.font_size));
+        let line_h = (p.height * geom.line_height as f64 / node.png_height as f64).max(1.0);
+        for line in &node.external_call_lines {
+            if *line < node.start_line || *line > node.end_line {
+                continue;
+            }
+            let rendered_index = PATH_HEADER_LINES + (line - node.start_line);
+            let y_fraction = geom.line_center_fraction(rendered_index, node.png_height);
+            let cy = p.y - p.height / 2.0 + p.height * y_fraction;
+            ext_bands.push((p.x, cy, p.width, line_h));
+        }
+    }
+    if !ext_bands.is_empty() {
+        let n_ext = ext_bands.len();
+        let bar = phase_bar("external boundaries", n_ext);
+        let mut ext_tasks = tokio::task::JoinSet::new();
+        for (x, y, width, height) in ext_bands {
+            let client = client.clone();
+            let frame_id = frame_id.clone();
+            let bar = bar.clone();
+            ext_tasks.spawn(async move {
+                let result = client
+                    .create_external_marker(&frame_id, x, y, width, height)
+                    .await;
+                bar.inc(1);
+                result
+            });
+        }
+        while let Some(joined) = ext_tasks.join_next().await {
+            let id = joined
+                .into_report()
+                .change_context(EvmMiroError)?
+                .change_context(EvmMiroError)?;
+            record.border_ids.push(id);
+        }
+        bar.finish_and_clear();
+        println!("    {} {} external boundaries", "✓".green(), n_ext);
     }
 
     // Connectors, one per call site. Each starts on an invisible marker sitting
@@ -742,78 +879,142 @@ async fn deploy_one(
     // arrow head out to the screenshot's border.
     let back_edges: HashSet<(String, String)> = layout.back_edges.iter().cloned().collect();
 
-    // Each call site needs a marker and then a connector attached to it. The
-    // two are ordered within a call site but independent across them, so each
-    // pair runs as one task.
-    struct PendingConnector {
-        marker_x: f64,
-        marker_y: f64,
-        /// Where the line meets the callee, in frame coordinates. Needed to
-        /// decide which side of the marker it should leave through.
-        end_point: (f64, f64),
-        start_id: String,
+    let _ = anchors;
+
+    // Dependencies that reach the SAME caller line from the SAME side share ONE
+    // arrow into that line: they all route into a single edge marker, and one stub
+    // carries the arrow in. So a line with two calls (both to the right) gets one
+    // arrow at its end, not two overlapping ones.
+    struct CalleeLink {
         end_id: String,
         end_anchor: RelativeAnchor,
+        end_point: (f64, f64),
+    }
+    struct PendingGroup {
+        token_x: f64,
+        token_y: f64,
+        edge_x: f64,
+        exit_right: bool,
         style: ConnectorStyle,
+        callees: Vec<CalleeLink>,
     }
 
-    let mut pending = Vec::new();
-    for ((index, edge), start_anchor) in edges.iter().enumerate().zip(anchors.iter()) {
-        let (Some(start_id), Some(end_id)) = (image_ids.get(&edge.from), image_ids.get(&edge.to))
+    let mut groups: HashMap<(String, usize, bool), PendingGroup> = HashMap::new();
+    for edge in edges.iter() {
+        let (Some(_start_id), Some(end_id)) =
+            (image_ids.get(&edge.from), image_ids.get(&edge.to))
         else {
             continue;
         };
-        let (Some(caller), Some(callee)) = (
-            by_id.get(edge.from.as_str()),
-            by_id.get(edge.to.as_str()),
-        ) else {
+        let (Some(caller), Some(callee)) =
+            (by_id.get(edge.from.as_str()), by_id.get(edge.to.as_str()))
+        else {
             continue;
         };
         let Some(caller_placed) = layout.node(&edge.from) else {
             continue;
         };
+        let callee_x = layout
+            .node(&edge.to)
+            .map(|placed| placed.x)
+            .unwrap_or(caller_placed.x + 1.0);
+        let exit_right = callee_x >= caller_placed.x;
 
-        pending.push(PendingConnector {
-            marker_x: caller_placed.x - caller_placed.width / 2.0
-                + caller_placed.width * start_anchor.x_fraction,
-            marker_y: caller_placed.y - caller_placed.height / 2.0
-                + caller_placed.height * start_anchor.y_fraction,
-            end_point: {
-                let placed = layout.node(&edge.to);
-                let fraction = silicon::line_geometry(Some(callee.font_size))
-                    .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height);
-                match placed {
-                    Some(placed) => (
-                        placed.x - placed.width / 2.0,
-                        placed.y - placed.height / 2.0 + placed.height * fraction,
-                    ),
-                    None => (0.0, 0.0),
-                }
-            },
-            start_id: start_id.clone(),
-            end_id: end_id.clone(),
-            end_anchor: RelativeAnchor::new(
-                0.0,
-                silicon::line_geometry(Some(callee.font_size))
-                    .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height),
+        // Where this dependency meets the callee (its side facing the caller).
+        let callee_fraction = silicon::line_geometry(Some(callee.font_size))
+            .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height);
+        let end_point = match layout.node(&edge.to) {
+            Some(placed) => (
+                if exit_right {
+                    placed.x - placed.width / 2.0
+                } else {
+                    placed.x + placed.width / 2.0
+                },
+                placed.y - placed.height / 2.0 + placed.height * callee_fraction,
             ),
-            style: ConnectorStyle {
-                stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
-                stroke_width: options.stroke_width.to_string(),
-                dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
-                // No caption. It carried the line number back when the arrow
-                // could only reach the border of a screenshot; now the head
-                // lands on the calling line itself, so the label repeats what
-                // the picture already says.
-                caption: None,
-                arrow: ArrowEnd::Start,
-            },
-        });
+            None => (0.0, 0.0),
+        };
+        let link = CalleeLink {
+            end_id: end_id.clone(),
+            end_anchor: RelativeAnchor::new(if exit_right { 0.0 } else { 1.0 }, callee_fraction),
+            end_point,
+        };
+
+        let dashed = back_edges.contains(&(edge.from.clone(), edge.to.clone()));
+        let group = groups
+            .entry((edge.from.clone(), edge.line_in_slice, exit_right))
+            .or_insert_with(|| {
+                // The shared arrow anchor for this caller line + side: the arrow lands
+                // at the END of the line for a right entry, or its START for a left
+                // one, and enters by a straight horizontal stub from the edge.
+                let line_index = edge.line_in_slice.saturating_sub(1) + PATH_HEADER_LINES;
+                let line_text = caller
+                    .rendered_lines
+                    .get(line_index)
+                    .cloned()
+                    .unwrap_or_default();
+                let text_width = |text: &str| {
+                    silicon::line_end_x(
+                        Some(caller.font_size),
+                        true,
+                        caller.rendered_lines.len(),
+                        caller.line_offset,
+                        text,
+                    ) as f64
+                };
+                let y_fraction = silicon::line_geometry(Some(caller.font_size))
+                    .line_center_fraction(line_index, caller.png_height);
+                let token_frac = if caller.png_width > 0 {
+                    let width = caller.png_width as f64;
+                    if exit_right {
+                        let gap = (text_width("a") - text_width("")) * ANCHOR_GAP_CHARS;
+                        ((text_width(&line_text) + gap) / width).min(1.0)
+                    } else {
+                        (text_width("") / width).max(0.0)
+                    }
+                } else if exit_right {
+                    1.0
+                } else {
+                    0.0
+                };
+                let edge_x = if exit_right {
+                    caller_placed.x + caller_placed.width / 2.0
+                } else {
+                    caller_placed.x - caller_placed.width / 2.0
+                };
+                let raw_token_x =
+                    caller_placed.x - caller_placed.width / 2.0 + caller_placed.width * token_frac;
+                // A minimum stub so the arrow head always renders (the widest line
+                // ends at the edge, which would make a zero-length stub otherwise).
+                let min_stub = 60.0_f64;
+                let token_x = if exit_right {
+                    raw_token_x.min(edge_x - min_stub)
+                } else {
+                    raw_token_x.max(edge_x + min_stub)
+                };
+                PendingGroup {
+                    token_x,
+                    token_y: caller_placed.y - caller_placed.height / 2.0
+                        + caller_placed.height * y_fraction,
+                    edge_x,
+                    exit_right,
+                    style: ConnectorStyle {
+                        stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
+                        stroke_width: options.stroke_width.to_string(),
+                        dashed: false,
+                        caption: None,
+                        arrow: ArrowEnd::Start,
+                    },
+                    callees: Vec::new(),
+                }
+            });
+        group.style.dashed = group.style.dashed || dashed;
+        group.callees.push(link);
     }
 
-    let bar = phase_bar("drawing connectors", pending.len());
+    let bar = phase_bar("drawing connectors", groups.len());
     let mut connector_tasks = tokio::task::JoinSet::new();
-    for item in pending {
+    for (_key, group) in groups {
         let client = client.clone();
         let frame_id = frame_id.clone();
         let bar = bar.clone();
@@ -821,40 +1022,47 @@ async fn deploy_one(
             let mut markers = Vec::new();
             let mut connectors = Vec::new();
 
-            let anchor_marker = client
-                .create_anchor_marker(&frame_id, item.marker_x, item.marker_y, ANCHOR_MARKER_SIZE)
+            // A token marker (arrow head, at the line end/start) and an edge marker
+            // (at the caller edge). ONE stub carries the arrow in; every dependency
+            // routes into the shared edge marker with no head of its own.
+            let token_marker = client
+                .create_anchor_marker(&frame_id, group.token_x, group.token_y, ANCHOR_MARKER_SIZE)
                 .await?;
-            markers.push(anchor_marker.clone());
+            markers.push(token_marker.clone());
+            let edge_marker = client
+                .create_anchor_marker(&frame_id, group.edge_x, group.token_y, ANCHOR_MARKER_SIZE)
+                .await?;
+            markers.push(edge_marker.clone());
 
-
-            // One connector per call, screenshot to screenshot.
-            //
-            // Routing a long edge as a chain through the bend points would keep
-            // it off the screenshots it crosses, but the result is several
-            // linked connectors rather than one line, and a composite like that
-            // cannot be dragged into a better position by hand. Reordering by
-            // hand matters more than the guarantee, so the bends are left to the
-            // layout, where they still push the columns apart and leave the
-            // corridor free.
-            let mut style = item.style.clone();
-            style.arrow = ArrowEnd::Start;
+            let (edge_side, token_side) = if group.exit_right {
+                (RelativeAnchor::new(0.0, 0.5), RelativeAnchor::new(1.0, 0.5))
+            } else {
+                (RelativeAnchor::new(1.0, 0.5), RelativeAnchor::new(0.0, 0.5))
+            };
+            let mut stub_style = group.style.clone();
+            stub_style.arrow = ArrowEnd::End;
             connectors.push(
                 client
-                    .create_connector(
-                        &anchor_marker,
-                        // Leave through the side that faces the callee. Anchoring
-                        // at the centre lets Miro pick, and it picks the same
-                        // side every time, so every arrow approached from above
-                        // however the boxes were arranged.
-                        facing_anchor((item.marker_x, item.marker_y), item.end_point),
-                        &item.end_id,
-                        item.end_anchor,
-                        style,
-                    )
+                    .create_connector(&edge_marker, edge_side, &token_marker, token_side, stub_style)
                     .await?,
             );
 
-            let _ = item.start_id;
+            for link in &group.callees {
+                let mut route_style = group.style.clone();
+                route_style.arrow = ArrowEnd::None;
+                connectors.push(
+                    client
+                        .create_connector(
+                            &link.end_id,
+                            link.end_anchor,
+                            &edge_marker,
+                            facing_anchor((group.edge_x, group.token_y), link.end_point),
+                            route_style,
+                        )
+                        .await?,
+                );
+            }
+
             bar.inc(1);
             Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((markers, connectors))
         });
@@ -881,6 +1089,65 @@ async fn deploy_one(
     println!("  {}", frame_url.blue());
     cleanup(&nodes);
     Ok(())
+}
+
+/// Wipe a recorded frame's CONTENTS (images, connectors, markers, storage
+/// borders) but KEEP the frame itself, returning its record so the redraw can
+/// reuse the same frame id and position.
+///
+/// The frame is deliberately not deleted: other diagrams may link to it by URL
+/// (`?moveToWidget=<frame_id>`), and a fresh frame would break those links. The
+/// metadata record is dropped here and a new one is saved during the redraw.
+///
+/// The deletes fan out concurrently (like the create side): every item is
+/// independent and best-effort, so there is no reason to wait one at a time.
+async fn recycle_recorded_frame(
+    title: &str,
+    client: &MiroClient,
+) -> Result<Option<AutoDeployedFrame>> {
+    let record = {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+            .cloned()
+    };
+    let Some(record) = record else {
+        return Ok(None);
+    };
+    let mut delete_tasks = tokio::task::JoinSet::new();
+    for id in record.connector_ids.clone() {
+        let client = client.clone();
+        delete_tasks.spawn(async move { client.delete_connector(&id).await });
+    }
+    let item_ids = record
+        .marker_ids
+        .iter()
+        .cloned()
+        .chain(record.border_ids.iter().cloned())
+        .chain(record.images.iter().map(|(_, image_id)| image_id.clone()));
+    for id in item_ids {
+        let client = client.clone();
+        delete_tasks.spawn(async move { client.delete_item(&id).await });
+    }
+    // Best-effort: drain the set, ignoring per-item failures (a hand-deleted
+    // item 404s and that is fine — the goal is an empty frame).
+    while delete_tasks.join_next().await.is_some() {}
+    // The frame itself is kept on purpose — only its contents are cleared.
+
+    let owner = title.to_string();
+    EvmBatMetadata::update_metadata(move |metadata| {
+        metadata
+            .miro
+            .auto
+            .frames
+            .retain(|frame| frame.entry_point != owner);
+    })
+    .change_context(EvmMiroError)?;
+    Ok(Some(record))
 }
 
 /// Store what a deployment owns, replacing any earlier record for the same
@@ -1211,6 +1478,11 @@ fn build_graph(
                 unresolved.push(u.clone());
                 continue;
             };
+            // A resolution that lands on a virtual/interface stub is redirected to
+            // its concrete override; a pure declaration with none is dropped.
+            let Some((tc, tf)) = destub(metadata, (tc, tf), options) else {
+                continue;
+            };
             if !options.include_external && tc.external {
                 continue;
             }
@@ -1253,6 +1525,35 @@ fn build_graph(
                 function: tf.name.clone(),
                 depth: current.depth + 1,
             });
+        }
+
+        // Calls to external contracts with no in-scope source: flag the lines that
+        // reach a non-view method (a `view`/`pure` one is compiler-guaranteed not to
+        // mutate, so it is never a state-change risk). Located on the caller's node.
+        let mut external_lines: Vec<usize> = Vec::new();
+        for uec in &function.unknown_external_calls {
+            let read_only = find_function(metadata, &uec.inferred_type, &uec.method)
+                .map(|(_, f)| {
+                    matches!(
+                        f.mutability,
+                        crate::batbelt::evm::types::EvmMutability::View
+                            | crate::batbelt::evm::types::EvmMutability::Pure
+                    )
+                })
+                .unwrap_or(false);
+            if read_only {
+                continue;
+            }
+            if let Some(pos) = slice.iter().position(|l| l.contains(&uec.method)) {
+                external_lines.push(function.line + pos);
+            }
+        }
+        if !external_lines.is_empty() {
+            external_lines.sort_unstable();
+            external_lines.dedup();
+            if let Some(node) = nodes.iter_mut().find(|n| n.id == current.node_id) {
+                node.external_call_lines = external_lines;
+            }
         }
 
         // Reversed, because popping a stack undoes the order.
@@ -1345,6 +1646,12 @@ fn make_node(
         rendered_lines: Vec::new(),
         line_offset: 0,
         writes_storage: !function.storage_writes.is_empty(),
+        write_lines: function
+            .storage_write_sites
+            .iter()
+            .map(|s| (s.line, s.name.clone()))
+            .collect(),
+        external_call_lines: Vec::new(),
     }
 }
 
@@ -1371,6 +1678,8 @@ fn make_modifier_node(
         rendered_lines: Vec::new(),
         line_offset: 0,
         writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
     }
 }
 
@@ -1500,7 +1809,7 @@ fn resolve_call<'a>(
                         continue;
                     }
                     if let Some(found) = find_function(metadata, &target.name, method) {
-                        return Some(found);
+                        return destub(metadata, found, options);
                     }
                 }
             }
@@ -1510,9 +1819,44 @@ fn resolve_call<'a>(
             continue;
         }
         if let Some(found) = find_function(metadata, &contract.name, method) {
-            // Skip interface-only declarations with no body.
-            return Some(found);
+            return destub(metadata, found, options);
         }
+    }
+    None
+}
+
+/// Redirect a resolved call that landed on a stub (a bodyless interface/abstract
+/// declaration or an empty `virtual {}`) to its concrete implementation: the one
+/// non-stub override among the contracts deriving from / implementing the stub's
+/// contract. Returns the override when exactly one exists; the stub itself when
+/// none does (it is the only thing there is to show); `None` when several
+/// overrides make the runtime target ambiguous.
+fn destub<'a>(
+    metadata: &'a EvmBatMetadata,
+    found: (&'a ContractMetadata, FunctionMetadata),
+    options: &AutoDeployOptions,
+) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
+    let (contract, function) = found;
+    if !function.is_stub {
+        return Some((contract, function));
+    }
+    let keep = |c: &ContractMetadata| options.include_external || !c.external;
+    let mut overrides: Vec<(&'a ContractMetadata, FunctionMetadata)> = Vec::new();
+    for impl_name in implementations_of(metadata, &contract.name) {
+        if impl_name == contract.name {
+            continue;
+        }
+        if let Some((tc, tf)) = find_function(metadata, &impl_name, &function.name) {
+            if !tf.is_stub && keep(tc) {
+                overrides.push((tc, tf));
+            }
+        }
+    }
+    // Exactly one override → draw it. None (a pure interface/abstract declaration
+    // or an empty virtual with no override) or several (ambiguous runtime target)
+    // → nothing meaningful to screenshot.
+    if overrides.len() == 1 {
+        return overrides.pop();
     }
     None
 }
@@ -1563,60 +1907,67 @@ fn render_and_measure(nodes: &mut [GraphNode], owner: &str) -> Result<()> {
         .change_context(EvmMiroError)?;
 
     let bar = phase_bar("rendering screenshots", nodes.len());
-    for node in nodes.iter_mut() {
-        bar.inc(1);
-        let code = read_slice(&node.file_path, node.start_line, node.end_line);
-        if code.is_empty() {
-            continue;
-        }
+    // Rendering is CPU-bound and every node is independent — each writes its own
+    // PNG and silicon only reads shared, read-only highlighting assets — so this
+    // fans out across cores. On a large diagram this is the dominant local cost.
+    let outcome: std::result::Result<(), String> = nodes
+        .par_iter_mut()
+        .map(|node| {
+            let code = read_slice(&node.file_path, node.start_line, node.end_line);
+            if code.is_empty() {
+                bar.inc(1);
+                return Ok(());
+            }
 
-        let pretty_path = crate::batbelt::path::prettify_source_code_path(&node.file_path)
-            .unwrap_or_else(|_| node.file_path.clone());
-        let mut rendered = vec![format!("// {pretty_path}"), String::new()];
-        rendered.extend(code.iter().cloned());
+            let pretty_path = crate::batbelt::path::prettify_source_code_path(&node.file_path)
+                .unwrap_or_else(|_| node.file_path.clone());
+            let mut rendered = vec![format!("// {pretty_path}"), String::new()];
+            rendered.extend(code.iter().cloned());
 
-        // silicon subtracts the two header lines from the offset so the printed
-        // line numbers still match the file.
-        node.line_offset = node.start_line.saturating_sub(PATH_HEADER_LINES);
+            // silicon subtracts the two header lines from the offset so the
+            // printed line numbers still match the file.
+            node.line_offset = node.start_line.saturating_sub(PATH_HEADER_LINES);
 
-        // `.js` gives Solidity the best Dracula colors available in syntect.
-        // Named after the deployment as well as the node. The same function
-        // appears in several graphs, and a deployment deletes its own files when
-        // it finishes: without the prefix, building a helper's frame partway
-        // through a bigger one would delete the screenshot that bigger one is
-        // still waiting to upload.
-        let file_name = format!(
-            "{}__{}.js",
-            owner.replace([':', '.', '/'], "_"),
-            node.id.replace([':', '.', '/'], "_")
-        );
-        let png_path = silicon::create_figure(
-            &rendered.join("\n"),
-            &destination,
-            &file_name,
-            node.line_offset,
-            Some(node.font_size),
-            true,
-        );
-        let (width, height) = image::image_dimensions(&png_path)
-            .into_report()
-            .change_context(EvmMiroError)
-            .attach_printable_lazy(|| format!("cannot measure {png_path}"))?;
-
-        if width > 8192 || height > 8192 {
-            log::warn!(
-                "{} renders to {}x{}, above Miro's 8192 px limit",
-                node.label,
-                width,
-                height
+            // `.js` gives Solidity the best Dracula colors available in syntect.
+            // Named after the deployment as well as the node. The same function
+            // appears in several graphs, and a deployment deletes its own files
+            // when it finishes: without the prefix, building a helper's frame
+            // partway through a bigger one would delete the screenshot that
+            // bigger one is still waiting to upload.
+            let file_name = format!(
+                "{}__{}.js",
+                owner.replace([':', '.', '/'], "_"),
+                node.id.replace([':', '.', '/'], "_")
             );
-        }
+            let png_path = silicon::create_figure(
+                &rendered.join("\n"),
+                &destination,
+                &file_name,
+                node.line_offset,
+                Some(node.font_size),
+                true,
+            );
+            let (width, height) = image::image_dimensions(&png_path)
+                .map_err(|e| format!("cannot measure {png_path}: {e}"))?;
 
-        node.png_path = png_path;
-        node.png_width = width;
-        node.png_height = height;
-        node.rendered_lines = rendered;
-    }
+            if width > 8192 || height > 8192 {
+                log::warn!(
+                    "{} renders to {}x{}, above Miro's 8192 px limit",
+                    node.label,
+                    width,
+                    height
+                );
+            }
+
+            node.png_path = png_path;
+            node.png_width = width;
+            node.png_height = height;
+            node.rendered_lines = rendered;
+            bar.inc(1);
+            Ok(())
+        })
+        .collect();
+    outcome.map_err(|message| Report::new(EvmMiroError).attach_printable(message))?;
     bar.finish_and_clear();
     println!("    {} {} screenshots rendered", "✓".green(), nodes.len());
     Ok(())
@@ -1860,18 +2211,34 @@ fn facing_anchor(from: (f64, f64), toward: (f64, f64)) -> RelativeAnchor {
     let dx = toward.0 - from.0;
     let dy = toward.1 - from.1;
 
-    // Whichever axis dominates decides the side; a tie is treated as horizontal
-    // because the layout runs left to right.
-    if dy.abs() > dx.abs() {
-        if dy > 0.0 {
-            RelativeAnchor::new(0.5, 1.0)
+    if dx > 0.0 {
+        // Forward edge (callee is to the right, the layout's flow). Leave
+        // HORIZONTALLY so the connector starts at its own call-line height and
+        // Miro turns it in the gutter — instead of leaving top/bottom and hugging
+        // the source's edge, which bundles many calls into one overlapping trunk.
+        // Only a near-vertical edge (callee almost directly above/below) leaves
+        // top/bottom.
+        if dy.abs() > dx.abs() * 3.0 {
+            if dy > 0.0 {
+                RelativeAnchor::new(0.5, 1.0)
+            } else {
+                RelativeAnchor::new(0.5, 0.0)
+            }
         } else {
-            RelativeAnchor::new(0.5, 0.0)
+            RelativeAnchor::new(1.0, 0.5)
         }
-    } else if dx >= 0.0 {
-        RelativeAnchor::new(1.0, 0.5)
     } else {
-        RelativeAnchor::new(0.0, 0.5)
+        // Back / same-column edge: the dominant axis decides; horizontal ties go
+        // left (away from the flow).
+        if dy.abs() > dx.abs() {
+            if dy > 0.0 {
+                RelativeAnchor::new(0.5, 1.0)
+            } else {
+                RelativeAnchor::new(0.5, 0.0)
+            }
+        } else {
+            RelativeAnchor::new(0.0, 0.5)
+        }
     }
 }
 
@@ -2000,6 +2367,8 @@ mod split_shared_leaves_test {
             rendered_lines: Vec::new(),
             line_offset: 0,
             writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
         }
     }
 
@@ -2093,6 +2462,8 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         rendered_lines: Vec::new(),
         line_offset: 0,
         writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
     });
     edges[index].to = card_id;
     prune_unreachable(nodes, edges);
@@ -2201,6 +2572,8 @@ mod cut_test {
             rendered_lines: Vec::new(),
             line_offset: 0,
             writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
         }
     }
 

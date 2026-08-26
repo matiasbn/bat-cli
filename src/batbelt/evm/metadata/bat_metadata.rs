@@ -73,17 +73,54 @@ pub struct FunctionMetadata {
     #[serde(default)]
     pub end_line: usize,
     pub is_constructor: bool,
+    /// True when the function has no real implementation: a bodyless declaration
+    /// (interface / abstract method) or an empty `{}` body (an unoverridden
+    /// `virtual` stub). Nothing to screenshot, so the diagram skips it — the
+    /// concrete implementation is drawn via its own (resolved) call.
+    #[serde(default)]
+    pub is_stub: bool,
     /// Storage locations this function writes (state vars / storage-pointer
     /// paths). Empty for a function that mutates no storage. Drives the
     /// "writes storage" marker on the diagram.
     #[serde(default)]
     pub storage_writes: Vec<String>,
+    /// The same storage writes, each with the FILE line (1-based) it happens on,
+    /// so a diagram can point at the exact statement inside the function, not just
+    /// mark the whole function. Empty for a function that mutates no storage.
+    #[serde(default)]
+    pub storage_write_sites: Vec<StorageWriteSite>,
     /// External calls that could NOT be statically resolved to a unique in-scope
     /// function — a call on an interface-typed receiver whose concrete target is a
     /// runtime property. An AI resolves these against the wiring to complete the
     /// cross-contract storage-change picture; each carries best-effort candidates.
     #[serde(default)]
     pub unresolved_calls: Vec<UnresolvedCall>,
+    /// Calls on an interface-typed receiver with NO in-scope implementer — the
+    /// target contract's source is not in the repo (e.g. an ERC-20 passed by
+    /// address). We cannot know which storage they touch, only that a non-view one
+    /// MIGHT mutate the callee's state. The diagram flags these lines as an
+    /// unverified external state-change boundary.
+    #[serde(default)]
+    pub unknown_external_calls: Vec<ExternalUnknownCall>,
+}
+
+/// A call whose target contract has no in-scope source: an interface-typed
+/// receiver (`inferred_type`) that nothing in the repo implements. The concrete
+/// storage effect is unknowable statically.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalUnknownCall {
+    pub receiver: String,
+    pub method: String,
+    #[serde(default)]
+    pub inferred_type: String,
+}
+
+/// A single storage write located in the source: the lvalue path and the file
+/// line (1-based) it sits on.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageWriteSite {
+    pub name: String,
+    pub line: usize,
 }
 
 /// An external call whose concrete target static analysis cannot pin down (the
@@ -217,6 +254,9 @@ pub struct AutoDeployedFrame {
     /// Invisible shapes used as connector endpoints, one per call site.
     #[serde(default)]
     pub marker_ids: Vec<String>,
+    /// Red rectangles marking storage-writing nodes, so a recycle deletes them too.
+    #[serde(default)]
+    pub border_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -500,12 +540,22 @@ impl EvmBatMetadata {
                     &storage_params,
                 );
                 let storage_writes = analysis.storage_writes;
+                // body_source starts at the function's first file line, so a
+                // source-relative write line maps to a file line by that offset.
+                let storage_write_sites = analysis
+                    .storage_write_sites
+                    .iter()
+                    .map(|(name, src_line)| StorageWriteSite {
+                        name: name.clone(),
+                        line: f.line + src_line.saturating_sub(1),
+                    })
+                    .collect();
                 // Receiver types visible here: state vars (inherited) + params + locals.
                 let mut local_var_types = var_types.clone();
                 for (n, t) in &analysis.local_types {
                     local_var_types.insert(n.clone(), t.clone());
                 }
-                let unresolved_calls = compute_unresolved_calls(
+                let (unresolved_calls, unknown_external_calls) = compute_unresolved_calls(
                     &analysis.call_targets,
                     &local_var_types,
                     &struct_fields,
@@ -532,8 +582,11 @@ impl EvmBatMetadata {
                     line: f.line,
                     end_line: f.end_line,
                     is_constructor: f.is_constructor,
+                    is_stub: is_stub_body(&f.body_source),
                     storage_writes,
+                    storage_write_sites,
                     unresolved_calls,
+                    unknown_external_calls,
                 });
             }
 
@@ -618,6 +671,23 @@ impl EvmBatMetadata {
 
         metadata
     }
+}
+
+/// True when a function has no real implementation to screenshot: a bodyless
+/// declaration (interface / abstract method — `body_source` is empty) or an
+/// empty `{}` block (an unoverridden `virtual` stub).
+fn is_stub_body(body_source: &str) -> bool {
+    if body_source.trim().is_empty() {
+        return true;
+    }
+    // The first `{` opens the body; if only whitespace sits before the matching
+    // final `}`, the body is empty.
+    if let (Some(open), Some(close)) = (body_source.find('{'), body_source.rfind('}')) {
+        if open < close && body_source[open + 1..close].trim().is_empty() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Collect a contract's effective storage-variable names: its own plus every
@@ -801,9 +871,11 @@ fn compute_unresolved_calls(
     external_contracts: &std::collections::HashSet<String>,
     impl_map: &std::collections::HashMap<String, Vec<String>>,
     method_map: &std::collections::HashMap<String, Vec<String>>,
-) -> Vec<UnresolvedCall> {
+) -> (Vec<UnresolvedCall>, Vec<ExternalUnknownCall>) {
     let mut out: Vec<UnresolvedCall> = Vec::new();
+    let mut external: Vec<ExternalUnknownCall> = Vec::new();
     let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut seen_ext: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
 
     for (receiver, method) in targets {
         let (receiver, method) = (receiver.clone(), method.clone());
@@ -851,8 +923,24 @@ fn compute_unresolved_calls(
         candidates.sort();
         candidates.dedup();
 
-        // No plausible in-scope target (builtin / external library) — nothing to resolve.
+        // No plausible in-scope target. If the receiver is interface-typed, its
+        // implementation lives outside the repo (e.g. an ERC-20 passed by address):
+        // record it as an external unknown so the diagram can flag the line. A bare
+        // untyped receiver (a builtin like `abi.encode`) is just noise — skip it.
         if candidates.is_empty() {
+            // Only an INTERFACE-typed receiver with no in-scope implementer is a
+            // real external contract we lack source for (e.g. IERC20). This excludes
+            // value-type library calls (`uint256.mulDiv`), low-level `address.call`,
+            // and builtins — none of which are an external contract boundary.
+            if is_interface.contains(&inferred_type)
+                && seen_ext.insert((receiver.clone(), method.clone()))
+            {
+                external.push(ExternalUnknownCall {
+                    receiver,
+                    method,
+                    inferred_type,
+                });
+            }
             continue;
         }
         if seen.insert((receiver.clone(), method.clone())) {
@@ -865,7 +953,7 @@ fn compute_unresolved_calls(
             });
         }
     }
-    out
+    (out, external)
 }
 
 /// The declared type of a call receiver expression: a bare variable (`positionManager`)
