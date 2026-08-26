@@ -978,9 +978,6 @@ async fn deploy_one(
     Ok(())
 }
 
-/// Delete the frame recorded for an entry point and everything it owns (connectors,
-/// markers, screenshots, the frame), then forget the record — so a redeploy recycles
-/// the frame instead of leaving a duplicate on the board. Best-effort per item.
 /// Wipe a recorded frame's CONTENTS (images, connectors, markers, storage
 /// borders) but KEEP the frame itself, returning its record so the redraw can
 /// reuse the same frame id and position.
@@ -988,6 +985,9 @@ async fn deploy_one(
 /// The frame is deliberately not deleted: other diagrams may link to it by URL
 /// (`?moveToWidget=<frame_id>`), and a fresh frame would break those links. The
 /// metadata record is dropped here and a new one is saved during the redraw.
+///
+/// The deletes fan out concurrently (like the create side): every item is
+/// independent and best-effort, so there is no reason to wait one at a time.
 async fn recycle_recorded_frame(
     title: &str,
     client: &MiroClient,
@@ -1005,18 +1005,24 @@ async fn recycle_recorded_frame(
     let Some(record) = record else {
         return Ok(None);
     };
-    for id in &record.connector_ids {
-        let _ = client.delete_connector(id).await;
+    let mut delete_tasks = tokio::task::JoinSet::new();
+    for id in record.connector_ids.clone() {
+        let client = client.clone();
+        delete_tasks.spawn(async move { client.delete_connector(&id).await });
     }
-    for id in &record.marker_ids {
-        let _ = client.delete_item(id).await;
+    let item_ids = record
+        .marker_ids
+        .iter()
+        .cloned()
+        .chain(record.border_ids.iter().cloned())
+        .chain(record.images.iter().map(|(_, image_id)| image_id.clone()));
+    for id in item_ids {
+        let client = client.clone();
+        delete_tasks.spawn(async move { client.delete_item(&id).await });
     }
-    for id in &record.border_ids {
-        let _ = client.delete_item(id).await;
-    }
-    for (_, image_id) in &record.images {
-        let _ = client.delete_item(image_id).await;
-    }
+    // Best-effort: drain the set, ignoring per-item failures (a hand-deleted
+    // item 404s and that is fine — the goal is an empty frame).
+    while delete_tasks.join_next().await.is_some() {}
     // The frame itself is kept on purpose — only its contents are cleared.
 
     let owner = title.to_string();
