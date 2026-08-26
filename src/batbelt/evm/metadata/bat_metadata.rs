@@ -217,6 +217,9 @@ pub struct AutoDeployedFrame {
     /// Invisible shapes used as connector endpoints, one per call site.
     #[serde(default)]
     pub marker_ids: Vec<String>,
+    /// Red rectangles marking storage-writing nodes, so a recycle deletes them too.
+    #[serde(default)]
+    pub border_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

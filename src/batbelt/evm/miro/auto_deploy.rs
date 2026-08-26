@@ -432,24 +432,20 @@ async fn deploy_one(
 
     // One frame per function, board-wide. Asked for as a link target, a function
     // already on the board is pointed at rather than drawn again — that is what
-    // lets several diagrams share a helper's frame and keeps the fan-in
-    // readable. Asked for directly, it is the user's call.
+    // lets several diagrams share a helper's frame and keeps the fan-in readable.
+    // Asked for directly, RECYCLE it: delete the old frame and its items, then
+    // redraw — so a redeploy replaces the frame instead of piling up duplicates.
+    let mut reused_frame: Option<AutoDeployedFrame> = None;
     if !options.dry_run {
         if let Some(url) = live_frame_url(&title, client).await? {
             if !is_primary {
                 return Ok(());
             }
-            println!("  already on the board: {}", url.blue());
-            println!(
-                "  {} deploying again builds a second frame; the one above stays\n  where it is, to be deleted by hand if it is no longer wanted.",
-                "note:".yellow()
-            );
-            // `--yes` (scripts / AI) skips the confirmation and redeploys.
-            if !options.assume_yes
-                && !BatDialoguer::select_yes_or_no("Deploy it again anyway?".to_string())
-                    .change_context(EvmMiroError)?
-            {
-                return Ok(());
+            if let Some(client) = client {
+                println!("  {} recycling the existing frame", "↻".yellow());
+                reused_frame = recycle_recorded_frame(&title, client).await?;
+            } else {
+                let _ = url;
             }
         }
     }
@@ -592,7 +588,14 @@ async fn deploy_one(
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
     // board positions instead of repeating the first one.
-    let (frame_x, frame_y) = allocator.place(layout.frame_width, layout.frame_height);
+    // A recycled frame keeps its board position (other diagrams may point a
+    // viewport link at it); only a brand-new frame consumes a slot from the
+    // allocator. Item coordinates are relative to the frame, so reusing the
+    // same centre keeps the layout identical regardless of the new size.
+    let (frame_x, frame_y) = match &reused_frame {
+        Some(record) => (record.x, record.y),
+        None => allocator.place(layout.frame_width, layout.frame_height),
+    };
 
     if let Some(preview_path) = &options.preview {
         let path = if options.all {
@@ -612,16 +615,34 @@ async fn deploy_one(
     }
 
     let client = client.expect("client is present when not in dry-run mode");
-    let frame_id = client
-        .create_frame(
-            &format!("auto: {title}"),
-            frame_x,
-            frame_y,
-            layout.frame_width,
-            layout.frame_height,
-        )
-        .await
-        .change_context(EvmMiroError)?;
+    let frame_id = match &reused_frame {
+        Some(record) => {
+            // Keep the id (so viewport links survive) but resize to the new
+            // layout, so the frame always fits its fresh contents exactly.
+            client
+                .update_frame(
+                    &record.frame_id,
+                    &format!("auto: {title}"),
+                    frame_x,
+                    frame_y,
+                    layout.frame_width,
+                    layout.frame_height,
+                )
+                .await
+                .change_context(EvmMiroError)?;
+            record.frame_id.clone()
+        }
+        None => client
+            .create_frame(
+                &format!("auto: {title}"),
+                frame_x,
+                frame_y,
+                layout.frame_width,
+                layout.frame_height,
+            )
+            .await
+            .change_context(EvmMiroError)?,
+    };
     println!(
         "  frame {} ({}x{}) at ({}, {})",
         frame_id.green(),
@@ -651,6 +672,7 @@ async fn deploy_one(
         images: Vec::new(),
         connector_ids: Vec::new(),
         marker_ids: Vec::new(),
+        border_ids: Vec::new(),
     };
     save_frame_record(&record)?;
 
@@ -727,10 +749,11 @@ async fn deploy_one(
             });
         }
         while let Some(joined) = border_tasks.join_next().await {
-            joined
+            let id = joined
                 .into_report()
                 .change_context(EvmMiroError)?
                 .change_context(EvmMiroError)?;
+            record.border_ids.push(id);
         }
         bar.finish_and_clear();
         println!("    {} {} storage markers", "✓".green(), n_borders);
@@ -742,97 +765,142 @@ async fn deploy_one(
     // arrow head out to the screenshot's border.
     let back_edges: HashSet<(String, String)> = layout.back_edges.iter().cloned().collect();
 
-    // Each call site needs a marker and then a connector attached to it. The
-    // two are ordered within a call site but independent across them, so each
-    // pair runs as one task.
-    struct PendingConnector {
-        marker_x: f64,
-        marker_y: f64,
-        /// Where the line meets the callee, in frame coordinates. Needed to
-        /// decide which side of the marker it should leave through.
-        end_point: (f64, f64),
-        start_id: String,
+    let _ = anchors;
+
+    // Dependencies that reach the SAME caller line from the SAME side share ONE
+    // arrow into that line: they all route into a single edge marker, and one stub
+    // carries the arrow in. So a line with two calls (both to the right) gets one
+    // arrow at its end, not two overlapping ones.
+    struct CalleeLink {
         end_id: String,
         end_anchor: RelativeAnchor,
+        end_point: (f64, f64),
+    }
+    struct PendingGroup {
+        token_x: f64,
+        token_y: f64,
+        edge_x: f64,
+        exit_right: bool,
         style: ConnectorStyle,
+        callees: Vec<CalleeLink>,
     }
 
-    let mut pending = Vec::new();
-    for ((index, edge), start_anchor) in edges.iter().enumerate().zip(anchors.iter()) {
-        let (Some(start_id), Some(end_id)) = (image_ids.get(&edge.from), image_ids.get(&edge.to))
+    let mut groups: HashMap<(String, usize, bool), PendingGroup> = HashMap::new();
+    for edge in edges.iter() {
+        let (Some(_start_id), Some(end_id)) =
+            (image_ids.get(&edge.from), image_ids.get(&edge.to))
         else {
             continue;
         };
-        let (Some(caller), Some(callee)) = (
-            by_id.get(edge.from.as_str()),
-            by_id.get(edge.to.as_str()),
-        ) else {
+        let (Some(caller), Some(callee)) =
+            (by_id.get(edge.from.as_str()), by_id.get(edge.to.as_str()))
+        else {
             continue;
         };
         let Some(caller_placed) = layout.node(&edge.from) else {
             continue;
         };
-
-        // Put the marker on the caller's EDGE (the side facing the callee), at the
-        // call line's height — not on the interior token. Anchored inside, Miro bends
-        // the connector *into* the screenshot to reach it; anchored at the edge, the
-        // arrow still lands on the calling line (same Y) but the elbow turns out in
-        // the gutter, clear of the code.
         let callee_x = layout
             .node(&edge.to)
             .map(|placed| placed.x)
             .unwrap_or(caller_placed.x + 1.0);
         let exit_right = callee_x >= caller_placed.x;
-        pending.push(PendingConnector {
-            marker_x: if exit_right {
-                caller_placed.x + caller_placed.width / 2.0
-            } else {
-                caller_placed.x - caller_placed.width / 2.0
-            },
-            marker_y: caller_placed.y - caller_placed.height / 2.0
-                + caller_placed.height * start_anchor.y_fraction,
-            end_point: {
-                let placed = layout.node(&edge.to);
-                let fraction = silicon::line_geometry(Some(callee.font_size))
-                    .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height);
-                match placed {
-                    // Meet the callee on the side facing the caller: its left edge
-                    // when it's to the right, its right edge when it's to the left.
-                    Some(placed) => (
-                        if exit_right {
-                            placed.x - placed.width / 2.0
-                        } else {
-                            placed.x + placed.width / 2.0
-                        },
-                        placed.y - placed.height / 2.0 + placed.height * fraction,
-                    ),
-                    None => (0.0, 0.0),
-                }
-            },
-            start_id: start_id.clone(),
-            end_id: end_id.clone(),
-            end_anchor: RelativeAnchor::new(
-                if exit_right { 0.0 } else { 1.0 },
-                silicon::line_geometry(Some(callee.font_size))
-                    .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height),
+
+        // Where this dependency meets the callee (its side facing the caller).
+        let callee_fraction = silicon::line_geometry(Some(callee.font_size))
+            .line_center_fraction(SIGNATURE_LINE_INDEX, callee.png_height);
+        let end_point = match layout.node(&edge.to) {
+            Some(placed) => (
+                if exit_right {
+                    placed.x - placed.width / 2.0
+                } else {
+                    placed.x + placed.width / 2.0
+                },
+                placed.y - placed.height / 2.0 + placed.height * callee_fraction,
             ),
-            style: ConnectorStyle {
-                stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
-                stroke_width: options.stroke_width.to_string(),
-                dashed: back_edges.contains(&(edge.from.clone(), edge.to.clone())),
-                // No caption. It carried the line number back when the arrow
-                // could only reach the border of a screenshot; now the head
-                // lands on the calling line itself, so the label repeats what
-                // the picture already says.
-                caption: None,
-                arrow: ArrowEnd::Start,
-            },
-        });
+            None => (0.0, 0.0),
+        };
+        let link = CalleeLink {
+            end_id: end_id.clone(),
+            end_anchor: RelativeAnchor::new(if exit_right { 0.0 } else { 1.0 }, callee_fraction),
+            end_point,
+        };
+
+        let dashed = back_edges.contains(&(edge.from.clone(), edge.to.clone()));
+        let group = groups
+            .entry((edge.from.clone(), edge.line_in_slice, exit_right))
+            .or_insert_with(|| {
+                // The shared arrow anchor for this caller line + side: the arrow lands
+                // at the END of the line for a right entry, or its START for a left
+                // one, and enters by a straight horizontal stub from the edge.
+                let line_index = edge.line_in_slice.saturating_sub(1) + PATH_HEADER_LINES;
+                let line_text = caller
+                    .rendered_lines
+                    .get(line_index)
+                    .cloned()
+                    .unwrap_or_default();
+                let text_width = |text: &str| {
+                    silicon::line_end_x(
+                        Some(caller.font_size),
+                        true,
+                        caller.rendered_lines.len(),
+                        caller.line_offset,
+                        text,
+                    ) as f64
+                };
+                let y_fraction = silicon::line_geometry(Some(caller.font_size))
+                    .line_center_fraction(line_index, caller.png_height);
+                let token_frac = if caller.png_width > 0 {
+                    let width = caller.png_width as f64;
+                    if exit_right {
+                        let gap = (text_width("a") - text_width("")) * ANCHOR_GAP_CHARS;
+                        ((text_width(&line_text) + gap) / width).min(1.0)
+                    } else {
+                        (text_width("") / width).max(0.0)
+                    }
+                } else if exit_right {
+                    1.0
+                } else {
+                    0.0
+                };
+                let edge_x = if exit_right {
+                    caller_placed.x + caller_placed.width / 2.0
+                } else {
+                    caller_placed.x - caller_placed.width / 2.0
+                };
+                let raw_token_x =
+                    caller_placed.x - caller_placed.width / 2.0 + caller_placed.width * token_frac;
+                // A minimum stub so the arrow head always renders (the widest line
+                // ends at the edge, which would make a zero-length stub otherwise).
+                let min_stub = 60.0_f64;
+                let token_x = if exit_right {
+                    raw_token_x.min(edge_x - min_stub)
+                } else {
+                    raw_token_x.max(edge_x + min_stub)
+                };
+                PendingGroup {
+                    token_x,
+                    token_y: caller_placed.y - caller_placed.height / 2.0
+                        + caller_placed.height * y_fraction,
+                    edge_x,
+                    exit_right,
+                    style: ConnectorStyle {
+                        stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
+                        stroke_width: options.stroke_width.to_string(),
+                        dashed: false,
+                        caption: None,
+                        arrow: ArrowEnd::Start,
+                    },
+                    callees: Vec::new(),
+                }
+            });
+        group.style.dashed = group.style.dashed || dashed;
+        group.callees.push(link);
     }
 
-    let bar = phase_bar("drawing connectors", pending.len());
+    let bar = phase_bar("drawing connectors", groups.len());
     let mut connector_tasks = tokio::task::JoinSet::new();
-    for item in pending {
+    for (_key, group) in groups {
         let client = client.clone();
         let frame_id = frame_id.clone();
         let bar = bar.clone();
@@ -840,40 +908,47 @@ async fn deploy_one(
             let mut markers = Vec::new();
             let mut connectors = Vec::new();
 
-            let anchor_marker = client
-                .create_anchor_marker(&frame_id, item.marker_x, item.marker_y, ANCHOR_MARKER_SIZE)
+            // A token marker (arrow head, at the line end/start) and an edge marker
+            // (at the caller edge). ONE stub carries the arrow in; every dependency
+            // routes into the shared edge marker with no head of its own.
+            let token_marker = client
+                .create_anchor_marker(&frame_id, group.token_x, group.token_y, ANCHOR_MARKER_SIZE)
                 .await?;
-            markers.push(anchor_marker.clone());
+            markers.push(token_marker.clone());
+            let edge_marker = client
+                .create_anchor_marker(&frame_id, group.edge_x, group.token_y, ANCHOR_MARKER_SIZE)
+                .await?;
+            markers.push(edge_marker.clone());
 
-
-            // One connector per call, screenshot to screenshot.
-            //
-            // Routing a long edge as a chain through the bend points would keep
-            // it off the screenshots it crosses, but the result is several
-            // linked connectors rather than one line, and a composite like that
-            // cannot be dragged into a better position by hand. Reordering by
-            // hand matters more than the guarantee, so the bends are left to the
-            // layout, where they still push the columns apart and leave the
-            // corridor free.
-            let mut style = item.style.clone();
-            style.arrow = ArrowEnd::Start;
+            let (edge_side, token_side) = if group.exit_right {
+                (RelativeAnchor::new(0.0, 0.5), RelativeAnchor::new(1.0, 0.5))
+            } else {
+                (RelativeAnchor::new(1.0, 0.5), RelativeAnchor::new(0.0, 0.5))
+            };
+            let mut stub_style = group.style.clone();
+            stub_style.arrow = ArrowEnd::End;
             connectors.push(
                 client
-                    .create_connector(
-                        &anchor_marker,
-                        // Leave through the side that faces the callee. Anchoring
-                        // at the centre lets Miro pick, and it picks the same
-                        // side every time, so every arrow approached from above
-                        // however the boxes were arranged.
-                        facing_anchor((item.marker_x, item.marker_y), item.end_point),
-                        &item.end_id,
-                        item.end_anchor,
-                        style,
-                    )
+                    .create_connector(&edge_marker, edge_side, &token_marker, token_side, stub_style)
                     .await?,
             );
 
-            let _ = item.start_id;
+            for link in &group.callees {
+                let mut route_style = group.style.clone();
+                route_style.arrow = ArrowEnd::None;
+                connectors.push(
+                    client
+                        .create_connector(
+                            &link.end_id,
+                            link.end_anchor,
+                            &edge_marker,
+                            facing_anchor((group.edge_x, group.token_y), link.end_point),
+                            route_style,
+                        )
+                        .await?,
+                );
+            }
+
             bar.inc(1);
             Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((markers, connectors))
         });
@@ -900,6 +975,59 @@ async fn deploy_one(
     println!("  {}", frame_url.blue());
     cleanup(&nodes);
     Ok(())
+}
+
+/// Delete the frame recorded for an entry point and everything it owns (connectors,
+/// markers, screenshots, the frame), then forget the record — so a redeploy recycles
+/// the frame instead of leaving a duplicate on the board. Best-effort per item.
+/// Wipe a recorded frame's CONTENTS (images, connectors, markers, storage
+/// borders) but KEEP the frame itself, returning its record so the redraw can
+/// reuse the same frame id and position.
+///
+/// The frame is deliberately not deleted: other diagrams may link to it by URL
+/// (`?moveToWidget=<frame_id>`), and a fresh frame would break those links. The
+/// metadata record is dropped here and a new one is saved during the redraw.
+async fn recycle_recorded_frame(
+    title: &str,
+    client: &MiroClient,
+) -> Result<Option<AutoDeployedFrame>> {
+    let record = {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+            .cloned()
+    };
+    let Some(record) = record else {
+        return Ok(None);
+    };
+    for id in &record.connector_ids {
+        let _ = client.delete_connector(id).await;
+    }
+    for id in &record.marker_ids {
+        let _ = client.delete_item(id).await;
+    }
+    for id in &record.border_ids {
+        let _ = client.delete_item(id).await;
+    }
+    for (_, image_id) in &record.images {
+        let _ = client.delete_item(image_id).await;
+    }
+    // The frame itself is kept on purpose — only its contents are cleared.
+
+    let owner = title.to_string();
+    EvmBatMetadata::update_metadata(move |metadata| {
+        metadata
+            .miro
+            .auto
+            .frames
+            .retain(|frame| frame.entry_point != owner);
+    })
+    .change_context(EvmMiroError)?;
+    Ok(Some(record))
 }
 
 /// Store what a deployment owns, replacing any earlier record for the same
