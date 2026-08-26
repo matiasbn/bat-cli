@@ -1368,12 +1368,6 @@ fn build_graph(
             else {
                 continue;
             };
-            // A bodyless interface/abstract declaration or an empty `{}` virtual
-            // stub has nothing to screenshot — the real implementation is drawn
-            // via its own resolved call. Skip it (edge included).
-            if target_function.is_stub {
-                continue;
-            }
             let target_id = node_key(&target_contract.name, &target_function.name);
             if target_id == current.node_id {
                 continue; // a function calling itself needs no arrow
@@ -1429,11 +1423,12 @@ fn build_graph(
                 unresolved.push(u.clone());
                 continue;
             };
-            if !options.include_external && tc.external {
+            // A resolution that lands on a virtual/interface stub is redirected to
+            // its concrete override; a pure declaration with none is dropped.
+            let Some((tc, tf)) = destub(metadata, (tc, tf), options) else {
                 continue;
-            }
-            // A resolution that lands on a bodyless/empty stub has nothing to draw.
-            if tf.is_stub {
+            };
+            if !options.include_external && tc.external {
                 continue;
             }
             let target_id = node_key(&tc.name, &tf.name);
@@ -1728,7 +1723,7 @@ fn resolve_call<'a>(
                         continue;
                     }
                     if let Some(found) = find_function(metadata, &target.name, method) {
-                        return Some(found);
+                        return destub(metadata, found, options);
                     }
                 }
             }
@@ -1738,9 +1733,44 @@ fn resolve_call<'a>(
             continue;
         }
         if let Some(found) = find_function(metadata, &contract.name, method) {
-            // Skip interface-only declarations with no body.
-            return Some(found);
+            return destub(metadata, found, options);
         }
+    }
+    None
+}
+
+/// Redirect a resolved call that landed on a stub (a bodyless interface/abstract
+/// declaration or an empty `virtual {}`) to its concrete implementation: the one
+/// non-stub override among the contracts deriving from / implementing the stub's
+/// contract. Returns the override when exactly one exists; the stub itself when
+/// none does (it is the only thing there is to show); `None` when several
+/// overrides make the runtime target ambiguous.
+fn destub<'a>(
+    metadata: &'a EvmBatMetadata,
+    found: (&'a ContractMetadata, FunctionMetadata),
+    options: &AutoDeployOptions,
+) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
+    let (contract, function) = found;
+    if !function.is_stub {
+        return Some((contract, function));
+    }
+    let keep = |c: &ContractMetadata| options.include_external || !c.external;
+    let mut overrides: Vec<(&'a ContractMetadata, FunctionMetadata)> = Vec::new();
+    for impl_name in implementations_of(metadata, &contract.name) {
+        if impl_name == contract.name {
+            continue;
+        }
+        if let Some((tc, tf)) = find_function(metadata, &impl_name, &function.name) {
+            if !tf.is_stub && keep(tc) {
+                overrides.push((tc, tf));
+            }
+        }
+    }
+    // Exactly one override → draw it. None (a pure interface/abstract declaration
+    // or an empty virtual with no override) or several (ambiguous runtime target)
+    // → nothing meaningful to screenshot.
+    if overrides.len() == 1 {
+        return overrides.pop();
     }
     None
 }
