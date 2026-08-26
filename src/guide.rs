@@ -610,6 +610,13 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.22.3
+- **Connector fix: arrows into a full-width line no longer pile up at the image edge.** When
+  several dependencies reach one line whose text runs to the screenshot's right edge (a signature
+  line carrying modifiers, say), their arrows used to converge flush on the boundary and became
+  impossible to tell apart. Their shared convergence point is now pushed into the gutter for that
+  case only; shorter lines and the left side are unchanged. _Re-read: nothing (visual only)._
+
 ## 0.22.2
 - **Node-level marker for probable external state changes.** A function that makes a non-view
   call to a sourceless external contract but writes NO storage of its own now gets a hollow SOLID
