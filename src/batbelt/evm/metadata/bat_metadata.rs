@@ -912,6 +912,27 @@ fn compute_unresolved_calls(
             continue;
         }
 
+        // An interface CAST of a runtime address (`IERC20Minimal(x).transfer(...)`,
+        // rendered `IERC20Minimal()`) with NO type-proven in-scope implementer is a
+        // generic external contract: nothing wires it to a specific in-scope address,
+        // so a name-only method match (some unrelated contract that happens to define
+        // `transfer`) is a false lead. Flag it as an external boundary, not a
+        // resolvable call. A wired variable receiver (`$.borrowerOps`, `_s().CORE`)
+        // is NOT a bare cast and keeps the name-inference path below.
+        if typed_impls.is_empty()
+            && receiver.ends_with("()")
+            && is_interface.contains(&inferred_type)
+        {
+            if seen_ext.insert((receiver.clone(), method.clone())) {
+                external.push(ExternalUnknownCall {
+                    receiver,
+                    method,
+                    inferred_type,
+                });
+            }
+            continue;
+        }
+
         // Otherwise: candidates are the type-proven impls if any, else any in-scope
         // concrete contract defining the method (name-inferred, for the AI to confirm).
         let mut candidates: Vec<String> = if !typed_impls.is_empty() {
