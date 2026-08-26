@@ -607,6 +607,14 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.22.1
+- **External-boundary detection now catches interface CASTS.** A call like
+  `IERC20Minimal(addr).transferFrom(...)` — an interface cast of a runtime address with no
+  in-scope implementer — used to be misfiled as a resolvable call (some unrelated in-scope contract
+  happens to define `transferFrom`) and then pruned, so the line was flagged as nothing. A bare
+  interface cast with no type-proven implementer is now correctly a dashed-amber external boundary.
+  A wired receiver (`$.borrowerOps`, `_s().CORE`) is unaffected. _Re-read: metadata.md, workflow.md._
+
 ## 0.22.0
 - **Exact storage-write lines on the board.** A red frame border said a function mutates state but
   not WHICH. Each `contracts[].functions[]` now carries **`storage_write_sites`** — every write
