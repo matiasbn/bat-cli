@@ -1371,6 +1371,26 @@ fn build_graph(
         return Ok((Vec::new(), Vec::new(), 0, Vec::new()));
     };
 
+    // Method name → in-scope, non-stub contracts that directly define it, built
+    // ONCE so resolve_call's unique-definer fallback is O(1) per call site instead
+    // of scanning every contract each time.
+    let mut definer_map: HashMap<String, Vec<String>> = HashMap::new();
+    for contract in &metadata.contracts {
+        if (contract.external && !options.include_external)
+            || contract.contract_type == EvmContractType::Interface
+        {
+            continue;
+        }
+        for function in &contract.functions {
+            if !function.is_stub {
+                definer_map
+                    .entry(function.name.clone())
+                    .or_default()
+                    .push(contract.name.clone());
+            }
+        }
+    }
+
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut truncated = 0usize;
@@ -1471,7 +1491,7 @@ fn build_graph(
 
         for call in extract_call_sites_from_source(&body_only(&slice).join("\n")) {
             let Some((target_contract, target_function)) =
-                resolve_call(metadata, contract, &call.name, options)
+                resolve_call(metadata, contract, &call.name, options, &definer_map)
             else {
                 continue;
             };
@@ -1812,6 +1832,7 @@ fn resolve_call<'a>(
     caller_contract: &ContractMetadata,
     call_name: &str,
     options: &AutoDeployOptions,
+    definer_map: &HashMap<String, Vec<String>>,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
     let keep = |contract: &ContractMetadata| options.include_external || !contract.external;
 
@@ -1861,7 +1882,11 @@ fn resolve_call<'a>(
                         continue;
                     }
                     if let Some(found) = find_function(metadata, &target.name, method) {
-                        return destub(metadata, found, options);
+                        // Only accept a concrete result; a bodyless stub with no
+                        // override falls through to the unique-definer fallback.
+                        if let Some(resolved) = destub(metadata, found, options) {
+                            return Some(resolved);
+                        }
                     }
                 }
             }
@@ -1871,7 +1896,24 @@ fn resolve_call<'a>(
             continue;
         }
         if let Some(found) = find_function(metadata, &contract.name, method) {
-            return destub(metadata, found, options);
+            if let Some(resolved) = destub(metadata, found, options) {
+                return Some(resolved);
+            }
+        }
+    }
+
+    // Fallback for an interface-typed receiver we could not pin through
+    // inheritance (nothing declares `is IFace`): if exactly ONE in-scope contract
+    // directly defines this method with a real body, that is the unambiguous
+    // target — draw it. This catches a view read like `alm.getReservesAtSqrtPrice`
+    // whose unresolved entry the storage-write prune would otherwise drop. Gated
+    // on a `receiver.method` call AND on uniqueness, so a common name (`transfer`,
+    // defined by many) never auto-binds to the wrong contract.
+    if matches!(target_name, Some(t) if t != "super" && t != "this") {
+        if let Some(definers) = definer_map.get(method) {
+            if definers.len() == 1 {
+                return find_function(metadata, &definers[0], method);
+            }
         }
     }
     None
