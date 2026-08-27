@@ -610,6 +610,17 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.22.4
+- **Interface calls with a single in-scope implementation now deploy — deterministically, no
+  `resolve` needed.** A call on an interface-typed receiver that nothing declares `is …` (so
+  inheritance can't pin it) but whose method is defined by EXACTLY ONE in-scope contract is now
+  drawn straight to that contract — e.g. `alm.getReservesAtSqrtPrice(...)` → `CvammALM`. Before,
+  such a call was pushed to the AI work-list and then dropped by the storage-write prune when the
+  method was a `view` read, so it silently never appeared. This is pure static analysis (a
+  uniqueness gate: a common name like `transfer`, defined by many, still never auto-binds and stays
+  an external boundary / `resolve` target). Deploy-time only; `sonar` is unchanged.
+  _Re-read: workflow.md._
+
 ## 0.22.3
 - **Connector fix: arrows into a full-width line no longer pile up at the image edge.** When
   several dependencies reach one line whose text runs to the screenshot's right edge (a signature
