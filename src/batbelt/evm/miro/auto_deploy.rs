@@ -465,6 +465,46 @@ async fn deploy_one(
         return Ok(());
     }
 
+    // Recycle already-deployed frames: any callee in this tree that ALREADY has
+    // its own frame on the board is referenced with a link card pointing at that
+    // frame, instead of being redrawn (with its whole subtree) inside this one —
+    // so a redeploy reuses what is already there rather than cluttering the frame
+    // with duplicates. The root being deployed is always drawn. A card whose
+    // frame has since been deleted is re-deployed on demand by
+    // `ensure_target_frames`, so a stale record is self-healing.
+    let deployed_titles: HashSet<String> = {
+        let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        meta.miro
+            .auto
+            .frames
+            .iter()
+            .map(|frame| frame.entry_point.clone())
+            .filter(|entry_point| *entry_point != title)
+            .collect()
+    };
+    if !deployed_titles.is_empty() {
+        let root_id = nodes[0].id.clone();
+        let mut linked = 0usize;
+        while let Some(index) = edges.iter().position(|edge| {
+            edge.to != root_id
+                && nodes.iter().any(|node| {
+                    node.id == edge.to
+                        && node.kind == NodeKind::Screenshot
+                        && deployed_titles.contains(&node.label)
+                })
+        }) {
+            cut_edge(&mut nodes, &mut edges, index);
+            linked += 1;
+        }
+        if linked > 0 {
+            println!(
+                "  {} linked {} call(s) to already-deployed frames",
+                "↻".yellow(),
+                linked
+            );
+        }
+    }
+
     // Cross-contract calls this tree reaches through an interface, whose concrete
     // target static analysis cannot pin. By default STOP so the AI (or auditor) can
     // resolve them and the downstream storage writers can be drawn; `--allow-unresolved`
