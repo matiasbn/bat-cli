@@ -454,7 +454,9 @@ no arrow points backwards.
 hollow red rectangle, so state-changing functions stand out at a glance. This is derived from
 each function's `storage_writes` in the metadata (see `metadata.md`); nothing to configure.
 Inside the rectangle, a **translucent red band** covers each exact line that writes storage
-(from `storage_write_sites`), so you see WHICH state changes, statement by statement.
+(from `storage_write_sites`), so you see WHICH state changes, statement by statement. A **modifier**
+that writes storage (e.g. `initializer`) is marked the same way — it runs as part of the function
+it guards, so its writes count.
 
 **External-boundary markers.** A **dashed amber band** covers a line that calls an external
 contract with no in-scope source — an interface-typed receiver nothing in the repo implements
@@ -612,6 +614,16 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.22.6
+- **Modifiers that write storage are now detected and marked.** A modifier runs as part of every
+  function it guards, so its state changes are real — e.g. OpenZeppelin's `initializer` sets
+  `$._initialized` / `$._initializing`. Its body is now analyzed like a function's, each
+  `contracts[].modifiers[]` carries `storage_writes` + `storage_write_sites`, and the modifier node
+  on the diagram gets the red border and per-line bands. Regenerate with `sonar`, then `deploy`.
+  (External `__…_init` FUNCTIONS such as `__ERC20_init` / `__UUPSUpgradeable_init` live in `lib/`;
+  their writes are always analyzed but only DRAWN with `--include-external`.) _Re-read: metadata.md,
+  workflow.md._
 
 ## 0.22.5
 - **Deploy recycles already-deployed frames instead of redrawing them.** When a function's tree

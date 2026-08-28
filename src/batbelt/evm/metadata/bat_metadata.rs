@@ -590,6 +590,29 @@ impl EvmBatMetadata {
                 });
             }
 
+            // A modifier writes storage too (e.g. OZ `initializer` sets
+            // `$._initialized`), and it runs as part of every function it guards —
+            // analyze its body the same way so the diagram can mark it.
+            let modifiers: Vec<crate::batbelt::evm::types::EvmModifierDef> = contract
+                .modifiers
+                .iter()
+                .map(|m| {
+                    let mut m = m.clone();
+                    let analysis = crate::batbelt::evm::parser::call_resolver::analyze_body(
+                        &m.body_source,
+                        &state_vars,
+                        &[],
+                    );
+                    m.storage_write_sites = analysis
+                        .storage_write_sites
+                        .iter()
+                        .map(|(name, src_line)| (name.clone(), m.line + src_line.saturating_sub(1)))
+                        .collect();
+                    m.storage_writes = analysis.storage_writes;
+                    m
+                })
+                .collect();
+
             let contract_metadata = ContractMetadata {
                 metadata_id: contract_id,
                 name: contract.name.clone(),
@@ -599,7 +622,7 @@ impl EvmBatMetadata {
                 functions,
                 state_variables: contract.storage_variables.clone(),
                 events: contract.events.clone(),
-                modifiers: contract.modifiers.clone(),
+                modifiers,
                 line: contract.line,
                 external: contract.external,
             };

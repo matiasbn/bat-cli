@@ -81,6 +81,14 @@ pub struct EvmModifierDef {
     #[serde(default)]
     pub end_line: usize,
     pub contract_name: String,
+    /// Storage locations this modifier writes (e.g. OZ's `initializer` sets
+    /// `$._initialized`). A modifier runs as part of the function it guards, so
+    /// these are real state changes — the diagram marks the modifier node red.
+    #[serde(default)]
+    pub storage_writes: Vec<String>,
+    /// Each write with the FILE line (1-based) it sits on, for the per-line marker.
+    #[serde(default)]
+    pub storage_write_sites: Vec<(String, usize)>,
 }
 
 /// A parsed Solidity function.
