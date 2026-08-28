@@ -1517,13 +1517,7 @@ fn build_graph(
                 nodes.push(make_modifier_node(
                     target_id,
                     owner,
-                    definition.name.clone(),
-                    definition.line,
-                    if definition.end_line > 0 {
-                        definition.end_line
-                    } else {
-                        definition.line + 6
-                    },
+                    &definition,
                     current.depth + 1,
                 ));
             }
@@ -1770,17 +1764,20 @@ fn make_node(
 fn make_modifier_node(
     id: String,
     contract: &ContractMetadata,
-    name: String,
-    start_line: usize,
-    end_line: usize,
+    definition: &crate::batbelt::evm::types::EvmModifierDef,
     depth: usize,
 ) -> GraphNode {
+    let end_line = if definition.end_line > 0 {
+        definition.end_line
+    } else {
+        definition.line + 6
+    };
     GraphNode {
         kind: NodeKind::Screenshot,
         id,
-        label: format!("{}.{} (modifier)", contract.name, name),
+        label: format!("{}.{} (modifier)", contract.name, definition.name),
         file_path: contract.file_path.clone(),
-        start_line,
+        start_line: definition.line,
         end_line,
         depth,
         font_size: font_for_depth(depth),
@@ -1789,9 +1786,15 @@ fn make_modifier_node(
         png_height: 0,
         rendered_lines: Vec::new(),
         line_offset: 0,
-        writes_storage: false,
-            write_lines: Vec::new(),
-            external_call_lines: Vec::new(),
+        // A modifier that writes storage (e.g. `initializer`) is marked like any
+        // state-mutating node.
+        writes_storage: !definition.storage_writes.is_empty(),
+        write_lines: definition
+            .storage_write_sites
+            .iter()
+            .map(|(name, line)| (*line, name.clone()))
+            .collect(),
+        external_call_lines: Vec::new(),
     }
 }
 

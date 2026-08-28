@@ -26,21 +26,17 @@ pub fn parse_modifier_definition(
         .map(|p| parse_parameter(sess, p))
         .collect();
 
-    let body_source = func
-        .body
-        .as_ref()
-        .map(|block| {
-            extract_source_by_lines(
-                source,
-                span_to_line(sess, block.span),
-                span_to_end_line(sess, block.span),
-            )
-        })
-        .unwrap_or_default();
-
     let full_span = func.header.span.to(func.body_span);
     let line = span_to_line(sess, full_span);
     let end_line = span_to_end_line(sess, full_span);
+
+    // The WHOLE modifier (header + body), like a function — so a multi-line
+    // signature parses and a write's line maps back to the file by `line`.
+    let body_source = if func.body.is_some() {
+        extract_source_by_lines(source, line, end_line)
+    } else {
+        String::new()
+    };
 
     EvmModifierDef {
         name,
@@ -49,6 +45,8 @@ pub fn parse_modifier_definition(
         line,
         end_line,
         contract_name: contract_name.to_string(),
+        storage_writes: Vec::new(),
+        storage_write_sites: Vec::new(),
     }
 }
 
