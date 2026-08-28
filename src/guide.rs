@@ -469,6 +469,9 @@ rectangle** around its whole node — the amber counterpart of the red storage b
 wiping and redrawing the contents — so a diagram that links to the frame by URL keeps working,
 and no duplicate frames pile up. Interface/abstract stubs (bodyless declarations, empty
 `virtual {}`) are never drawn on their own: a stub is redirected to its concrete override.
+A callee that ALREADY has its own frame on the board is referenced with a link card pointing at
+that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
+deploy as their own frames, the thinner the parent frame becomes on its next redeploy.
 
 ## Failure modes
 
@@ -609,6 +612,15 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.22.5
+- **Deploy recycles already-deployed frames instead of redrawing them.** When a function's tree
+  reaches a callee that ALREADY has its own frame on the board, that callee is now referenced with
+  a link card pointing at its frame — its whole subtree is no longer redrawn inside this one, so a
+  redeploy reuses what is there rather than cluttering the frame with duplicates. It is recomputed
+  every deploy from the current frames, so deploying more of the tree's functions as their own
+  frames progressively thins the parent (e.g. `execute` links `swapExactInX96`, 44 → 33
+  screenshots). A card whose frame was deleted is re-deployed on demand. _Re-read: workflow.md._
 
 ## 0.22.4
 - **Interface calls with a single in-scope implementation now deploy — deterministically, no
