@@ -584,10 +584,22 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
                     }
                 }
                 ast::ExprKind::Member(obj_expr, method_ident) => {
-                    if let ast::ExprKind::Ident(obj_ident) = &obj_expr.kind {
-                        let obj_name = obj_ident.as_str().to_string();
-                        let method_name = method_ident.as_str().to_string();
-                        if !is_builtin(&obj_name) {
+                    let method_name = method_ident.as_str().to_string();
+                    // Render the receiver so the call is `receiver.method`. A plain
+                    // variable/type is its name; an interface CAST
+                    // `IFace(addr).method()` renders as `IFace()` (matching
+                    // analyze_body), so the resolver can reach it — otherwise the
+                    // call was dropped and neither drawn nor linked.
+                    let receiver = match &obj_expr.kind {
+                        ast::ExprKind::Ident(obj_ident) => Some(obj_ident.as_str().to_string()),
+                        ast::ExprKind::Call(inner_callee, _) => match &inner_callee.kind {
+                            ast::ExprKind::Ident(id) => Some(format!("{}()", id.as_str())),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    match receiver {
+                        Some(obj_name) if !is_builtin(&obj_name) => {
                             // Point at the method, not at the receiver: in
                             // `MathLib.wadMul(...)` the interesting token is
                             // `wadMul`.
@@ -597,6 +609,7 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
                                 method_ident.span,
                             ));
                         }
+                        _ => collect_call_sites_from_expr(obj_expr, out),
                     }
                 }
                 _ => collect_call_sites_from_expr(callee, out),

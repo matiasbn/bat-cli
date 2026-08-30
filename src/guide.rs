@@ -615,6 +615,15 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.22.7
+- **Calls on an interface CAST receiver are no longer dropped.** A call written as
+  `IFace(addr).method()` — e.g. `IClammReferenceFeed($.referenceFeed).latestReference()` — was
+  silently lost by the deploy's call-site extractor (it only understood a plain variable receiver),
+  so the callee was neither drawn nor linked to its own frame. The receiver now renders as
+  `IFace().method`, matching the metadata analysis, so it resolves (to a unique in-scope
+  implementation) and, if that function already has a frame, links to it. _Re-read: nothing
+  (behavioral; metadata shape unchanged)._
+
 ## 0.22.6
 - **Modifiers that write storage are now detected and marked.** A modifier runs as part of every
   function it guards, so its state changes are real — e.g. OpenZeppelin's `initializer` sets
