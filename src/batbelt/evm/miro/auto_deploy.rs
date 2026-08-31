@@ -485,15 +485,34 @@ async fn deploy_one(
     // with duplicates. The root being deployed is always drawn. A card whose
     // frame has since been deleted is re-deployed on demand by
     // `ensure_target_frames`, so a stale record is self-healing.
+    // Only frames that are STILL on the board count: a metadata entry outlives a
+    // frame the auditor deleted by hand, and recycling to a dead frame would make
+    // `ensure_target_frames` RE-CREATE it — resurrecting exactly the tiny husk
+    // frames the auditor just cleaned up. So we recycle (and treat as "free to cut
+    // to") only frames confirmed live on the board.
     let deployed_titles: HashSet<String> = {
         let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        meta.miro
+        let in_graph: HashSet<&str> = nodes.iter().map(|n| n.label.as_str()).collect();
+        let candidates: Vec<String> = meta
+            .miro
             .auto
             .frames
             .iter()
             .map(|frame| frame.entry_point.clone())
-            .filter(|entry_point| *entry_point != title)
-            .collect()
+            .filter(|entry_point| *entry_point != title && in_graph.contains(entry_point.as_str()))
+            .collect();
+        let mut live = HashSet::new();
+        if client.is_some() {
+            for candidate in candidates {
+                if live_frame_url(&candidate, client).await?.is_some() {
+                    live.insert(candidate);
+                }
+            }
+        } else {
+            // No board access (dry run): fall back to the registry as-is.
+            live.extend(candidates);
+        }
+        live
     };
     if !deployed_titles.is_empty() {
         let root_id = nodes[0].id.clone();
@@ -643,19 +662,28 @@ async fn deploy_one(
     // the layout already reserves a corridor for them, so they cross nothing.
     // What a card buys is space, and it only buys space when the call it
     // replaces was the last reference to a branch.
+    // Functions with a frame already on the board: cutting to one is free (no new
+    // frame is created), so `best_cut` may target them at any size.
+    let framed: HashSet<&str> = deployed_titles.iter().map(|s| s.as_str()).collect();
     let mut anchors = anchors;
     for _ in 0..MAX_CUT_PASSES {
-        if screenshot_count(&nodes) <= READABLE_SCREENSHOTS {
+        let count = screenshot_count(&nodes);
+        if count <= SOFT_CAP {
             break;
         }
-        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges) else {
-            // Too big, but nothing left that cutting would shrink.
+        // Only above the HARD cap do we force a cut onto a small branch; between
+        // SOFT and HARD we cut ONLY frame-worthy branches, and if none exist we
+        // ship the bigger frame rather than fragment it into tiny husks.
+        let relax = count > HARD_CAP;
+        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges, &framed, relax) else {
+            // Too big, but nothing worth cutting — a slightly larger, whole frame
+            // beats a scatter of tiny pass-through frames.
             break;
         };
         println!(
             "  {} {} screenshots is more than reads well; linking a branch out to\n  its own frame instead",
             "note:".yellow(),
-            screenshot_count(&nodes)
+            count
         );
         nodes = cut_nodes;
         edges = cut_edges;
@@ -3134,6 +3162,28 @@ mod split_shared_leaves_test {
 /// work. Below it nothing is cut, and the diagram shows the code.
 const READABLE_SCREENSHOTS: usize = 45;
 
+/// Two-tier cut budget. Below `SOFT_CAP` nothing is cut. Between SOFT and HARD we
+/// cut ONLY branches worth a frame of their own (see `MIN_FRAME_SIZE`); if none
+/// qualify we ship the slightly-bigger frame rather than fragment it into husks.
+/// Above `HARD_CAP` the frame is genuinely unreadable, so cutting is forced even
+/// onto a smaller branch. SOFT stays at the long-proven readable number.
+const SOFT_CAP: usize = READABLE_SCREENSHOTS;
+const HARD_CAP: usize = 65;
+
+/// A cut branch is deployed as its OWN frame — so it must be substantial, or the
+/// board fills with tiny fragmenting frames. A brand-new frame is created only for
+/// a subtree of at least this many screenshots (a widely-reused mid-size subtree
+/// earns one earlier — see `best_cut`). Cutting to a frame that ALREADY exists is
+/// free (no new frame) and allowed at any size.
+const MIN_FRAME_SIZE: usize = 8;
+
+/// After a branch is cut, the frame we would create for it must keep at least this
+/// many screenshots of its OWN (its subtree minus the children that would in turn
+/// be cut out of it). Below this the frame is a pass-through husk — one screenshot
+/// pointing at another frame — so we skip that cut and let `best_cut` target the
+/// heavy child directly instead.
+const MIN_RESIDUAL: usize = 4;
+
 /// Replace one call with a card linking to the callee's own frame.
 ///
 /// The decision is per **edge**, not per function. `FeeLib.feeOf` is called from
@@ -3198,14 +3248,56 @@ fn screenshot_count(nodes: &[GraphNode]) -> usize {
 /// Leaves are never candidates: a copy costs one small screenshot and
 /// [`split_shared_leaves`] has already made those, so a card would be a click in
 /// exchange for nothing.
+/// Screenshot ids reachable from `root` (root included if it is a screenshot),
+/// following edges. A visited set makes cycles/shared subtrees count once.
+fn reachable_screens(root: &str, adjacency: &HashMap<&str, Vec<&str>>, screens: &HashSet<&str>) -> HashSet<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: HashSet<String> = HashSet::new();
+    let mut stack = vec![root.to_string()];
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        if screens.contains(id.as_str()) {
+            out.insert(id.clone());
+        }
+        for next in adjacency.get(id.as_str()).cloned().unwrap_or_default() {
+            stack.push(next.to_string());
+        }
+    }
+    out
+}
+
+/// Choose the single best branch to link out to its own frame — or `None` when no
+/// cut is worth it. A cut is worth it when it (a) actually shrinks the frame AND
+/// (b) either lands on a frame that already exists (free) or carves off a subtree
+/// substantial enough to deserve a frame of its own (`MIN_FRAME_SIZE`, relaxed to
+/// any shrinking cut once the frame is genuinely unreadable — `relax`). Among the
+/// eligible cuts we score: bigger removal, an existing target, wide reuse, and a
+/// self-contained result all raise the score; a pass-through husk is rejected
+/// outright, which naturally pushes the cut down onto the heavy child instead.
 fn best_cut(
     nodes: &[GraphNode],
     edges: &[GraphEdge],
+    framed: &HashSet<&str>,
+    relax: bool,
 ) -> Option<(Vec<GraphNode>, Vec<GraphEdge>)> {
     let has_children: HashSet<&str> = edges.iter().map(|edge| edge.from.as_str()).collect();
+    let screens: HashSet<&str> = nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Screenshot)
+        .map(|n| n.id.as_str())
+        .collect();
+    let label_of: HashMap<&str, &str> = nodes.iter().map(|n| (n.id.as_str(), n.label.as_str())).collect();
+    let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
+    for edge in edges.iter() {
+        adjacency.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
+        children.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
+    }
 
     let before = screenshot_count(nodes);
-    let mut best: Option<(usize, Vec<GraphNode>, Vec<GraphEdge>)> = None;
+    let mut best: Option<(i64, Vec<GraphNode>, Vec<GraphEdge>)> = None;
 
     for (index, edge) in edges.iter().enumerate() {
         if !has_children.contains(edge.to.as_str()) {
@@ -3220,8 +3312,54 @@ fn best_cut(
         if saved == 0 {
             continue;
         }
-        if best.as_ref().map(|(most, _, _)| saved > *most).unwrap_or(true) {
-            best = Some((saved, candidate_nodes, candidate_edges));
+
+        let target_label = label_of.get(edge.to.as_str()).copied().unwrap_or("");
+        let has_frame = framed.contains(target_label);
+        // Size of the frame this cut would create/point at.
+        let sub = reachable_screens(&edge.to, &adjacency, &screens).len();
+
+        // Eligibility: an existing frame is free at any size; otherwise the
+        // carved-off subtree must be big enough to stand alone (or reused and
+        // mid-size), unless we're over the hard cap and must cut something.
+        let reuse = children
+            .iter()
+            .filter(|(_, tos)| tos.contains(&edge.to.as_str()))
+            .count();
+        let eligible = has_frame
+            || relax
+            || sub >= MIN_FRAME_SIZE
+            || (sub >= 5 && reuse >= 3);
+        if !eligible {
+            continue;
+        }
+
+        // Pass-through guard: what would actually REMAIN in the new frame after its
+        // own big/existing children are themselves cut out of it. A husk is rejected
+        // (unless the target already exists — then no new frame is created anyway).
+        let residual = if has_frame {
+            sub
+        } else {
+            let sub_set = reachable_screens(&edge.to, &adjacency, &screens);
+            let mut carved: HashSet<String> = HashSet::new();
+            for &ch in children.get(edge.to.as_str()).unwrap_or(&Vec::new()) {
+                let child_sub = reachable_screens(ch, &adjacency, &screens);
+                let child_framed = framed.contains(label_of.get(ch).copied().unwrap_or(""));
+                if child_framed || child_sub.len() >= MIN_FRAME_SIZE {
+                    carved.extend(child_sub);
+                }
+            }
+            sub_set.difference(&carved).count()
+        };
+        if !has_frame && residual < MIN_RESIDUAL {
+            continue;
+        }
+
+        let score = saved as i64
+            + if has_frame { 25 } else { 0 }
+            + if reuse >= 3 { 10 } else { 0 }
+            + if residual >= 12 { 5 } else { 0 };
+        if best.as_ref().map(|(most, _, _)| score > *most).unwrap_or(true) {
+            best = Some((score, candidate_nodes, candidate_edges));
         }
     }
 
@@ -3337,7 +3475,7 @@ mod cut_test {
             edge("shared", "child"),
         ];
 
-        if let Some((cut_nodes, _)) = best_cut(&nodes, &edges) {
+        if let Some((cut_nodes, _)) = best_cut(&nodes, &edges, &HashSet::new(), true) {
             assert!(
                 screenshot_count(&cut_nodes) < screenshot_count(&nodes),
                 "a cut that is taken has to free something"
@@ -3396,7 +3534,8 @@ mod cut_test {
         let edges = vec![edge("root", "a"), edge("a", "b")];
 
         // `a` holds `b` up on its own, so cutting root→a frees both.
-        let (cut_nodes, _) = best_cut(&nodes, &edges).expect("cutting root->a strands b");
+        let (cut_nodes, _) =
+            best_cut(&nodes, &edges, &HashSet::new(), true).expect("cutting root->a strands b");
         assert!(screenshot_count(&cut_nodes) < screenshot_count(&nodes));
     }
 }

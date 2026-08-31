@@ -483,9 +483,20 @@ rectangle** around its whole node — the amber counterpart of the red storage b
 wiping and redrawing the contents — so a diagram that links to the frame by URL keeps working,
 and no duplicate frames pile up. Interface/abstract stubs (bodyless declarations, empty
 `virtual {}`) are never drawn on their own: a stub is redirected to its concrete override.
-A callee that ALREADY has its own frame on the board is referenced with a link card pointing at
-that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
+A callee that ALREADY has its own (still-on-the-board) frame is referenced with a link card pointing
+at that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
 deploy as their own frames, the thinner the parent frame becomes on its next redeploy.
+
+**When a branch is linked out to its own frame.** The whole call tree is drawn inline as one frame
+until it grows past ~45 screenshots; only then does the tool start cutting branches out to their own
+frames — and it is deliberately conservative so the board doesn't fragment into tiny frames: between
+45 and 65 screenshots it links out ONLY a branch substantial enough to stand alone (≥ 8 screenshots,
+or ≥ 5 if that helper is reused ≥ 3× in the tree), and if no branch qualifies it just ships the
+slightly-bigger whole frame; past 65 it will force a smaller cut. It never creates a "pass-through"
+frame (one screenshot that only points at another frame): such a cut is dropped and the heavy child
+is linked out instead. Cutting to a frame that already exists is always allowed (it reuses, it
+doesn't create). So a redeploy prefers ONE readable frame plus a few link cards to genuinely large
+(or already-deployed) frames — not a scatter of fragments.
 
 ## Failure modes
 
@@ -626,6 +637,20 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.22.10
+- **Fewer, bigger frames: no more tiny fragmenting sub-frames.** Deploying a large entry point used
+  to shatter the board — every branch cut to fit the frame spawned a brand-new frame, and small
+  branches became tiny frames, some of them useless "pass-through" husks (one screenshot pointing at
+  another frame). Now a branch is linked out to its OWN frame only when it's worth it: (1) a two-tier
+  budget — nothing is cut below 45 screenshots, between 45 and 65 only branches big enough to stand
+  alone (≥ 8 screenshots, or ≥ 5 and reused ≥ 3×) are cut, and if none qualify the whole (slightly
+  bigger) frame ships intact rather than fragmenting; only above 65 is a smaller cut forced; (2) a
+  pass-through guard drops any cut that would leave a husk frame (< 4 own screenshots), pushing the
+  cut down onto the heavy child instead; (3) recycling now reuses only frames STILL on the board, so
+  deleting a small frame by hand no longer makes the next deploy silently re-create it. Net effect:
+  one readable frame plus link cards to genuinely substantial (or pre-existing) frames. Regenerate
+  with `deploy`. _Re-read: workflow.md (the framing/link-card policy under `deploy`)._
 
 ## 0.22.9
 - **Incremental `deploy --refresh-links`: swap newly-framed callees for link cards without
