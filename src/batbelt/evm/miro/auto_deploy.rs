@@ -45,9 +45,6 @@ const PATH_HEADER_LINES: usize = 2;
 /// reserve for automatic deployments.
 const REGION_MARGIN: f64 = 5_000.0;
 
-/// How many times to cut and re-lay out before giving up. Each pass removes at
-/// least one edge, so this only guards against a pathological graph.
-const MAX_CUT_PASSES: usize = 5;
 
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
@@ -694,12 +691,12 @@ async fn deploy_one(
     let total = screenshot_count(&nodes);
     let budget = FRAME_TARGET.max(total.div_ceil(MAX_CUTS_PER_FRAME + 1));
     let mut anchors = anchors;
-    let mut cuts_made = 0usize;
-    for _ in 0..MAX_CUT_PASSES {
-        // Split while the frame is over the readable MAX (depth included), but never
-        // past the per-frame cut cap — a graph that stays big after that ships whole
-        // rather than dissolving into a scavenger hunt of link cards.
-        if effective_size(&nodes) <= FRAME_MAX || cuts_made >= MAX_CUTS_PER_FRAME {
+    for _ in 0..MAX_CUTS_PER_FRAME {
+        // Split while the frame is over the readable MAX (depth included). The loop
+        // bound is the per-frame cut cap itself, so a huge graph gets enough cuts to
+        // shrink instead of shipping a wall; a piece that stays big becomes its own
+        // frame and is split again.
+        if effective_size(&nodes) <= FRAME_MAX {
             break;
         }
         let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges, &framed, budget) else {
@@ -711,7 +708,6 @@ async fn deploy_one(
             "note:".yellow(),
             screenshot_count(&nodes)
         );
-        cuts_made += 1;
         nodes = cut_nodes;
         edges = cut_edges;
 
@@ -3349,7 +3345,7 @@ mod split_shared_leaves_test {
 const FRAME_TARGET: usize = 15;
 const FRAME_MAX: usize = 20;
 const FRAME_MIN: usize = 6;
-const MAX_CUTS_PER_FRAME: usize = 6;
+const MAX_CUTS_PER_FRAME: usize = 10;
 
 /// Depth costs horizontal px (the scarce resource): past this many layers a frame
 /// runs off-screen even at a modest screenshot count. Effective size scales up
