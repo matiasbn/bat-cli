@@ -105,6 +105,17 @@ impl GraphLayout {
     }
 }
 
+/// A slight per-node horizontal nudge inside a column (0 for a column too small to
+/// need it). Kept small and bounded so the frame barely widens — just enough that
+/// each box's incoming connector leaves from a distinct x.
+fn stagger_step(node_count: usize) -> f64 {
+    if node_count >= 3 {
+        (300.0 / (node_count - 1) as f64).min(50.0)
+    } else {
+        0.0
+    }
+}
+
 /// Lay out the dependency graph of a single entry point.
 ///
 /// Layers come from the **longest** path to the root, not the shortest: a helper
@@ -157,7 +168,10 @@ pub fn layout_graph(
         let sub_gutter = config.gutter_x / 2.0;
         let width: f64 = layer_columns
             .iter()
-            .map(|column| column_width(column, &by_id))
+            .map(|column| {
+                column_width(column, &by_id)
+                    + stagger_step(column.len()) * column.len().saturating_sub(1) as f64
+            })
             .sum::<f64>()
             + sub_gutter * (layer_columns.len().saturating_sub(1)) as f64;
         let height = layer_columns
@@ -181,6 +195,8 @@ pub fn layout_graph(
         for column in layer_columns {
             let this_column_width = column_width(column, &by_id);
             let this_column_height = column_height(column, &by_id, config);
+            let stagger_step = stagger_step(column.len());
+            let stagger_span = stagger_step * column.len().saturating_sub(1) as f64;
             // Layer 0 holds the entry point and stays at the top-left corner, so
             // the frame reads as "the calls start here". Deeper layers are
             // centred against the tallest one.
@@ -189,22 +205,26 @@ pub fn layout_graph(
             } else {
                 config.padding_y + config.title_band + (bbox_height - this_column_height) / 2.0
             };
-            for id in column {
+            for (rank, id) in column.iter().enumerate() {
                 let node = match by_id.get(id.as_str()) {
                     Some(node) => *node,
                     None => continue,
                 };
+                // Nudge each box slightly right of the one above it: every incoming
+                // connector then leaves from a different x, so the elbows fan a
+                // little instead of stacking on one line — without any invisible
+                // anchor, just moving the real screenshots.
                 placed.push(PlacedNode {
                     id: id.clone(),
                     layer: layer_index,
-                    x: column_x + node.width / 2.0,
+                    x: column_x + rank as f64 * stagger_step + node.width / 2.0,
                     y: y_cursor + node.height / 2.0,
                     width: node.width,
                     height: node.height,
                 });
                 y_cursor += node.height + config.gutter_y;
             }
-            column_x += this_column_width + sub_gutter;
+            column_x += this_column_width + stagger_span + sub_gutter;
         }
         layer_x += layer_widths[layer_index] + config.gutter_x;
     }
