@@ -210,6 +210,7 @@ fn font_for_depth(depth: usize) -> usize {
     }
 }
 
+
 pub async fn run(options: AutoDeployOptions) -> Result<()> {
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
 
@@ -975,6 +976,29 @@ async fn deploy_one(
         callees: Vec<CalleeLink>,
     }
 
+    // Colour each connector by its CALLEE, ranked WITHIN ITS DEPTH (layer) — so two
+    // DIFFERENT functions at the same depth never share a hue (e.g. `mint` and
+    // `burn` on layer 2), while the SAME function keeps ONE colour on all its arrows
+    // (one entry per callee). A layer rarely has more than the palette's worth of
+    // distinct callees. Depth itself is read off the column, so the hue is free.
+    let depth_of: HashMap<&str, usize> = nodes.iter().map(|n| (n.id.as_str(), n.depth)).collect();
+    let mut callee_color: HashMap<String, String> = HashMap::new();
+    {
+        let mut rank_in_depth: HashMap<usize, usize> = HashMap::new();
+        for edge in edges.iter() {
+            if callee_color.contains_key(&edge.to) {
+                continue;
+            }
+            let depth = depth_of.get(edge.to.as_str()).copied().unwrap_or(0);
+            let rank = rank_in_depth.entry(depth).or_insert(0);
+            callee_color.insert(
+                edge.to.clone(),
+                DEPTH_COLORS[*rank % DEPTH_COLORS.len()].to_string(),
+            );
+            *rank += 1;
+        }
+    }
+
     let mut groups: HashMap<(String, usize, bool), PendingGroup> = HashMap::new();
     for edge in edges.iter() {
         let (Some(_start_id), Some(end_id)) =
@@ -1091,7 +1115,10 @@ async fn deploy_one(
                     edge_x,
                     exit_right,
                     style: ConnectorStyle {
-                        stroke_color: DEPTH_COLORS[caller.depth % DEPTH_COLORS.len()].to_string(),
+                        stroke_color: callee_color
+                            .get(&edge.to)
+                            .cloned()
+                            .unwrap_or_else(|| DEPTH_COLORS[0].to_string()),
                         stroke_width: options.stroke_width.to_string(),
                         dashed: false,
                         caption: None,
@@ -1499,7 +1526,7 @@ fn build_graph(
             }
             let line_in_slice = slice
                 .iter()
-                .position(|line| line.contains(modifier_name))
+                .position(|line| line_has_token(line, modifier_name))
                 .map(|index| index + 1)
                 .unwrap_or(1);
             let target_id = node_key(&owner.name, &definition.name);
@@ -1602,7 +1629,7 @@ fn build_graph(
             }
             let line_in_slice = slice
                 .iter()
-                .position(|l| l.contains(&u.method))
+                .position(|l| line_has_call(l, &u.method))
                 .map(|i| i + 1)
                 .unwrap_or(1);
             edges.push(GraphEdge {
@@ -1650,7 +1677,7 @@ fn build_graph(
             if read_only {
                 continue;
             }
-            if let Some(pos) = slice.iter().position(|l| l.contains(&uec.method)) {
+            if let Some(pos) = slice.iter().position(|l| line_has_call(l, &uec.method)) {
                 external_lines.push(function.line + pos);
             }
         }
@@ -1673,7 +1700,7 @@ fn build_graph(
     // its function and collect ITS unresolved too, so the AI can resolve in one pass.
     let unresolved = expand_unresolved(metadata, unresolved);
 
-    split_shared_leaves(&mut nodes, &mut edges);
+    duplicate_shared_subtrees(&mut nodes, &mut edges);
     Ok((nodes, edges, truncated, unresolved))
 }
 
@@ -1759,6 +1786,52 @@ fn make_node(
             .collect(),
         external_call_lines: Vec::new(),
     }
+}
+
+fn is_ident_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'$'
+}
+
+/// True when `token` appears in `line` as a WHOLE identifier, so `mint` does not
+/// match inside `mintedAlmShares`.
+fn line_has_token(line: &str, token: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = line[from..].find(token) {
+        let start = from + rel;
+        let end = start + token.len();
+        let before_ok = start == 0 || !is_ident_byte(bytes[start - 1]);
+        let after_ok = end >= bytes.len() || !is_ident_byte(bytes[end]);
+        if before_ok && after_ok {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
+}
+
+/// Like [`line_has_token`] but the identifier must be a CALL — followed (after
+/// optional spaces) by `(`. So `mint` matches `collVault.mint(…)` on line 362 but
+/// not the `mintedAlmShares` declaration on line 351.
+fn line_has_call(line: &str, method: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = line[from..].find(method) {
+        let start = from + rel;
+        let end = start + method.len();
+        let before_ok = start == 0 || !is_ident_byte(bytes[start - 1]);
+        let after_ident_ok = end >= bytes.len() || !is_ident_byte(bytes[end]);
+        let mut cursor = end;
+        while cursor < bytes.len() && (bytes[cursor] == b' ' || bytes[cursor] == b'\t') {
+            cursor += 1;
+        }
+        let is_call = cursor < bytes.len() && bytes[cursor] == b'(';
+        if before_ok && after_ident_ok && is_call {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
 }
 
 fn make_modifier_node(
@@ -2435,6 +2508,135 @@ mod facing_anchor_test {
 /// nothing, because a call could not be resolved, or because its callee lives in
 /// `lib/` and was excluded. For laying out the picture those are the same thing,
 /// since what matters is that the node has nothing hanging off it.
+/// The node plus its transitively PRIVATE (non-shared) descendants — the copy
+/// unit. Descent stops at any shared descendant, so a copy unit is always a
+/// disjoint private subtree cut at shared/anchor nodes; that is what makes the
+/// duplication non-cascading.
+fn private_closure(
+    root: &str,
+    out: &HashMap<String, Vec<String>>,
+    shared: &HashSet<String>,
+) -> HashSet<String> {
+    let mut result = HashSet::new();
+    result.insert(root.to_string());
+    let mut stack = vec![root.to_string()];
+    while let Some(current) = stack.pop() {
+        if let Some(children) = out.get(&current) {
+            for child in children {
+                if shared.contains(child) {
+                    continue; // cut at shared descendants — decided on their own
+                }
+                if result.insert(child.clone()) {
+                    stack.push(child.clone());
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Duplicate shared nodes (fan-in ≥ 2) so every caller has a nearby copy and the
+/// arrows stay short and local instead of one node reached by long edges that
+/// cross other screenshots. Generalises [`split_shared_leaves`]: a leaf is just
+/// the `|closure| == 1` case.
+///
+/// The copy unit is the node's PRIVATE closure (it + its non-shared descendants),
+/// so cascades are structurally impossible — an inner shared node is left in place
+/// and, once the copies raise its own fan-in, duplicated on its own turn under the
+/// same caps. Bounded by: closure size ≤ `MAX_CLOSURE`, ≤ `MAX_COPIES` copies per
+/// node, and a global added-box budget, so the frame can grow at most ~1.4×.
+fn duplicate_shared_subtrees(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>) {
+    const MAX_CLOSURE: usize = 4;
+    const MAX_COPIES: usize = 10;
+    let budget = (nodes.len() * 2 / 5).max(20);
+    let mut added = 0usize;
+
+    loop {
+        if added >= budget {
+            break;
+        }
+        // Distinct callers + out-adjacency, recomputed each round (copies change it).
+        let mut callers: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut out: HashMap<String, Vec<String>> = HashMap::new();
+        for edge in edges.iter() {
+            callers
+                .entry(edge.to.clone())
+                .or_default()
+                .insert(edge.from.clone());
+            out.entry(edge.from.clone()).or_default().push(edge.to.clone());
+        }
+        let shared: HashSet<String> = callers
+            .iter()
+            .filter(|(_, callers)| callers.len() >= 2)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        // Pick the SHALLOWEST shared node whose private closure fits the cap.
+        let depth_of: HashMap<&str, usize> =
+            nodes.iter().map(|node| (node.id.as_str(), node.depth)).collect();
+        let mut candidates: Vec<&String> = shared.iter().collect();
+        candidates.sort_by_key(|id| depth_of.get(id.as_str()).copied().unwrap_or(0));
+        let chosen = candidates.into_iter().find_map(|id| {
+            let closure = private_closure(id, &out, &shared);
+            (closure.len() <= MAX_CLOSURE).then(|| (id.clone(), closure))
+        });
+        let Some((victim, closure)) = chosen else {
+            break;
+        };
+
+        let templates: HashMap<String, GraphNode> = nodes
+            .iter()
+            .filter(|node| closure.contains(&node.id))
+            .map(|node| (node.id.clone(), node.clone()))
+            .collect();
+        let internal: Vec<GraphEdge> = edges
+            .iter()
+            .filter(|edge| closure.contains(&edge.from) && closure.contains(&edge.to))
+            .cloned()
+            .collect();
+
+        let mut caller_list: Vec<String> =
+            callers.get(&victim).cloned().unwrap_or_default().into_iter().collect();
+        caller_list.sort(); // deterministic; the first caller keeps the original
+
+        let mut made = 0usize;
+        for caller in caller_list.iter().skip(1) {
+            if made >= MAX_COPIES || added + closure.len() > budget {
+                break;
+            }
+            let suffix = format!("dup{added}_{made}");
+            let id_map: HashMap<String, String> = closure
+                .iter()
+                .map(|id| (id.clone(), format!("{id}#{suffix}")))
+                .collect();
+            for id in &closure {
+                if let Some(template) = templates.get(id) {
+                    let mut copy = template.clone();
+                    copy.id = id_map[id].clone();
+                    nodes.push(copy);
+                }
+            }
+            for edge in &internal {
+                let mut copy = edge.clone();
+                copy.from = id_map[&edge.from].clone();
+                copy.to = id_map[&edge.to].clone();
+                edges.push(copy);
+            }
+            // Repoint every call from THIS caller to the victim onto its own copy.
+            for edge in edges.iter_mut() {
+                if edge.from == *caller && edge.to == victim {
+                    edge.to = id_map[&victim].clone();
+                }
+            }
+            added += closure.len();
+            made += 1;
+        }
+        if made == 0 {
+            break; // budget exhausted for even the smallest closure
+        }
+    }
+}
+
 fn split_shared_leaves(nodes: &mut Vec<GraphNode>, edges: &mut [GraphEdge]) {
     let mut outgoing: HashMap<&str, usize> = HashMap::new();
     let mut incoming: HashMap<&str, usize> = HashMap::new();
@@ -2461,23 +2663,40 @@ fn split_shared_leaves(nodes: &mut Vec<GraphNode>, edges: &mut [GraphEdge]) {
         .map(|node| (node.id.clone(), node.clone()))
         .collect();
 
-    // The first caller keeps the original node; the rest get copies.
-    let mut used: HashSet<String> = HashSet::new();
+    // One instance of the leaf PER DISTINCT CALLER, not per call. A leaf called
+    // several times from the SAME caller stays one node — the arrows converge from
+    // that caller's own (adjacent) lines, a small local fan, and N identical boxes
+    // would be pure noise. Different callers still each get their own copy: that is
+    // what keeps a widely-shared leaf from becoming one node every layer has to
+    // reach across. The first caller keeps the original node.
+    let mut instance: HashMap<(String, String), String> = HashMap::new();
+    let mut keeper: HashMap<String, String> = HashMap::new();
     let mut copies: Vec<GraphNode> = Vec::new();
     for edge in edges.iter_mut() {
         if !shared_leaves.contains(&edge.to) {
             continue;
         }
-        if used.insert(edge.to.clone()) {
+        // The first caller seen for this leaf keeps the original node.
+        let first = keeper
+            .entry(edge.to.clone())
+            .or_insert_with(|| edge.from.clone());
+        if *first == edge.from {
             continue;
         }
         let Some(original) = template.get(&edge.to) else {
             continue;
         };
-        let copy_id = format!("{}#{}", edge.to, copies.len());
-        let mut copy = original.clone();
-        copy.id = copy_id.clone();
-        copies.push(copy);
+        // Reuse this caller's single copy across its repeated calls.
+        let copy_id = instance
+            .entry((edge.to.clone(), edge.from.clone()))
+            .or_insert_with(|| {
+                let copy_id = format!("{}#{}", edge.to, copies.len());
+                let mut copy = original.clone();
+                copy.id = copy_id.clone();
+                copies.push(copy);
+                copy_id
+            })
+            .clone();
         edge.to = copy_id;
     }
 

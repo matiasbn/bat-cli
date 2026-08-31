@@ -615,6 +615,18 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.22.8
+- **Readable fan-out: per-target arrow colours, shared-node duplication, and marker fixes.** The
+  diagram is much easier to follow on a busy frame: (1) each callee's arrows get a colour ranked
+  within its depth, so different functions at one layer are distinct hues while the same function
+  keeps one colour; (2) a shared NON-leaf reused across callers (e.g. `getNominalICR` ×8) is now
+  DUPLICATED near each caller (its private subtree, capped so the frame grows ≤ ~1.4×) instead of
+  drawn once with long edges crossing over other screenshots — generalises the shared-leaf copy
+  rule; (3) boxes are nudged slightly in x so connectors leave from distinct points; (4) a
+  substring bug that put a call/marker on the wrong line (`mint` matching `mintedAlmShares`,
+  `stake` matching `_stake`) is fixed with whole-identifier matching. Regenerate with `sonar`,
+  then `deploy`. _Re-read: nothing (diagram only; metadata shape unchanged)._
+
 ## 0.22.7
 - **Calls on an interface CAST receiver are no longer dropped.** A call written as
   `IFace(addr).method()` — e.g. `IClammReferenceFeed($.referenceFeed).latestReference()` — was
