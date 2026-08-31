@@ -448,6 +448,27 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
+    /// Move an existing item (an image, say) to a new position inside its parent
+    /// frame — used by `deploy --refresh-links` to re-lay-out reused screenshots
+    /// without re-uploading them. Position is the item CENTER, relative to the
+    /// parent, matching how the items were created.
+    pub async fn update_item_position(
+        &self,
+        item_id: &str,
+        x: f64,
+        y: f64,
+    ) -> Result<(), MiroError> {
+        let url = self.endpoint(&format!("items/{item_id}"));
+        let body = json!({ "position": { "x": x, "y": y } }).to_string();
+        self.execute(LEVEL_1_CREDITS, "update_item_position", move |http| {
+            http.patch(&url)
+                .header(CONTENT_TYPE, "application/json")
+                .body(body.clone())
+        })
+        .await?;
+        Ok(())
+    }
+
     /// Reposition and resize an existing frame in place, keeping its id.
     ///
     /// Redeploying a function recycles its frame instead of deleting it, because
