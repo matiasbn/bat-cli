@@ -412,6 +412,7 @@ bat-cli deploy                                        # fuzzy-pick (interactive)
 bat-cli deploy --entry-point Vault.deposit            # Contract.function, or a bare function name
 bat-cli deploy --entry-point Vault.deposit --dry-run  # print the layout, contact nothing
 bat-cli deploy --entry-point Vault.deposit --preview /tmp/frame.png
+bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only swap newly-framed callees
 ```
 
 | flag | |
@@ -419,11 +420,22 @@ bat-cli deploy --entry-point Vault.deposit --preview /tmp/frame.png
 | `--entry-point <name>` | `Contract.function` or bare `function`; omit to pick from a list |
 | `--dry-run` | compute and print the layout, never touch Miro (no login needed) |
 | `--preview <path>` | compose the frame locally as a PNG |
+| `--refresh-links` | incrementally swap callees that gained their own frame for link cards, WITHOUT re-deploying (see below) |
 | `--max-depth <n>` / `--max-nodes <n>` | bound the graph by hand; unset draws all of it |
 | `--include-external` | include contracts coming from `lib/` |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
 | `--all` | every entry point at once — **discouraged**; it warns and asks first |
 | `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; builds a second frame) |
+
+**Incremental relink — `--refresh-links`.** After you've hand-arranged a deployed frame, giving one
+of its callees its own frame (by deploying that callee as an entry point) means the callee should
+become a link card in the parent. A plain redeploy would rebuild the whole frame and DESTROY your
+manual layout. `deploy --entry-point <fn> --refresh-links` instead updates ONLY what changed: for
+each callee that gained a frame since the last deploy it deletes that callee's screenshot + its
+connectors and drops a link card + one arrow in its place, leaving every other box, connector and
+your manual positioning untouched (no re-render, no re-layout). It's idempotent (re-running reports
+"nothing to refresh") and never deletes existing link cards. A frame first deployed by bat-cli <
+0.22.9 has no recorded box positions, so refresh will ask you to deploy it once (full) first.
 
 **Cross-contract resolution loop.** `deploy` follows the tree into other contracts, but a call on
 an interface-typed receiver (`$.borrowerOps.adjustPosition`) has a runtime-bound target it can't
@@ -614,6 +626,18 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.22.9
+- **Incremental `deploy --refresh-links`: swap newly-framed callees for link cards without
+  re-deploying.** After you've hand-arranged a frame, deploying one of its callees as its own
+  entry point means that callee should become a link card in the parent — but a full redeploy
+  would blow away your manual layout. `deploy --entry-point <fn> --refresh-links` now does this
+  SURGICALLY: it touches ONLY the callees that gained a frame since the last deploy — deletes each
+  one's screenshot + its connectors and drops a link card + one arrow in its place — and leaves
+  every other box, connector and your manual positioning exactly as-is (no re-render, no re-layout).
+  It's idempotent (a second run reports "nothing to refresh") and never deletes existing link
+  cards. A frame first deployed by an older bat-cli has no recorded positions, so refresh asks you
+  to deploy it once (full) first. _Re-read: workflow.md (the `--refresh-links` incremental flow)._
 
 ## 0.22.8
 - **Readable fan-out: per-target arrow colours, shared-node duplication, and marker fixes.** The

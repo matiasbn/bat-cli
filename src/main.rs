@@ -138,6 +138,12 @@ enum BatCommands {
         /// simply omitted.
         #[arg(long)]
         allow_unresolved: bool,
+        /// Incremental refresh of an already-deployed frame: reuse its uploaded
+        /// screenshots (render only new ones), re-lay-out and redraw connectors, so
+        /// a callee that now has its own frame becomes a link card — without
+        /// re-rendering the whole frame.
+        #[arg(long)]
+        refresh_links: bool,
     },
     /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
     /// interface call to its concrete implementation. `deploy` stops and lists what to
@@ -216,6 +222,7 @@ impl BatCommands {
                 stroke_width,
                 yes,
                 allow_unresolved,
+                refresh_links,
             } => {
                 crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
@@ -229,6 +236,7 @@ impl BatCommands {
                     stroke_width: *stroke_width,
                     assume_yes: *yes,
                     allow_unresolved: *allow_unresolved,
+                    refresh_links: *refresh_links,
                     },
                 )
                 .await

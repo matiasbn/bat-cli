@@ -250,6 +250,27 @@ pub struct AutoDeployedFrame {
     pub height: f64,
     /// `(graph node id, miro image id)`
     pub images: Vec<(String, String)>,
+    /// `(graph node id, png width, png height)` — the measured size of each
+    /// screenshot, so `deploy --refresh-links` can re-lay-out and reuse the
+    /// already-uploaded images without re-rendering them.
+    #[serde(default)]
+    pub image_dims: Vec<(String, u32, u32)>,
+    /// `(graph node id, center x, center y)` in frame-local coords — where each
+    /// screenshot was placed, so a SURGICAL `--refresh-links` can drop a link card
+    /// at the exact spot of the node it replaces without re-laying-out anything.
+    #[serde(default)]
+    pub node_positions: Vec<(String, f64, f64)>,
+    /// `(callee graph node id, [connector/marker ids])` — every connector and
+    /// marker drawn for the arrows INTO that callee, so removing the callee deletes
+    /// exactly its arrows and nothing else. Lets `--refresh-links` swap one node for
+    /// a link card surgically, leaving all other arrows (and manual edits) untouched.
+    #[serde(default)]
+    pub callee_connectors: Vec<(String, Vec<String>)>,
+    /// `(original graph node id, link-card item id, card→caller connector id)` for
+    /// callees that a surgical `--refresh-links` has already swapped for a link
+    /// card, so a later refresh does not process them again.
+    #[serde(default)]
+    pub link_cards: Vec<(String, String, String)>,
     pub connector_ids: Vec<String>,
     /// Invisible shapes used as connector endpoints, one per call site.
     #[serde(default)]

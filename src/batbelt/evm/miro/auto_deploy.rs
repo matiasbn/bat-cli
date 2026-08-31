@@ -102,6 +102,11 @@ pub struct AutoDeployOptions {
     /// Draw the partial graph even when interface calls in the tree are unresolved,
     /// instead of stopping to list them.
     pub allow_unresolved: bool,
+    /// Incremental refresh: reuse the frame's already-uploaded screenshots (only
+    /// render ones that are new), re-lay-out, and redraw connectors — so a callee
+    /// that has since gained its own frame becomes a link card without the whole
+    /// frame being re-rendered. Requires the entry point to already have a frame.
+    pub refresh_links: bool,
 }
 
 impl Default for AutoDeployOptions {
@@ -117,6 +122,7 @@ impl Default for AutoDeployOptions {
             stroke_width: 8,
             assume_yes: false,
             allow_unresolved: false,
+            refresh_links: false,
         }
     }
 }
@@ -451,8 +457,14 @@ async fn deploy_one(
                 return Ok(());
             }
             if let Some(client) = client {
-                println!("  {} recycling the existing frame", "↻".yellow());
-                reused_frame = recycle_recorded_frame(&title, client).await?;
+                if options.refresh_links {
+                    // Surgical refresh: DON'T recycle (that would wipe the manual
+                    // layout). The diff-and-patch happens after the link pass below.
+                    let _ = client;
+                } else {
+                    println!("  {} recycling the existing frame", "↻".yellow());
+                    reused_frame = recycle_recorded_frame(&title, client, false).await?;
+                }
             } else {
                 let _ = url;
             }
@@ -503,6 +515,16 @@ async fn deploy_one(
                 "↻".yellow(),
                 linked
             );
+        }
+    }
+
+    // Surgical refresh: with the link pass applied, patch ONLY the difference from
+    // what is already on the board — swap the newly-framed callees for link cards,
+    // delete exactly their arrows, and leave every other item (and every manual
+    // edit) untouched. Never re-lay-out or redraw the whole frame.
+    if options.refresh_links && !options.dry_run {
+        if let Some(client) = client {
+            return refresh_links_surgical(&title, &nodes, &edges, client).await;
         }
     }
 
@@ -566,7 +588,32 @@ async fn deploy_one(
     }
 
 
-    render_and_measure(&mut nodes, &title)?;
+    // In --refresh-links mode, map each graph node to its already-uploaded image
+    // and measured size, so render_and_measure can skip re-rendering it.
+    let reuse: HashMap<String, (String, u32, u32)> = if options.refresh_links {
+        reused_frame
+            .as_ref()
+            .map(|record| {
+                let dims: HashMap<&str, (u32, u32)> = record
+                    .image_dims
+                    .iter()
+                    .map(|(id, w, h)| (id.as_str(), (*w, *h)))
+                    .collect();
+                record
+                    .images
+                    .iter()
+                    .filter_map(|(node_id, image_id)| {
+                        dims.get(node_id.as_str())
+                            .map(|(w, h)| (node_id.clone(), (image_id.clone(), *w, *h)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+
+    render_and_measure(&mut nodes, &title, &reuse)?;
 
     let layout_nodes: Vec<LayoutNode> = nodes
         .iter()
@@ -719,6 +766,10 @@ async fn deploy_one(
         width: layout.frame_width,
         height: layout.frame_height,
         images: Vec::new(),
+        image_dims: Vec::new(),
+        node_positions: Vec::new(),
+        callee_connectors: Vec::new(),
+        link_cards: Vec::new(),
         connector_ids: Vec::new(),
         marker_ids: Vec::new(),
         border_ids: Vec::new(),
@@ -745,6 +796,7 @@ async fn deploy_one(
             NodeKind::Link { target } => target_frames.get(target).cloned().unwrap_or_default(),
             NodeKind::Screenshot => String::new(),
         };
+        let reused_image = reuse.get(&node.id).map(|(image_id, _, _)| image_id.clone());
         let (x, y, width, height) = (placed.x, placed.y, placed.width, placed.height);
         let bar = bar.clone();
         upload_tasks.spawn(async move {
@@ -754,9 +806,18 @@ async fn deploy_one(
                         .create_link_card(&frame_id, &label, &target_url, x, y, width, height)
                         .await
                 }
-                NodeKind::Screenshot => client
-                    .create_image_in_frame(&png_path, &frame_id, &label, x, y, width)
-                    .await,
+                NodeKind::Screenshot => match reused_image {
+                    // Refresh: the image is already on the board — just move it.
+                    Some(image_id) => client
+                        .update_item_position(&image_id, x, y)
+                        .await
+                        .map(|_| image_id),
+                    None => {
+                        client
+                            .create_image_in_frame(&png_path, &frame_id, &label, x, y, width)
+                            .await
+                    }
+                },
             };
             bar.inc(1);
             result.map(|image_id| (node_id, image_id))
@@ -773,6 +834,22 @@ async fn deploy_one(
     }
     bar.finish_and_clear();
     println!("    {} {} screenshots uploaded", "✓".green(), image_ids.len());
+
+    // Refresh: any old screenshot that is no longer used (its node became a link
+    // card, or dropped out of the graph) is now an orphan on the board — delete it.
+    if options.refresh_links {
+        if let Some(old) = &reused_frame {
+            let mut orphans = tokio::task::JoinSet::new();
+            for (node_id, old_image_id) in &old.images {
+                if image_ids.get(node_id) != Some(old_image_id) {
+                    let client = client.clone();
+                    let id = old_image_id.clone();
+                    orphans.spawn(async move { client.delete_item(&id).await });
+                }
+            }
+            while orphans.join_next().await.is_some() {}
+        }
+    }
 
     // Storage-write markers: a hollow colored rectangle around every node whose
     // function mutates contract storage, so state changes stand out on the board.
@@ -964,6 +1041,9 @@ async fn deploy_one(
     // arrow at its end, not two overlapping ones.
     struct CalleeLink {
         end_id: String,
+        /// The callee's graph node id, so the connectors drawn for it can be
+        /// attributed to it for surgical removal.
+        node_id: String,
         end_anchor: RelativeAnchor,
         end_point: (f64, f64),
     }
@@ -1036,6 +1116,7 @@ async fn deploy_one(
         };
         let link = CalleeLink {
             end_id: end_id.clone(),
+            node_id: edge.to.clone(),
             end_anchor: RelativeAnchor::new(if exit_right { 0.0 } else { 1.0 }, callee_fraction),
             end_point,
         };
@@ -1137,6 +1218,9 @@ async fn deploy_one(
         let client = client.clone();
         let frame_id = frame_id.clone();
         let bar = bar.clone();
+        // Attribute this whole group's connectors + markers to its primary callee,
+        // so removing that callee later deletes exactly its arrows.
+        let owner = group.callees.first().map(|link| link.node_id.clone());
         connector_tasks.spawn(async move {
             let mut markers = Vec::new();
             let mut connectors = Vec::new();
@@ -1183,23 +1267,57 @@ async fn deploy_one(
             }
 
             bar.inc(1);
-            Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((markers, connectors))
+            Ok::<_, error_stack::Report<crate::batbelt::miro::MiroError>>((owner, markers, connectors))
         });
     }
 
     let mut connector_ids = Vec::new();
     let mut marker_ids = Vec::new();
+    let mut callee_owned: HashMap<String, Vec<String>> = HashMap::new();
     while let Some(joined) = connector_tasks.join_next().await {
-        let (markers, connectors) = joined
+        let (owner, markers, connectors) = joined
             .into_report()
             .change_context(EvmMiroError)?
             .change_context(EvmMiroError)?;
+        if let Some(owner) = owner {
+            let bucket = callee_owned.entry(owner).or_default();
+            bucket.extend(markers.iter().cloned());
+            bucket.extend(connectors.iter().cloned());
+        }
         marker_ids.extend(markers);
         connector_ids.extend(connectors);
     }
     bar.finish_and_clear();
     println!("    {} {} connector(s)", "✓".green(), connector_ids.len());
 
+    // Store each screenshot's measured size so a later --refresh-links can reuse
+    // the uploaded image without re-rendering.
+    record.image_dims = nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Screenshot && image_ids.contains_key(&node.id))
+        .map(|node| (node.id.clone(), node.png_width, node.png_height))
+        .collect();
+    // Positions and per-callee connector ownership for a surgical --refresh-links.
+    record.node_positions = nodes
+        .iter()
+        .filter_map(|node| layout.node(&node.id).map(|placed| (node.id.clone(), placed.x, placed.y)))
+        .collect();
+    record.callee_connectors = callee_owned.into_iter().collect();
+    // Record link cards by the TARGET they stand for (their own node id is a
+    // throwaway `\0link{n}` that changes every deploy), so a later --refresh-links
+    // recognises them and never re-creates or deletes them.
+    record.link_cards = nodes
+        .iter()
+        .filter_map(|node| match &node.kind {
+            NodeKind::Link { .. } => {
+                let target_id = node.label.replacen('.', "::", 1);
+                image_ids
+                    .get(&node.id)
+                    .map(|card_id| (target_id, card_id.clone(), String::new()))
+            }
+            NodeKind::Screenshot => None,
+        })
+        .collect();
     record.images = image_ids.into_iter().collect();
     record.connector_ids = connector_ids;
     record.marker_ids = marker_ids;
@@ -1220,9 +1338,217 @@ async fn deploy_one(
 ///
 /// The deletes fan out concurrently (like the create side): every item is
 /// independent and best-effort, so there is no reason to wait one at a time.
+/// Surgically patch an already-deployed frame: swap the callees that have GAINED
+/// their own frame for link cards, deleting exactly their arrows and screenshots
+/// and NOTHING else — every other item, position and manual edit is left as-is.
+///
+/// `nodes`/`edges` are the freshly-built graph with the link pass already applied,
+/// so a node that used to be a screenshot but is now a link card is the diff to
+/// apply. Requires the frame to have been deployed once since the record started
+/// storing positions + per-callee connector ownership.
+async fn refresh_links_surgical(
+    title: &str,
+    nodes: &[GraphNode],
+    edges: &[GraphEdge],
+    client: &MiroClient,
+) -> Result<()> {
+    let (mut record, frame_urls) = {
+        let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        let record = meta
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+            .cloned();
+        let urls: HashMap<String, String> = meta
+            .miro
+            .auto
+            .frames
+            .iter()
+            .map(|frame| (frame.entry_point.clone(), frame.frame_url.clone()))
+            .collect();
+        (record, urls)
+    };
+    let Some(record) = record.take() else {
+        println!("  {} no recorded frame — deploy it once first", "note:".yellow());
+        return Ok(());
+    };
+    let mut record = record;
+    if record.node_positions.is_empty() {
+        println!(
+            "  {} this frame predates --refresh-links; deploy it once (full) to enable surgical refresh",
+            "note:".yellow()
+        );
+        return Ok(());
+    }
+
+    let current_screens: HashSet<&str> = nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Screenshot)
+        .map(|node| node.id.as_str())
+        .collect();
+    let old_images: HashMap<String, String> = record.images.iter().cloned().collect();
+    let positions: HashMap<String, (f64, f64)> = record
+        .node_positions
+        .iter()
+        .map(|(id, x, y)| (id.clone(), (*x, *y)))
+        .collect();
+    let mut callee_conns: HashMap<String, Vec<String>> =
+        record.callee_connectors.iter().cloned().collect();
+    let already_carded: HashSet<String> =
+        record.link_cards.iter().map(|(id, _, _)| id.clone()).collect();
+
+    // Nodes that USED to be screenshots but are gone now (linked away / removed).
+    // Skip link-card entries (their `\0link{n}` id is a throwaway and they must be
+    // kept) and anything we've already carded.
+    let removed: Vec<String> = old_images
+        .keys()
+        .filter(|id| {
+            !id.starts_with('\u{0}')
+                && !current_screens.contains(id.as_str())
+                && !already_carded.contains(*id)
+        })
+        .cloned()
+        .collect();
+    if removed.is_empty() {
+        println!("  {} nothing to refresh — no new frames to link", "note:".yellow());
+        return Ok(());
+    }
+
+    // Delete each removed screenshot and exactly its own arrows.
+    let mut deleted_ids: HashSet<String> = HashSet::new();
+    let mut tasks = tokio::task::JoinSet::new();
+    for node_id in &removed {
+        if let Some(image_id) = old_images.get(node_id) {
+            let client = client.clone();
+            let id = image_id.clone();
+            deleted_ids.insert(id.clone());
+            tasks.spawn(async move { client.delete_item(&id).await });
+        }
+        if let Some(ids) = callee_conns.remove(node_id) {
+            for id in ids {
+                deleted_ids.insert(id.clone());
+                // A connector or a marker — try both endpoints, best-effort.
+                let client_a = client.clone();
+                let a = id.clone();
+                tasks.spawn(async move { client_a.delete_connector(&a).await });
+                let client_b = client.clone();
+                let b = id.clone();
+                tasks.spawn(async move { client_b.delete_item(&b).await });
+            }
+        }
+    }
+    while tasks.join_next().await.is_some() {}
+
+    // Add a link card where each newly-linked callee used to sit, and one arrow
+    // from its caller's call line into the card.
+    let node_by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let dims: HashMap<&str, (u32, u32)> = record
+        .image_dims
+        .iter()
+        .map(|(id, w, h)| (id.as_str(), (*w, *h)))
+        .collect();
+    let mut new_cards: Vec<(String, String, String)> = Vec::new();
+    let mut added_conn_ids: Vec<String> = Vec::new();
+    for node in nodes.iter() {
+        let NodeKind::Link { .. } = &node.kind else {
+            continue;
+        };
+        // The original node id this card stands in for.
+        let original_id = node.label.replacen('.', "::", 1);
+        if already_carded.contains(&original_id) {
+            continue;
+        }
+        let Some(&(px, py)) = positions.get(&original_id) else {
+            continue;
+        };
+        let Some(caller_edge) = edges.iter().find(|edge| edge.to == node.id) else {
+            continue;
+        };
+        let target_url = frame_urls.get(&node.label).cloned().unwrap_or_default();
+        let card = client
+            .create_link_card(
+                &record.frame_id,
+                &node.label,
+                &target_url,
+                px,
+                py,
+                LINK_CARD_WIDTH,
+                LINK_CARD_HEIGHT,
+            )
+            .await
+            .change_context(EvmMiroError)?;
+
+        // Arrow from the caller's call line into the card.
+        if let (Some(caller_image), Some(caller_node), Some(&(_, caller_h))) = (
+            old_images.get(&caller_edge.from),
+            node_by_id.get(caller_edge.from.as_str()),
+            dims.get(caller_edge.from.as_str()),
+        ) {
+            let line_index = caller_edge.line_in_slice.saturating_sub(1) + PATH_HEADER_LINES;
+            let y_fraction = silicon::line_geometry(Some(caller_node.font_size))
+                .line_center_fraction(line_index, caller_h);
+            let style = ConnectorStyle {
+                stroke_color: DEPTH_COLORS[caller_node.depth % DEPTH_COLORS.len()].to_string(),
+                stroke_width: "8".to_string(),
+                dashed: false,
+                caption: None,
+                arrow: ArrowEnd::Start,
+            };
+            let conn = client
+                .create_connector(
+                    caller_image,
+                    RelativeAnchor::new(1.0, y_fraction),
+                    &card,
+                    RelativeAnchor::new(0.0, 0.5),
+                    style,
+                )
+                .await
+                .change_context(EvmMiroError)?;
+            added_conn_ids.push(conn.clone());
+            new_cards.push((original_id.clone(), card.clone(), conn));
+        } else {
+            new_cards.push((original_id.clone(), card.clone(), String::new()));
+        }
+    }
+
+    // Update the record: drop removed items, keep everything else exactly, add cards.
+    record
+        .images
+        .retain(|(node_id, _)| !removed.contains(node_id));
+    record.image_dims.retain(|(id, _, _)| !removed.contains(id));
+    record.node_positions.retain(|(id, _, _)| !removed.contains(id));
+    record.callee_connectors = callee_conns.into_iter().collect();
+    record.connector_ids.retain(|id| !deleted_ids.contains(id));
+    record.connector_ids.extend(added_conn_ids);
+    record.marker_ids.retain(|id| !deleted_ids.contains(id));
+    record.link_cards.extend(new_cards.iter().cloned());
+    // The card's own connector is owned by the card's original id, so a future
+    // refresh (or a full redeploy) cleans it up too.
+    for (original_id, _card, conn) in &new_cards {
+        if !conn.is_empty() {
+            record
+                .callee_connectors
+                .push((original_id.clone(), vec![conn.clone()]));
+        }
+    }
+    save_frame_record(&record)?;
+
+    println!(
+        "  {} refreshed: {} linked, {} removed (no re-render, layout untouched)",
+        "✓".green(),
+        new_cards.len(),
+        removed.len()
+    );
+    println!("  {}", record.frame_url.blue());
+    Ok(())
+}
+
 async fn recycle_recorded_frame(
     title: &str,
     client: &MiroClient,
+    keep_images: bool,
 ) -> Result<Option<AutoDeployedFrame>> {
     let record = {
         let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
@@ -1242,12 +1568,19 @@ async fn recycle_recorded_frame(
         let client = client.clone();
         delete_tasks.spawn(async move { client.delete_connector(&id).await });
     }
+    // In a --refresh-links pass the screenshots are reused (repositioned), not
+    // re-rendered, so we keep them; only the connectors/markers/borders are redrawn.
+    let images = if keep_images {
+        Vec::new()
+    } else {
+        record.images.iter().map(|(_, id)| id.clone()).collect::<Vec<_>>()
+    };
     let item_ids = record
         .marker_ids
         .iter()
         .cloned()
         .chain(record.border_ids.iter().cloned())
-        .chain(record.images.iter().map(|(_, image_id)| image_id.clone()));
+        .chain(images);
     for id in item_ids {
         let client = client.clone();
         delete_tasks.spawn(async move { client.delete_item(&id).await });
@@ -2105,7 +2438,15 @@ fn read_slice(file_path: &str, start_line: usize, end_line: usize) -> Vec<String
 }
 
 /// Render every node and read back its pixel size, without uploading anything.
-fn render_and_measure(nodes: &mut [GraphNode], owner: &str) -> Result<()> {
+///
+/// `reuse` maps a node id to its already-uploaded image and measured size: those
+/// nodes are NOT re-rendered (their size is taken as given), which is what makes
+/// `--refresh-links` cheap. An empty map is a normal full render.
+fn render_and_measure(
+    nodes: &mut [GraphNode],
+    owner: &str,
+    reuse: &HashMap<String, (String, u32, u32)>,
+) -> Result<()> {
     // Screenshots are scratch: they are deleted once uploaded, so the directory
     // is often not there. Create it rather than treating its absence as an
     // error the user has to fix.
@@ -2123,6 +2464,13 @@ fn render_and_measure(nodes: &mut [GraphNode], owner: &str) -> Result<()> {
     let outcome: std::result::Result<(), String> = nodes
         .par_iter_mut()
         .map(|node| {
+            // Already uploaded (refresh): take its stored size, skip rendering.
+            if let Some((_, width, height)) = reuse.get(&node.id) {
+                node.png_width = *width;
+                node.png_height = *height;
+                bar.inc(1);
+                return Ok(());
+            }
             let code = read_slice(&node.file_path, node.start_line, node.end_line);
             if code.is_empty() {
                 bar.inc(1);
