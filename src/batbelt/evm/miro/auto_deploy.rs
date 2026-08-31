@@ -107,6 +107,11 @@ pub struct AutoDeployOptions {
     /// that has since gained its own frame becomes a link card without the whole
     /// frame being re-rendered. Requires the entry point to already have a frame.
     pub refresh_links: bool,
+    /// Remove the entry point's frame from the board and the registry entirely
+    /// (frame shell, all its items, its link cards + arrows, and its metadata
+    /// entry) instead of deploying. Cleans up a frame that should never have been
+    /// its own — e.g. a small helper fragmenting the board.
+    pub undeploy: bool,
 }
 
 impl Default for AutoDeployOptions {
@@ -123,6 +128,7 @@ impl Default for AutoDeployOptions {
             assume_yes: false,
             allow_unresolved: false,
             refresh_links: false,
+            undeploy: false,
         }
     }
 }
@@ -259,6 +265,23 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
                 .change_context(EvmMiroError)?,
         )
     };
+
+    // Undeploy mode: remove each target's frame outright, then stop.
+    if options.undeploy {
+        let Some(client) = client.as_ref() else {
+            return Err(Report::new(EvmMiroError)
+                .attach_printable("--undeploy needs board access; it can't run under --dry-run"));
+        };
+        for (contract_name, function_name) in &targets {
+            let title = format!("{contract_name}.{function_name}");
+            if undeploy_frame(&title, client).await? {
+                println!("  {} removed frame {}", "✓".green(), title.bold());
+            } else {
+                println!("  {} no recorded frame for {}", "note:".yellow(), title);
+            }
+        }
+        return Ok(());
+    }
 
     // The board is scanned at most once, to pick the region origin.
     let mut allocator = if options.dry_run {
@@ -1630,6 +1653,66 @@ async fn recycle_recorded_frame(
     Ok(Some(record))
 }
 
+/// Completely remove a deployed frame from the board and the registry: its
+/// contents (connectors, markers, borders, images, link cards + their arrows) AND
+/// the frame shell itself, then drop its metadata entry. Best-effort per item (a
+/// hand-deleted item 404s, which is fine). Use it to clean up a frame that should
+/// never have been its own frame — e.g. a small helper that fragments the board.
+async fn undeploy_frame(title: &str, client: &MiroClient) -> Result<bool> {
+    let record = {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+            .cloned()
+    };
+    let Some(record) = record else {
+        return Ok(false);
+    };
+    let mut tasks = tokio::task::JoinSet::new();
+    // Connectors (route/stub) and each link card's caller arrow.
+    for id in record
+        .connector_ids
+        .iter()
+        .cloned()
+        .chain(record.link_cards.iter().map(|(_, _, conn)| conn.clone()))
+        .filter(|id| !id.is_empty())
+    {
+        let client = client.clone();
+        tasks.spawn(async move { client.delete_connector(&id).await });
+    }
+    // Items: markers, borders, screenshots, link cards.
+    for id in record
+        .marker_ids
+        .iter()
+        .cloned()
+        .chain(record.border_ids.iter().cloned())
+        .chain(record.images.iter().map(|(_, id)| id.clone()))
+        .chain(record.link_cards.iter().map(|(_, card, _)| card.clone()))
+        .filter(|id| !id.is_empty())
+    {
+        let client = client.clone();
+        tasks.spawn(async move { client.delete_item(&id).await });
+    }
+    while tasks.join_next().await.is_some() {}
+    // The frame shell last, once it is empty.
+    let _ = client.delete_item(&record.frame_id).await;
+
+    let owner = title.to_string();
+    EvmBatMetadata::update_metadata(move |metadata| {
+        metadata
+            .miro
+            .auto
+            .frames
+            .retain(|frame| frame.entry_point != owner);
+    })
+    .change_context(EvmMiroError)?;
+    Ok(true)
+}
+
 /// Store what a deployment owns, replacing any earlier record for the same
 /// entry point.
 fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
@@ -2970,6 +3053,18 @@ fn duplicate_shared_subtrees(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEd
             .filter(|edge| closure.contains(&edge.from) && closure.contains(&edge.to))
             .cloned()
             .collect();
+        // Edges from a closure node to a SHARED child OUTSIDE the closure (cut at
+        // the shared boundary). The copy must still call that shared node, or the
+        // duplicate is a dead-end whose call line points at nothing — e.g. a copy of
+        // `_positionCollAndDebt` whose only body is a call to the shared
+        // `getPositionCollAndDebt`. Repoint the source onto the copy, keep the shared
+        // target as-is (its raised fan-in lets IT duplicate on a later round, or the
+        // copies simply converge on the single shared node — never a dead-end).
+        let external: Vec<GraphEdge> = edges
+            .iter()
+            .filter(|edge| closure.contains(&edge.from) && !closure.contains(&edge.to))
+            .cloned()
+            .collect();
 
         let mut caller_list: Vec<String> =
             callers.get(&victim).cloned().unwrap_or_default().into_iter().collect();
@@ -2996,6 +3091,13 @@ fn duplicate_shared_subtrees(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEd
                 let mut copy = edge.clone();
                 copy.from = id_map[&edge.from].clone();
                 copy.to = id_map[&edge.to].clone();
+                edges.push(copy);
+            }
+            // Copy each external call from the copied closure onto the SAME shared
+            // target, so the duplicate keeps calling out (no dead-ends).
+            for edge in &external {
+                let mut copy = edge.clone();
+                copy.from = id_map[&edge.from].clone();
                 edges.push(copy);
             }
             // Repoint every call from THIS caller to the victim onto its own copy.

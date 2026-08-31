@@ -421,6 +421,7 @@ bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only 
 | `--dry-run` | compute and print the layout, never touch Miro (no login needed) |
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--refresh-links` | incrementally swap callees that gained their own frame for link cards, WITHOUT re-deploying (see below) |
+| `--undeploy` | remove this entry point's frame from the board and registry entirely (frame, items, link cards, metadata) — to clean up a helper that should never have been its own frame |
 | `--max-depth <n>` / `--max-nodes <n>` | bound the graph by hand; unset draws all of it |
 | `--include-external` | include contracts coming from `lib/` |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
@@ -639,6 +640,17 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.22.10
+- **`deploy --undeploy <entry-point>` removes a frame outright.** Cleans a frame that should never
+  have been its own — its shell, all its screenshots/markers/borders, its link cards + arrows, and
+  its registry entry — so the next deploy of a caller inlines that helper instead of linking to it.
+  (A frame you delete BY HAND in Miro is also detected as gone on the next deploy and forgotten, so
+  it is never silently re-created either.)
+- **Duplicated callers no longer lose their call-out.** When a helper is duplicated so each caller
+  has a nearby copy, a copy whose real work is a call to a SHARED function (e.g. a copy of
+  `_positionCollAndDebt` that just calls the shared `getPositionCollAndDebt`) used to be drawn as a
+  dead-end — its call line pointing at nothing. Each copy now keeps its calls to shared functions
+  (the shared node duplicates in turn, or the copies converge on it), so the graph below a
+  duplicated node is always complete. Regenerate with `deploy`.
 - **Fewer, bigger frames: no more tiny fragmenting sub-frames.** Deploying a large entry point used
   to shatter the board — every branch cut to fit the frame spawned a brand-new frame, and small
   branches became tiny frames, some of them useless "pass-through" husks (one screenshot pointing at
