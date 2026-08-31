@@ -688,26 +688,30 @@ async fn deploy_one(
     // Functions with a frame already on the board: cutting to one is free (no new
     // frame is created), so `best_cut` may target them at any size.
     let framed: HashSet<&str> = deployed_titles.iter().map(|s| s.as_str()).collect();
+    // Aim each piece AT a readable size: the budget is the target, raised only when
+    // the graph is so big that even `MAX_CUTS_PER_FRAME` target-sized cuts wouldn't
+    // fit it — then the pieces are bigger and split again by their own deploy.
+    let total = screenshot_count(&nodes);
+    let budget = FRAME_TARGET.max(total.div_ceil(MAX_CUTS_PER_FRAME + 1));
     let mut anchors = anchors;
+    let mut cuts_made = 0usize;
     for _ in 0..MAX_CUT_PASSES {
-        let count = screenshot_count(&nodes);
-        if count <= SOFT_CAP {
+        // Split while the frame is over the readable MAX (depth included), but never
+        // past the per-frame cut cap — a graph that stays big after that ships whole
+        // rather than dissolving into a scavenger hunt of link cards.
+        if effective_size(&nodes) <= FRAME_MAX || cuts_made >= MAX_CUTS_PER_FRAME {
             break;
         }
-        // Only above the HARD cap do we force a cut onto a small branch; between
-        // SOFT and HARD we cut ONLY frame-worthy branches, and if none exist we
-        // ship the bigger frame rather than fragment it into tiny husks.
-        let relax = count > HARD_CAP;
-        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges, &framed, relax) else {
-            // Too big, but nothing worth cutting — a slightly larger, whole frame
-            // beats a scatter of tiny pass-through frames.
+        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges, &framed, budget) else {
+            // Nothing left worth cutting into a readable, non-husk piece.
             break;
         };
         println!(
             "  {} {} screenshots is more than reads well; linking a branch out to\n  its own frame instead",
             "note:".yellow(),
-            count
+            screenshot_count(&nodes)
         );
+        cuts_made += 1;
         nodes = cut_nodes;
         edges = cut_edges;
 
@@ -3327,34 +3331,32 @@ mod split_shared_leaves_test {
     }
 }
 
-/// How many screenshots a frame can hold and still be read in one sitting.
+/// Balanced partitioning, not "cut until under a cap". A frame is aimed AT a
+/// readable size, and a graph too big for one frame is split into several pieces
+/// each near that size — never one giant frame, never a scatter of husks.
 ///
-/// Measured rather than chosen: `Vault.depositWithReferral` at 32 screenshots
-/// and 14874x2894 is comfortable, so the limit sits above what has been seen to
-/// work. Below it nothing is cut, and the diagram shows the code.
-const READABLE_SCREENSHOTS: usize = 45;
+/// - `FRAME_TARGET` — the size (in screenshots) a frame is aimed at. ~1500–2600px
+///   screenshots across ≤5 layers land around 10–12k px wide: readable at a normal
+///   zoom, ~30 connectors. (Auditors rejected 24–33-shot frames as unreadable.)
+/// - `FRAME_MAX` — above this (measured as EFFECTIVE size, depth included) a frame
+///   is split; a graph at or under it ships whole (one 20-shot frame beats a
+///   14 + 6 split with a link card to chase).
+/// - `FRAME_MIN` — a cut branch, and the residual left behind, must each keep at
+///   least this many of their own screenshots; below it the piece is a husk.
+/// - `MAX_CUTS_PER_FRAME` — at most this many branches leave one frame, so a frame
+///   never becomes a scavenger hunt of link cards. A cut branch bigger than
+///   `FRAME_MAX` becomes its own frame and is split again by the same policy.
+const FRAME_TARGET: usize = 15;
+const FRAME_MAX: usize = 20;
+const FRAME_MIN: usize = 6;
+const MAX_CUTS_PER_FRAME: usize = 6;
 
-/// Two-tier cut budget. Below `SOFT_CAP` nothing is cut. Between SOFT and HARD we
-/// cut ONLY branches worth a frame of their own (see `MIN_FRAME_SIZE`); if none
-/// qualify we ship the slightly-bigger frame rather than fragment it into husks.
-/// Above `HARD_CAP` the frame is genuinely unreadable, so cutting is forced even
-/// onto a smaller branch. SOFT stays at the long-proven readable number.
-const SOFT_CAP: usize = READABLE_SCREENSHOTS;
-const HARD_CAP: usize = 65;
-
-/// A cut branch is deployed as its OWN frame — so it must be substantial, or the
-/// board fills with tiny fragmenting frames. A brand-new frame is created only for
-/// a subtree of at least this many screenshots (a widely-reused mid-size subtree
-/// earns one earlier — see `best_cut`). Cutting to a frame that ALREADY exists is
-/// free (no new frame) and allowed at any size.
-const MIN_FRAME_SIZE: usize = 8;
-
-/// After a branch is cut, the frame we would create for it must keep at least this
-/// many screenshots of its OWN (its subtree minus the children that would in turn
-/// be cut out of it). Below this the frame is a pass-through husk — one screenshot
-/// pointing at another frame — so we skip that cut and let `best_cut` target the
-/// heavy child directly instead.
-const MIN_RESIDUAL: usize = 4;
+/// Depth costs horizontal px (the scarce resource): past this many layers a frame
+/// runs off-screen even at a modest screenshot count. Effective size scales up
+/// `DEPTH_PENALTY` per layer beyond the free budget, so a deep-and-narrow frame is
+/// cut sooner than a shallow-and-wide one of the same raw count.
+const DEPTH_FREE_LAYERS: usize = 5;
+const DEPTH_PENALTY: f64 = 0.15;
 
 /// Replace one call with a card linking to the callee's own frame.
 ///
@@ -3395,12 +3397,73 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
     prune_unreachable(nodes, edges);
 }
 
+/// Link out a whole (possibly shared) node: repoint EVERY call into `target_id`
+/// onto its own link card, so each caller keeps a nearby card pointing at the
+/// node's frame, and the node's now-unreachable subtree is pruned. Unlike
+/// [`cut_edge`], which severs a single last-reference call, this removes a node
+/// reached from several callers — the only way to carve a balanced piece out of a
+/// densely-shared graph, where cutting one edge frees nothing.
+fn cut_node(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, target_id: &str) {
+    let Some(label) = nodes
+        .iter()
+        .find(|node| node.id == target_id)
+        .map(|node| node.label.clone())
+    else {
+        return;
+    };
+    let in_edges: Vec<usize> = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.to == target_id)
+        .map(|(i, _)| i)
+        .collect();
+    for (n, idx) in in_edges.into_iter().enumerate() {
+        let card_id = format!("\u{0}linknode_{target_id}_{n}");
+        nodes.push(GraphNode {
+            id: card_id.clone(),
+            label: label.clone(),
+            kind: NodeKind::Link { target: label.clone() },
+            file_path: String::new(),
+            start_line: 0,
+            end_line: 0,
+            depth: 0,
+            font_size: 22,
+            png_path: String::new(),
+            png_width: LINK_CARD_WIDTH as u32,
+            png_height: LINK_CARD_HEIGHT as u32,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+            writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
+        });
+        edges[idx].to = card_id;
+    }
+    prune_unreachable(nodes, edges);
+}
+
 /// Screenshots only: a card is a reference, not something to read.
 fn screenshot_count(nodes: &[GraphNode]) -> usize {
     nodes
         .iter()
         .filter(|node| node.kind == NodeKind::Screenshot)
         .count()
+}
+
+/// Screenshot count adjusted for depth: past `DEPTH_FREE_LAYERS` layers a frame
+/// runs off-screen horizontally, so each extra layer inflates the effective size.
+/// A shallow-wide frame reads far better than a deep-narrow one of the same count,
+/// and this is what makes the cut policy split the latter sooner.
+fn effective_size(nodes: &[GraphNode]) -> usize {
+    let count = screenshot_count(nodes);
+    let max_layer = nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Screenshot)
+        .map(|n| n.depth)
+        .max()
+        .unwrap_or(0);
+    let over = max_layer.saturating_sub(DEPTH_FREE_LAYERS);
+    (count as f64 * (1.0 + DEPTH_PENALTY * over as f64)).round() as usize
 }
 
 /// The cut that removes the most screenshots, if any removes one at all.
@@ -3440,19 +3503,35 @@ fn reachable_screens(root: &str, adjacency: &HashMap<&str, Vec<&str>>, screens: 
     out
 }
 
+/// All node ids reachable from `root` (root included), following edges. Used to
+/// measure a branch's whole subtree and its edge boundary.
+fn reachable_nodes(root: &str, adjacency: &HashMap<&str, Vec<&str>>) -> HashSet<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut stack = vec![root.to_string()];
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        for next in adjacency.get(id.as_str()).cloned().unwrap_or_default() {
+            stack.push(next.to_string());
+        }
+    }
+    seen
+}
+
 /// Choose the single best branch to link out to its own frame — or `None` when no
-/// cut is worth it. A cut is worth it when it (a) actually shrinks the frame AND
-/// (b) either lands on a frame that already exists (free) or carves off a subtree
-/// substantial enough to deserve a frame of its own (`MIN_FRAME_SIZE`, relaxed to
-/// any shrinking cut once the frame is genuinely unreadable — `relax`). Among the
-/// eligible cuts we score: bigger removal, an existing target, wide reuse, and a
-/// self-contained result all raise the score; a pass-through husk is rejected
-/// outright, which naturally pushes the cut down onto the heavy child instead.
+/// cut yields a readable, non-husk piece. Rather than lopping off the LARGEST
+/// subtree (which leaves two lopsided halves), we score each candidate on how close
+/// its size lands to `budget` (the per-piece target), minus the cross-frame edges
+/// the cut severs (each becomes a link card, not a drawn arrow), plus small bonuses
+/// for a subtree that is widely reused or already has a frame. A branch smaller than
+/// `FRAME_MIN`, or one whose removal would leave the frame itself below `FRAME_MIN`,
+/// is rejected — that is the husk guard, in both directions.
 fn best_cut(
     nodes: &[GraphNode],
     edges: &[GraphEdge],
     framed: &HashSet<&str>,
-    relax: bool,
+    budget: usize,
 ) -> Option<(Vec<GraphNode>, Vec<GraphEdge>)> {
     let has_children: HashSet<&str> = edges.iter().map(|edge| edge.from.as_str()).collect();
     let screens: HashSet<&str> = nodes
@@ -3460,76 +3539,62 @@ fn best_cut(
         .filter(|n| n.kind == NodeKind::Screenshot)
         .map(|n| n.id.as_str())
         .collect();
-    let label_of: HashMap<&str, &str> = nodes.iter().map(|n| (n.id.as_str(), n.label.as_str())).collect();
     let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
-    let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
     for edge in edges.iter() {
         adjacency.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
-        children.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
     }
+    let root = nodes.first().map(|n| n.id.as_str()).unwrap_or("");
 
     let before = screenshot_count(nodes);
-    let mut best: Option<(i64, Vec<GraphNode>, Vec<GraphEdge>)> = None;
+    let budget_f = budget.max(1) as f64;
+    let mut best: Option<(f64, Vec<GraphNode>, Vec<GraphEdge>)> = None;
 
-    for (index, edge) in edges.iter().enumerate() {
-        if !has_children.contains(edge.to.as_str()) {
+    // Candidates are NODES with a subtree (not the root, not a leaf, not a link
+    // card). Cutting a node lifts out its whole subtree — as one frame — no matter
+    // how many callers reach it, which is what lets a densely-shared graph be
+    // partitioned at all.
+    for node in nodes.iter() {
+        if node.kind != NodeKind::Screenshot
+            || node.id == root
+            || !has_children.contains(node.id.as_str())
+        {
             continue;
         }
+        let has_frame = framed.contains(node.label.as_str());
+        let sub = reachable_screens(&node.id, &adjacency, &screens).len();
 
         let mut candidate_nodes = nodes.to_vec();
         let mut candidate_edges = edges.to_vec();
-        cut_edge(&mut candidate_nodes, &mut candidate_edges, index);
-
+        cut_node(&mut candidate_nodes, &mut candidate_edges, &node.id);
         let saved = before.saturating_sub(screenshot_count(&candidate_nodes));
         if saved == 0 {
             continue;
         }
+        let residual = before.saturating_sub(saved);
 
-        let target_label = label_of.get(edge.to.as_str()).copied().unwrap_or("");
-        let has_frame = framed.contains(target_label);
-        // Size of the frame this cut would create/point at.
-        let sub = reachable_screens(&edge.to, &adjacency, &screens).len();
+        // Husk guard, both directions: neither the new piece nor the leftover frame
+        // may fall below the readable minimum. An existing frame is exempt on the
+        // piece side (no new frame is created — the cut only replaces arrows).
+        if (!has_frame && sub < FRAME_MIN) || residual < FRAME_MIN {
+            continue;
+        }
 
-        // Eligibility: an existing frame is free at any size; otherwise the
-        // carved-off subtree must be big enough to stand alone (or reused and
-        // mid-size), unless we're over the hard cap and must cut something.
-        let reuse = children
+        // Cross-frame edges this cut severs (the subtree's boundary) — each becomes
+        // a link card rather than a drawn arrow — and how many callers reach it.
+        let subtree = reachable_nodes(&node.id, &adjacency);
+        let severed = edges
             .iter()
-            .filter(|(_, tos)| tos.contains(&edge.to.as_str()))
-            .count();
-        let eligible = has_frame
-            || relax
-            || sub >= MIN_FRAME_SIZE
-            || (sub >= 5 && reuse >= 3);
-        if !eligible {
-            continue;
-        }
+            .filter(|e| subtree.contains(&e.from) != subtree.contains(&e.to))
+            .count()
+            .max(1);
+        let reuse = edges.iter().filter(|e| e.to == node.id).count();
 
-        // Pass-through guard: what would actually REMAIN in the new frame after its
-        // own big/existing children are themselves cut out of it. A husk is rejected
-        // (unless the target already exists — then no new frame is created anyway).
-        let residual = if has_frame {
-            sub
-        } else {
-            let sub_set = reachable_screens(&edge.to, &adjacency, &screens);
-            let mut carved: HashSet<String> = HashSet::new();
-            for &ch in children.get(edge.to.as_str()).unwrap_or(&Vec::new()) {
-                let child_sub = reachable_screens(ch, &adjacency, &screens);
-                let child_framed = framed.contains(label_of.get(ch).copied().unwrap_or(""));
-                if child_framed || child_sub.len() >= MIN_FRAME_SIZE {
-                    carved.extend(child_sub);
-                }
-            }
-            sub_set.difference(&carved).count()
-        };
-        if !has_frame && residual < MIN_RESIDUAL {
-            continue;
-        }
-
-        let score = saved as i64
-            + if has_frame { 25 } else { 0 }
-            + if reuse >= 3 { 10 } else { 0 }
-            + if residual >= 12 { 5 } else { 0 };
+        // Nearness to the target dominates; severed edges tiebreak; reuse and an
+        // existing frame nudge. (Weights: size distance ~3.3/shot, edge ~12.)
+        let score = -(50.0 / budget_f) * (sub as f64 - budget_f).abs()
+            - 12.0 * (severed as f64 - 1.0)
+            + 10.0 * (reuse.min(3) as f64)
+            + if has_frame { 8.0 } else { 0.0 };
         if best.as_ref().map(|(most, _, _)| score > *most).unwrap_or(true) {
             best = Some((score, candidate_nodes, candidate_edges));
         }
@@ -3647,7 +3712,7 @@ mod cut_test {
             edge("shared", "child"),
         ];
 
-        if let Some((cut_nodes, _)) = best_cut(&nodes, &edges, &HashSet::new(), true) {
+        if let Some((cut_nodes, _)) = best_cut(&nodes, &edges, &HashSet::new(), FRAME_TARGET) {
             assert!(
                 screenshot_count(&cut_nodes) < screenshot_count(&nodes),
                 "a cut that is taken has to free something"
@@ -3707,7 +3772,7 @@ mod cut_test {
 
         // `a` holds `b` up on its own, so cutting root→a frees both.
         let (cut_nodes, _) =
-            best_cut(&nodes, &edges, &HashSet::new(), true).expect("cutting root->a strands b");
+            best_cut(&nodes, &edges, &HashSet::new(), FRAME_TARGET).expect("cutting root->a strands b");
         assert!(screenshot_count(&cut_nodes) < screenshot_count(&nodes));
     }
 }

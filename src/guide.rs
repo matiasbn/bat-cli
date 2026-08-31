@@ -488,16 +488,17 @@ A callee that ALREADY has its own (still-on-the-board) frame is referenced with 
 at that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
 deploy as their own frames, the thinner the parent frame becomes on its next redeploy.
 
-**When a branch is linked out to its own frame.** The whole call tree is drawn inline as one frame
-until it grows past ~45 screenshots; only then does the tool start cutting branches out to their own
-frames — and it is deliberately conservative so the board doesn't fragment into tiny frames: between
-45 and 65 screenshots it links out ONLY a branch substantial enough to stand alone (≥ 8 screenshots,
-or ≥ 5 if that helper is reused ≥ 3× in the tree), and if no branch qualifies it just ships the
-slightly-bigger whole frame; past 65 it will force a smaller cut. It never creates a "pass-through"
-frame (one screenshot that only points at another frame): such a cut is dropped and the heavy child
-is linked out instead. Cutting to a frame that already exists is always allowed (it reuses, it
-doesn't create). So a redeploy prefers ONE readable frame plus a few link cards to genuinely large
-(or already-deployed) frames — not a scatter of fragments.
+**When a branch is linked out to its own frame.** Framing is a size-balanced partition, not a hard
+cap. A call tree under ~20 screenshots is drawn whole. A bigger one is split so each piece lands near
+a readable **target of ~15 screenshots** — never below 6 (so no husks) — at most 6 pieces per frame;
+a piece that is itself still over ~20 becomes its own frame and is split again the same way, giving a
+shallow hierarchy of readable frames instead of one giant canvas. The branch chosen to link out is
+the one whose size is nearest the target AND severs the fewest cross-frame arrows (not simply the
+biggest), and a densely-shared function can be lifted out whole — each of its callers keeps a link
+card to it — which is the only way to partition a graph where a few helpers are reused everywhere.
+Depth counts against a frame (a deep, narrow frame runs off-screen). Cutting to a frame that already
+exists is always allowed (it reuses, doesn't create). So a redeploy prefers several readable frames,
+each linked from the ones above it, over one wall of screenshots or a scatter of tiny fragments.
 
 ## Failure modes
 
@@ -658,18 +659,20 @@ so you re-open only the docs that actually changed — not everything.
   dead-end — its call line pointing at nothing. Each copy now keeps its calls to shared functions
   (the shared node duplicates in turn, or the copies converge on it), so the graph below a
   duplicated node is always complete. Regenerate with `deploy`.
-- **Fewer, bigger frames: no more tiny fragmenting sub-frames.** Deploying a large entry point used
-  to shatter the board — every branch cut to fit the frame spawned a brand-new frame, and small
-  branches became tiny frames, some of them useless "pass-through" husks (one screenshot pointing at
-  another frame). Now a branch is linked out to its OWN frame only when it's worth it: (1) a two-tier
-  budget — nothing is cut below 45 screenshots, between 45 and 65 only branches big enough to stand
-  alone (≥ 8 screenshots, or ≥ 5 and reused ≥ 3×) are cut, and if none qualify the whole (slightly
-  bigger) frame ships intact rather than fragmenting; only above 65 is a smaller cut forced; (2) a
-  pass-through guard drops any cut that would leave a husk frame (< 4 own screenshots), pushing the
-  cut down onto the heavy child instead; (3) recycling now reuses only frames STILL on the board, so
-  deleting a small frame by hand no longer makes the next deploy silently re-create it. Net effect:
-  one readable frame plus link cards to genuinely substantial (or pre-existing) frames. Regenerate
-  with `deploy`. _Re-read: workflow.md (the framing/link-card policy under `deploy`)._
+- **Balanced framing: a big graph becomes several readable frames, not one wall or a scatter of
+  husks.** Deploying a large entry point used to either ship one enormous unreadable frame or, when
+  it did cut, fragment into tiny pass-through husks. Framing is now a partition aimed at a size:
+  a graph under ~20 screenshots ships whole; a bigger one is split so each piece lands near a
+  readable **target of ~15 screenshots** (never below 6, so no husks), at most 6 pieces per frame,
+  and a piece that is itself still too big becomes its own frame and is split again the same way —
+  so the result is a shallow hierarchy of frames you can actually read, not a 30-layer canvas.
+  Which branch is cut is chosen for BALANCE (a piece whose size is near the target, that severs the
+  fewest cross-frame arrows) rather than just "the biggest", and a densely-shared node can now be
+  lifted out as a whole (each caller keeps a link card to it) — the only way to partition a graph
+  where every helper is reused. Depth counts against a frame (a deep-narrow frame runs off-screen),
+  and recycling reuses only frames STILL on the board, so a frame you delete by hand is never
+  silently re-created. Regenerate with `deploy`. _Re-read: workflow.md (the framing/link-card
+  policy under `deploy`)._
 
 ## 0.22.9
 - **Incremental `deploy --refresh-links`: swap newly-framed callees for link cards without
