@@ -640,6 +640,13 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.22.10
+- **Overloaded functions are no longer collapsed.** When a contract defines the same function name
+  several times (Solidity overloads — e.g. a public `deleverageQuote(...)` that forwards to an
+  internal `deleverageQuote(curve, ...)`), the deploy used to map every call to the FIRST definition,
+  so a wrapper calling its sibling overload looked like a self-call and was dropped — the whole
+  implementation subtree behind it silently vanished. Calls now carry their argument count and
+  resolve to the overload whose parameter count matches, and each overload is its own node, so the
+  full graph is drawn. Non-overloaded code is unchanged. Regenerate with `deploy`.
 - **`deploy --undeploy <entry-point>` removes a frame outright.** Cleans a frame that should never
   have been its own — its shell, all its screenshots/markers/borders, its link cards + arrows, and
   its registry entry — so the next deploy of a caller inlines that helper instead of linking to it.

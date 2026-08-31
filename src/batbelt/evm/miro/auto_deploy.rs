@@ -1877,7 +1877,7 @@ fn build_graph(
     Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall>,
 )> {
     let Some((root_contract, root_function)) =
-        find_function(metadata, contract_name, function_name)
+        find_function(metadata, contract_name, function_name, None)
     else {
         return Ok((Vec::new(), Vec::new(), 0, Vec::new()));
     };
@@ -1912,7 +1912,7 @@ fn build_graph(
     // node that already exists.
     let mut drawn: HashMap<String, String> = HashMap::new();
 
-    let root_id = node_key(contract_name, function_name);
+    let root_id = overload_node_key(metadata, &root_contract.name, &root_function);
     drawn.insert(root_id.clone(), root_id.clone());
     nodes.push(make_node(
         root_id.clone(),
@@ -1923,18 +1923,21 @@ fn build_graph(
     ));
 
     // Depth-first, so siblings stay in source order and each subtree is built
-    // before the next one starts — which is the order the layout wants.
+    // before the next one starts — which is the order the layout wants. `line`
+    // pins WHICH overload this node is, so the re-read below lands on the same one.
     struct Pending {
         node_id: String,
         contract: String,
         function: String,
+        line: usize,
         depth: usize,
     }
 
     let mut stack = vec![Pending {
         node_id: root_id,
-        contract: contract_name.to_string(),
+        contract: root_contract.name.clone(),
         function: function_name.to_string(),
+        line: root_function.line,
         depth: 0,
     }];
 
@@ -1943,8 +1946,9 @@ fn build_graph(
             continue;
         }
         // The contract that defines the function, which is where its source is.
+        // Pin the exact overload by line so a re-read never drifts to a sibling.
         let Some((contract, function)) =
-            find_function(metadata, &current.contract, &current.function)
+            find_function_at(metadata, &current.contract, &current.function, current.line)
         else {
             continue;
         };
@@ -1995,12 +1999,13 @@ fn build_graph(
         }
 
         for call in extract_call_sites_from_source(&body_only(&slice).join("\n")) {
+            let arity = (call.arg_count != usize::MAX).then_some(call.arg_count);
             let Some((target_contract, target_function)) =
-                resolve_call(metadata, contract, &call.name, options, &definer_map)
+                resolve_call(metadata, contract, &call.name, arity, options, &definer_map)
             else {
                 continue;
             };
-            let target_id = node_key(&target_contract.name, &target_function.name);
+            let target_id = overload_node_key(metadata, &target_contract.name, &target_function);
             if target_id == current.node_id {
                 continue; // a function calling itself needs no arrow
             }
@@ -2033,6 +2038,7 @@ fn build_graph(
                 node_id: target_id,
                 contract: target_contract.name.clone(),
                 function: target_function.name.clone(),
+                line: target_function.line,
                 depth: current.depth + 1,
             });
         }
@@ -2050,7 +2056,7 @@ fn build_graph(
                 unresolved.push(u.clone());
                 continue;
             };
-            let Some((tc, tf)) = find_function(metadata, concrete, &u.method) else {
+            let Some((tc, tf)) = find_function(metadata, concrete, &u.method, None) else {
                 // A resolution is set but its method isn't there — still unresolved.
                 unresolved.push(u.clone());
                 continue;
@@ -2063,7 +2069,7 @@ fn build_graph(
             if !options.include_external && tc.external {
                 continue;
             }
-            let target_id = node_key(&tc.name, &tf.name);
+            let target_id = overload_node_key(metadata, &tc.name, &tf);
             if target_id == current.node_id {
                 continue;
             }
@@ -2100,6 +2106,7 @@ fn build_graph(
                 node_id: target_id,
                 contract: tc.name.clone(),
                 function: tf.name.clone(),
+                line: tf.line,
                 depth: current.depth + 1,
             });
         }
@@ -2109,7 +2116,7 @@ fn build_graph(
         // mutate, so it is never a state-change risk). Located on the caller's node.
         let mut external_lines: Vec<usize> = Vec::new();
         for uec in &function.unknown_external_calls {
-            let read_only = find_function(metadata, &uec.inferred_type, &uec.method)
+            let read_only = find_function(metadata, &uec.inferred_type, &uec.method, None)
                 .map(|(_, f)| {
                     matches!(
                         f.mutability,
@@ -2178,7 +2185,7 @@ fn expand_unresolved(
         });
         if let Some(contract) = target {
             if visited_fns.insert((contract.clone(), u.method.clone())) {
-                if let Some((_, f)) = find_function(metadata, &contract, &u.method) {
+                if let Some((_, f)) = find_function(metadata, &contract, &u.method, None) {
                     for du in &f.unresolved_calls {
                         frontier.push(du.clone());
                     }
@@ -2352,17 +2359,77 @@ fn find_function<'a>(
     metadata: &'a EvmBatMetadata,
     contract_name: &str,
     function_name: &str,
+    arg_count: Option<usize>,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
     let contract = metadata.get_contract_by_name(contract_name)?;
-    if let Some(function) = contract.functions.iter().find(|f| f.name == function_name) {
-        return Some((contract, function.clone()));
+    let overloads: Vec<&FunctionMetadata> =
+        contract.functions.iter().filter(|f| f.name == function_name).collect();
+    if !overloads.is_empty() {
+        // With several same-named overloads, pick the one whose parameter count
+        // matches the call site; otherwise (or when the arity is unknown) keep the
+        // first, which preserves the old single-definition behaviour exactly.
+        let chosen = match arg_count {
+            Some(n) if overloads.len() > 1 => overloads
+                .iter()
+                .find(|f| f.params.len() == n)
+                .copied()
+                .unwrap_or(overloads[0]),
+            _ => overloads[0],
+        };
+        return Some((contract, chosen.clone()));
     }
     for base in &contract.base_contracts {
-        if let Some(found) = find_function(metadata, base, function_name) {
+        if let Some(found) = find_function(metadata, base, function_name, arg_count) {
             return Some(found);
         }
     }
     None
+}
+
+/// Resolve to the SPECIFIC overload defined at `line` (walking base contracts),
+/// so the DFS re-reads the same overload an edge was built for — not just the
+/// first one sharing the name.
+fn find_function_at<'a>(
+    metadata: &'a EvmBatMetadata,
+    contract_name: &str,
+    function_name: &str,
+    line: usize,
+) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
+    let contract = metadata.get_contract_by_name(contract_name)?;
+    if let Some(function) = contract
+        .functions
+        .iter()
+        .find(|f| f.name == function_name && f.line == line)
+    {
+        return Some((contract, function.clone()));
+    }
+    for base in &contract.base_contracts {
+        if let Some(found) = find_function_at(metadata, base, function_name, line) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Node id for a function, distinguishing overloads: when a contract defines the
+/// same name several times, the id carries the definition line so each overload is
+/// its own node (otherwise both collapse and a wrapper→overload call looks like a
+/// self-call and is pruned). A single-definition function keeps the plain id, so
+/// non-overloaded graphs are byte-identical to before.
+fn overload_node_key(
+    metadata: &EvmBatMetadata,
+    contract_name: &str,
+    function: &FunctionMetadata,
+) -> String {
+    let overloaded = metadata
+        .get_contract_by_name(contract_name)
+        .map(|c| c.functions.iter().filter(|f| f.name == function.name).count() > 1)
+        .unwrap_or(false);
+    if overloaded {
+        format!("{}@{}", node_key(contract_name, &function.name), function.line)
+    } else {
+        node_key(contract_name, &function.name)
+    }
 }
 
 fn find_modifier<'a>(
@@ -2391,6 +2458,7 @@ fn resolve_call<'a>(
     metadata: &'a EvmBatMetadata,
     caller_contract: &ContractMetadata,
     call_name: &str,
+    arg_count: Option<usize>,
     options: &AutoDeployOptions,
     definer_map: &HashMap<String, Vec<String>>,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
@@ -2441,7 +2509,7 @@ fn resolve_call<'a>(
                     if !keep(target) {
                         continue;
                     }
-                    if let Some(found) = find_function(metadata, &target.name, method) {
+                    if let Some(found) = find_function(metadata, &target.name, method, arg_count) {
                         // Only accept a concrete result; a bodyless stub with no
                         // override falls through to the unique-definer fallback.
                         if let Some(resolved) = destub(metadata, found, options) {
@@ -2455,7 +2523,7 @@ fn resolve_call<'a>(
         if !keep(contract) {
             continue;
         }
-        if let Some(found) = find_function(metadata, &contract.name, method) {
+        if let Some(found) = find_function(metadata, &contract.name, method, arg_count) {
             if let Some(resolved) = destub(metadata, found, options) {
                 return Some(resolved);
             }
@@ -2472,7 +2540,7 @@ fn resolve_call<'a>(
     if matches!(target_name, Some(t) if t != "super" && t != "this") {
         if let Some(definers) = definer_map.get(method) {
             if definers.len() == 1 {
-                return find_function(metadata, &definers[0], method);
+                return find_function(metadata, &definers[0], method, arg_count);
             }
         }
     }
@@ -2500,7 +2568,9 @@ fn destub<'a>(
         if impl_name == contract.name {
             continue;
         }
-        if let Some((tc, tf)) = find_function(metadata, &impl_name, &function.name) {
+        if let Some((tc, tf)) =
+            find_function(metadata, &impl_name, &function.name, Some(function.params.len()))
+        {
             if !tf.is_stub && keep(tc) {
                 overrides.push((tc, tf));
             }
