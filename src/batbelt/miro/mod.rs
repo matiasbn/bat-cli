@@ -152,9 +152,21 @@ impl MiroConfig {
     /// free plan caps team boards at three, so this can legitimately fail and
     /// the caller must be able to fall back to picking an existing board.
     pub async fn create_board(access_token: &str, name: &str) -> Result<(String, String), MiroError> {
+        // Create the board PRIVATE — only the owner can open it. Audit diagrams are
+        // sensitive, and on a Business/Enterprise org a board is team-shared by
+        // default (everyone in the org could see it). Lock every access channel:
+        // no link access, no team access, no org access.
         let body = serde_json::json!({
             "name": name,
             "description": "Dependency diagrams deployed by bat-cli",
+            "policy": {
+                "sharingPolicy": {
+                    "access": "private",
+                    "teamAccess": "private",
+                    "organizationAccess": "private",
+                    "inviteToAccountAndBoardLinkAccess": "no_access"
+                }
+            }
         })
         .to_string();
 

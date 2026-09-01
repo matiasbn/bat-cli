@@ -640,6 +640,13 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.22.12
+- **Boards bat-cli creates are PRIVATE.** When `init` creates a Miro board for you, it now sets the
+  sharing policy so only you can open it — `access`, `teamAccess` and `organizationAccess` are all
+  `private`, so no link, no teammate, and no one else in the org can see it. Audit diagrams are
+  sensitive, and on a Business/Enterprise org a new board is team-shared by default; this locks it.
+  _Re-read: nothing (behaviour only)._
+
 ## 0.22.11
 - **The board picker only lists boards you OWN, and no longer hangs.** `init` (and any board
   selection) used to fetch every board you can see — on a big org that is hundreds (243 in one case,
