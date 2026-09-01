@@ -555,6 +555,16 @@ fn apply_token_response(credentials: &mut MiroCredentials, token: &Value) {
     };
 }
 
+/// The Miro user id of the authorized account (from the token info). Used to list
+/// only the boards this user OWNS, so the picker never offers a board that belongs
+/// to someone else — and, on a big org, so it returns 3 boards instead of hundreds.
+pub async fn current_user_id(access_token: &str) -> Option<String> {
+    fetch_token_info(access_token)
+        .await
+        .ok()
+        .and_then(|info| info["user"]["id"].as_str().map(|s| s.to_string()))
+}
+
 async fn fetch_token_info(access_token: &str) -> Result<Value, MiroError> {
     let response = reqwest::Client::new()
         .get(TOKEN_INFO_URL)

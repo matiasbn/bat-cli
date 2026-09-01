@@ -190,19 +190,34 @@ impl MiroConfig {
         ))
     }
 
-    /// Fetches the user's boards from the Miro API using the given OAuth token.
-    /// Returns a list of (board_name, board_url) tuples.
+    /// Fetches the boards the user OWNS from the Miro API using the given OAuth
+    /// token. Returns a list of (board_name, board_url) tuples.
+    ///
+    /// Filtered by owner on the server (`?owner=<user id>`) so the picker never
+    /// offers — and the auditor never risks editing — a board that belongs to
+    /// someone else, and so a big org returns a handful of boards instead of
+    /// hundreds (which is what made listing hang). If the user id can't be read the
+    /// fetch falls back to all accessible boards.
     pub async fn list_boards(access_token: &str) -> Result<Vec<(String, String)>, MiroError> {
         let client = reqwest::Client::new();
         let mut all_boards: Vec<(String, String)> = vec![];
         let mut offset: usize = 0;
         let limit = 50;
 
+        let spinner = indicatif::ProgressBar::new_spinner();
+        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+        spinner.set_message("Loading your Miro boards...");
+
+        let owner_filter = crate::batbelt::miro::auth::current_user_id(access_token)
+            .await
+            .map(|id| format!("&owner={id}"))
+            .unwrap_or_default();
+
         loop {
             let response = client
                 .get(format!(
-                    "https://api.miro.com/v2/boards?limit={}&offset={}&sort=last_modified",
-                    limit, offset
+                    "https://api.miro.com/v2/boards?limit={}&offset={}&sort=last_modified{}",
+                    limit, offset, owner_filter
                 ))
                 .header(AUTHORIZATION, format!("Bearer {}", access_token))
                 .header(CONTENT_TYPE, "application/json")
@@ -239,12 +254,14 @@ impl MiroConfig {
             }
 
             let total = json["total"].as_u64().unwrap_or(0) as usize;
+            spinner.set_message(format!("Loading your Miro boards... ({} found)", all_boards.len()));
             offset += limit;
             if offset >= total {
                 break;
             }
         }
 
+        spinner.finish_and_clear();
         Ok(all_boards)
     }
 }
