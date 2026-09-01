@@ -150,6 +150,12 @@ enum BatCommands {
         /// helper that should never have been its own frame.
         #[arg(long)]
         undeploy: bool,
+        /// Draw the whole call graph inline in ONE frame: never cut a branch out to
+        /// its own frame, never link an already-deployed frame — every function is a
+        /// screenshot. Use it to see how large a big function is with screenshots
+        /// only (and how Miro handles it).
+        #[arg(long)]
+        inline_all: bool,
     },
     /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
     /// interface call to its concrete implementation. `deploy` stops and lists what to
@@ -230,6 +236,7 @@ impl BatCommands {
                 allow_unresolved,
                 refresh_links,
                 undeploy,
+                inline_all,
             } => {
                 crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
@@ -245,6 +252,7 @@ impl BatCommands {
                     allow_unresolved: *allow_unresolved,
                     refresh_links: *refresh_links,
                     undeploy: *undeploy,
+                    inline_all: *inline_all,
                     },
                 )
                 .await

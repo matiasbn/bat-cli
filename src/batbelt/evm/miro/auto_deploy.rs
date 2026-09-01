@@ -109,6 +109,11 @@ pub struct AutoDeployOptions {
     /// entry) instead of deploying. Cleans up a frame that should never have been
     /// its own — e.g. a small helper fragmenting the board.
     pub undeploy: bool,
+    /// Draw the ENTIRE call graph inline in one frame: no branch is cut to its own
+    /// frame, and no already-deployed frame is linked — every function is a
+    /// screenshot. Lets you see how big a large function is with screenshots only
+    /// (and how Miro copes), and gives a step-through-able single frame.
+    pub inline_all: bool,
 }
 
 impl Default for AutoDeployOptions {
@@ -126,6 +131,7 @@ impl Default for AutoDeployOptions {
             allow_unresolved: false,
             refresh_links: false,
             undeploy: false,
+            inline_all: false,
         }
     }
 }
@@ -174,15 +180,21 @@ struct GraphNode {
     /// (an interface-typed receiver nothing in the repo implements) via a non-view
     /// method — an unverified external state-change boundary, flagged distinctly.
     external_call_lines: Vec<usize>,
+    /// Display scale for this placement. Every function is rendered ONCE at the
+    /// reference font (`REFERENCE_FONT`, the depth-0 size); a deeper node shows the
+    /// same image shrunk by this factor (< 1), so the source is rendered once and
+    /// reused across depths and duplicate placements instead of re-rendered. Line
+    /// fractions are scale-invariant, so only the board size and upload width use it.
+    scale: f64,
 }
 
 impl GraphNode {
     fn board_width(&self) -> f64 {
-        self.png_width as f64 * BOARD_UNITS_PER_PIXEL
+        self.png_width as f64 * BOARD_UNITS_PER_PIXEL * self.scale
     }
 
     fn board_height(&self) -> f64 {
-        self.png_height as f64 * BOARD_UNITS_PER_PIXEL
+        self.png_height as f64 * BOARD_UNITS_PER_PIXEL * self.scale
     }
 }
 
@@ -211,12 +223,23 @@ const BOARD_UNITS_PER_PIXEL: f64 = 1.0;
 
 /// Font per depth: the entry point is rendered biggest and leaves smallest, so a
 /// deep graph stays readable. Width now follows from the code itself.
+/// The one font every screenshot is rendered at (the largest, depth-0 size). A
+/// deeper node reuses that render shrunk via `scale_for_depth`, so a function is
+/// rendered once and reused across depths and duplicate placements.
+const REFERENCE_FONT: usize = 32;
+
 fn font_for_depth(depth: usize) -> usize {
     match depth {
         0 => 32,
         1 => 26,
         _ => 22,
     }
+}
+
+/// How much to shrink a node's (reference-font) render for its depth. Always ≤ 1,
+/// so text is only ever scaled DOWN and stays crisp.
+fn scale_for_depth(depth: usize) -> f64 {
+    font_for_depth(depth) as f64 / REFERENCE_FONT as f64
 }
 
 
@@ -510,7 +533,10 @@ async fn deploy_one(
     // `ensure_target_frames` RE-CREATE it — resurrecting exactly the tiny husk
     // frames the auditor just cleaned up. So we recycle (and treat as "free to cut
     // to") only frames confirmed live on the board.
-    let deployed_titles: HashSet<String> = {
+    let deployed_titles: HashSet<String> = if options.inline_all {
+        // --inline-all: draw everything, link nothing.
+        HashSet::new()
+    } else {
         let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
         let in_graph: HashSet<&str> = nodes.iter().map(|n| n.label.as_str()).collect();
         let candidates: Vec<String> = meta
@@ -691,7 +717,8 @@ async fn deploy_one(
     let total = screenshot_count(&nodes);
     let budget = FRAME_TARGET.max(total.div_ceil(MAX_CUTS_PER_FRAME + 1));
     let mut anchors = anchors;
-    for _ in 0..MAX_CUTS_PER_FRAME {
+    let cut_passes = if options.inline_all { 0 } else { MAX_CUTS_PER_FRAME };
+    for _ in 0..cut_passes {
         // Split while the frame is over the readable MAX (depth included). The loop
         // bound is the per-frame cut cap itself, so a huge graph gets enough cuts to
         // shrink instead of shipping a wall; a piece that stays big becomes its own
@@ -2223,7 +2250,10 @@ fn make_node(
         start_line: function.line,
         end_line: function_end(function, contract),
         depth,
-        font_size: font_for_depth(depth),
+        // Rendered at the reference font (so one render serves every depth); the
+        // depth's smaller look comes from `scale`, not a separate render.
+        font_size: REFERENCE_FONT,
+        scale: scale_for_depth(depth),
         png_path: String::new(),
         png_width: 0,
         png_height: 0,
@@ -2304,7 +2334,8 @@ fn make_modifier_node(
         start_line: definition.line,
         end_line,
         depth,
-        font_size: font_for_depth(depth),
+        font_size: REFERENCE_FONT,
+        scale: scale_for_depth(depth),
         png_path: String::new(),
         png_width: 0,
         png_height: 0,
@@ -2638,77 +2669,104 @@ fn render_and_measure(
         .get_path(true)
         .change_context(EvmMiroError)?;
 
-    let bar = phase_bar("rendering screenshots", nodes.len());
-    // Rendering is CPU-bound and every node is independent — each writes its own
-    // PNG and silicon only reads shared, read-only highlighting assets — so this
-    // fans out across cores. On a large diagram this is the dominant local cost.
-    let outcome: std::result::Result<(), String> = nodes
-        .par_iter_mut()
-        .map(|node| {
-            // Already uploaded (refresh): take its stored size, skip rendering.
-            if let Some((_, width, height)) = reuse.get(&node.id) {
-                node.png_width = *width;
-                node.png_height = *height;
-                bar.inc(1);
-                return Ok(());
+    // Render DEDUP: every node now renders at the reference font, so two nodes with
+    // the same (file, line range) produce a byte-identical image — a function used
+    // (or duplicated) N times used to render N identical PNGs, the dominant cost on
+    // a big diagram. Render each DISTINCT (file, start, end) once and share it; the
+    // per-depth smaller look is applied later via `scale`, not another render.
+    type RenderKey = (String, usize, usize);
+    let key_of = |node: &GraphNode| -> Option<RenderKey> {
+        (!node.file_path.is_empty() && !reuse.contains_key(&node.id))
+            .then(|| (node.file_path.clone(), node.start_line, node.end_line))
+    };
+    let mut distinct: Vec<RenderKey> = Vec::new();
+    let mut seen: HashSet<RenderKey> = HashSet::new();
+    for node in nodes.iter() {
+        if let Some(key) = key_of(node) {
+            if seen.insert(key.clone()) {
+                distinct.push(key);
             }
-            let code = read_slice(&node.file_path, node.start_line, node.end_line);
-            if code.is_empty() {
-                bar.inc(1);
-                return Ok(());
-            }
+        }
+    }
 
-            let pretty_path = crate::batbelt::path::prettify_source_code_path(&node.file_path)
-                .unwrap_or_else(|_| node.file_path.clone());
-            let mut rendered = vec![format!("// {pretty_path}"), String::new()];
-            rendered.extend(code.iter().cloned());
+    struct Rendered {
+        png_path: String,
+        width: u32,
+        height: u32,
+        line_offset: usize,
+        lines: Vec<String>,
+    }
 
-            // silicon subtracts the two header lines from the offset so the
-            // printed line numbers still match the file.
-            node.line_offset = node.start_line.saturating_sub(PATH_HEADER_LINES);
-
-            // `.js` gives Solidity the best Dracula colors available in syntect.
-            // Named after the deployment as well as the node. The same function
-            // appears in several graphs, and a deployment deletes its own files
-            // when it finishes: without the prefix, building a helper's frame
-            // partway through a bigger one would delete the screenshot that
-            // bigger one is still waiting to upload.
+    let bar = phase_bar("rendering screenshots", distinct.len());
+    // CPU-bound and independent per DISTINCT function — fans out across cores.
+    let results: std::result::Result<Vec<(RenderKey, Rendered)>, String> = distinct
+        .par_iter()
+        .map(|key| {
+            let (file_path, start, end) = key;
+            let code = read_slice(file_path, *start, *end);
+            let pretty_path = crate::batbelt::path::prettify_source_code_path(file_path)
+                .unwrap_or_else(|_| file_path.clone());
+            let mut lines = vec![format!("// {pretty_path}"), String::new()];
+            lines.extend(code.iter().cloned());
+            let line_offset = start.saturating_sub(PATH_HEADER_LINES);
+            // One file per DISTINCT function (not per node), so copies share it. Prefixed
+            // by the deployment so a helper's own frame build doesn't delete a file a
+            // bigger in-flight frame still needs to upload.
             let file_name = format!(
-                "{}__{}.js",
+                "{}__{}_{}_{}.js",
                 owner.replace([':', '.', '/'], "_"),
-                node.id.replace([':', '.', '/'], "_")
+                file_path.replace([':', '.', '/'], "_"),
+                start,
+                end
             );
             let png_path = silicon::create_figure(
-                &rendered.join("\n"),
+                &lines.join("\n"),
                 &destination,
                 &file_name,
-                node.line_offset,
-                Some(node.font_size),
+                line_offset,
+                Some(REFERENCE_FONT),
                 true,
             );
             let (width, height) = image::image_dimensions(&png_path)
                 .map_err(|e| format!("cannot measure {png_path}: {e}"))?;
-
             if width > 8192 || height > 8192 {
-                log::warn!(
-                    "{} renders to {}x{}, above Miro's 8192 px limit",
-                    node.label,
-                    width,
-                    height
-                );
+                log::warn!("{png_path} renders to {width}x{height}, above Miro's 8192 px limit");
             }
-
-            node.png_path = png_path;
-            node.png_width = width;
-            node.png_height = height;
-            node.rendered_lines = rendered;
             bar.inc(1);
-            Ok(())
+            Ok((
+                key.clone(),
+                Rendered { png_path, width, height, line_offset, lines },
+            ))
         })
         .collect();
-    outcome.map_err(|message| Report::new(EvmMiroError).attach_printable(message))?;
+    let rendered: HashMap<RenderKey, Rendered> = results
+        .map_err(|message| Report::new(EvmMiroError).attach_printable(message))?
+        .into_iter()
+        .collect();
     bar.finish_and_clear();
-    println!("    {} {} screenshots rendered", "✓".green(), nodes.len());
+
+    // Fan the shared renders (and reused sizes) back onto every node.
+    for node in nodes.iter_mut() {
+        if let Some((_, width, height)) = reuse.get(&node.id) {
+            node.png_width = *width;
+            node.png_height = *height;
+            continue;
+        }
+        let Some(key) = key_of(node) else { continue };
+        if let Some(r) = rendered.get(&key) {
+            node.png_path = r.png_path.clone();
+            node.png_width = r.width;
+            node.png_height = r.height;
+            node.line_offset = r.line_offset;
+            node.rendered_lines = r.lines.clone();
+        }
+    }
+    println!(
+        "    {} {} screenshots ({} distinct rendered)",
+        "✓".green(),
+        nodes.len(),
+        distinct.len()
+    );
     Ok(())
 }
 
@@ -3265,6 +3323,7 @@ mod split_shared_leaves_test {
             end_line: 2,
             depth: 0,
             font_size: 22,
+            scale: 1.0,
             png_path: String::new(),
             png_width: 0,
             png_height: 0,
@@ -3380,6 +3439,7 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         end_line: 0,
         depth: 0,
         font_size: 22,
+        scale: 1.0,
         png_path: String::new(),
         png_width: LINK_CARD_WIDTH as u32,
         png_height: LINK_CARD_HEIGHT as u32,
@@ -3424,6 +3484,7 @@ fn cut_node(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, target_id: &
             end_line: 0,
             depth: 0,
             font_size: 22,
+            scale: 1.0,
             png_path: String::new(),
             png_width: LINK_CARD_WIDTH as u32,
             png_height: LINK_CARD_HEIGHT as u32,
