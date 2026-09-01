@@ -641,6 +641,23 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.22.10
+- **Readable frames for tangled graphs: frame the big shared subtrees, localize the small crossers.**
+  A function reused all over a diagram used to draw arrows that cross every screenshot, turning a big
+  frame into an unreadable mesh (Miro auto-routes connectors, so the layout can't bend around them).
+  Now: (1) big shared subtrees (≥ 6 screenshots) are cut to their own sub-frames; (2) THEN the small
+  helpers still crossing (a caller ≥ 2 columns back) get a local copy per far caller — cheap, and no
+  longer whack-a-mole because the deep floor is already framed out. increaseLeverage's main frame
+  went from a 178-screenshot mesh to a readable ~37.
+- **`deploy --redeploy` — fresh cluster in a clean zone, old URLs handed back.** Redeploys the whole
+  cluster (entry point + every dependency frame) FRESH into a clean region, reusing nothing already
+  on the board (only frames created within the same run). At the end it prints the PREVIOUS cluster's
+  frame URLs so you delete them with one click in Miro's web UI (which deletes a frame with its
+  contents; the API can't, and one-by-one deletion is slow). No hunting the board by hand.
+- **`deploy --inline-all`** draws the whole graph in one frame (no cuts, no links) to see how big a
+  function is with screenshots only. **`deploy --preview <path>`** now composes the frame as a LOCAL
+  png and never touches the board — the fast way to iterate on a diagram (was a footgun that also
+  deployed). **Render dedup:** each distinct function is rendered once per run (shared across every
+  frame and every duplicate copy), not once per appearance.
 - **Overloaded functions are no longer collapsed.** When a contract defines the same function name
   several times (Solidity overloads — e.g. a public `deleverageQuote(...)` that forwards to an
   internal `deleverageQuote(curve, ...)`), the deploy used to map every call to the FIRST definition,
