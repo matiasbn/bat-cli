@@ -58,6 +58,12 @@ less code"; it's "split into more frames" or "repeat a screenshot".
 ground truth we measure against (not a distance proxy). A pure tree lays out with
 ZERO crossings; crossings ⟹ shared nodes (fan-in ≥ 2) reached from distant callers.
 
+**Every layer is TOP-aligned, not centred.** A caller (a long entry point) sits at
+the top-left; centring its callees would push them to the middle, so arrows from the
+caller's top AND bottom call sites both converge inward and cross. Top-aligning keeps
+the fan-out monotonic — the cascade flows down-and-right from the top — and keeps deep
+chains from drifting far down (see `layout.rs`, the `y_cursor` init).
+
 ---
 
 ## 4. Framing: partition a big graph into readable frames

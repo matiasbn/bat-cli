@@ -197,14 +197,14 @@ pub fn layout_graph(
             let this_column_height = column_height(column, &by_id, config);
             let stagger_step = stagger_step(column.len());
             let stagger_span = stagger_step * column.len().saturating_sub(1) as f64;
-            // Layer 0 holds the entry point and stays at the top-left corner, so
-            // the frame reads as "the calls start here". Deeper layers are
-            // centred against the tallest one.
-            let mut y_cursor = if layer_index == 0 {
-                config.padding_y + config.title_band
-            } else {
-                config.padding_y + config.title_band + (bbox_height - this_column_height) / 2.0
-            };
+            // Every layer starts at the TOP, not centred. A caller (tall entry point)
+            // sits at the top-left; centring its callees would push them to the middle
+            // of the frame, so arrows from the caller's top AND bottom call sites both
+            // converge inward and cross. Top-aligning keeps the fan-out monotonic —
+            // the cascade flows down-and-right from the top — which is what removes
+            // those crossings, and keeps deep chains from drifting far down.
+            let mut y_cursor = config.padding_y + config.title_band;
+            let _ = this_column_height;
             for (rank, id) in column.iter().enumerate() {
                 let node = match by_id.get(id.as_str()) {
                     Some(node) => *node,
