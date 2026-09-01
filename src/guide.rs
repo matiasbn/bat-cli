@@ -640,6 +640,14 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.22.11
+- **The board picker only lists boards you OWN, and no longer hangs.** `init` (and any board
+  selection) used to fetch every board you can see — on a big org that is hundreds (243 in one case,
+  five silent pages), so it looked hung, and it offered boards owned by other people that you could
+  accidentally edit. It now filters by owner on the server (`?owner=<your user id>`), so the list is
+  just your own boards (3 instead of 243) and returns instantly, with a spinner while it loads.
+  _Re-read: nothing (behaviour only)._
+
 ## 0.22.10
 - **Readable frames for tangled graphs: frame the big shared subtrees, localize the small crossers.**
   A function reused all over a diagram used to draw arrows that cross every screenshot, turning a big
