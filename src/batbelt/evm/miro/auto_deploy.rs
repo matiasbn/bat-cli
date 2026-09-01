@@ -792,6 +792,11 @@ async fn deploy_one(
         };
         render_preview(&nodes, &edges, &anchors, &layout, &path)?;
         println!("  preview written to {}", path.blue());
+        // A preview is a LOCAL composition for eyeballing the layout — it never
+        // touches the board. (The delete+recreate of a redeploy is slow, so this is
+        // the fast way to iterate on the diagram.) Stop here, like a dry run.
+        cleanup(&nodes);
+        return Ok(());
     }
 
     if options.dry_run {
