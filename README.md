@@ -92,21 +92,44 @@ access control; and the call graph. Solidity is parsed with
 Miro authorization happens once per machine, not once per project.
 
 ```bash
-bat-cli login --setup   # first time: register your Miro app credentials
+bat-cli login --setup   # first time: create a Miro app (one-time, ~1 minute)
 bat-cli login           # opens the browser, you press Accept
 bat-cli login --status  # who the token belongs to, and its scopes
 ```
 
-It runs the OAuth 2.0 authorization code flow, listening on
-`http://localhost:9871/callback`, and stores the token in your user config
-directory. Every project picks it up automatically.
+#### First-time step: create a Miro app (required, once per machine)
 
-Only **one** Miro app is ever needed, no matter how many people use bat-cli.
-Fill its credentials into `src/batbelt/miro/app_credentials.rs` and everyone
-else skips app creation entirely: `bat-cli login` opens the consent page, they
-pick their team, press Accept. The setup screen only appears when no shared app
-is configured — Miro documents no PKCE and exposes no API to discover a user's
-apps, so without one there is nothing to authorize against.
+OAuth needs an **app** to authorize against, and **Miro has no API to create one**
+— so the very first time, every user runs `bat-cli login --setup`, which opens the
+Miro apps page and walks you through it (about a minute). It is a one-time step; after
+it, `bat-cli login` only opens the browser. `--setup` prints the exact values, but in
+short:
+
+1. On the page it opens (`https://miro.com/app/settings/user-profile/apps`), click
+   **+ Create new app**. If you have no Developer team yet, Miro asks you to create one
+   first (tick the terms, "Create team") — the app is assigned to it automatically.
+2. Leave **"Expire user authorization token" unchecked** (a CLI wants a non-expiring
+   token).
+3. Scopes: check **`boards:read`** and **`boards:write`**.
+4. Redirect URI for OAuth 2.0: paste exactly **`http://localhost:9871/callback`**.
+5. Copy the app's **Client ID** and **Client secret** and paste them back into `--setup`.
+
+They are stored in your user config and reused by every project — the last copy-paste.
+The app is created **once per user** and can then authorize any team's boards (custom
+OAuth apps install by simply authorizing them; no separate install step). On a Business/
+Enterprise org that restricts third-party apps, a Miro admin may have to approve it once.
+
+Then `bat-cli login` runs the OAuth 2.0 authorization code flow, listening on
+`http://localhost:9871/callback`, and stores the token in your user config directory.
+Every project picks it up automatically. The board picker only lists boards **you own**.
+
+**Sharing one app across a team (optional).** Instead of each user creating an app, a
+maintainer can register **one** app and distribute its `client_id`/`client_secret`
+(via `BAT_MIRO_CLIENT_ID` / `BAT_MIRO_CLIENT_SECRET`, or a private build that injects
+them — **never commit the secret**). Then teammates skip `--setup` entirely: `bat-cli
+login` opens the consent page, they pick their team, press Accept. Resolution order is
+env vars → `--setup` → compile-time baked (`src/batbelt/miro/app_credentials.rs`, empty
+by default so the secret stays out of the repo).
 
 ### `config`
 
