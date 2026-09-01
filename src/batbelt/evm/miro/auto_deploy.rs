@@ -114,6 +114,13 @@ pub struct AutoDeployOptions {
     /// screenshot. Lets you see how big a large function is with screenshots only
     /// (and how Miro copes), and gives a step-through-able single frame.
     pub inline_all: bool,
+    /// Redeploy from scratch into a CLEAN zone: deploy the whole cluster (the entry
+    /// point and every dependency frame) FRESH, reusing nothing already on the board
+    /// (not even this entry point's own previous frames), and at the end print the
+    /// URLs of the PREVIOUS cluster's frames so you can delete them with one click in
+    /// Miro (the web UI deletes a frame and its contents together; the API can't).
+    /// Deleting is slow and one-by-one via the API, so this hands that back to you.
+    pub redeploy: bool,
 }
 
 impl Default for AutoDeployOptions {
@@ -132,8 +139,20 @@ impl Default for AutoDeployOptions {
             refresh_links: false,
             undeploy: false,
             inline_all: false,
+            redeploy: false,
         }
     }
+}
+
+/// Shared context for a fresh-cluster deploy (`--redeploy`): the entry point that
+/// owns the whole cluster, and the ids of the PREVIOUS cluster's frames so a
+/// still-live old frame is never reused (we want everything fresh) and can be
+/// reported for manual deletion afterwards. Threaded through the recursive deploy.
+#[derive(Clone)]
+struct ClusterCtx {
+    root: String,
+    fresh: bool,
+    stale_ids: HashSet<String>,
 }
 
 /// What a node stands for.
@@ -303,7 +322,15 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         return Ok(());
     }
 
+    // --redeploy draws into a CLEAN zone: forget the cached region so the allocator
+    // re-scans and places the fresh cluster below everything currently on the board.
+    if options.redeploy && !options.dry_run {
+        EvmBatMetadata::update_metadata(|m| m.miro.auto.region = None)
+            .change_context(EvmMiroError)?;
+    }
+
     // The board is scanned at most once, to pick the region origin.
+    let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
     let mut allocator = if options.dry_run {
         ShelfAllocator::new(0.0, 0.0)
     } else {
@@ -311,6 +338,40 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     };
 
     for (contract_name, function_name) in targets {
+        let title = format!("{contract_name}.{function_name}");
+
+        // --redeploy: find the PREVIOUS cluster (this entry point's frame + every
+        // dependency frame its last deploy spawned), keep only the ones still on the
+        // board, so we can (a) never reuse them and (b) hand you their URLs to delete.
+        let mut stale: Vec<(String, String)> = Vec::new(); // (entry_point, url)
+        if options.redeploy && !options.dry_run {
+            if let Some(client) = client.as_ref() {
+                let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+                for f in &meta.miro.auto.frames {
+                    if f.cluster_root == title || f.entry_point == title {
+                        if client.item_exists(&f.frame_id).await {
+                            stale.push((f.entry_point.clone(), f.frame_url.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        let stale_ids: HashSet<String> = {
+            let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+            meta.miro
+                .auto
+                .frames
+                .iter()
+                .filter(|f| f.cluster_root == title || f.entry_point == title)
+                .map(|f| f.frame_id.clone())
+                .collect()
+        };
+        let cluster = ClusterCtx {
+            root: if options.redeploy { title.clone() } else { String::new() },
+            fresh: options.redeploy && !options.dry_run,
+            stale_ids,
+        };
+
         deploy_one(
             &metadata,
             &contract_name,
@@ -319,8 +380,34 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             client.as_ref(),
             &mut allocator,
             true,
+            &cluster,
         )
         .await?;
+
+        // --redeploy: drop the old cluster's now-orphaned records and print their
+        // URLs for one-click manual deletion (a frame + its contents delete together
+        // in Miro's web UI; the API can't, and one-by-one deletion is slow).
+        if options.redeploy && !options.dry_run {
+            let owner = title.clone();
+            let old_ids: HashSet<String> = cluster.stale_ids.clone();
+            EvmBatMetadata::update_metadata(move |m| {
+                m.miro.auto.frames.retain(|f| {
+                    !((f.cluster_root == owner || f.entry_point == owner)
+                        && old_ids.contains(&f.frame_id))
+                });
+            })
+            .change_context(EvmMiroError)?;
+            if !stale.is_empty() {
+                println!(
+                    "\n  {} {} old frame(s) from the previous deploy — delete them in Miro (one click each; the frame takes its contents with it):",
+                    "⚠".yellow(),
+                    stale.len()
+                );
+                for (ep, url) in &stale {
+                    println!("    {} {}", ep.dimmed(), url.blue());
+                }
+            }
+        }
 
         // Persist the cursor after every entry point, not once at the end: a run
         // over a whole project is long enough to be interrupted, and a lost
@@ -329,6 +416,14 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             let state = ShelfState::from(&allocator);
             EvmBatMetadata::update_metadata(|m| m.miro.auto.region = Some(state.clone()))
                 .change_context(EvmMiroError)?;
+        }
+    }
+
+    // Wipe the shared screenshot cache once, now that every frame (a whole cluster)
+    // has uploaded — each distinct function was rendered once for the entire run.
+    if !options.dry_run {
+        if let Ok(dir) = BatFolder::Figures.get_path(false) {
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 
@@ -484,6 +579,7 @@ async fn deploy_one(
     // True when the user named this function, false when it is being built only
     // because a card needs somewhere to point.
     is_primary: bool,
+    cluster: &ClusterCtx,
 ) -> Result<()> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
@@ -494,7 +590,9 @@ async fn deploy_one(
     // Asked for directly, RECYCLE it: delete the old frame and its items, then
     // redraw — so a redeploy replaces the frame instead of piling up duplicates.
     let mut reused_frame: Option<AutoDeployedFrame> = None;
-    if !options.dry_run {
+    // --redeploy: never reuse an existing frame — the whole cluster is drawn fresh
+    // in a clean zone, and the old one is reported for manual deletion.
+    if !options.dry_run && !cluster.fresh {
         if let Some(url) = live_frame_url(&title, client).await? {
             if !is_primary {
                 return Ok(());
@@ -533,8 +631,10 @@ async fn deploy_one(
     // `ensure_target_frames` RE-CREATE it — resurrecting exactly the tiny husk
     // frames the auditor just cleaned up. So we recycle (and treat as "free to cut
     // to") only frames confirmed live on the board.
-    let deployed_titles: HashSet<String> = if options.inline_all {
-        // --inline-all: draw everything, link nothing.
+    let deployed_titles: HashSet<String> = if options.inline_all || cluster.fresh {
+        // --inline-all / --redeploy: link nothing pre-existing — every dependency is
+        // drawn fresh in this cluster (reuse happens only within this run, via
+        // `ensure_target_frames`, which skips the stale old-cluster frames).
         HashSet::new()
     } else {
         let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
@@ -872,7 +972,7 @@ async fn deploy_one(
     // cards for the same helper resolve to the same frame, and a helper already
     // deployed is reused rather than drawn again. That is what keeps the fan-in
     // answerable — one frame with several references, not a copy per caller.
-    let target_frames = ensure_target_frames(&nodes, options, client, allocator).await?;
+    let target_frames = ensure_target_frames(&nodes, options, client, allocator, cluster).await?;
 
     // Record the frame before filling it, so a run that dies partway through
     // still leaves something that names what is on the board.
@@ -893,6 +993,9 @@ async fn deploy_one(
         connector_ids: Vec::new(),
         marker_ids: Vec::new(),
         border_ids: Vec::new(),
+        // Every frame in a fresh deploy belongs to the named entry point's cluster,
+        // so a later --redeploy can find and report the whole previous cluster.
+        cluster_root: if cluster.root.is_empty() { title.clone() } else { cluster.root.clone() },
     };
     save_frame_record(&record)?;
 
@@ -1444,7 +1547,9 @@ async fn deploy_one(
     save_frame_record(&record)?;
 
     println!("  {}", frame_url.blue());
-    cleanup(&nodes);
+    // NB: screenshot files are NOT deleted here — they are shared across every frame
+    // in this run (see render_and_measure), so the whole figures folder is wiped once
+    // at the end of `run()`.
     Ok(())
 }
 
@@ -2755,24 +2860,29 @@ fn render_and_measure(
             let mut lines = vec![format!("// {pretty_path}"), String::new()];
             lines.extend(code.iter().cloned());
             let line_offset = start.saturating_sub(PATH_HEADER_LINES);
-            // One file per DISTINCT function (not per node), so copies share it. Prefixed
-            // by the deployment so a helper's own frame build doesn't delete a file a
-            // bigger in-flight frame still needs to upload.
+            // One file per DISTINCT function, named ONLY by (file, lines) — no
+            // deployment prefix — so every frame in the same run (a whole --redeploy
+            // cluster) SHARES it: a function that appears in several frames is rendered
+            // once for the entire run, not once per frame. Cleanup is deferred to the
+            // end of the run so the shared files survive between frames.
             let file_name = format!(
-                "{}__{}_{}_{}.js",
-                owner.replace([':', '.', '/'], "_"),
+                "fn_{}_{}_{}.js",
                 file_path.replace([':', '.', '/'], "_"),
                 start,
                 end
             );
-            let png_path = silicon::create_figure(
-                &lines.join("\n"),
-                &destination,
-                &file_name,
-                line_offset,
-                Some(REFERENCE_FONT),
-                true,
-            );
+            let png_path = format!("{destination}/{file_name}.png");
+            // Cache hit: an earlier frame this run already rendered this function.
+            if !std::path::Path::new(&png_path).exists() {
+                silicon::create_figure(
+                    &lines.join("\n"),
+                    &destination,
+                    &file_name,
+                    line_offset,
+                    Some(REFERENCE_FONT),
+                    true,
+                );
+            }
             let (width, height) = image::image_dimensions(&png_path)
                 .map_err(|e| format!("cannot measure {png_path}: {e}"))?;
             if width > 8192 || height > 8192 {
@@ -3957,6 +4067,7 @@ async fn ensure_target_frames(
     options: &AutoDeployOptions,
     client: &MiroClient,
     allocator: &mut ShelfAllocator,
+    cluster: &ClusterCtx,
 ) -> Result<HashMap<String, String>> {
     let wanted: Vec<String> = {
         let mut seen = HashSet::new();
@@ -3975,7 +4086,31 @@ async fn ensure_target_frames(
 
     let mut resolved = HashMap::new();
     for target in wanted {
-        if let Some(url) = live_frame_url(&target, Some(client)).await? {
+        // Reuse a frame only if it is genuinely reusable: in --redeploy we skip any
+        // frame that belongs to the OLD cluster (a stale id) so it is drawn fresh,
+        // but still reuse frames created earlier in THIS run (their new ids aren't
+        // stale) so a helper shared inside the cluster is drawn once.
+        let reusable = if cluster.fresh {
+            // Reuse ONLY a frame created earlier in THIS run for THIS cluster
+            // (cluster_root == root AND a fresh, non-stale id). Anything else — the
+            // old cluster, or a frame from another entry point's deploy — is drawn
+            // fresh, so the cluster is fully self-contained in its clean zone.
+            let created_here = EvmBatMetadata::read_metadata().ok().is_some_and(|m| {
+                m.miro.auto.frames.iter().any(|f| {
+                    f.entry_point == target
+                        && f.cluster_root == cluster.root
+                        && !cluster.stale_ids.contains(&f.frame_id)
+                })
+            });
+            if created_here {
+                live_frame_url(&target, Some(client)).await?
+            } else {
+                None
+            }
+        } else {
+            live_frame_url(&target, Some(client)).await?
+        };
+        if let Some(url) = reusable {
             println!("  {} reuses its frame", target.blue());
             resolved.insert(target, url);
             continue;
@@ -3996,6 +4131,7 @@ async fn ensure_target_frames(
             Some(client),
             allocator,
             false,
+            cluster,
         ))
         .await?;
 
