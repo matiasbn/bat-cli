@@ -680,6 +680,18 @@ async fn deploy_one(
 
     render_and_measure(&mut nodes, &title, &reuse)?;
 
+    // De-share the functions whose reuse would actually TANGLE the diagram: a
+    // shared node sitting far from a caller draws a long arrow that crosses the
+    // screenshots in between (Miro routes connectors itself, so the layout can't
+    // avoid it). Give those far callers a local copy instead — a repeated
+    // screenshot, which the auditor prefers to a crossing. Adjacent reuse stays
+    // shared. Runs after render so copies inherit the image (no re-render). Skipped
+    // in --refresh-links (that path reuses exactly the frame's existing nodes).
+    if !options.refresh_links {
+        let root_id = nodes[0].id.clone();
+        duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
+    }
+
     let layout_nodes: Vec<LayoutNode> = nodes
         .iter()
         .map(|node| LayoutNode {
@@ -2178,7 +2190,11 @@ fn build_graph(
     // its function and collect ITS unresolved too, so the AI can resolve in one pass.
     let unresolved = expand_unresolved(metadata, unresolved);
 
-    duplicate_shared_subtrees(&mut nodes, &mut edges);
+    // De-sharing (duplicating a shared function per caller) is decided AFTER render,
+    // in `deploy_one`, where a preliminary layout tells which shared nodes actually
+    // sit far from a caller and would cross — see `duplicate_crossing_shared`. A
+    // blanket duplication here would repeat functions whose callers are adjacent
+    // (no crossing) for nothing.
     Ok((nodes, edges, truncated, unresolved))
 }
 
@@ -3122,54 +3138,117 @@ fn private_closure(
     result
 }
 
-/// Duplicate shared nodes (fan-in ≥ 2) so every caller has a nearby copy and the
-/// arrows stay short and local instead of one node reached by long edges that
-/// cross other screenshots. Generalises [`split_shared_leaves`]: a leaf is just
-/// the `|closure| == 1` case.
+/// De-share ONLY the functions whose reuse tangles the diagram. A shared node
+/// sitting several columns back from a caller draws a long arrow that crosses the
+/// screenshots between them (Miro routes connectors itself, so the layout can't
+/// bend around them); that far caller gets a local copy of the node's private
+/// closure instead — a repeated screenshot, which the auditor prefers to a
+/// crossing. A caller in the adjacent column keeps sharing the one node, so nothing
+/// is repeated for free. Runs after render, so copies inherit the image.
 ///
-/// The copy unit is the node's PRIVATE closure (it + its non-shared descendants),
-/// so cascades are structurally impossible — an inner shared node is left in place
-/// and, once the copies raise its own fan-in, duplicated on its own turn under the
-/// same caps. Bounded by: closure size ≤ `MAX_CLOSURE`, ≤ `MAX_COPIES` copies per
-/// node, and a global added-box budget, so the frame can grow at most ~1.4×.
-fn duplicate_shared_subtrees(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>) {
-    const MAX_CLOSURE: usize = 4;
-    const MAX_COPIES: usize = 10;
-    let budget = (nodes.len() * 2 / 5).max(20);
+/// Each round lays the graph out, finds the shared node with the farthest-back
+/// caller, and copies its closure for every caller ≥ `CROSS_LAYERS` columns back —
+/// keeping the NEAREST caller on the original so it is never orphaned (with one
+/// caller left, layering places the node adjacent, so it no longer crosses).
+/// Re-lays-out each round because a copy changes the columns; bounded by closure
+/// size and a box budget.
+fn duplicate_crossing_shared(
+    nodes: &mut Vec<GraphNode>,
+    edges: &mut Vec<GraphEdge>,
+    root_id: &str,
+) {
+    const CROSS_LAYERS: usize = 2; // a caller this many columns back skips a column
+    const MAX_CLOSURE: usize = 8;
+    const MAX_COPIES: usize = 12;
+    let budget = nodes.len().max(40);
     let mut added = 0usize;
 
     loop {
         if added >= budget {
             break;
         }
-        // Distinct callers + out-adjacency, recomputed each round (copies change it).
-        let mut callers: HashMap<String, HashSet<String>> = HashMap::new();
+        // Preliminary layout to read each node's column (layer).
+        let layout_nodes: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|node| LayoutNode {
+                id: node.id.clone(),
+                width: node.board_width(),
+                height: node.board_height(),
+            })
+            .collect();
+        let anchors = compute_anchors(nodes, edges);
+        let layout_edges: Vec<LayoutEdge> = edges
+            .iter()
+            .zip(anchors.iter())
+            .map(|(edge, anchor)| LayoutEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                from_line_fraction: anchor.y_fraction,
+            })
+            .collect();
+        let layout = layout_graph(root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+        let layer_of: HashMap<&str, usize> =
+            layout.nodes.iter().map(|p| (p.id.as_str(), p.layer)).collect();
+
+        // Callers + out-adjacency + shared set (recomputed; copies change them).
+        let mut callers: HashMap<String, Vec<String>> = HashMap::new();
         let mut out: HashMap<String, Vec<String>> = HashMap::new();
         for edge in edges.iter() {
-            callers
-                .entry(edge.to.clone())
-                .or_default()
-                .insert(edge.from.clone());
+            callers.entry(edge.to.clone()).or_default().push(edge.from.clone());
             out.entry(edge.from.clone()).or_default().push(edge.to.clone());
         }
         let shared: HashSet<String> = callers
             .iter()
-            .filter(|(_, callers)| callers.len() >= 2)
+            .filter(|(_, cs)| cs.len() >= 2)
             .map(|(id, _)| id.clone())
             .collect();
 
-        // Pick the SHALLOWEST shared node whose private closure fits the cap.
-        let depth_of: HashMap<&str, usize> =
-            nodes.iter().map(|node| (node.id.as_str(), node.depth)).collect();
-        let mut candidates: Vec<&String> = shared.iter().collect();
-        candidates.sort_by_key(|id| depth_of.get(id.as_str()).copied().unwrap_or(0));
-        let chosen = candidates.into_iter().find_map(|id| {
-            let closure = private_closure(id, &out, &shared);
-            (closure.len() <= MAX_CLOSURE).then(|| (id.clone(), closure))
-        });
-        let Some((victim, closure)) = chosen else {
+        // How far back a caller sits from a node, in columns.
+        let skip = |v: &str, c: &str| -> usize {
+            match (layer_of.get(v), layer_of.get(c)) {
+                (Some(&vl), Some(&cl)) => vl.saturating_sub(cl),
+                _ => 0,
+            }
+        };
+
+        // The shared node with the farthest-back caller whose closure fits the cap.
+        let mut best: Option<(usize, String)> = None;
+        for v in &shared {
+            let worst = callers
+                .get(v)
+                .map(|cs| cs.iter().map(|c| skip(v, c)).max().unwrap_or(0))
+                .unwrap_or(0);
+            if worst < CROSS_LAYERS {
+                continue;
+            }
+            if private_closure(v, &out, &shared).len() > MAX_CLOSURE {
+                continue;
+            }
+            if best.as_ref().map_or(true, |(w, _)| worst > *w) {
+                best = Some((worst, v.clone()));
+            }
+        }
+        let Some((_, victim)) = best else {
             break;
         };
+        let closure = private_closure(&victim, &out, &shared);
+
+        // Copy for callers ≥ CROSS_LAYERS back, but never for the NEAREST one — it
+        // stays on the original so the victim keeps a caller (and, alone, no longer
+        // crosses).
+        let mut distinct_callers: Vec<String> = callers.get(&victim).cloned().unwrap_or_default();
+        distinct_callers.sort();
+        distinct_callers.dedup();
+        distinct_callers.sort_by_key(|c| skip(&victim, c)); // nearest first
+        let distant: Vec<String> = distinct_callers
+            .iter()
+            .skip(1)
+            .filter(|c| skip(&victim, c) >= CROSS_LAYERS)
+            .cloned()
+            .collect();
+        if distant.is_empty() {
+            break;
+        }
 
         let templates: HashMap<String, GraphNode> = nodes
             .iter()
@@ -3181,25 +3260,15 @@ fn duplicate_shared_subtrees(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEd
             .filter(|edge| closure.contains(&edge.from) && closure.contains(&edge.to))
             .cloned()
             .collect();
-        // Edges from a closure node to a SHARED child OUTSIDE the closure (cut at
-        // the shared boundary). The copy must still call that shared node, or the
-        // duplicate is a dead-end whose call line points at nothing — e.g. a copy of
-        // `_positionCollAndDebt` whose only body is a call to the shared
-        // `getPositionCollAndDebt`. Repoint the source onto the copy, keep the shared
-        // target as-is (its raised fan-in lets IT duplicate on a later round, or the
-        // copies simply converge on the single shared node — never a dead-end).
+        // Keep calls to shared children OUTSIDE the closure, or the copy dead-ends.
         let external: Vec<GraphEdge> = edges
             .iter()
             .filter(|edge| closure.contains(&edge.from) && !closure.contains(&edge.to))
             .cloned()
             .collect();
 
-        let mut caller_list: Vec<String> =
-            callers.get(&victim).cloned().unwrap_or_default().into_iter().collect();
-        caller_list.sort(); // deterministic; the first caller keeps the original
-
         let mut made = 0usize;
-        for caller in caller_list.iter().skip(1) {
+        for caller in distant.iter() {
             if made >= MAX_COPIES || added + closure.len() > budget {
                 break;
             }
