@@ -680,18 +680,6 @@ async fn deploy_one(
 
     render_and_measure(&mut nodes, &title, &reuse)?;
 
-    // De-share the functions whose reuse would actually TANGLE the diagram: a
-    // shared node sitting far from a caller draws a long arrow that crosses the
-    // screenshots in between (Miro routes connectors itself, so the layout can't
-    // avoid it). Give those far callers a local copy instead — a repeated
-    // screenshot, which the auditor prefers to a crossing. Adjacent reuse stays
-    // shared. Runs after render so copies inherit the image (no re-render). Skipped
-    // in --refresh-links (that path reuses exactly the frame's existing nodes).
-    if !options.refresh_links {
-        let root_id = nodes[0].id.clone();
-        duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
-    }
-
     let layout_nodes: Vec<LayoutNode> = nodes
         .iter()
         .map(|node| LayoutNode {
@@ -769,6 +757,43 @@ async fn deploy_one(
             })
             .collect();
         layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+    }
+
+    // Localize the small helpers that STILL cross after framing. Now that the big
+    // shared subtrees are cut out to their own frames, the frame is small, so
+    // copying a leaf (sqrt, a getter) next to each far caller is cheap and — crucial
+    // — no longer whack-a-mole (the deep floor those copies would re-call is gone).
+    // Uses the measured layout (a caller ≥2 columns back = a crossing arrow), copies
+    // only SMALL closures, then re-lays-out. Skipped in --refresh-links.
+    if !options.refresh_links {
+        let before = screenshot_count(&nodes);
+        duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
+        if screenshot_count(&nodes) > before {
+            println!(
+                "  {} localized {} crossing helper copy(ies)",
+                "↳".blue(),
+                screenshot_count(&nodes) - before
+            );
+        }
+        anchors = compute_anchors(&nodes, &edges);
+        let ln: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|node| LayoutNode {
+                id: node.id.clone(),
+                width: node.board_width(),
+                height: node.board_height(),
+            })
+            .collect();
+        let le: Vec<LayoutEdge> = edges
+            .iter()
+            .zip(anchors.iter())
+            .map(|(edge, anchor)| LayoutEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                from_line_fraction: anchor.y_fraction,
+            })
+            .collect();
+        layout = layout_graph(&root_id, &ln, &le, LayoutConfig::default());
     }
     let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
@@ -3163,9 +3188,16 @@ fn duplicate_crossing_shared(
     root_id: &str,
 ) {
     const CROSS_LAYERS: usize = 2; // a caller this many columns back skips a column
-    const MAX_CLOSURE: usize = 8;
-    const MAX_COPIES: usize = 12;
-    let budget = nodes.len().max(40);
+    // Copy only SMALL helpers (leaves + tiny subtrees) — those are cheap to repeat
+    // and are the mesh floor (sqrt, mul512, getters). A big subtree is never copied
+    // here (it would explode); it stays shared, externalised to a frame by the cut
+    // pass that ran BEFORE this.
+    const MAX_CLOSURE: usize = 3;
+    // Effectively uncapped copies: a leaf used 56× needs 56 local copies, or it
+    // still draws long crossing arrows. Small copies, so the box budget (below)
+    // is the real bound.
+    const MAX_COPIES: usize = 4096;
+    let budget = nodes.len() * 4;
     let mut added = 0usize;
 
     loop {
@@ -3216,8 +3248,11 @@ fn duplicate_crossing_shared(
             }
         };
 
-        // The shared node with the farthest-back caller whose closure fits the cap.
-        let mut best: Option<(usize, String)> = None;
+        // Copy the SMALLEST crossing helper first (the cheap mesh floor — leaves
+        // like sqrt/mul512), then bigger ones; ties broken by the farthest-back
+        // caller. Copying the floor first dissolves the mesh from the bottom, which
+        // is what a top-down pass could never reach before the budget ran out.
+        let mut best: Option<(usize, usize, String)> = None; // (closure_len, -worst, id)
         for v in &shared {
             let worst = callers
                 .get(v)
@@ -3226,14 +3261,17 @@ fn duplicate_crossing_shared(
             if worst < CROSS_LAYERS {
                 continue;
             }
-            if private_closure(v, &out, &shared).len() > MAX_CLOSURE {
+            let clen = private_closure(v, &out, &shared).len();
+            if clen > MAX_CLOSURE {
                 continue;
             }
-            if best.as_ref().map_or(true, |(w, _)| worst > *w) {
-                best = Some((worst, v.clone()));
+            // Prefer smaller closure, then larger skip.
+            let key = (clen, usize::MAX - worst);
+            if best.as_ref().map_or(true, |(cl, w, _)| key < (*cl, *w)) {
+                best = Some((key.0, key.1, v.clone()));
             }
         }
-        let Some((_, victim)) = best else {
+        let Some((_, _, victim)) = best else {
             break;
         };
         let closure = private_closure(&victim, &out, &shared);
