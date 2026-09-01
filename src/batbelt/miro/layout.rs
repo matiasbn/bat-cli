@@ -210,14 +210,17 @@ pub fn layout_graph(
                     Some(node) => *node,
                     None => continue,
                 };
-                // Nudge each box slightly right of the one above it: every incoming
-                // connector then leaves from a different x, so the elbows fan a
-                // little instead of stacking on one line — without any invisible
-                // anchor, just moving the real screenshots.
+                // Stagger the column in x by vertical rank: the TOP box sits furthest
+                // RIGHT, the bottom box furthest LEFT. The caller is to the left, so an
+                // incoming connector to a lower box turns left sooner and one to a
+                // higher box runs further right before turning — the elbows nest with
+                // space between them instead of stacking on one x and crossing. Just
+                // moving the real screenshots, no invisible anchors.
+                let stagger_rank = column.len().saturating_sub(1).saturating_sub(rank);
                 placed.push(PlacedNode {
                     id: id.clone(),
                     layer: layer_index,
-                    x: column_x + rank as f64 * stagger_step + node.width / 2.0,
+                    x: column_x + stagger_rank as f64 * stagger_step + node.width / 2.0,
                     y: y_cursor + node.height / 2.0,
                     width: node.width,
                     height: node.height,
