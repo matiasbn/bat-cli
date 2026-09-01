@@ -640,6 +640,14 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.22.13
+- **Columns are top-aligned, so a tall caller's arrows stop crossing.** Deeper layers used to be
+  centred vertically against the tallest column. When the entry point is a long function at the
+  top-left, centring pushed its callees to the middle of the frame, so arrows from its top AND
+  bottom call sites both converged inward and crossed. Every layer now starts at the top: the
+  cascade flows down-and-right from the top, the fan-out stays monotonic (no convergence), and deep
+  chains no longer drift far down. _Re-read: nothing (layout only)._
+
 ## 0.22.12
 - **Boards bat-cli creates are PRIVATE.** When `init` creates a Miro board for you, it now sets the
   sharing policy so only you can open it — `access`, `teamAccess` and `organizationAccess` are all
