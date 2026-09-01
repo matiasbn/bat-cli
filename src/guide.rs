@@ -421,6 +421,7 @@ bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only 
 | `--dry-run` | compute and print the layout, never touch Miro (no login needed) |
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--refresh-links` | incrementally swap callees that gained their own frame for link cards, WITHOUT re-deploying (see below) |
+| `--undeploy` | remove this entry point's frame from the board and registry entirely (frame, items, link cards, metadata) — to clean up a helper that should never have been its own frame |
 | `--max-depth <n>` / `--max-nodes <n>` | bound the graph by hand; unset draws all of it |
 | `--include-external` | include contracts coming from `lib/` |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
@@ -483,9 +484,21 @@ rectangle** around its whole node — the amber counterpart of the red storage b
 wiping and redrawing the contents — so a diagram that links to the frame by URL keeps working,
 and no duplicate frames pile up. Interface/abstract stubs (bodyless declarations, empty
 `virtual {}`) are never drawn on their own: a stub is redirected to its concrete override.
-A callee that ALREADY has its own frame on the board is referenced with a link card pointing at
-that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
+A callee that ALREADY has its own (still-on-the-board) frame is referenced with a link card pointing
+at that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
 deploy as their own frames, the thinner the parent frame becomes on its next redeploy.
+
+**When a branch is linked out to its own frame.** Framing is a size-balanced partition, not a hard
+cap. A call tree under ~20 screenshots is drawn whole. A bigger one is split so each piece lands near
+a readable **target of ~15 screenshots** — never below 6 (so no husks) — at most 6 pieces per frame;
+a piece that is itself still over ~20 becomes its own frame and is split again the same way, giving a
+shallow hierarchy of readable frames instead of one giant canvas. The branch chosen to link out is
+the one whose size is nearest the target AND severs the fewest cross-frame arrows (not simply the
+biggest), and a densely-shared function can be lifted out whole — each of its callers keeps a link
+card to it — which is the only way to partition a graph where a few helpers are reused everywhere.
+Depth counts against a frame (a deep, narrow frame runs off-screen). Cutting to a frame that already
+exists is always allowed (it reuses, doesn't create). So a redeploy prefers several readable frames,
+each linked from the ones above it, over one wall of screenshots or a scatter of tiny fragments.
 
 ## Failure modes
 
@@ -626,6 +639,57 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.22.10
+- **Readable frames for tangled graphs: frame the big shared subtrees, localize the small crossers.**
+  A function reused all over a diagram used to draw arrows that cross every screenshot, turning a big
+  frame into an unreadable mesh (Miro auto-routes connectors, so the layout can't bend around them).
+  Now: (1) big shared subtrees (≥ 6 screenshots) are cut to their own sub-frames; (2) THEN the small
+  helpers still crossing (a caller ≥ 2 columns back) get a local copy per far caller — cheap, and no
+  longer whack-a-mole because the deep floor is already framed out. increaseLeverage's main frame
+  went from a 178-screenshot mesh to a readable ~37.
+- **`deploy --redeploy` — fresh cluster in a clean zone, old URLs handed back.** Redeploys the whole
+  cluster (entry point + every dependency frame) FRESH into a clean region, reusing nothing already
+  on the board (only frames created within the same run). At the end it prints the PREVIOUS cluster's
+  frame URLs so you delete them with one click in Miro's web UI (which deletes a frame with its
+  contents; the API can't, and one-by-one deletion is slow). No hunting the board by hand.
+- **`deploy --inline-all`** draws the whole graph in one frame (no cuts, no links) to see how big a
+  function is with screenshots only. **`deploy --preview <path>`** now composes the frame as a LOCAL
+  png and never touches the board — the fast way to iterate on a diagram (was a footgun that also
+  deployed). **Render dedup:** each distinct function is rendered once per run (shared across every
+  frame and every duplicate copy), not once per appearance.
+- **Overloaded functions are no longer collapsed.** When a contract defines the same function name
+  several times (Solidity overloads — e.g. a public `deleverageQuote(...)` that forwards to an
+  internal `deleverageQuote(curve, ...)`), the deploy used to map every call to the FIRST definition,
+  so a wrapper calling its sibling overload looked like a self-call and was dropped — the whole
+  implementation subtree behind it silently vanished. Calls now carry their argument count and
+  resolve to the overload whose parameter count matches, and each overload is its own node, so the
+  full graph is drawn. Non-overloaded code is unchanged. Regenerate with `deploy`.
+- **`deploy --undeploy <entry-point>` removes a frame outright.** Cleans a frame that should never
+  have been its own — its shell, all its screenshots/markers/borders, its link cards + arrows, and
+  its registry entry — so the next deploy of a caller inlines that helper instead of linking to it.
+  (A frame you delete BY HAND in Miro is also detected as gone on the next deploy and forgotten, so
+  it is never silently re-created either.)
+- **Duplicated callers no longer lose their call-out.** When a helper is duplicated so each caller
+  has a nearby copy, a copy whose real work is a call to a SHARED function (e.g. a copy of
+  `_positionCollAndDebt` that just calls the shared `getPositionCollAndDebt`) used to be drawn as a
+  dead-end — its call line pointing at nothing. Each copy now keeps its calls to shared functions
+  (the shared node duplicates in turn, or the copies converge on it), so the graph below a
+  duplicated node is always complete. Regenerate with `deploy`.
+- **Balanced framing: a big graph becomes several readable frames, not one wall or a scatter of
+  husks.** Deploying a large entry point used to either ship one enormous unreadable frame or, when
+  it did cut, fragment into tiny pass-through husks. Framing is now a partition aimed at a size:
+  a graph under ~20 screenshots ships whole; a bigger one is split so each piece lands near a
+  readable **target of ~15 screenshots** (never below 6, so no husks), at most 6 pieces per frame,
+  and a piece that is itself still too big becomes its own frame and is split again the same way —
+  so the result is a shallow hierarchy of frames you can actually read, not a 30-layer canvas.
+  Which branch is cut is chosen for BALANCE (a piece whose size is near the target, that severs the
+  fewest cross-frame arrows) rather than just "the biggest", and a densely-shared node can now be
+  lifted out as a whole (each caller keeps a link card to it) — the only way to partition a graph
+  where every helper is reused. Depth counts against a frame (a deep-narrow frame runs off-screen),
+  and recycling reuses only frames STILL on the board, so a frame you delete by hand is never
+  silently re-created. Regenerate with `deploy`. _Re-read: workflow.md (the framing/link-card
+  policy under `deploy`)._
 
 ## 0.22.9
 - **Incremental `deploy --refresh-links`: swap newly-framed callees for link cards without

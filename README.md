@@ -74,6 +74,8 @@ Useful flags, though none are needed:
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--max-depth` / `--max-nodes` | bound a graph by hand; unset draws all of it |
 | `--stroke-width` | connector thickness in dp |
+| `--refresh-links` | after a callee gains its own frame, swap it for a link card in place — no re-render, no re-layout, your manual arrangement untouched |
+| `--undeploy` | remove this entry point's frame from the board and registry entirely (a helper that shouldn't be its own frame) |
 
 ### `sonar`
 
@@ -136,8 +138,17 @@ and each is handled by measuring rather than guessing.
 **A helper called from several places.** Drawing a copy per call site was tried:
 `Vault.depositWithReferral` came to 77 screenshots for 27 distinct functions,
 with a three-line arithmetic helper repeated fourteen times. So functions are
-shared — except **leaves**, where a copy costs one small screenshot and no
-subtree, and buys a short arrow instead of a long one.
+shared — except a **small private subtree** (a leaf, or a helper with only a few
+non-shared descendants), where a copy costs little and buys a short local arrow
+instead of a long crossing one. A duplicated copy keeps its own calls to any
+shared function it uses, so the subgraph under it is always complete — never a
+dead-end whose call line points at nothing.
+
+**Overloaded functions.** When a contract defines the same name several times
+(e.g. a public `quote(...)` forwarding to an internal `quote(curve, ...)`), each
+call is matched to the overload whose argument count fits, and each overload is
+its own node — so a wrapper calling its sibling is drawn as a real edge, not
+mistaken for a self-call and dropped.
 
 **Arrows crossing the code.** An edge between adjacent layers runs down the empty
 corridor between them; one that skips a layer has to cross the column of
@@ -146,11 +157,17 @@ screenshots living there. Layering inserts a placeholder in each skipped layer
 which claims a slot in the ordering and pushes the columns apart, so the corridor
 is reserved rather than hoped for.
 
-**A call reaching too far.** When an edge still skips layers and its target has
-dependencies of its own, that one call — not the whole function — is replaced by
-a card linking to the target's own frame. The near caller keeps the screenshot;
-only the far one clicks through. One frame per function board-wide, reused by
-every diagram that needs it, so the fan-in stays answerable.
+**Too many screenshots on one frame.** A whole call tree is drawn inline until it
+grows past ~45 screenshots; only then is a branch replaced by a card linking to
+its own frame. The choice is deliberately conservative so the board doesn't
+fragment into tiny frames: between 45 and 65 screenshots only a branch big enough
+to stand alone (≥ 8 screenshots, or ≥ 5 if it's reused ≥ 3× in the tree) is linked
+out, and if none qualifies the slightly-bigger whole frame ships intact; past 65 a
+smaller cut is forced. A cut that would leave a "pass-through" husk — one
+screenshot pointing at another frame — is never taken; the heavy child is linked
+out instead. One frame per function board-wide, reused by every diagram that needs
+it (and only while it's actually still on the board), so the fan-in stays
+answerable and a frame you delete by hand is never silently re-created.
 
 ## License
 

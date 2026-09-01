@@ -144,6 +144,24 @@ enum BatCommands {
         /// re-rendering the whole frame.
         #[arg(long)]
         refresh_links: bool,
+        /// Remove the entry point's frame from the board and the registry entirely
+        /// (the frame, its screenshots/markers/borders, its link cards + arrows, and
+        /// its metadata entry) instead of deploying. Use it to clean up a small
+        /// helper that should never have been its own frame.
+        #[arg(long)]
+        undeploy: bool,
+        /// Draw the whole call graph inline in ONE frame: never cut a branch out to
+        /// its own frame, never link an already-deployed frame — every function is a
+        /// screenshot. Use it to see how large a big function is with screenshots
+        /// only (and how Miro handles it).
+        #[arg(long)]
+        inline_all: bool,
+        /// Redeploy the whole cluster FRESH into a clean zone: reuse nothing already
+        /// on the board (not even this entry point's own previous frames), and print
+        /// the previous cluster's frame URLs so you can delete them with one click in
+        /// Miro (the web UI deletes a frame with its contents; the API can't/is slow).
+        #[arg(long)]
+        redeploy: bool,
     },
     /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
     /// interface call to its concrete implementation. `deploy` stops and lists what to
@@ -223,6 +241,9 @@ impl BatCommands {
                 yes,
                 allow_unresolved,
                 refresh_links,
+                undeploy,
+                inline_all,
+                redeploy,
             } => {
                 crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
@@ -237,6 +258,9 @@ impl BatCommands {
                     assume_yes: *yes,
                     allow_unresolved: *allow_unresolved,
                     refresh_links: *refresh_links,
+                    undeploy: *undeploy,
+                    inline_all: *inline_all,
+                    redeploy: *redeploy,
                     },
                 )
                 .await

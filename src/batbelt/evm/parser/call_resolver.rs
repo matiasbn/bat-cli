@@ -400,6 +400,10 @@ pub struct CallSite {
     pub column: usize,
     /// The identifier the connector should point at: `b` for `a.b()`.
     pub symbol: String,
+    /// Number of arguments passed at this call site — used to pick the right
+    /// overload when a name has several. `usize::MAX` means "unknown" (the regex
+    /// fallback can't count reliably), which disables overload disambiguation.
+    pub arg_count: usize,
 }
 
 /// Extract every call site — name **and** line — from a Solidity source slice.
@@ -432,7 +436,7 @@ pub fn extract_call_sites_from_source(source: &str) -> Vec<CallSite> {
 
         let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
 
-        let mut raw: Vec<(String, String, solar_parse::interface::Span)> = Vec::new();
+        let mut raw: Vec<RawCallSite> = Vec::new();
         for item in file.items.iter() {
             if let ast::ItemKind::Contract(c) = &item.kind {
                 for body_item in c.body.iter() {
@@ -450,7 +454,7 @@ pub fn extract_call_sites_from_source(source: &str) -> Vec<CallSite> {
         let source_map = sess.source_map();
         let mut sites: Vec<CallSite> = raw
             .into_iter()
-            .map(|(name, symbol, span)| {
+            .map(|(name, symbol, span, arg_count)| {
                 let location = source_map.lookup_char_pos(span.lo());
                 CallSite {
                     name,
@@ -458,6 +462,7 @@ pub fn extract_call_sites_from_source(source: &str) -> Vec<CallSite> {
                     line: location.line.saturating_sub(1).max(1),
                     column: location.col.0,
                     symbol,
+                    arg_count,
                 }
             })
             .collect();
@@ -500,13 +505,14 @@ fn extract_call_sites_regex(source: &str) -> Vec<CallSite> {
                 line: idx + 1,
                 column,
                 symbol,
+                arg_count: usize::MAX, // regex can't count args reliably
             });
         }
     }
     sites
 }
 
-type RawCallSite = (String, String, solar_parse::interface::Span);
+type RawCallSite = (String, String, solar_parse::interface::Span, usize);
 
 fn collect_call_sites_from_stmt(kind: &ast::StmtKind<'_>, out: &mut Vec<RawCallSite>) {
     match kind {
@@ -574,13 +580,14 @@ fn collect_call_sites_from_stmt(kind: &ast::StmtKind<'_>, out: &mut Vec<RawCallS
 fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>) {
     match &expr.kind {
         ast::ExprKind::Call(callee, args) => {
+            let arg_count = args.exprs().count();
             match &callee.kind {
                 ast::ExprKind::Ident(ident) => {
                     let name = ident.as_str().to_string();
                     if !is_builtin(&name) {
                         // The identifier's own span, so the connector lands on
                         // the called name rather than on the whole expression.
-                        out.push((name.clone(), name, ident.span));
+                        out.push((name.clone(), name, ident.span, arg_count));
                     }
                 }
                 ast::ExprKind::Member(obj_expr, method_ident) => {
@@ -607,6 +614,7 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
                                 format!("{}.{}", obj_name, method_name),
                                 method_name,
                                 method_ident.span,
+                                arg_count,
                             ));
                         }
                         _ => collect_call_sites_from_expr(obj_expr, out),

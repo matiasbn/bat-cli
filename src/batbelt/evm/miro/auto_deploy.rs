@@ -45,9 +45,6 @@ const PATH_HEADER_LINES: usize = 2;
 /// reserve for automatic deployments.
 const REGION_MARGIN: f64 = 5_000.0;
 
-/// How many times to cut and re-lay out before giving up. Each pass removes at
-/// least one edge, so this only guards against a pathological graph.
-const MAX_CUT_PASSES: usize = 5;
 
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
@@ -107,6 +104,23 @@ pub struct AutoDeployOptions {
     /// that has since gained its own frame becomes a link card without the whole
     /// frame being re-rendered. Requires the entry point to already have a frame.
     pub refresh_links: bool,
+    /// Remove the entry point's frame from the board and the registry entirely
+    /// (frame shell, all its items, its link cards + arrows, and its metadata
+    /// entry) instead of deploying. Cleans up a frame that should never have been
+    /// its own — e.g. a small helper fragmenting the board.
+    pub undeploy: bool,
+    /// Draw the ENTIRE call graph inline in one frame: no branch is cut to its own
+    /// frame, and no already-deployed frame is linked — every function is a
+    /// screenshot. Lets you see how big a large function is with screenshots only
+    /// (and how Miro copes), and gives a step-through-able single frame.
+    pub inline_all: bool,
+    /// Redeploy from scratch into a CLEAN zone: deploy the whole cluster (the entry
+    /// point and every dependency frame) FRESH, reusing nothing already on the board
+    /// (not even this entry point's own previous frames), and at the end print the
+    /// URLs of the PREVIOUS cluster's frames so you can delete them with one click in
+    /// Miro (the web UI deletes a frame and its contents together; the API can't).
+    /// Deleting is slow and one-by-one via the API, so this hands that back to you.
+    pub redeploy: bool,
 }
 
 impl Default for AutoDeployOptions {
@@ -123,8 +137,22 @@ impl Default for AutoDeployOptions {
             assume_yes: false,
             allow_unresolved: false,
             refresh_links: false,
+            undeploy: false,
+            inline_all: false,
+            redeploy: false,
         }
     }
+}
+
+/// Shared context for a fresh-cluster deploy (`--redeploy`): the entry point that
+/// owns the whole cluster, and the ids of the PREVIOUS cluster's frames so a
+/// still-live old frame is never reused (we want everything fresh) and can be
+/// reported for manual deletion afterwards. Threaded through the recursive deploy.
+#[derive(Clone)]
+struct ClusterCtx {
+    root: String,
+    fresh: bool,
+    stale_ids: HashSet<String>,
 }
 
 /// What a node stands for.
@@ -171,15 +199,21 @@ struct GraphNode {
     /// (an interface-typed receiver nothing in the repo implements) via a non-view
     /// method — an unverified external state-change boundary, flagged distinctly.
     external_call_lines: Vec<usize>,
+    /// Display scale for this placement. Every function is rendered ONCE at the
+    /// reference font (`REFERENCE_FONT`, the depth-0 size); a deeper node shows the
+    /// same image shrunk by this factor (< 1), so the source is rendered once and
+    /// reused across depths and duplicate placements instead of re-rendered. Line
+    /// fractions are scale-invariant, so only the board size and upload width use it.
+    scale: f64,
 }
 
 impl GraphNode {
     fn board_width(&self) -> f64 {
-        self.png_width as f64 * BOARD_UNITS_PER_PIXEL
+        self.png_width as f64 * BOARD_UNITS_PER_PIXEL * self.scale
     }
 
     fn board_height(&self) -> f64 {
-        self.png_height as f64 * BOARD_UNITS_PER_PIXEL
+        self.png_height as f64 * BOARD_UNITS_PER_PIXEL * self.scale
     }
 }
 
@@ -208,12 +242,23 @@ const BOARD_UNITS_PER_PIXEL: f64 = 1.0;
 
 /// Font per depth: the entry point is rendered biggest and leaves smallest, so a
 /// deep graph stays readable. Width now follows from the code itself.
+/// The one font every screenshot is rendered at (the largest, depth-0 size). A
+/// deeper node reuses that render shrunk via `scale_for_depth`, so a function is
+/// rendered once and reused across depths and duplicate placements.
+const REFERENCE_FONT: usize = 32;
+
 fn font_for_depth(depth: usize) -> usize {
     match depth {
         0 => 32,
         1 => 26,
         _ => 22,
     }
+}
+
+/// How much to shrink a node's (reference-font) render for its depth. Always ≤ 1,
+/// so text is only ever scaled DOWN and stays crisp.
+fn scale_for_depth(depth: usize) -> f64 {
+    font_for_depth(depth) as f64 / REFERENCE_FONT as f64
 }
 
 
@@ -260,7 +305,32 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         )
     };
 
+    // Undeploy mode: remove each target's frame outright, then stop.
+    if options.undeploy {
+        let Some(client) = client.as_ref() else {
+            return Err(Report::new(EvmMiroError)
+                .attach_printable("--undeploy needs board access; it can't run under --dry-run"));
+        };
+        for (contract_name, function_name) in &targets {
+            let title = format!("{contract_name}.{function_name}");
+            if undeploy_frame(&title, client).await? {
+                println!("  {} removed frame {}", "✓".green(), title.bold());
+            } else {
+                println!("  {} no recorded frame for {}", "note:".yellow(), title);
+            }
+        }
+        return Ok(());
+    }
+
+    // --redeploy draws into a CLEAN zone: forget the cached region so the allocator
+    // re-scans and places the fresh cluster below everything currently on the board.
+    if options.redeploy && !options.dry_run {
+        EvmBatMetadata::update_metadata(|m| m.miro.auto.region = None)
+            .change_context(EvmMiroError)?;
+    }
+
     // The board is scanned at most once, to pick the region origin.
+    let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
     let mut allocator = if options.dry_run {
         ShelfAllocator::new(0.0, 0.0)
     } else {
@@ -268,6 +338,40 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     };
 
     for (contract_name, function_name) in targets {
+        let title = format!("{contract_name}.{function_name}");
+
+        // --redeploy: find the PREVIOUS cluster (this entry point's frame + every
+        // dependency frame its last deploy spawned), keep only the ones still on the
+        // board, so we can (a) never reuse them and (b) hand you their URLs to delete.
+        let mut stale: Vec<(String, String)> = Vec::new(); // (entry_point, url)
+        if options.redeploy && !options.dry_run {
+            if let Some(client) = client.as_ref() {
+                let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+                for f in &meta.miro.auto.frames {
+                    if f.cluster_root == title || f.entry_point == title {
+                        if client.item_exists(&f.frame_id).await {
+                            stale.push((f.entry_point.clone(), f.frame_url.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        let stale_ids: HashSet<String> = {
+            let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+            meta.miro
+                .auto
+                .frames
+                .iter()
+                .filter(|f| f.cluster_root == title || f.entry_point == title)
+                .map(|f| f.frame_id.clone())
+                .collect()
+        };
+        let cluster = ClusterCtx {
+            root: if options.redeploy { title.clone() } else { String::new() },
+            fresh: options.redeploy && !options.dry_run,
+            stale_ids,
+        };
+
         deploy_one(
             &metadata,
             &contract_name,
@@ -276,8 +380,34 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             client.as_ref(),
             &mut allocator,
             true,
+            &cluster,
         )
         .await?;
+
+        // --redeploy: drop the old cluster's now-orphaned records and print their
+        // URLs for one-click manual deletion (a frame + its contents delete together
+        // in Miro's web UI; the API can't, and one-by-one deletion is slow).
+        if options.redeploy && !options.dry_run {
+            let owner = title.clone();
+            let old_ids: HashSet<String> = cluster.stale_ids.clone();
+            EvmBatMetadata::update_metadata(move |m| {
+                m.miro.auto.frames.retain(|f| {
+                    !((f.cluster_root == owner || f.entry_point == owner)
+                        && old_ids.contains(&f.frame_id))
+                });
+            })
+            .change_context(EvmMiroError)?;
+            if !stale.is_empty() {
+                println!(
+                    "\n  {} {} old frame(s) from the previous deploy — delete them in Miro (one click each; the frame takes its contents with it):",
+                    "⚠".yellow(),
+                    stale.len()
+                );
+                for (ep, url) in &stale {
+                    println!("    {} {}", ep.dimmed(), url.blue());
+                }
+            }
+        }
 
         // Persist the cursor after every entry point, not once at the end: a run
         // over a whole project is long enough to be interrupted, and a lost
@@ -286,6 +416,14 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             let state = ShelfState::from(&allocator);
             EvmBatMetadata::update_metadata(|m| m.miro.auto.region = Some(state.clone()))
                 .change_context(EvmMiroError)?;
+        }
+    }
+
+    // Wipe the shared screenshot cache once, now that every frame (a whole cluster)
+    // has uploaded — each distinct function was rendered once for the entire run.
+    if !options.dry_run {
+        if let Ok(dir) = BatFolder::Figures.get_path(false) {
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 
@@ -441,6 +579,7 @@ async fn deploy_one(
     // True when the user named this function, false when it is being built only
     // because a card needs somewhere to point.
     is_primary: bool,
+    cluster: &ClusterCtx,
 ) -> Result<()> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
@@ -451,7 +590,9 @@ async fn deploy_one(
     // Asked for directly, RECYCLE it: delete the old frame and its items, then
     // redraw — so a redeploy replaces the frame instead of piling up duplicates.
     let mut reused_frame: Option<AutoDeployedFrame> = None;
-    if !options.dry_run {
+    // --redeploy: never reuse an existing frame — the whole cluster is drawn fresh
+    // in a clean zone, and the old one is reported for manual deletion.
+    if !options.dry_run && !cluster.fresh {
         if let Some(url) = live_frame_url(&title, client).await? {
             if !is_primary {
                 return Ok(());
@@ -485,15 +626,39 @@ async fn deploy_one(
     // with duplicates. The root being deployed is always drawn. A card whose
     // frame has since been deleted is re-deployed on demand by
     // `ensure_target_frames`, so a stale record is self-healing.
-    let deployed_titles: HashSet<String> = {
+    // Only frames that are STILL on the board count: a metadata entry outlives a
+    // frame the auditor deleted by hand, and recycling to a dead frame would make
+    // `ensure_target_frames` RE-CREATE it — resurrecting exactly the tiny husk
+    // frames the auditor just cleaned up. So we recycle (and treat as "free to cut
+    // to") only frames confirmed live on the board.
+    let deployed_titles: HashSet<String> = if options.inline_all || cluster.fresh {
+        // --inline-all / --redeploy: link nothing pre-existing — every dependency is
+        // drawn fresh in this cluster (reuse happens only within this run, via
+        // `ensure_target_frames`, which skips the stale old-cluster frames).
+        HashSet::new()
+    } else {
         let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        meta.miro
+        let in_graph: HashSet<&str> = nodes.iter().map(|n| n.label.as_str()).collect();
+        let candidates: Vec<String> = meta
+            .miro
             .auto
             .frames
             .iter()
             .map(|frame| frame.entry_point.clone())
-            .filter(|entry_point| *entry_point != title)
-            .collect()
+            .filter(|entry_point| *entry_point != title && in_graph.contains(entry_point.as_str()))
+            .collect();
+        let mut live = HashSet::new();
+        if client.is_some() {
+            for candidate in candidates {
+                if live_frame_url(&candidate, client).await?.is_some() {
+                    live.insert(candidate);
+                }
+            }
+        } else {
+            // No board access (dry run): fall back to the registry as-is.
+            live.extend(candidates);
+        }
+        live
     };
     if !deployed_titles.is_empty() {
         let root_id = nodes[0].id.clone();
@@ -643,13 +808,26 @@ async fn deploy_one(
     // the layout already reserves a corridor for them, so they cross nothing.
     // What a card buys is space, and it only buys space when the call it
     // replaces was the last reference to a branch.
+    // Functions with a frame already on the board: cutting to one is free (no new
+    // frame is created), so `best_cut` may target them at any size.
+    let framed: HashSet<&str> = deployed_titles.iter().map(|s| s.as_str()).collect();
+    // Aim each piece AT a readable size: the budget is the target, raised only when
+    // the graph is so big that even `MAX_CUTS_PER_FRAME` target-sized cuts wouldn't
+    // fit it — then the pieces are bigger and split again by their own deploy.
+    let total = screenshot_count(&nodes);
+    let budget = FRAME_TARGET.max(total.div_ceil(MAX_CUTS_PER_FRAME + 1));
     let mut anchors = anchors;
-    for _ in 0..MAX_CUT_PASSES {
-        if screenshot_count(&nodes) <= READABLE_SCREENSHOTS {
+    let cut_passes = if options.inline_all { 0 } else { MAX_CUTS_PER_FRAME };
+    for _ in 0..cut_passes {
+        // Split while the frame is over the readable MAX (depth included). The loop
+        // bound is the per-frame cut cap itself, so a huge graph gets enough cuts to
+        // shrink instead of shipping a wall; a piece that stays big becomes its own
+        // frame and is split again.
+        if effective_size(&nodes) <= FRAME_MAX {
             break;
         }
-        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges) else {
-            // Too big, but nothing left that cutting would shrink.
+        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges, &framed, budget) else {
+            // Nothing left worth cutting into a readable, non-husk piece.
             break;
         };
         println!(
@@ -680,6 +858,43 @@ async fn deploy_one(
             .collect();
         layout = layout_graph(&root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
     }
+
+    // Localize the small helpers that STILL cross after framing. Now that the big
+    // shared subtrees are cut out to their own frames, the frame is small, so
+    // copying a leaf (sqrt, a getter) next to each far caller is cheap and — crucial
+    // — no longer whack-a-mole (the deep floor those copies would re-call is gone).
+    // Uses the measured layout (a caller ≥2 columns back = a crossing arrow), copies
+    // only SMALL closures, then re-lays-out. Skipped in --refresh-links.
+    if !options.refresh_links {
+        let before = screenshot_count(&nodes);
+        duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
+        if screenshot_count(&nodes) > before {
+            println!(
+                "  {} localized {} crossing helper copy(ies)",
+                "↳".blue(),
+                screenshot_count(&nodes) - before
+            );
+        }
+        anchors = compute_anchors(&nodes, &edges);
+        let ln: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|node| LayoutNode {
+                id: node.id.clone(),
+                width: node.board_width(),
+                height: node.board_height(),
+            })
+            .collect();
+        let le: Vec<LayoutEdge> = edges
+            .iter()
+            .zip(anchors.iter())
+            .map(|(edge, anchor)| LayoutEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                from_line_fraction: anchor.y_fraction,
+            })
+            .collect();
+        layout = layout_graph(&root_id, &ln, &le, LayoutConfig::default());
+    }
     let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
@@ -702,6 +917,11 @@ async fn deploy_one(
         };
         render_preview(&nodes, &edges, &anchors, &layout, &path)?;
         println!("  preview written to {}", path.blue());
+        // A preview is a LOCAL composition for eyeballing the layout — it never
+        // touches the board. (The delete+recreate of a redeploy is slow, so this is
+        // the fast way to iterate on the diagram.) Stop here, like a dry run.
+        cleanup(&nodes);
+        return Ok(());
     }
 
     if options.dry_run {
@@ -752,7 +972,7 @@ async fn deploy_one(
     // cards for the same helper resolve to the same frame, and a helper already
     // deployed is reused rather than drawn again. That is what keeps the fan-in
     // answerable — one frame with several references, not a copy per caller.
-    let target_frames = ensure_target_frames(&nodes, options, client, allocator).await?;
+    let target_frames = ensure_target_frames(&nodes, options, client, allocator, cluster).await?;
 
     // Record the frame before filling it, so a run that dies partway through
     // still leaves something that names what is on the board.
@@ -773,6 +993,9 @@ async fn deploy_one(
         connector_ids: Vec::new(),
         marker_ids: Vec::new(),
         border_ids: Vec::new(),
+        // Every frame in a fresh deploy belongs to the named entry point's cluster,
+        // so a later --redeploy can find and report the whole previous cluster.
+        cluster_root: if cluster.root.is_empty() { title.clone() } else { cluster.root.clone() },
     };
     save_frame_record(&record)?;
 
@@ -1324,7 +1547,9 @@ async fn deploy_one(
     save_frame_record(&record)?;
 
     println!("  {}", frame_url.blue());
-    cleanup(&nodes);
+    // NB: screenshot files are NOT deleted here — they are shared across every frame
+    // in this run (see render_and_measure), so the whole figures folder is wiped once
+    // at the end of `run()`.
     Ok(())
 }
 
@@ -1602,6 +1827,66 @@ async fn recycle_recorded_frame(
     Ok(Some(record))
 }
 
+/// Completely remove a deployed frame from the board and the registry: its
+/// contents (connectors, markers, borders, images, link cards + their arrows) AND
+/// the frame shell itself, then drop its metadata entry. Best-effort per item (a
+/// hand-deleted item 404s, which is fine). Use it to clean up a frame that should
+/// never have been its own frame — e.g. a small helper that fragments the board.
+async fn undeploy_frame(title: &str, client: &MiroClient) -> Result<bool> {
+    let record = {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+            .cloned()
+    };
+    let Some(record) = record else {
+        return Ok(false);
+    };
+    let mut tasks = tokio::task::JoinSet::new();
+    // Connectors (route/stub) and each link card's caller arrow.
+    for id in record
+        .connector_ids
+        .iter()
+        .cloned()
+        .chain(record.link_cards.iter().map(|(_, _, conn)| conn.clone()))
+        .filter(|id| !id.is_empty())
+    {
+        let client = client.clone();
+        tasks.spawn(async move { client.delete_connector(&id).await });
+    }
+    // Items: markers, borders, screenshots, link cards.
+    for id in record
+        .marker_ids
+        .iter()
+        .cloned()
+        .chain(record.border_ids.iter().cloned())
+        .chain(record.images.iter().map(|(_, id)| id.clone()))
+        .chain(record.link_cards.iter().map(|(_, card, _)| card.clone()))
+        .filter(|id| !id.is_empty())
+    {
+        let client = client.clone();
+        tasks.spawn(async move { client.delete_item(&id).await });
+    }
+    while tasks.join_next().await.is_some() {}
+    // The frame shell last, once it is empty.
+    let _ = client.delete_item(&record.frame_id).await;
+
+    let owner = title.to_string();
+    EvmBatMetadata::update_metadata(move |metadata| {
+        metadata
+            .miro
+            .auto
+            .frames
+            .retain(|frame| frame.entry_point != owner);
+    })
+    .change_context(EvmMiroError)?;
+    Ok(true)
+}
+
 /// Store what a deployment owns, replacing any earlier record for the same
 /// entry point.
 fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
@@ -1766,7 +2051,7 @@ fn build_graph(
     Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall>,
 )> {
     let Some((root_contract, root_function)) =
-        find_function(metadata, contract_name, function_name)
+        find_function(metadata, contract_name, function_name, None)
     else {
         return Ok((Vec::new(), Vec::new(), 0, Vec::new()));
     };
@@ -1801,7 +2086,7 @@ fn build_graph(
     // node that already exists.
     let mut drawn: HashMap<String, String> = HashMap::new();
 
-    let root_id = node_key(contract_name, function_name);
+    let root_id = overload_node_key(metadata, &root_contract.name, &root_function);
     drawn.insert(root_id.clone(), root_id.clone());
     nodes.push(make_node(
         root_id.clone(),
@@ -1812,18 +2097,21 @@ fn build_graph(
     ));
 
     // Depth-first, so siblings stay in source order and each subtree is built
-    // before the next one starts — which is the order the layout wants.
+    // before the next one starts — which is the order the layout wants. `line`
+    // pins WHICH overload this node is, so the re-read below lands on the same one.
     struct Pending {
         node_id: String,
         contract: String,
         function: String,
+        line: usize,
         depth: usize,
     }
 
     let mut stack = vec![Pending {
         node_id: root_id,
-        contract: contract_name.to_string(),
+        contract: root_contract.name.clone(),
         function: function_name.to_string(),
+        line: root_function.line,
         depth: 0,
     }];
 
@@ -1832,8 +2120,9 @@ fn build_graph(
             continue;
         }
         // The contract that defines the function, which is where its source is.
+        // Pin the exact overload by line so a re-read never drifts to a sibling.
         let Some((contract, function)) =
-            find_function(metadata, &current.contract, &current.function)
+            find_function_at(metadata, &current.contract, &current.function, current.line)
         else {
             continue;
         };
@@ -1884,12 +2173,13 @@ fn build_graph(
         }
 
         for call in extract_call_sites_from_source(&body_only(&slice).join("\n")) {
+            let arity = (call.arg_count != usize::MAX).then_some(call.arg_count);
             let Some((target_contract, target_function)) =
-                resolve_call(metadata, contract, &call.name, options, &definer_map)
+                resolve_call(metadata, contract, &call.name, arity, options, &definer_map)
             else {
                 continue;
             };
-            let target_id = node_key(&target_contract.name, &target_function.name);
+            let target_id = overload_node_key(metadata, &target_contract.name, &target_function);
             if target_id == current.node_id {
                 continue; // a function calling itself needs no arrow
             }
@@ -1922,6 +2212,7 @@ fn build_graph(
                 node_id: target_id,
                 contract: target_contract.name.clone(),
                 function: target_function.name.clone(),
+                line: target_function.line,
                 depth: current.depth + 1,
             });
         }
@@ -1939,7 +2230,7 @@ fn build_graph(
                 unresolved.push(u.clone());
                 continue;
             };
-            let Some((tc, tf)) = find_function(metadata, concrete, &u.method) else {
+            let Some((tc, tf)) = find_function(metadata, concrete, &u.method, None) else {
                 // A resolution is set but its method isn't there — still unresolved.
                 unresolved.push(u.clone());
                 continue;
@@ -1952,7 +2243,7 @@ fn build_graph(
             if !options.include_external && tc.external {
                 continue;
             }
-            let target_id = node_key(&tc.name, &tf.name);
+            let target_id = overload_node_key(metadata, &tc.name, &tf);
             if target_id == current.node_id {
                 continue;
             }
@@ -1989,6 +2280,7 @@ fn build_graph(
                 node_id: target_id,
                 contract: tc.name.clone(),
                 function: tf.name.clone(),
+                line: tf.line,
                 depth: current.depth + 1,
             });
         }
@@ -1998,7 +2290,7 @@ fn build_graph(
         // mutate, so it is never a state-change risk). Located on the caller's node.
         let mut external_lines: Vec<usize> = Vec::new();
         for uec in &function.unknown_external_calls {
-            let read_only = find_function(metadata, &uec.inferred_type, &uec.method)
+            let read_only = find_function(metadata, &uec.inferred_type, &uec.method, None)
                 .map(|(_, f)| {
                     matches!(
                         f.mutability,
@@ -2033,7 +2325,11 @@ fn build_graph(
     // its function and collect ITS unresolved too, so the AI can resolve in one pass.
     let unresolved = expand_unresolved(metadata, unresolved);
 
-    duplicate_shared_subtrees(&mut nodes, &mut edges);
+    // De-sharing (duplicating a shared function per caller) is decided AFTER render,
+    // in `deploy_one`, where a preliminary layout tells which shared nodes actually
+    // sit far from a caller and would cross — see `duplicate_crossing_shared`. A
+    // blanket duplication here would repeat functions whose callers are adjacent
+    // (no crossing) for nothing.
     Ok((nodes, edges, truncated, unresolved))
 }
 
@@ -2067,7 +2363,7 @@ fn expand_unresolved(
         });
         if let Some(contract) = target {
             if visited_fns.insert((contract.clone(), u.method.clone())) {
-                if let Some((_, f)) = find_function(metadata, &contract, &u.method) {
+                if let Some((_, f)) = find_function(metadata, &contract, &u.method, None) {
                     for du in &f.unresolved_calls {
                         frontier.push(du.clone());
                     }
@@ -2105,7 +2401,10 @@ fn make_node(
         start_line: function.line,
         end_line: function_end(function, contract),
         depth,
-        font_size: font_for_depth(depth),
+        // Rendered at the reference font (so one render serves every depth); the
+        // depth's smaller look comes from `scale`, not a separate render.
+        font_size: REFERENCE_FONT,
+        scale: scale_for_depth(depth),
         png_path: String::new(),
         png_width: 0,
         png_height: 0,
@@ -2186,7 +2485,8 @@ fn make_modifier_node(
         start_line: definition.line,
         end_line,
         depth,
-        font_size: font_for_depth(depth),
+        font_size: REFERENCE_FONT,
+        scale: scale_for_depth(depth),
         png_path: String::new(),
         png_width: 0,
         png_height: 0,
@@ -2241,17 +2541,77 @@ fn find_function<'a>(
     metadata: &'a EvmBatMetadata,
     contract_name: &str,
     function_name: &str,
+    arg_count: Option<usize>,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
     let contract = metadata.get_contract_by_name(contract_name)?;
-    if let Some(function) = contract.functions.iter().find(|f| f.name == function_name) {
-        return Some((contract, function.clone()));
+    let overloads: Vec<&FunctionMetadata> =
+        contract.functions.iter().filter(|f| f.name == function_name).collect();
+    if !overloads.is_empty() {
+        // With several same-named overloads, pick the one whose parameter count
+        // matches the call site; otherwise (or when the arity is unknown) keep the
+        // first, which preserves the old single-definition behaviour exactly.
+        let chosen = match arg_count {
+            Some(n) if overloads.len() > 1 => overloads
+                .iter()
+                .find(|f| f.params.len() == n)
+                .copied()
+                .unwrap_or(overloads[0]),
+            _ => overloads[0],
+        };
+        return Some((contract, chosen.clone()));
     }
     for base in &contract.base_contracts {
-        if let Some(found) = find_function(metadata, base, function_name) {
+        if let Some(found) = find_function(metadata, base, function_name, arg_count) {
             return Some(found);
         }
     }
     None
+}
+
+/// Resolve to the SPECIFIC overload defined at `line` (walking base contracts),
+/// so the DFS re-reads the same overload an edge was built for — not just the
+/// first one sharing the name.
+fn find_function_at<'a>(
+    metadata: &'a EvmBatMetadata,
+    contract_name: &str,
+    function_name: &str,
+    line: usize,
+) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
+    let contract = metadata.get_contract_by_name(contract_name)?;
+    if let Some(function) = contract
+        .functions
+        .iter()
+        .find(|f| f.name == function_name && f.line == line)
+    {
+        return Some((contract, function.clone()));
+    }
+    for base in &contract.base_contracts {
+        if let Some(found) = find_function_at(metadata, base, function_name, line) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Node id for a function, distinguishing overloads: when a contract defines the
+/// same name several times, the id carries the definition line so each overload is
+/// its own node (otherwise both collapse and a wrapper→overload call looks like a
+/// self-call and is pruned). A single-definition function keeps the plain id, so
+/// non-overloaded graphs are byte-identical to before.
+fn overload_node_key(
+    metadata: &EvmBatMetadata,
+    contract_name: &str,
+    function: &FunctionMetadata,
+) -> String {
+    let overloaded = metadata
+        .get_contract_by_name(contract_name)
+        .map(|c| c.functions.iter().filter(|f| f.name == function.name).count() > 1)
+        .unwrap_or(false);
+    if overloaded {
+        format!("{}@{}", node_key(contract_name, &function.name), function.line)
+    } else {
+        node_key(contract_name, &function.name)
+    }
 }
 
 fn find_modifier<'a>(
@@ -2280,6 +2640,7 @@ fn resolve_call<'a>(
     metadata: &'a EvmBatMetadata,
     caller_contract: &ContractMetadata,
     call_name: &str,
+    arg_count: Option<usize>,
     options: &AutoDeployOptions,
     definer_map: &HashMap<String, Vec<String>>,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
@@ -2330,7 +2691,7 @@ fn resolve_call<'a>(
                     if !keep(target) {
                         continue;
                     }
-                    if let Some(found) = find_function(metadata, &target.name, method) {
+                    if let Some(found) = find_function(metadata, &target.name, method, arg_count) {
                         // Only accept a concrete result; a bodyless stub with no
                         // override falls through to the unique-definer fallback.
                         if let Some(resolved) = destub(metadata, found, options) {
@@ -2344,7 +2705,7 @@ fn resolve_call<'a>(
         if !keep(contract) {
             continue;
         }
-        if let Some(found) = find_function(metadata, &contract.name, method) {
+        if let Some(found) = find_function(metadata, &contract.name, method, arg_count) {
             if let Some(resolved) = destub(metadata, found, options) {
                 return Some(resolved);
             }
@@ -2361,7 +2722,7 @@ fn resolve_call<'a>(
     if matches!(target_name, Some(t) if t != "super" && t != "this") {
         if let Some(definers) = definer_map.get(method) {
             if definers.len() == 1 {
-                return find_function(metadata, &definers[0], method);
+                return find_function(metadata, &definers[0], method, arg_count);
             }
         }
     }
@@ -2389,7 +2750,9 @@ fn destub<'a>(
         if impl_name == contract.name {
             continue;
         }
-        if let Some((tc, tf)) = find_function(metadata, &impl_name, &function.name) {
+        if let Some((tc, tf)) =
+            find_function(metadata, &impl_name, &function.name, Some(function.params.len()))
+        {
             if !tf.is_stub && keep(tc) {
                 overrides.push((tc, tf));
             }
@@ -2457,77 +2820,109 @@ fn render_and_measure(
         .get_path(true)
         .change_context(EvmMiroError)?;
 
-    let bar = phase_bar("rendering screenshots", nodes.len());
-    // Rendering is CPU-bound and every node is independent — each writes its own
-    // PNG and silicon only reads shared, read-only highlighting assets — so this
-    // fans out across cores. On a large diagram this is the dominant local cost.
-    let outcome: std::result::Result<(), String> = nodes
-        .par_iter_mut()
-        .map(|node| {
-            // Already uploaded (refresh): take its stored size, skip rendering.
-            if let Some((_, width, height)) = reuse.get(&node.id) {
-                node.png_width = *width;
-                node.png_height = *height;
-                bar.inc(1);
-                return Ok(());
+    // Render DEDUP: every node now renders at the reference font, so two nodes with
+    // the same (file, line range) produce a byte-identical image — a function used
+    // (or duplicated) N times used to render N identical PNGs, the dominant cost on
+    // a big diagram. Render each DISTINCT (file, start, end) once and share it; the
+    // per-depth smaller look is applied later via `scale`, not another render.
+    type RenderKey = (String, usize, usize);
+    let key_of = |node: &GraphNode| -> Option<RenderKey> {
+        (!node.file_path.is_empty() && !reuse.contains_key(&node.id))
+            .then(|| (node.file_path.clone(), node.start_line, node.end_line))
+    };
+    let mut distinct: Vec<RenderKey> = Vec::new();
+    let mut seen: HashSet<RenderKey> = HashSet::new();
+    for node in nodes.iter() {
+        if let Some(key) = key_of(node) {
+            if seen.insert(key.clone()) {
+                distinct.push(key);
             }
-            let code = read_slice(&node.file_path, node.start_line, node.end_line);
-            if code.is_empty() {
-                bar.inc(1);
-                return Ok(());
-            }
+        }
+    }
 
-            let pretty_path = crate::batbelt::path::prettify_source_code_path(&node.file_path)
-                .unwrap_or_else(|_| node.file_path.clone());
-            let mut rendered = vec![format!("// {pretty_path}"), String::new()];
-            rendered.extend(code.iter().cloned());
+    struct Rendered {
+        png_path: String,
+        width: u32,
+        height: u32,
+        line_offset: usize,
+        lines: Vec<String>,
+    }
 
-            // silicon subtracts the two header lines from the offset so the
-            // printed line numbers still match the file.
-            node.line_offset = node.start_line.saturating_sub(PATH_HEADER_LINES);
-
-            // `.js` gives Solidity the best Dracula colors available in syntect.
-            // Named after the deployment as well as the node. The same function
-            // appears in several graphs, and a deployment deletes its own files
-            // when it finishes: without the prefix, building a helper's frame
-            // partway through a bigger one would delete the screenshot that
-            // bigger one is still waiting to upload.
+    let bar = phase_bar("rendering screenshots", distinct.len());
+    // CPU-bound and independent per DISTINCT function — fans out across cores.
+    let results: std::result::Result<Vec<(RenderKey, Rendered)>, String> = distinct
+        .par_iter()
+        .map(|key| {
+            let (file_path, start, end) = key;
+            let code = read_slice(file_path, *start, *end);
+            let pretty_path = crate::batbelt::path::prettify_source_code_path(file_path)
+                .unwrap_or_else(|_| file_path.clone());
+            let mut lines = vec![format!("// {pretty_path}"), String::new()];
+            lines.extend(code.iter().cloned());
+            let line_offset = start.saturating_sub(PATH_HEADER_LINES);
+            // One file per DISTINCT function, named ONLY by (file, lines) — no
+            // deployment prefix — so every frame in the same run (a whole --redeploy
+            // cluster) SHARES it: a function that appears in several frames is rendered
+            // once for the entire run, not once per frame. Cleanup is deferred to the
+            // end of the run so the shared files survive between frames.
             let file_name = format!(
-                "{}__{}.js",
-                owner.replace([':', '.', '/'], "_"),
-                node.id.replace([':', '.', '/'], "_")
+                "fn_{}_{}_{}.js",
+                file_path.replace([':', '.', '/'], "_"),
+                start,
+                end
             );
-            let png_path = silicon::create_figure(
-                &rendered.join("\n"),
-                &destination,
-                &file_name,
-                node.line_offset,
-                Some(node.font_size),
-                true,
-            );
-            let (width, height) = image::image_dimensions(&png_path)
-                .map_err(|e| format!("cannot measure {png_path}: {e}"))?;
-
-            if width > 8192 || height > 8192 {
-                log::warn!(
-                    "{} renders to {}x{}, above Miro's 8192 px limit",
-                    node.label,
-                    width,
-                    height
+            let png_path = format!("{destination}/{file_name}.png");
+            // Cache hit: an earlier frame this run already rendered this function.
+            if !std::path::Path::new(&png_path).exists() {
+                silicon::create_figure(
+                    &lines.join("\n"),
+                    &destination,
+                    &file_name,
+                    line_offset,
+                    Some(REFERENCE_FONT),
+                    true,
                 );
             }
-
-            node.png_path = png_path;
-            node.png_width = width;
-            node.png_height = height;
-            node.rendered_lines = rendered;
+            let (width, height) = image::image_dimensions(&png_path)
+                .map_err(|e| format!("cannot measure {png_path}: {e}"))?;
+            if width > 8192 || height > 8192 {
+                log::warn!("{png_path} renders to {width}x{height}, above Miro's 8192 px limit");
+            }
             bar.inc(1);
-            Ok(())
+            Ok((
+                key.clone(),
+                Rendered { png_path, width, height, line_offset, lines },
+            ))
         })
         .collect();
-    outcome.map_err(|message| Report::new(EvmMiroError).attach_printable(message))?;
+    let rendered: HashMap<RenderKey, Rendered> = results
+        .map_err(|message| Report::new(EvmMiroError).attach_printable(message))?
+        .into_iter()
+        .collect();
     bar.finish_and_clear();
-    println!("    {} {} screenshots rendered", "✓".green(), nodes.len());
+
+    // Fan the shared renders (and reused sizes) back onto every node.
+    for node in nodes.iter_mut() {
+        if let Some((_, width, height)) = reuse.get(&node.id) {
+            node.png_width = *width;
+            node.png_height = *height;
+            continue;
+        }
+        let Some(key) = key_of(node) else { continue };
+        if let Some(r) = rendered.get(&key) {
+            node.png_path = r.png_path.clone();
+            node.png_width = r.width;
+            node.png_height = r.height;
+            node.line_offset = r.line_offset;
+            node.rendered_lines = r.lines.clone();
+        }
+    }
+    println!(
+        "    {} {} screenshots ({} distinct rendered)",
+        "✓".green(),
+        nodes.len(),
+        distinct.len()
+    );
     Ok(())
 }
 
@@ -2883,54 +3278,130 @@ fn private_closure(
     result
 }
 
-/// Duplicate shared nodes (fan-in ≥ 2) so every caller has a nearby copy and the
-/// arrows stay short and local instead of one node reached by long edges that
-/// cross other screenshots. Generalises [`split_shared_leaves`]: a leaf is just
-/// the `|closure| == 1` case.
+/// De-share ONLY the functions whose reuse tangles the diagram. A shared node
+/// sitting several columns back from a caller draws a long arrow that crosses the
+/// screenshots between them (Miro routes connectors itself, so the layout can't
+/// bend around them); that far caller gets a local copy of the node's private
+/// closure instead — a repeated screenshot, which the auditor prefers to a
+/// crossing. A caller in the adjacent column keeps sharing the one node, so nothing
+/// is repeated for free. Runs after render, so copies inherit the image.
 ///
-/// The copy unit is the node's PRIVATE closure (it + its non-shared descendants),
-/// so cascades are structurally impossible — an inner shared node is left in place
-/// and, once the copies raise its own fan-in, duplicated on its own turn under the
-/// same caps. Bounded by: closure size ≤ `MAX_CLOSURE`, ≤ `MAX_COPIES` copies per
-/// node, and a global added-box budget, so the frame can grow at most ~1.4×.
-fn duplicate_shared_subtrees(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>) {
-    const MAX_CLOSURE: usize = 4;
-    const MAX_COPIES: usize = 10;
-    let budget = (nodes.len() * 2 / 5).max(20);
+/// Each round lays the graph out, finds the shared node with the farthest-back
+/// caller, and copies its closure for every caller ≥ `CROSS_LAYERS` columns back —
+/// keeping the NEAREST caller on the original so it is never orphaned (with one
+/// caller left, layering places the node adjacent, so it no longer crosses).
+/// Re-lays-out each round because a copy changes the columns; bounded by closure
+/// size and a box budget.
+fn duplicate_crossing_shared(
+    nodes: &mut Vec<GraphNode>,
+    edges: &mut Vec<GraphEdge>,
+    root_id: &str,
+) {
+    const CROSS_LAYERS: usize = 2; // a caller this many columns back skips a column
+    // Copy only SMALL helpers (leaves + tiny subtrees) — those are cheap to repeat
+    // and are the mesh floor (sqrt, mul512, getters). A big subtree is never copied
+    // here (it would explode); it stays shared, externalised to a frame by the cut
+    // pass that ran BEFORE this.
+    const MAX_CLOSURE: usize = 3;
+    // Effectively uncapped copies: a leaf used 56× needs 56 local copies, or it
+    // still draws long crossing arrows. Small copies, so the box budget (below)
+    // is the real bound.
+    const MAX_COPIES: usize = 4096;
+    let budget = nodes.len() * 4;
     let mut added = 0usize;
 
     loop {
         if added >= budget {
             break;
         }
-        // Distinct callers + out-adjacency, recomputed each round (copies change it).
-        let mut callers: HashMap<String, HashSet<String>> = HashMap::new();
+        // Preliminary layout to read each node's column (layer).
+        let layout_nodes: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|node| LayoutNode {
+                id: node.id.clone(),
+                width: node.board_width(),
+                height: node.board_height(),
+            })
+            .collect();
+        let anchors = compute_anchors(nodes, edges);
+        let layout_edges: Vec<LayoutEdge> = edges
+            .iter()
+            .zip(anchors.iter())
+            .map(|(edge, anchor)| LayoutEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                from_line_fraction: anchor.y_fraction,
+            })
+            .collect();
+        let layout = layout_graph(root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+        let layer_of: HashMap<&str, usize> =
+            layout.nodes.iter().map(|p| (p.id.as_str(), p.layer)).collect();
+
+        // Callers + out-adjacency + shared set (recomputed; copies change them).
+        let mut callers: HashMap<String, Vec<String>> = HashMap::new();
         let mut out: HashMap<String, Vec<String>> = HashMap::new();
         for edge in edges.iter() {
-            callers
-                .entry(edge.to.clone())
-                .or_default()
-                .insert(edge.from.clone());
+            callers.entry(edge.to.clone()).or_default().push(edge.from.clone());
             out.entry(edge.from.clone()).or_default().push(edge.to.clone());
         }
         let shared: HashSet<String> = callers
             .iter()
-            .filter(|(_, callers)| callers.len() >= 2)
+            .filter(|(_, cs)| cs.len() >= 2)
             .map(|(id, _)| id.clone())
             .collect();
 
-        // Pick the SHALLOWEST shared node whose private closure fits the cap.
-        let depth_of: HashMap<&str, usize> =
-            nodes.iter().map(|node| (node.id.as_str(), node.depth)).collect();
-        let mut candidates: Vec<&String> = shared.iter().collect();
-        candidates.sort_by_key(|id| depth_of.get(id.as_str()).copied().unwrap_or(0));
-        let chosen = candidates.into_iter().find_map(|id| {
-            let closure = private_closure(id, &out, &shared);
-            (closure.len() <= MAX_CLOSURE).then(|| (id.clone(), closure))
-        });
-        let Some((victim, closure)) = chosen else {
+        // How far back a caller sits from a node, in columns.
+        let skip = |v: &str, c: &str| -> usize {
+            match (layer_of.get(v), layer_of.get(c)) {
+                (Some(&vl), Some(&cl)) => vl.saturating_sub(cl),
+                _ => 0,
+            }
+        };
+
+        // Copy the SMALLEST crossing helper first (the cheap mesh floor — leaves
+        // like sqrt/mul512), then bigger ones; ties broken by the farthest-back
+        // caller. Copying the floor first dissolves the mesh from the bottom, which
+        // is what a top-down pass could never reach before the budget ran out.
+        let mut best: Option<(usize, usize, String)> = None; // (closure_len, -worst, id)
+        for v in &shared {
+            let worst = callers
+                .get(v)
+                .map(|cs| cs.iter().map(|c| skip(v, c)).max().unwrap_or(0))
+                .unwrap_or(0);
+            if worst < CROSS_LAYERS {
+                continue;
+            }
+            let clen = private_closure(v, &out, &shared).len();
+            if clen > MAX_CLOSURE {
+                continue;
+            }
+            // Prefer smaller closure, then larger skip.
+            let key = (clen, usize::MAX - worst);
+            if best.as_ref().map_or(true, |(cl, w, _)| key < (*cl, *w)) {
+                best = Some((key.0, key.1, v.clone()));
+            }
+        }
+        let Some((_, _, victim)) = best else {
             break;
         };
+        let closure = private_closure(&victim, &out, &shared);
+
+        // Copy for callers ≥ CROSS_LAYERS back, but never for the NEAREST one — it
+        // stays on the original so the victim keeps a caller (and, alone, no longer
+        // crosses).
+        let mut distinct_callers: Vec<String> = callers.get(&victim).cloned().unwrap_or_default();
+        distinct_callers.sort();
+        distinct_callers.dedup();
+        distinct_callers.sort_by_key(|c| skip(&victim, c)); // nearest first
+        let distant: Vec<String> = distinct_callers
+            .iter()
+            .skip(1)
+            .filter(|c| skip(&victim, c) >= CROSS_LAYERS)
+            .cloned()
+            .collect();
+        if distant.is_empty() {
+            break;
+        }
 
         let templates: HashMap<String, GraphNode> = nodes
             .iter()
@@ -2942,13 +3413,15 @@ fn duplicate_shared_subtrees(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEd
             .filter(|edge| closure.contains(&edge.from) && closure.contains(&edge.to))
             .cloned()
             .collect();
-
-        let mut caller_list: Vec<String> =
-            callers.get(&victim).cloned().unwrap_or_default().into_iter().collect();
-        caller_list.sort(); // deterministic; the first caller keeps the original
+        // Keep calls to shared children OUTSIDE the closure, or the copy dead-ends.
+        let external: Vec<GraphEdge> = edges
+            .iter()
+            .filter(|edge| closure.contains(&edge.from) && !closure.contains(&edge.to))
+            .cloned()
+            .collect();
 
         let mut made = 0usize;
-        for caller in caller_list.iter().skip(1) {
+        for caller in distant.iter() {
             if made >= MAX_COPIES || added + closure.len() > budget {
                 break;
             }
@@ -2968,6 +3441,13 @@ fn duplicate_shared_subtrees(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEd
                 let mut copy = edge.clone();
                 copy.from = id_map[&edge.from].clone();
                 copy.to = id_map[&edge.to].clone();
+                edges.push(copy);
+            }
+            // Copy each external call from the copied closure onto the SAME shared
+            // target, so the duplicate keeps calling out (no dead-ends).
+            for edge in &external {
+                let mut copy = edge.clone();
+                copy.from = id_map[&edge.from].clone();
                 edges.push(copy);
             }
             // Repoint every call from THIS caller to the victim onto its own copy.
@@ -3065,6 +3545,7 @@ mod split_shared_leaves_test {
             end_line: 2,
             depth: 0,
             font_size: 22,
+            scale: 1.0,
             png_path: String::new(),
             png_width: 0,
             png_height: 0,
@@ -3127,12 +3608,32 @@ mod split_shared_leaves_test {
     }
 }
 
-/// How many screenshots a frame can hold and still be read in one sitting.
+/// Balanced partitioning, not "cut until under a cap". A frame is aimed AT a
+/// readable size, and a graph too big for one frame is split into several pieces
+/// each near that size — never one giant frame, never a scatter of husks.
 ///
-/// Measured rather than chosen: `Vault.depositWithReferral` at 32 screenshots
-/// and 14874x2894 is comfortable, so the limit sits above what has been seen to
-/// work. Below it nothing is cut, and the diagram shows the code.
-const READABLE_SCREENSHOTS: usize = 45;
+/// - `FRAME_TARGET` — the size (in screenshots) a frame is aimed at. ~1500–2600px
+///   screenshots across ≤5 layers land around 10–12k px wide: readable at a normal
+///   zoom, ~30 connectors. (Auditors rejected 24–33-shot frames as unreadable.)
+/// - `FRAME_MAX` — above this (measured as EFFECTIVE size, depth included) a frame
+///   is split; a graph at or under it ships whole (one 20-shot frame beats a
+///   14 + 6 split with a link card to chase).
+/// - `FRAME_MIN` — a cut branch, and the residual left behind, must each keep at
+///   least this many of their own screenshots; below it the piece is a husk.
+/// - `MAX_CUTS_PER_FRAME` — at most this many branches leave one frame, so a frame
+///   never becomes a scavenger hunt of link cards. A cut branch bigger than
+///   `FRAME_MAX` becomes its own frame and is split again by the same policy.
+const FRAME_TARGET: usize = 15;
+const FRAME_MAX: usize = 20;
+const FRAME_MIN: usize = 6;
+const MAX_CUTS_PER_FRAME: usize = 10;
+
+/// Depth costs horizontal px (the scarce resource): past this many layers a frame
+/// runs off-screen even at a modest screenshot count. Effective size scales up
+/// `DEPTH_PENALTY` per layer beyond the free budget, so a deep-and-narrow frame is
+/// cut sooner than a shallow-and-wide one of the same raw count.
+const DEPTH_FREE_LAYERS: usize = 5;
+const DEPTH_PENALTY: f64 = 0.15;
 
 /// Replace one call with a card linking to the callee's own frame.
 ///
@@ -3160,6 +3661,7 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         end_line: 0,
         depth: 0,
         font_size: 22,
+        scale: 1.0,
         png_path: String::new(),
         png_width: LINK_CARD_WIDTH as u32,
         png_height: LINK_CARD_HEIGHT as u32,
@@ -3173,12 +3675,74 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
     prune_unreachable(nodes, edges);
 }
 
+/// Link out a whole (possibly shared) node: repoint EVERY call into `target_id`
+/// onto its own link card, so each caller keeps a nearby card pointing at the
+/// node's frame, and the node's now-unreachable subtree is pruned. Unlike
+/// [`cut_edge`], which severs a single last-reference call, this removes a node
+/// reached from several callers — the only way to carve a balanced piece out of a
+/// densely-shared graph, where cutting one edge frees nothing.
+fn cut_node(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, target_id: &str) {
+    let Some(label) = nodes
+        .iter()
+        .find(|node| node.id == target_id)
+        .map(|node| node.label.clone())
+    else {
+        return;
+    };
+    let in_edges: Vec<usize> = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.to == target_id)
+        .map(|(i, _)| i)
+        .collect();
+    for (n, idx) in in_edges.into_iter().enumerate() {
+        let card_id = format!("\u{0}linknode_{target_id}_{n}");
+        nodes.push(GraphNode {
+            id: card_id.clone(),
+            label: label.clone(),
+            kind: NodeKind::Link { target: label.clone() },
+            file_path: String::new(),
+            start_line: 0,
+            end_line: 0,
+            depth: 0,
+            font_size: 22,
+            scale: 1.0,
+            png_path: String::new(),
+            png_width: LINK_CARD_WIDTH as u32,
+            png_height: LINK_CARD_HEIGHT as u32,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+            writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
+        });
+        edges[idx].to = card_id;
+    }
+    prune_unreachable(nodes, edges);
+}
+
 /// Screenshots only: a card is a reference, not something to read.
 fn screenshot_count(nodes: &[GraphNode]) -> usize {
     nodes
         .iter()
         .filter(|node| node.kind == NodeKind::Screenshot)
         .count()
+}
+
+/// Screenshot count adjusted for depth: past `DEPTH_FREE_LAYERS` layers a frame
+/// runs off-screen horizontally, so each extra layer inflates the effective size.
+/// A shallow-wide frame reads far better than a deep-narrow one of the same count,
+/// and this is what makes the cut policy split the latter sooner.
+fn effective_size(nodes: &[GraphNode]) -> usize {
+    let count = screenshot_count(nodes);
+    let max_layer = nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Screenshot)
+        .map(|n| n.depth)
+        .max()
+        .unwrap_or(0);
+    let over = max_layer.saturating_sub(DEPTH_FREE_LAYERS);
+    (count as f64 * (1.0 + DEPTH_PENALTY * over as f64)).round() as usize
 }
 
 /// The cut that removes the most screenshots, if any removes one at all.
@@ -3198,30 +3762,120 @@ fn screenshot_count(nodes: &[GraphNode]) -> usize {
 /// Leaves are never candidates: a copy costs one small screenshot and
 /// [`split_shared_leaves`] has already made those, so a card would be a click in
 /// exchange for nothing.
+/// Screenshot ids reachable from `root` (root included if it is a screenshot),
+/// following edges. A visited set makes cycles/shared subtrees count once.
+fn reachable_screens(root: &str, adjacency: &HashMap<&str, Vec<&str>>, screens: &HashSet<&str>) -> HashSet<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: HashSet<String> = HashSet::new();
+    let mut stack = vec![root.to_string()];
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        if screens.contains(id.as_str()) {
+            out.insert(id.clone());
+        }
+        for next in adjacency.get(id.as_str()).cloned().unwrap_or_default() {
+            stack.push(next.to_string());
+        }
+    }
+    out
+}
+
+/// All node ids reachable from `root` (root included), following edges. Used to
+/// measure a branch's whole subtree and its edge boundary.
+fn reachable_nodes(root: &str, adjacency: &HashMap<&str, Vec<&str>>) -> HashSet<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut stack = vec![root.to_string()];
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        for next in adjacency.get(id.as_str()).cloned().unwrap_or_default() {
+            stack.push(next.to_string());
+        }
+    }
+    seen
+}
+
+/// Choose the single best branch to link out to its own frame — or `None` when no
+/// cut yields a readable, non-husk piece. Rather than lopping off the LARGEST
+/// subtree (which leaves two lopsided halves), we score each candidate on how close
+/// its size lands to `budget` (the per-piece target), minus the cross-frame edges
+/// the cut severs (each becomes a link card, not a drawn arrow), plus small bonuses
+/// for a subtree that is widely reused or already has a frame. A branch smaller than
+/// `FRAME_MIN`, or one whose removal would leave the frame itself below `FRAME_MIN`,
+/// is rejected — that is the husk guard, in both directions.
 fn best_cut(
     nodes: &[GraphNode],
     edges: &[GraphEdge],
+    framed: &HashSet<&str>,
+    budget: usize,
 ) -> Option<(Vec<GraphNode>, Vec<GraphEdge>)> {
     let has_children: HashSet<&str> = edges.iter().map(|edge| edge.from.as_str()).collect();
+    let screens: HashSet<&str> = nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Screenshot)
+        .map(|n| n.id.as_str())
+        .collect();
+    let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+    for edge in edges.iter() {
+        adjacency.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
+    }
+    let root = nodes.first().map(|n| n.id.as_str()).unwrap_or("");
 
     let before = screenshot_count(nodes);
-    let mut best: Option<(usize, Vec<GraphNode>, Vec<GraphEdge>)> = None;
+    let budget_f = budget.max(1) as f64;
+    let mut best: Option<(f64, Vec<GraphNode>, Vec<GraphEdge>)> = None;
 
-    for (index, edge) in edges.iter().enumerate() {
-        if !has_children.contains(edge.to.as_str()) {
+    // Candidates are NODES with a subtree (not the root, not a leaf, not a link
+    // card). Cutting a node lifts out its whole subtree — as one frame — no matter
+    // how many callers reach it, which is what lets a densely-shared graph be
+    // partitioned at all.
+    for node in nodes.iter() {
+        if node.kind != NodeKind::Screenshot
+            || node.id == root
+            || !has_children.contains(node.id.as_str())
+        {
             continue;
         }
+        let has_frame = framed.contains(node.label.as_str());
+        let sub = reachable_screens(&node.id, &adjacency, &screens).len();
 
         let mut candidate_nodes = nodes.to_vec();
         let mut candidate_edges = edges.to_vec();
-        cut_edge(&mut candidate_nodes, &mut candidate_edges, index);
-
+        cut_node(&mut candidate_nodes, &mut candidate_edges, &node.id);
         let saved = before.saturating_sub(screenshot_count(&candidate_nodes));
         if saved == 0 {
             continue;
         }
-        if best.as_ref().map(|(most, _, _)| saved > *most).unwrap_or(true) {
-            best = Some((saved, candidate_nodes, candidate_edges));
+        let residual = before.saturating_sub(saved);
+
+        // Husk guard, both directions: neither the new piece nor the leftover frame
+        // may fall below the readable minimum. An existing frame is exempt on the
+        // piece side (no new frame is created — the cut only replaces arrows).
+        if (!has_frame && sub < FRAME_MIN) || residual < FRAME_MIN {
+            continue;
+        }
+
+        // Cross-frame edges this cut severs (the subtree's boundary) — each becomes
+        // a link card rather than a drawn arrow — and how many callers reach it.
+        let subtree = reachable_nodes(&node.id, &adjacency);
+        let severed = edges
+            .iter()
+            .filter(|e| subtree.contains(&e.from) != subtree.contains(&e.to))
+            .count()
+            .max(1);
+        let reuse = edges.iter().filter(|e| e.to == node.id).count();
+
+        // Nearness to the target dominates; severed edges tiebreak; reuse and an
+        // existing frame nudge. (Weights: size distance ~3.3/shot, edge ~12.)
+        let score = -(50.0 / budget_f) * (sub as f64 - budget_f).abs()
+            - 12.0 * (severed as f64 - 1.0)
+            + 10.0 * (reuse.min(3) as f64)
+            + if has_frame { 8.0 } else { 0.0 };
+        if best.as_ref().map(|(most, _, _)| score > *most).unwrap_or(true) {
+            best = Some((score, candidate_nodes, candidate_edges));
         }
     }
 
@@ -3337,7 +3991,7 @@ mod cut_test {
             edge("shared", "child"),
         ];
 
-        if let Some((cut_nodes, _)) = best_cut(&nodes, &edges) {
+        if let Some((cut_nodes, _)) = best_cut(&nodes, &edges, &HashSet::new(), FRAME_TARGET) {
             assert!(
                 screenshot_count(&cut_nodes) < screenshot_count(&nodes),
                 "a cut that is taken has to free something"
@@ -3396,7 +4050,8 @@ mod cut_test {
         let edges = vec![edge("root", "a"), edge("a", "b")];
 
         // `a` holds `b` up on its own, so cutting root→a frees both.
-        let (cut_nodes, _) = best_cut(&nodes, &edges).expect("cutting root->a strands b");
+        let (cut_nodes, _) =
+            best_cut(&nodes, &edges, &HashSet::new(), FRAME_TARGET).expect("cutting root->a strands b");
         assert!(screenshot_count(&cut_nodes) < screenshot_count(&nodes));
     }
 }
@@ -3412,6 +4067,7 @@ async fn ensure_target_frames(
     options: &AutoDeployOptions,
     client: &MiroClient,
     allocator: &mut ShelfAllocator,
+    cluster: &ClusterCtx,
 ) -> Result<HashMap<String, String>> {
     let wanted: Vec<String> = {
         let mut seen = HashSet::new();
@@ -3430,7 +4086,31 @@ async fn ensure_target_frames(
 
     let mut resolved = HashMap::new();
     for target in wanted {
-        if let Some(url) = live_frame_url(&target, Some(client)).await? {
+        // Reuse a frame only if it is genuinely reusable: in --redeploy we skip any
+        // frame that belongs to the OLD cluster (a stale id) so it is drawn fresh,
+        // but still reuse frames created earlier in THIS run (their new ids aren't
+        // stale) so a helper shared inside the cluster is drawn once.
+        let reusable = if cluster.fresh {
+            // Reuse ONLY a frame created earlier in THIS run for THIS cluster
+            // (cluster_root == root AND a fresh, non-stale id). Anything else — the
+            // old cluster, or a frame from another entry point's deploy — is drawn
+            // fresh, so the cluster is fully self-contained in its clean zone.
+            let created_here = EvmBatMetadata::read_metadata().ok().is_some_and(|m| {
+                m.miro.auto.frames.iter().any(|f| {
+                    f.entry_point == target
+                        && f.cluster_root == cluster.root
+                        && !cluster.stale_ids.contains(&f.frame_id)
+                })
+            });
+            if created_here {
+                live_frame_url(&target, Some(client)).await?
+            } else {
+                None
+            }
+        } else {
+            live_frame_url(&target, Some(client)).await?
+        };
+        if let Some(url) = reusable {
             println!("  {} reuses its frame", target.blue());
             resolved.insert(target, url);
             continue;
@@ -3451,6 +4131,7 @@ async fn ensure_target_frames(
             Some(client),
             allocator,
             false,
+            cluster,
         ))
         .await?;
 

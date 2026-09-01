@@ -278,6 +278,12 @@ pub struct AutoDeployedFrame {
     /// Red rectangles marking storage-writing nodes, so a recycle deletes them too.
     #[serde(default)]
     pub border_ids: Vec<String>,
+    /// The top entry point whose deploy created this frame — the same value for a
+    /// frame and every dependency sub-frame it spawned. Lets `--redeploy` find the
+    /// whole previous CLUSTER of an entry point (to report its URLs for one-click
+    /// manual deletion) and stamp the fresh cluster it deploys in a clean zone.
+    #[serde(default)]
+    pub cluster_root: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
