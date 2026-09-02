@@ -140,6 +140,30 @@ bat-cli login --status  # who the token belongs to, and its scopes
 bat-cli logout          # revoke the stored token and forget it
 ```
 
+### `screenshot`
+
+A function's screenshot names things it does not explain — the state variable it compares
+against, the struct it takes as a parameter. `screenshot` puts that declaration on the frame
+you are reading:
+
+```bash
+bat-cli screenshot                                            # list the deployed frames
+bat-cli screenshot deviationThresholdWad --frame Vault.deposit
+bat-cli screenshot PriceFeed.FeedType --frame Vault.deposit --with-documentation
+bat-cli screenshot --file src/PriceFeed.sol --lines 36-44 --frame Vault.deposit
+```
+
+The symbol is `Name` or `Contract.Name`, resolved from the scan — structs and enums (including
+those declared inside a contract) and state variables, `constant` and `immutable` included. A
+name declared in several contracts stops and lists the candidates rather than guessing. When a
+name is not in the index, `--file` and `--lines` draw the range directly, so the command never
+blocks on a gap.
+
+The image lands in free space below the frame's content, rendered exactly as `deploy` renders a
+function, and you drag it where you want it. There is deliberately no rule about what deserves
+to be drawn: that judgement is yours. It is a manual enrichment of one diagram, so a redeploy
+does not bring it back, and `--undeploy` cleans it up with the frame.
+
 ### `config`
 
 Everything that belongs to you rather than to a project lives in

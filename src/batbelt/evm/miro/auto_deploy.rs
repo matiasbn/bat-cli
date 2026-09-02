@@ -40,7 +40,7 @@ const ANCHOR_GAP_CHARS: f64 = 1.0;
 /// index 2 of the image, because `include_path` prepends `// path` plus a blank.
 const SIGNATURE_LINE_INDEX: usize = 2;
 /// Number of lines `include_path` prepends to the rendered content.
-const PATH_HEADER_LINES: usize = 2;
+pub(crate) const PATH_HEADER_LINES: usize = 2;
 /// Vertical margin left between the existing board content and the region we
 /// reserve for automatic deployments.
 const REGION_MARGIN: f64 = 5_000.0;
@@ -242,14 +242,14 @@ struct GraphEdge {
 /// stretched to 1200 and a 1468 px image squeezed to 1200 end up with nearly 3x
 /// difference in text size inside the same layer. Keeping the ratio fixed means
 /// the only thing that changes the text size is the font used to render it.
-const BOARD_UNITS_PER_PIXEL: f64 = 1.0;
+pub(crate) const BOARD_UNITS_PER_PIXEL: f64 = 1.0;
 
 /// Font per depth: the entry point is rendered biggest and leaves smallest, so a
 /// deep graph stays readable. Width now follows from the code itself.
 /// The one font every screenshot is rendered at (the largest, depth-0 size). A
 /// deeper node reuses that render shrunk via `scale_for_depth`, so a function is
 /// rendered once and reused across depths and duplicate placements.
-const REFERENCE_FONT: usize = 32;
+pub(crate) const REFERENCE_FONT: usize = 32;
 
 fn font_for_depth(depth: usize) -> usize {
     match depth {
@@ -997,6 +997,14 @@ async fn deploy_one(
         connector_ids: Vec::new(),
         marker_ids: Vec::new(),
         border_ids: Vec::new(),
+        // Declaration screenshots survive a redeploy INTO THE SAME FRAME: the images are
+        // not ours to delete here, so dropping the record would strand them on the board
+        // with nothing left that knows how to clean them up. A `--redeploy` builds a new
+        // frame instead, and legitimately starts with none.
+        screenshots: reused_frame
+            .as_ref()
+            .map(|record| record.screenshots.clone())
+            .unwrap_or_default(),
         // Every frame in a fresh deploy belongs to the named entry point's cluster,
         // so a later --redeploy can find and report the whole previous cluster.
         cluster_root: if cluster.root.is_empty() { title.clone() } else { cluster.root.clone() },
@@ -1870,6 +1878,7 @@ async fn undeploy_frame(title: &str, client: &MiroClient) -> Result<bool> {
         .chain(record.border_ids.iter().cloned())
         .chain(record.images.iter().map(|(_, id)| id.clone()))
         .chain(record.link_cards.iter().map(|(_, card, _)| card.clone()))
+        .chain(record.screenshots.iter().map(|shot| shot.item_id.clone()))
         .filter(|id| !id.is_empty())
     {
         let client = client.clone();
@@ -1893,7 +1902,7 @@ async fn undeploy_frame(title: &str, client: &MiroClient) -> Result<bool> {
 
 /// Store what a deployment owns, replacing any earlier record for the same
 /// entry point.
-fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
+pub(crate) fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
     let record = record.clone();
     EvmBatMetadata::update_metadata(move |metadata| {
         metadata
@@ -2814,7 +2823,7 @@ fn implementations_of(metadata: &EvmBatMetadata, type_name: &str) -> Vec<String>
 /// another function's documentation on this one's screenshot. Both NatSpec forms count —
 /// a run of `///` lines, or one `/** … */` block — and nothing else does, so an ordinary
 /// `//` note is left out.
-fn natspec_start(file_path: &str, decl_line: usize) -> usize {
+pub(crate) fn natspec_start(file_path: &str, decl_line: usize) -> usize {
     let content = std::fs::read_to_string(file_path).unwrap_or_default();
     let lines: Vec<&str> = content.lines().collect();
     // `decl_line` is 1-based, so the line above it is at index `decl_line - 2`.
@@ -2860,7 +2869,7 @@ fn doc_lines_above(options: &AutoDeployOptions, file_path: &str, decl_line: usiz
     decl_line.saturating_sub(natspec_start(file_path, decl_line))
 }
 
-fn read_slice(file_path: &str, start_line: usize, end_line: usize) -> Vec<String> {
+pub(crate) fn read_slice(file_path: &str, start_line: usize, end_line: usize) -> Vec<String> {
     let content = std::fs::read_to_string(file_path).unwrap_or_default();
     let lines: Vec<&str> = content.lines().collect();
     let start = start_line.saturating_sub(1);

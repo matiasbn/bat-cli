@@ -127,6 +127,12 @@ pub struct EvmContract {
     /// to resolve the type of a `structPointer.field` call receiver.
     #[serde(default)]
     pub structs: Vec<EvmStruct>,
+    /// Structs and enums declared inside this contract, as locatable index entries.
+    ///
+    /// The file parser hoists these into the file's `file_items` so they are stamped
+    /// with a path and reach the metadata like any file-level declaration.
+    #[serde(default)]
+    pub inner_items: Vec<EvmFileItem>,
 }
 
 /// A struct type and its fields (name + declared type), used for type inference of
@@ -172,6 +178,13 @@ pub struct EvmFileItem {
     pub line: usize,
     pub end_line: usize,
     pub external: bool,
+    /// Contract, library or interface this was declared inside; empty when the
+    /// declaration sits at file level and belongs to nobody.
+    ///
+    /// Solidity puts most structs and enums inside a contract, so without this the
+    /// index only ever saw the handful declared at file level.
+    #[serde(default)]
+    pub owner: String,
 }
 
 /// A parsed .sol file containing one or more contracts.
