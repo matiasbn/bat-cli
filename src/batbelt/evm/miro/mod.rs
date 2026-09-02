@@ -7,6 +7,7 @@
 //! there is nothing left for them to do.
 
 pub mod auto_deploy;
+pub mod screenshot;
 
 use std::{error::Error, fmt};
 

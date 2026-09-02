@@ -70,8 +70,13 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                     sol_file.imports.push(sol_import);
                 }
                 ast::ItemKind::Contract(contract_def) => {
-                    let contract =
+                    let mut contract =
                         parse_contract_definition(&sess, contract_def, file_path, &source);
+                    // Hoist the contract's own structs and enums into the file's item list,
+                    // so the scan stamps them with a path and they land in the index next to
+                    // the file-level ones. They keep their `owner`, which is what makes
+                    // `PriceFeed.FeedType` resolvable.
+                    sol_file.file_items.append(&mut contract.inner_items);
                     sol_file.contracts.push(contract);
                 }
                 ast::ItemKind::Struct(s) => {
@@ -82,6 +87,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
                         external: false,
+                        owner: String::new(),
                     });
                 }
                 ast::ItemKind::Enum(e) => {
@@ -92,6 +98,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
                         external: false,
+                        owner: String::new(),
                     });
                 }
                 ast::ItemKind::Error(e) => {
@@ -102,6 +109,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
                         external: false,
+                        owner: String::new(),
                     });
                 }
                 ast::ItemKind::Udvt(u) => {
@@ -112,6 +120,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
                         external: false,
+                        owner: String::new(),
                     });
                 }
                 ast::ItemKind::Variable(v) => {
@@ -123,6 +132,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                             line: span_to_line(&sess, item.span),
                             end_line: span_to_end_line(&sess, item.span),
                             external: false,
+                            owner: String::new(),
                         });
                     }
                 }
@@ -136,6 +146,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                                 line: span_to_line(&sess, item.span),
                                 end_line: span_to_end_line(&sess, item.span),
                                 external: false,
+                                owner: String::new(),
                             });
                         }
                     }
@@ -148,6 +159,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
                         external: false,
+                        owner: String::new(),
                     });
                 }
                 _ => {}

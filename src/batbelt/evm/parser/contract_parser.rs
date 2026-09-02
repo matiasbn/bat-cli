@@ -1,12 +1,12 @@
 use solar_parse::{ast, interface::Session};
 
 use crate::batbelt::evm::types::{
-    EvmContract, EvmContractType, EvmEvent, EvmFunction, EvmModifierDef, EvmParam, EvmStruct,
-    StorageVariable,
+    EvmContract, EvmContractType, EvmEvent, EvmFileItem, EvmFileItemKind, EvmFunction,
+    EvmModifierDef, EvmParam, EvmStruct, StorageVariable,
 };
 
 use super::event_parser::parse_event_definition;
-use super::evm_file_parser::{span_to_line, type_to_string};
+use super::evm_file_parser::{span_to_end_line, span_to_line, type_to_string};
 use super::function_parser::parse_function_definition;
 use super::modifier_parser::parse_modifier_definition;
 use super::storage_parser::parse_variable_definition;
@@ -38,6 +38,10 @@ pub fn parse_contract_definition(
     let mut storage_variables: Vec<StorageVariable> = Vec::new();
     let mut events: Vec<EvmEvent> = Vec::new();
     let mut structs: Vec<EvmStruct> = Vec::new();
+    // Structs and enums declared inside the contract. Solidity puts most of them here
+    // rather than at file level, and until now they were parsed for type inference and
+    // then thrown away — so nothing could say where `FeedType` is declared.
+    let mut inner_items: Vec<EvmFileItem> = Vec::new();
 
     for item in contract.body.iter() {
         match &item.kind {
@@ -72,6 +76,27 @@ pub fn parse_contract_definition(
                     name: s.name.as_str().to_string(),
                     fields,
                 });
+                inner_items.push(EvmFileItem {
+                    name: s.name.as_str().to_string(),
+                    kind: EvmFileItemKind::Struct,
+                    // Stamped by the scan, like every other file item.
+                    file_path: String::new(),
+                    line: span_to_line(sess, item.span),
+                    end_line: span_to_end_line(sess, item.span),
+                    external: false,
+                    owner: name.clone(),
+                });
+            }
+            ast::ItemKind::Enum(e) => {
+                inner_items.push(EvmFileItem {
+                    name: e.name.as_str().to_string(),
+                    kind: EvmFileItemKind::Enum,
+                    file_path: String::new(),
+                    line: span_to_line(sess, item.span),
+                    end_line: span_to_end_line(sess, item.span),
+                    external: false,
+                    owner: name.clone(),
+                });
             }
             _ => {}
         }
@@ -93,5 +118,6 @@ pub fn parse_contract_definition(
         line,
         external,
         structs,
+        inner_items,
     }
 }

@@ -167,6 +167,27 @@ enum BatCommands {
         #[arg(long)]
         redeploy: bool,
     },
+    /// Draw one declaration's source onto a frame that is already on the board.
+    ///
+    /// A function's screenshot names things it does not explain — a state variable, a
+    /// struct used as a parameter. Name it and it lands on the frame, in free space, for
+    /// you to drag where you want it. Run with no `--frame` to list the deployed frames.
+    Screenshot {
+        /// Symbol to draw: `Name` or `Contract.Name`. Omit when giving --file/--lines.
+        name: Option<String>,
+        /// Frame to draw into, named by its entry point. Omit to list the frames.
+        #[arg(long)]
+        frame: Option<String>,
+        /// Source file, when the symbol is not in the index. Needs --lines.
+        #[arg(long)]
+        file: Option<String>,
+        /// Line range as `start-end`, 1-based and inclusive. Needs --file.
+        #[arg(long)]
+        lines: Option<String>,
+        /// Include the declaration's NatSpec, as `deploy --with-documentation` does
+        #[arg(long = "with-documentation")]
+        with_documentation: bool,
+    },
     /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
     /// interface call to its concrete implementation. `deploy` stops and lists what to
     /// resolve; add them here, then deploy again. Stored in the metadata.
@@ -272,6 +293,23 @@ impl BatCommands {
                 .await
                 .change_context(CommandError)
             }
+            BatCommands::Screenshot {
+                name,
+                frame,
+                file,
+                lines,
+                with_documentation,
+            } => crate::batbelt::evm::miro::screenshot::run(
+                crate::batbelt::evm::miro::screenshot::ScreenshotOptions {
+                    name: name.clone(),
+                    frame: frame.clone(),
+                    file: file.clone(),
+                    lines: lines.clone(),
+                    with_documentation: *with_documentation,
+                },
+            )
+            .await
+            .change_context(CommandError),
             BatCommands::Resolve {
                 interface,
                 contract,
@@ -294,7 +332,9 @@ impl BatCommands {
             | BatCommands::RefreshAiGuide
             | BatCommands::Update { .. } => return Ok(()),
             BatCommands::Sonar => false,
-            BatCommands::Deploy { .. } | BatCommands::Resolve { .. } => true,
+            BatCommands::Deploy { .. }
+            | BatCommands::Screenshot { .. }
+            | BatCommands::Resolve { .. } => true,
         };
 
         if check_metadata {

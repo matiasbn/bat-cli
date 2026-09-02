@@ -240,6 +240,18 @@ impl From<&crate::batbelt::miro::layout::ShelfAllocator> for ShelfState {
 /// One entry point's frame, with every item it owns, so a re-deploy can update
 /// instead of duplicating.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtraScreenshot {
+    /// What was asked for — a symbol name, or `file:start-end` for an explicit range.
+    pub label: String,
+    pub item_id: String,
+    /// Frame-local centre and size, so the next one placed avoids this one.
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoDeployedFrame {
     pub entry_point: String,
     pub frame_id: String,
@@ -284,6 +296,11 @@ pub struct AutoDeployedFrame {
     /// manual deletion) and stamp the fresh cluster it deploys in a clean zone.
     #[serde(default)]
     pub cluster_root: String,
+    /// Declaration screenshots added by `bat-cli screenshot`, kept ONLY so they are
+    /// cleaned up with the frame. A redeploy does not redraw them: they are a manual
+    /// enrichment of one diagram, not part of the call graph.
+    #[serde(default)]
+    pub screenshots: Vec<ExtraScreenshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

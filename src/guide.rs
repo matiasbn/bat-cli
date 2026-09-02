@@ -363,6 +363,7 @@ ls Bat.toml BatMetadata.json 2>/dev/null; bat-cli --version
 | `bat-cli login` / `logout` | machine-wide Miro OAuth (`--setup`, `--status`, `--force`) | **yes** (browser) |
 | `bat-cli config` | show the machine preferences (`--edit` re-answers them) | only with `--edit` |
 | `bat-cli update` | install the latest crates.io version (`--check`, `--force`) | no |
+| `bat-cli screenshot` | draw one declaration's source onto a frame already on the board | no |
 
 Machine-wide state lives in `~/.config/bat-cli/` — `config.toml` (auditor name, code editor),
 `miro.toml` (the OAuth credentials, `0600`) and `ai_context/` (this guide). Override the
@@ -381,6 +382,36 @@ from the old parser until `bat-cli sonar` runs inside it, and `Bat.toml`'s `bat_
 what tells you so.
 
 `-v` / `-vv` raise the `env_logger` level (logs go to stderr); `RUST_LOG` works too.
+
+## When the auditor doesn't know what something is
+
+A function's screenshot names things it does not explain: a state variable it compares against,
+a struct it takes as a parameter. The declaration is elsewhere in the source, so reading the
+diagram means leaving it. `bat-cli screenshot` puts that declaration on the frame.
+
+There is deliberately **no rule** deciding what deserves to be drawn — that judgement is the
+auditor's. When they say "I don't know what `X` is", draw `X`:
+
+```bash
+bat-cli screenshot                                            # lists the deployed frames
+bat-cli screenshot deviationThresholdWad --frame CvammALM.poke
+bat-cli screenshot PriceFeed.FeedType --frame CvammALM.poke --with-documentation
+bat-cli screenshot --file src/core/PriceFeed.sol --lines 36-44 --frame CvammALM.poke
+```
+
+- The symbol is `Name` or `Contract.Name`. Structs and enums (including the ones declared
+  inside a contract), and state variables including `constant` and `immutable`, all resolve
+  from the scan — you do not need to find the line numbers yourself.
+- **A name declared in several contracts stops with the candidates listed.** Re-run with the
+  qualified form it prints; do not guess.
+- **`--file` + `--lines` is the escape hatch.** If a name is not in the index, read the source,
+  find the range, and pass it — the command never blocks on a gap in the scan.
+- Omitting `--frame` lists the deployed frames, which is how you learn their names.
+- The image lands in free space below the frame's content, never on top of anything, and the
+  auditor drags it where they want it. It is drawn the same way `deploy` draws a function, so
+  it matches the rest of the diagram.
+- It is a manual enrichment of one diagram, not part of the call graph: a `--redeploy` does not
+  bring it back. `--undeploy` cleans it up with the frame.
 
 ## Interactive prompts — you cannot answer them
 
@@ -529,6 +560,11 @@ is in the file, rescan rather than working around it.
 Top level: `contracts`, `entry_points`, `function_dependencies`, `interfaces`, `file_items`,
 `miro`.
 
+- **`file_items[]`** is the declaration index — structs, enums, errors, type aliases, constants,
+  free functions and events — each with `file_path`, `line`, `end_line` and an `owner` naming the
+  contract it was declared inside (empty when it sits at file level). Since 0.24 this includes
+  declarations inside a contract, which is where Solidity puts most structs and enums.
+
 - **`contracts[]`** — `metadata_id`, `name`, `file_path`, `contract_type`
   (`Contract` | `Interface` | `Abstract` | `Library`), `base_contracts`, `line`, `external`,
   and nested `functions`, `state_variables`, `events`, `modifiers`.
@@ -640,6 +676,23 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.24.0
+- **`bat-cli screenshot` — put any declaration on a frame you are reading.** A function's
+  screenshot names things it cannot explain: the state variable it compares against, the struct it
+  takes as a parameter. Name the symbol and its source lands on the frame, in free space, for you
+  to drag where you want it — `bat-cli screenshot deviationThresholdWad --frame CvammALM.poke`.
+  It resolves `Name` or `Contract.Name` from the scan, stops and lists the candidates when a name
+  is declared in several contracts, and takes `--file`/`--lines` for anything the index misses, so
+  it never blocks. Run it with no `--frame` to list the deployed frames. Accepts
+  `--with-documentation` and renders exactly like `deploy`, so the image matches the diagram.
+  There is deliberately no rule about what deserves to be drawn: that judgement is the auditor's.
+- **Structs and enums declared inside a contract are now indexed.** Solidity puts most of them
+  there rather than at file level, and the scan used to parse them for type inference and then
+  throw the location away — on one real project that meant 5 of 174 types were locatable. They now
+  carry their file and line range, qualified by the contract that declares them
+  (`PriceFeed.FeedType`). Rescan with `bat-cli sonar` to pick them up.
+  _Re-read: workflow.md, metadata.md._
 
 ## 0.23.1
 - Documentation only: the guide and README no longer name functions from the codebase this was
