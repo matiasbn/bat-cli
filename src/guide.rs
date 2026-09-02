@@ -641,6 +641,11 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.23.1
+- Documentation only: the guide and README no longer name functions from the codebase this was
+  developed against, and the README's framing description now matches the current partitioning
+  (target ~15 screenshots, floor of 6) instead of the superseded 45/65 caps. _Re-read: nothing._
+
 ## 0.23.0
 - **`deploy --with-documentation` puts the NatSpec on the diagram.** Each screenshot normally starts
   at the function signature, so the `/// @notice …` above it — the author's statement of what the
@@ -683,8 +688,8 @@ so you re-open only the docs that actually changed — not everything.
   frame into an unreadable mesh (Miro auto-routes connectors, so the layout can't bend around them).
   Now: (1) big shared subtrees (≥ 6 screenshots) are cut to their own sub-frames; (2) THEN the small
   helpers still crossing (a caller ≥ 2 columns back) get a local copy per far caller — cheap, and no
-  longer whack-a-mole because the deep floor is already framed out. increaseLeverage's main frame
-  went from a 178-screenshot mesh to a readable ~37.
+  longer whack-a-mole because the deep floor is already framed out. On the entry point this was
+  developed against, the main frame went from a 178-screenshot mesh to a readable ~37.
 - **`deploy --redeploy` — fresh cluster in a clean zone, old URLs handed back.** Redeploys the whole
   cluster (entry point + every dependency frame) FRESH into a clean region, reusing nothing already
   on the board (only frames created within the same run). At the end it prints the PREVIOUS cluster's
@@ -696,8 +701,8 @@ so you re-open only the docs that actually changed — not everything.
   deployed). **Render dedup:** each distinct function is rendered once per run (shared across every
   frame and every duplicate copy), not once per appearance.
 - **Overloaded functions are no longer collapsed.** When a contract defines the same function name
-  several times (Solidity overloads — e.g. a public `deleverageQuote(...)` that forwards to an
-  internal `deleverageQuote(curve, ...)`), the deploy used to map every call to the FIRST definition,
+  several times (Solidity overloads — e.g. a public `quote(...)` that forwards to an
+  internal `quote(curve, ...)`), the deploy used to map every call to the FIRST definition,
   so a wrapper calling its sibling overload looked like a self-call and was dropped — the whole
   implementation subtree behind it silently vanished. Calls now carry their argument count and
   resolve to the overload whose parameter count matches, and each overload is its own node, so the
@@ -709,7 +714,7 @@ so you re-open only the docs that actually changed — not everything.
   it is never silently re-created either.)
 - **Duplicated callers no longer lose their call-out.** When a helper is duplicated so each caller
   has a nearby copy, a copy whose real work is a call to a SHARED function (e.g. a copy of
-  `_positionCollAndDebt` that just calls the shared `getPositionCollAndDebt`) used to be drawn as a
+  `_positionValue` that just calls the shared `getPositionValue`) used to be drawn as a
   dead-end — its call line pointing at nothing. Each copy now keeps its calls to shared functions
   (the shared node duplicates in turn, or the copies converge on it), so the graph below a
   duplicated node is always complete. Regenerate with `deploy`.
@@ -784,7 +789,7 @@ so you re-open only the docs that actually changed — not everything.
 - **Interface calls with a single in-scope implementation now deploy — deterministically, no
   `resolve` needed.** A call on an interface-typed receiver that nothing declares `is …` (so
   inheritance can't pin it) but whose method is defined by EXACTLY ONE in-scope contract is now
-  drawn straight to that contract — e.g. `alm.getReservesAtSqrtPrice(...)` → `CvammALM`. Before,
+  drawn straight to that contract — e.g. `pool.getReserves(...)` → `Pool`. Before,
   such a call was pushed to the AI work-list and then dropped by the storage-write prune when the
   method was a `view` read, so it silently never appeared. This is pure static analysis (a
   uniqueness gate: a common name like `transfer`, defined by many, still never auto-binds and stays

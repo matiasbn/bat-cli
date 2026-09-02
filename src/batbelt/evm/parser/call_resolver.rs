@@ -1288,7 +1288,7 @@ mod storage_write_test {
 
     #[test]
     fn detects_accessor_write_in_a_real_setter_shape() {
-        // The exact shape of CvammALM.setPaused: guard branches, then an
+        // The exact shape of a real `setPaused`: guard branches, then an
         // accessor-call storage write. No state_vars needed (call-rooted).
         let src = r#"
             if (p) {
