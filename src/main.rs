@@ -120,6 +120,10 @@ enum BatCommands {
         /// Print the computed layout without sending anything to Miro
         #[arg(long)]
         dry_run: bool,
+        /// Include each function's NatSpec documentation in its screenshot, so the
+        /// diagram carries the documented intent next to the code
+        #[arg(long = "with-documentation")]
+        with_documentation: bool,
         /// Include contracts coming from lib/
         #[arg(long)]
         include_external: bool,
@@ -235,6 +239,7 @@ impl BatCommands {
                 max_depth,
                 max_nodes,
                 dry_run,
+                with_documentation,
                 include_external,
                 preview,
                 stroke_width,
@@ -252,6 +257,7 @@ impl BatCommands {
                     max_depth: *max_depth,
                     max_nodes: *max_nodes,
                     dry_run: *dry_run,
+                    with_documentation: *with_documentation,
                     include_external: *include_external,
                     preview: preview.clone(),
                     stroke_width: *stroke_width,

@@ -129,7 +129,9 @@ doc updates in the same commit as the code they document. Commit to the working 
 
 ## Architecture
 
-bat-cli is a single binary (`src/main.rs`) whose `BatCommands` clap enum dispatches to `src/commands/*`. Every command first runs `validate_command()`, which only checks that the metadata cache exists for the commands that read it (`deploy`). There is no branch check: bat-cli creates no commits and manages no git.
+bat-cli is a single binary (`src/main.rs`) whose `BatCommands` clap enum dispatches to `src/commands/*`: `init`, `login`/`logout`, `update`, `config`, `sonar`, `refresh-ai-guide`, `deploy` and `resolve`. Every command first runs `validate_command()`, which only checks that the metadata cache exists for the commands that read it (`deploy`). There is no branch check: bat-cli creates no commits and manages no git.
+
+**`deploy` is where the complexity lives.** `src/batbelt/evm/miro/auto_deploy.rs` (~4.2k lines) plus `src/batbelt/miro/layout.rs` turn a Solidity call graph into a readable Miro diagram, and the design decisions behind it — the pipeline order, framing, localization, overload handling, `--redeploy`, and a list of approaches that were tried and FAILED — live in **`docs/diagram-deploy-design.md`**. Read that before touching either file; it is the "why" the code does not carry.
 
 `src/guide.rs` owns the AI-facing surface — see "Telling the AI what changed" above.
 
@@ -165,28 +167,39 @@ Deterministic, three-layer, built on `syn`:
 
 ### Metadata model (`src/batbelt/metadata/`)
 
-`BatMetadata` = `{ source_code, entry_points, function_dependencies, traits, context_accounts, miro }`. Every item carries a random 30-char `MetadataId`; cross-references (dependencies, entry points, Miro items) are stored by id, never by name. The `BatMetadataParser<U>` trait is the common interface (`name/path/metadata_id/start_line_index/end_line_index/metadata_sub_type`) implemented by each `*_source_code_metadata.rs`. `BatAuditorConfig::external_bat_metadata` lets one audit reference `BatMetadata.json` files from sibling projects.
+Both stacks persist to the same file, `BatMetadata.json` at the repo root, but with different shapes.
+
+**SVM** — `BatMetadata` = `{ source_code, entry_points, function_dependencies, traits, context_accounts, miro }`. Every item carries a random 30-char `MetadataId`; cross-references (dependencies, entry points, Miro items) are stored by id, never by name. The `BatMetadataParser<U>` trait is the common interface (`name/path/metadata_id/start_line_index/end_line_index/metadata_sub_type`) implemented by each `*_source_code_metadata.rs`.
+
+**EVM** — `EvmBatMetadata` = `{ contracts, entry_points, function_dependencies, interfaces, file_items, miro, resolutions }`.
+
+- `contracts[]` nests `functions`, `state_variables`, `events`, `modifiers`; `external: true` marks anything from `lib/`.
+- `miro` is the deploy registry — `miro.auto.frames[]` of `AutoDeployedFrame`, keyed by `entry_point` (the frame's ROOT function) plus `cluster_root`, each carrying `images`, `image_dims`, `node_positions`, `callee_connectors` and `link_cards`. This is what makes `--refresh-links`, `--undeploy` and `--redeploy` surgical. Note it records **which functions own a frame**, not every function drawn: the same function appearing as a non-root screenshot in two frames is drawn twice, on purpose (framing cuts branches out; `duplicate_crossing_shared` copies small helpers to shorten arrows).
+- `resolutions` maps an interface type name to the concrete in-scope contract it binds to at runtime — what static analysis cannot pin. `deploy` STOPS and lists what to resolve (unless `--allow-unresolved`); `bat-cli resolve <INTERFACE> <CONTRACT>` records one (`--list`, `--remove`).
+
+**`miro` and `resolutions` are preserved across a `sonar` regeneration.** Anything else you add to `EvmBatMetadata` that a rescan must not destroy has to be preserved explicitly too.
 
 ### Paths & workspace layout
 
-Never hardcode audit paths: `BatFile` and `BatFolder` (`src/batbelt/path.rs`) are enums that resolve every path from `Bat.toml`/`BatAuditor.toml`. The workspace is:
+Never hardcode audit paths: `BatFile` and `BatFolder` (`src/batbelt/path.rs`) are enums that resolve every path from `Bat.toml`. A project is **two files at the root of the audited repository** — bat-cli owns no folder there, which is why the AI guide is machine-global (see above) and why screenshots go to the system temp dir:
 
 ```
-bat-audit/
-├── Bat.toml            # project config (BatConfig: programs, project_type, miro board, auditors)
-├── BatAuditor.toml     # per-auditor config (BatAuditorConfig: name, miro token, editor) — gitignored
-├── BatMetadata.json    # sonar cache
-├── code-overhaul/{to-review,started,finished}/
-└── notes/<auditor>-notes/
+<audited repo>/
+├── Bat.toml           # BatConfig: project_type, program/src paths, miro board, bat_cli_version
+└── BatMetadata.json   # sonar cache + the Miro deploy registry
 ```
 
-Config is loaded with `figment` from those TOMLs; `BatConfig::get_config()` is called ad hoc from deep in the tree (including `metadata::derive_program_name_from_path`), so a valid `Bat.toml` in the cwd is a precondition for most code paths.
+`BatFolder::Figures` points at `$TMPDIR/bat-cli/<project>/`, not into the repo. There is **no `bat-audit/` directory, no `BatAuditor.toml`, and no `code-overhaul/`** — the code-overhaul workflow and the per-auditor config were removed; stale references to them survive only in a few doc comments (`miro/auth.rs`, `config.rs`).
+
+Config is loaded with `figment`/`confy`; `BatConfig::get_config()` is called ad hoc from deep in the tree, so a valid `Bat.toml` in the cwd is a precondition for most code paths.
 
 ### Miro integration
 
 `batbelt/miro/client.rs` wraps the Miro REST API (frames, images, shapes, connectors) with the machine-wide OAuth token from `~/.config/bat-cli/`. It carries a credit budget, a concurrency semaphore, and retries on 429/5xx. Screenshots are rendered locally by `batbelt/silicon.rs` (silicon + syntect, Dracula theme, background `#282a36`) into the system temp dir, uploaded, then deleted.
 
 `batbelt/evm/miro/auto_deploy.rs` orchestrates a deploy; `batbelt/miro/layout.rs` holds the pure, testable layout (Sugiyama for graphs, Reingold–Tilford for trees, shelf packing for board-level frame placement).
+
+`deploy_one`'s pipeline is **build graph → render → recycle/link → framing → localize → layout → upload**, and that order is a decision, not an accident (localizing before framing was whack-a-mole). The constants that tune it (`FRAME_TARGET`, `FRAME_MAX`, `FRAME_MIN`, `CROSS_LAYERS`, `MAX_CLOSURE`, `REFERENCE_FONT`, …) and the reasoning are in `docs/diagram-deploy-design.md` §2–§6 and §12. **The single hard constraint:** Miro auto-routes connectors — you set the two endpoints, never the waypoints — so a crossing can only be removed by making the callee LOCAL to its caller, never by a smarter layout. And the auditor's rule: never crop, fold or hide source; "make it fit" means more frames or a repeated screenshot, never less code.
 
 Connectors anchor to invisible 24×24 marker shapes rather than to the screenshots, because Miro clips a connector endpoint to the item's border — the marker is what lets an arrow land on an exact line and column, computed from `silicon::line_geometry` plus the call site's AST span.
 
