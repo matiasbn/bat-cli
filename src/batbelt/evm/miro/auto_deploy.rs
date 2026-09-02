@@ -86,6 +86,9 @@ pub struct AutoDeployOptions {
     pub max_nodes: Option<usize>,
     /// Compute and print the layout without touching Miro.
     pub dry_run: bool,
+    /// Extend each screenshot upward to include the function's NatSpec block, so
+    /// the diagram carries the documented intent next to the code.
+    pub with_documentation: bool,
     /// Include contracts coming from `lib/`.
     pub include_external: bool,
     /// Compose a local preview PNG of the frame at this path.
@@ -131,6 +134,7 @@ impl Default for AutoDeployOptions {
             max_depth: None,
             max_nodes: None,
             dry_run: false,
+            with_documentation: false,
             include_external: false,
             preview: None,
             stroke_width: 8,
@@ -2094,6 +2098,7 @@ fn build_graph(
         root_contract,
         &root_function,
         0,
+        doc_lines_above(options, &root_contract.file_path, root_function.line),
     ));
 
     // Depth-first, so siblings stay in source order and each subtree is built
@@ -2131,6 +2136,10 @@ fn build_graph(
             function.line,
             function_end(&function, contract),
         );
+        // `slice` is the body, so every line found in it is relative to the declaration.
+        // The screenshot may start higher (the NatSpec), so shift the anchors by exactly
+        // the number of documentation lines drawn above this caller.
+        let doc_shift = doc_lines_above(options, &contract.file_path, function.line);
 
         let mut children: Vec<Pending> = Vec::new();
 
@@ -2155,7 +2164,7 @@ fn build_graph(
             edges.push(GraphEdge {
                 from: current.node_id.clone(),
                 to: target_id.clone(),
-                line_in_slice,
+                line_in_slice: line_in_slice + doc_shift,
                 column: slice
                     .get(line_in_slice - 1)
                     .and_then(|line| line.find(modifier_name.as_str()))
@@ -2168,6 +2177,7 @@ fn build_graph(
                     owner,
                     &definition,
                     current.depth + 1,
+                    doc_lines_above(options, &owner.file_path, definition.line),
                 ));
             }
         }
@@ -2191,7 +2201,7 @@ fn build_graph(
             edges.push(GraphEdge {
                 from: current.node_id.clone(),
                 to: target_id.clone(),
-                line_in_slice: call.line,
+                line_in_slice: call.line + doc_shift,
                 column: call.column,
                 symbol: call.symbol.clone(),
             });
@@ -2207,6 +2217,7 @@ fn build_graph(
                 target_contract,
                 &target_function,
                 current.depth + 1,
+                doc_lines_above(options, &target_contract.file_path, target_function.line),
             ));
             children.push(Pending {
                 node_id: target_id,
@@ -2259,7 +2270,7 @@ fn build_graph(
             edges.push(GraphEdge {
                 from: current.node_id.clone(),
                 to: target_id.clone(),
-                line_in_slice,
+                line_in_slice: line_in_slice + doc_shift,
                 column: slice
                     .get(line_in_slice - 1)
                     .and_then(|l| l.find(u.method.as_str()))
@@ -2275,6 +2286,7 @@ fn build_graph(
                 tc,
                 &tf,
                 current.depth + 1,
+                doc_lines_above(options, &tc.file_path, tf.line),
             ));
             children.push(Pending {
                 node_id: target_id,
@@ -2392,13 +2404,17 @@ fn make_node(
     contract: &ContractMetadata,
     function: &FunctionMetadata,
     depth: usize,
+    doc_lines: usize,
 ) -> GraphNode {
     GraphNode {
         kind: NodeKind::Screenshot,
         id,
         label,
         file_path: contract.file_path.clone(),
-        start_line: function.line,
+        // The screenshot starts at the NatSpec when `--with-documentation` asked for it,
+        // so the render key, the line gutter and every absolute-line lookup all agree on
+        // where the image begins.
+        start_line: function.line - doc_lines,
         end_line: function_end(function, contract),
         depth,
         // Rendered at the reference font (so one render serves every depth); the
@@ -2471,6 +2487,7 @@ fn make_modifier_node(
     contract: &ContractMetadata,
     definition: &crate::batbelt::evm::types::EvmModifierDef,
     depth: usize,
+    doc_lines: usize,
 ) -> GraphNode {
     let end_line = if definition.end_line > 0 {
         definition.end_line
@@ -2482,7 +2499,7 @@ fn make_modifier_node(
         id,
         label: format!("{}.{} (modifier)", contract.name, definition.name),
         file_path: contract.file_path.clone(),
-        start_line: definition.line,
+        start_line: definition.line - doc_lines,
         end_line,
         depth,
         font_size: REFERENCE_FONT,
@@ -2787,6 +2804,60 @@ fn implementations_of(metadata: &EvmBatMetadata, type_name: &str) -> Vec<String>
         return derived;
     }
     vec![clean.to_string()]
+}
+
+/// First line of the NatSpec block written directly above `decl_line`, or `decl_line`
+/// itself when there is none.
+///
+/// "Directly above" is deliberate: a comment separated from the declaration by a blank
+/// line belongs to whatever came before it as often as not, and pulling it in would put
+/// another function's documentation on this one's screenshot. Both NatSpec forms count —
+/// a run of `///` lines, or one `/** … */` block — and nothing else does, so an ordinary
+/// `//` note is left out.
+fn natspec_start(file_path: &str, decl_line: usize) -> usize {
+    let content = std::fs::read_to_string(file_path).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().collect();
+    // `decl_line` is 1-based, so the line above it is at index `decl_line - 2`.
+    if decl_line < 2 || decl_line > lines.len() {
+        return decl_line;
+    }
+    let mut index = decl_line - 2;
+    let above = lines[index].trim();
+
+    if above.ends_with("*/") {
+        // Walk up to the line that opens the block. A one-line `/** … */` opens and
+        // closes on the same line, which this handles too.
+        loop {
+            let line = lines[index].trim();
+            if line.starts_with("/**") || line.starts_with("/*") {
+                return index + 1;
+            }
+            if index == 0 {
+                return decl_line; // unterminated — take nothing rather than guess
+            }
+            index -= 1;
+        }
+    }
+
+    if !above.starts_with("///") {
+        return decl_line;
+    }
+    // Consume the whole run of `///` lines.
+    while index > 0 && lines[index - 1].trim().starts_with("///") {
+        index -= 1;
+    }
+    index + 1
+}
+
+/// How many lines `--with-documentation` prepends to this declaration's screenshot.
+///
+/// Every rendered line above the declaration shifts the anchors computed from the body,
+/// so this same number is added to each edge's `line_in_slice`.
+fn doc_lines_above(options: &AutoDeployOptions, file_path: &str, decl_line: usize) -> usize {
+    if !options.with_documentation {
+        return 0;
+    }
+    decl_line.saturating_sub(natspec_start(file_path, decl_line))
 }
 
 fn read_slice(file_path: &str, start_line: usize, end_line: usize) -> Vec<String> {
@@ -3924,6 +3995,7 @@ mod cut_test {
             end_line: 2,
             depth: 0,
             font_size: 22,
+            scale: 1.0,
             png_path: String::new(),
             png_width: 1000,
             png_height: 300,
@@ -4043,16 +4115,19 @@ mod cut_test {
         }
     }
 
-    /// Nothing to consider when every call reaches the next layer along.
+    /// A graph too small to split is left alone: the husk guard wins over the cut.
+    ///
+    /// Cutting root→a would strand `b` with it, which frees two screenshots — but both
+    /// the piece (2) and the residual (1) land under `FRAME_MIN`, and a frame holding one
+    /// screenshot that points at a frame holding two is a scavenger hunt, not a diagram.
+    /// So there is no candidate at all.
     #[test]
-    fn test_a_clean_graph_has_no_candidate() {
+    fn test_a_graph_below_the_husk_floor_is_not_cut() {
         let nodes = vec![node("root"), node("a"), node("b")];
         let edges = vec![edge("root", "a"), edge("a", "b")];
 
-        // `a` holds `b` up on its own, so cutting root→a frees both.
-        let (cut_nodes, _) =
-            best_cut(&nodes, &edges, &HashSet::new(), FRAME_TARGET).expect("cutting root->a strands b");
-        assert!(screenshot_count(&cut_nodes) < screenshot_count(&nodes));
+        assert!(nodes.len() < FRAME_MIN);
+        assert!(best_cut(&nodes, &edges, &HashSet::new(), FRAME_TARGET).is_none());
     }
 }
 
@@ -4191,4 +4266,74 @@ async fn live_frame_url(title: &str, client: Option<&MiroClient>) -> Result<Opti
     })
     .change_context(EvmMiroError)?;
     Ok(None)
+}
+
+#[cfg(test)]
+mod natspec_test {
+    use super::*;
+
+    /// Writes `body` to a scratch .sol file and returns its path.
+    fn sol_fixture(name: &str, body: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("bat-cli-natspec-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{name}.sol"));
+        std::fs::write(&path, body).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn takes_a_run_of_slash_slash_slash_lines() {
+        //                   1                2                3               4
+        let path = sol_fixture("triple", "contract C {\n    /// @notice a\n    /// @dev b\n    function f() {}\n}\n");
+        assert_eq!(natspec_start(&path, 4), 2); // the whole run, not just the last line
+    }
+
+    #[test]
+    fn takes_a_block_comment_whole() {
+        let path = sol_fixture(
+            "block",
+            "contract C {\n    /**\n     * @notice a\n     */\n    function f() {}\n}\n",
+        );
+        assert_eq!(natspec_start(&path, 5), 2); // opens at `/**`, four lines up
+    }
+
+    #[test]
+    fn takes_a_one_line_block() {
+        let path = sol_fixture("oneline", "contract C {\n    /** @notice a */\n    function f() {}\n}\n");
+        assert_eq!(natspec_start(&path, 3), 2);
+    }
+
+    #[test]
+    fn leaves_an_ordinary_comment_out() {
+        // `//` is a note to the reader, not documentation of the function.
+        let path = sol_fixture("plain", "contract C {\n    // just a note\n    function f() {}\n}\n");
+        assert_eq!(natspec_start(&path, 3), 3);
+    }
+
+    #[test]
+    fn a_blank_line_detaches_the_comment() {
+        // A comment separated by a blank line belongs to whatever came before it as
+        // often as not; pulling it in would put another function's docs on this one.
+        let path = sol_fixture("detached", "contract C {\n    /// @notice a\n\n    function f() {}\n}\n");
+        assert_eq!(natspec_start(&path, 4), 4);
+    }
+
+    #[test]
+    fn takes_nothing_when_there_is_nothing() {
+        let path = sol_fixture("bare", "contract C {\n    function f() {}\n}\n");
+        assert_eq!(natspec_start(&path, 2), 2);
+        // Out of range and line 1 are handled without panicking.
+        assert_eq!(natspec_start(&path, 1), 1);
+        assert_eq!(natspec_start(&path, 999), 999);
+        assert_eq!(natspec_start("/no/such/file.sol", 7), 7);
+    }
+
+    #[test]
+    fn doc_lines_above_is_zero_unless_asked_for() {
+        let path = sol_fixture("gated", "contract C {\n    /// @notice a\n    function f() {}\n}\n");
+        let mut options = AutoDeployOptions::default();
+        assert_eq!(doc_lines_above(&options, &path, 3), 0);
+        options.with_documentation = true;
+        assert_eq!(doc_lines_above(&options, &path, 3), 1);
+    }
 }

@@ -419,6 +419,7 @@ bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only 
 |---|---|
 | `--entry-point <name>` | `Contract.function` or bare `function`; omit to pick from a list |
 | `--dry-run` | compute and print the layout, never touch Miro (no login needed) |
+| `--with-documentation` | start each screenshot at the function's NatSpec, so the documented intent is on the diagram |
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--refresh-links` | incrementally swap callees that gained their own frame for link cards, WITHOUT re-deploying (see below) |
 | `--undeploy` | remove this entry point's frame from the board and registry entirely (frame, items, link cards, metadata) — to clean up a helper that should never have been its own frame |
@@ -639,6 +640,19 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.23.0
+- **`deploy --with-documentation` puts the NatSpec on the diagram.** Each screenshot normally starts
+  at the function signature, so the `/// @notice …` above it — the author's statement of what the
+  function is FOR — never made it onto the board, and the reviewer had to read intent back out of the
+  code. With the flag, a screenshot starts at the top of the NatSpec block written directly above the
+  declaration: a run of `///` lines or one `/** … */` block, modifiers included. An ordinary `//`
+  note is left out (it is a remark, not documentation), and so is a comment separated from the
+  declaration by a blank line, which belongs to whatever came before it as often as not. Arrows still
+  land on the exact calling line — the anchors shift by however many documentation lines were added —
+  and the screenshots are cached separately, so a documented and an undocumented deploy never reuse
+  each other's images. Everything is unchanged without the flag.
+  _Re-read: workflow.md._
 
 ## 0.22.13
 - **Columns are top-aligned, so a tall caller's arrows stop crossing.** Deeper layers used to be

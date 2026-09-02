@@ -71,6 +71,7 @@ Useful flags, though none are needed:
 | flag | |
 |---|---|
 | `--dry-run` | print the computed layout without contacting Miro |
+| `--with-documentation` | start each screenshot at the function's NatSpec, so the documented intent rides along with the code |
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--max-depth` / `--max-nodes` | bound a graph by hand; unset draws all of it |
 | `--stroke-width` | connector thickness in dp |
