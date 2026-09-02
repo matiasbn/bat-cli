@@ -119,8 +119,9 @@ Constants (`auto_deploy.rs`): `FRAME_TARGET = 15`, `FRAME_MAX = 20`,
 WHICH node to copy; the CERTIFICATE that a crossing is gone is `count_crossings`
 from the re-layout — "close" is not a guarantee.
 
-Result: `increaseLeverage`'s main frame went from a 178-screenshot mesh to a
-readable ~37 (framing) with the residual small crossers copied local.
+Result on the entry point this was developed against: the main frame went from a
+178-screenshot mesh to a readable ~37 (framing), with the residual small crossers
+copied local.
 
 ---
 
@@ -145,7 +146,7 @@ Decisions in `render_and_measure` / `make_node`:
 ## 7. Overloaded functions (resolved by arity)
 
 A contract with several same-named functions (Solidity overloads, e.g. a public
-`deleverageQuote(...)` forwarding to an internal `deleverageQuote(curve, ...)`) used
+`quote(...)` forwarding to an internal `quote(curve, ...)`) used
 to map EVERY call to the first definition — so a wrapper calling its sibling looked
 like a self-call and was dropped, and the whole implementation subtree vanished.
 
