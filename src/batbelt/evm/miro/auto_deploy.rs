@@ -210,9 +210,16 @@ struct GraphNode {
     /// — the write is three hops down. The chain was drawn correctly and looked like it
     /// changed nothing.
     leads_to_write: bool,
-    /// File lines (1-based) whose call reaches a storage write, with the called symbol.
-    /// This is what puts a mark on `debtToken.mint(...)` itself.
-    write_call_lines: Vec<(usize, String)>,
+    /// Call lines (1-based, file) that reach a storage write, as
+    /// `(line, symbol, callee node id)`. The id is empty when the callee never entered
+    /// the graph at all.
+    ///
+    /// These are CANDIDATES. One state change must produce exactly ONE mark, so a line is
+    /// only drawn when its callee is not itself a screenshot on this frame — otherwise the
+    /// callee carries the mark, nearer to where the write really happens. The filter runs
+    /// at draw time because framing can turn a screenshot into a link card after the graph
+    /// is built.
+    write_call_lines: Vec<(usize, String, String)>,
     /// Display scale for this placement. Every function is rendered ONCE at the
     /// reference font (`REFERENCE_FONT`, the depth-0 size); a deeper node shows the
     /// same image shrunk by this factor (< 1), so the source is rendered once and
@@ -1100,9 +1107,12 @@ async fn deploy_one(
     // changes state — whether it holds the assignment or only reaches one through what it
     // calls. One marking, not two: the question a reader asks is "does this change state",
     // and a pass-through like `DebtToken.mint` answers yes even though it assigns nothing.
+    let drawn_screens = drawn_screen_ids(&nodes);
     let borders: Vec<(f64, f64, f64, f64)> = nodes
         .iter()
-        .filter(|n| n.writes_storage || n.leads_to_write)
+        .filter(|n| {
+            n.writes_storage || surviving_write_calls(n, &drawn_screens).next().is_some()
+        })
         .filter_map(|n| layout.node(&n.id).map(|p| (p.x, p.y, p.width, p.height)))
         .collect();
     if !borders.is_empty() {
@@ -1173,9 +1183,13 @@ async fn deploy_one(
     // that it does). Tracked as border ids so a recycle clears them too.
     let mut highlights: Vec<(f64, f64, f64, f64)> = Vec::new();
     for node in nodes.iter() {
-        if (node.write_lines.is_empty() && node.write_call_lines.is_empty())
-            || node.png_height == 0
-        {
+        if node.png_height == 0 {
+            continue;
+        }
+        let surviving: Vec<usize> = surviving_write_calls(node, &drawn_screens)
+            .map(|(line, _, _)| *line)
+            .collect();
+        if node.write_lines.is_empty() && surviving.is_empty() {
             continue;
         }
         let Some(p) = layout.node(&node.id) else {
@@ -1186,8 +1200,8 @@ async fn deploy_one(
         let mut lines: Vec<usize> = node
             .write_lines
             .iter()
-            .chain(node.write_call_lines.iter())
             .map(|(line, _)| *line)
+            .chain(surviving.iter().copied())
             .filter(|line| *line >= node.start_line && *line <= node.end_line)
             .collect();
         lines.sort_unstable();
@@ -2200,7 +2214,7 @@ fn build_graph(
         let mut children: Vec<Pending> = Vec::new();
         // Lines in THIS function whose call reaches a storage write, collected while the
         // calls are resolved and written back onto the node once the loop is done.
-        let mut caller_write_calls: Vec<(usize, String)> = Vec::new();
+        let mut caller_write_calls: Vec<(usize, String, String)> = Vec::new();
 
         // Modifiers count as dependencies; their call site is the line of the
         // signature where the modifier name appears.
@@ -2265,8 +2279,24 @@ fn build_graph(
                     &mut write_memo,
                     &mut HashSet::new(),
                 ) {
-                    caller_write_calls
-                        .push((function.line + call.line - 1, call.symbol.clone()));
+                    // Empty when the callee is dropped from the graph (a `lib/` target
+                    // without `--include-external`): nothing downstream can carry the
+                    // mark, so this line keeps it.
+                    let callee_id = resolve_call(
+                        metadata,
+                        contract,
+                        &call.name,
+                        arity,
+                        options,
+                        &definer_map,
+                    )
+                    .map(|(c, f)| overload_node_key(metadata, &c.name, &f))
+                    .unwrap_or_default();
+                    caller_write_calls.push((
+                        function.line + call.line - 1,
+                        call.symbol.clone(),
+                        callee_id,
+                    ));
                 }
             }
 
@@ -2383,7 +2413,11 @@ fn build_graph(
                 &mut write_memo,
                 &mut HashSet::new(),
             ) {
-                caller_write_calls.push((function.line + line_in_slice - 1, u.method.clone()));
+                caller_write_calls.push((
+                    function.line + line_in_slice - 1,
+                    u.method.clone(),
+                    target_id.clone(),
+                ));
             }
             if drawn.insert(target_id.clone(), target_id.clone()).is_some() {
                 continue;
@@ -2783,6 +2817,38 @@ fn find_modifier<'a>(
 /// Handles `helper(...)` (same contract or inherited), `Lib.fn(...)`,
 /// `super.fn(...)` and `stateVar.fn(...)` where the variable's declared type is
 /// an interface with a known implementation.
+/// The call lines that actually get a mark on this frame.
+///
+/// One state change must produce ONE mark. A chain like
+/// `_increaseDebt → DebtToken.mint → ERC20._mint → ERC20._update` would otherwise paint
+/// every hop for the single write in `_update`, and counting the red marks on a frame
+/// would tell the reader nothing.
+///
+/// So a call line keeps its mark only when the callee is NOT a screenshot on this frame:
+/// then this line is the deepest the frame gets to the write, and the last place able to
+/// show it. When the callee IS drawn, it carries the mark instead — its own assignment, or
+/// its own outgoing call — which is nearer to where the change really happens. A callee
+/// cut out to another frame (a link card) counts as absent, since the mark belongs to the
+/// frame that draws it.
+fn surviving_write_calls<'a>(
+    node: &'a GraphNode,
+    drawn_screens: &HashSet<&str>,
+) -> impl Iterator<Item = &'a (usize, String, String)> {
+    let drawn: HashSet<String> = drawn_screens.iter().map(|id| id.to_string()).collect();
+    node.write_call_lines
+        .iter()
+        .filter(move |(_, _, callee)| !drawn.contains(callee))
+}
+
+/// Node ids drawn as source on this frame, which is what decides who owns a mark.
+fn drawn_screen_ids(nodes: &[GraphNode]) -> HashSet<&str> {
+    nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Screenshot)
+        .map(|node| node.id.as_str())
+        .collect()
+}
+
 /// Does this function reach a storage write, directly or through anything it calls?
 ///
 /// A node is drawn red only when it holds the assignment itself, and that hides real state
@@ -3369,6 +3435,7 @@ fn print_dry_run(
         "  {:<38} {:>5} {:>9} {:>9} {:>7} {:>7}  {:<11}  {}",
         "node", "layer", "x", "y", "w", "h", "png", "state"
     );
+    let drawn_screens = drawn_screen_ids(nodes);
     let mut placed: Vec<_> = layout.nodes.iter().collect();
     placed.sort_by_key(|node| (node.layer, node.y as i64));
     for node in placed {
@@ -3384,12 +3451,14 @@ fn print_dry_run(
             source
                 .map(|n| format!("{}x{}", n.png_width, n.png_height))
                 .unwrap_or_default(),
-            // `write` holds the assignment; `→write` only reaches one through a call.
+            // What this node actually gets drawn with: `write` holds the assignment,
+            // `→write` carries the mark for a change that happens past the frame's edge.
+            // A node that only passes the call along shows nothing — the callee owns it.
             source
                 .map(|n| {
                     if n.writes_storage {
                         "write".to_string()
-                    } else if n.leads_to_write {
+                    } else if surviving_write_calls(n, &drawn_screens).next().is_some() {
                         "→write".to_string()
                     } else {
                         String::new()
@@ -3402,9 +3471,8 @@ fn print_dry_run(
     let marked_lines: Vec<String> = nodes
         .iter()
         .flat_map(|node| {
-            node.write_call_lines
-                .iter()
-                .map(move |(line, symbol)| format!("{} L{line} → {symbol}()", node.label))
+            surviving_write_calls(node, &drawn_screens)
+                .map(move |(line, symbol, _)| format!("{} L{line} → {symbol}()", node.label))
         })
         .collect();
     if !marked_lines.is_empty() {

@@ -204,8 +204,9 @@ whose call line points at nothing.
 assigns to storage, and each mutating line gets a red band. But a chain of pass-throughs assigns
 nothing on the way down — `mint` calls `_mint` calls `_update`, and only the last one writes —
 so the state change used to be invisible unless the final function happened to be on the frame.
-A function that reaches a write through anything it calls is now marked the same way, with the
-band on the line that makes the call. Reachability is computed across the whole call graph, `lib/`
+The change is now marked once, at the deepest point the frame reaches: on the assignment when
+the function holding it is drawn, otherwise on the call that leaves the frame towards it — so one
+red mark is one state change, and they can be counted. Reachability is computed across the whole call graph, `lib/`
 included, so the mark survives a chain cut short by framing or depth limits.
 
 **Overloaded functions.** When a contract defines the same name several times
