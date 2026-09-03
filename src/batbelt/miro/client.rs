@@ -640,48 +640,6 @@ impl MiroClient {
         Ok(value["id"].as_str().unwrap_or_default().to_string())
     }
 
-    /// Hollow DASHED red rectangle: this function does not write storage itself, but
-    /// something it calls does.
-    ///
-    /// Same red as `create_storage_border` because it is the same kind of event — a state
-    /// change — and dashed because it happens downstream rather than here. Without it a
-    /// pass-through like `DebtToken.mint`, whose whole job is to reach `ERC20._update`,
-    /// reads as inert on the board.
-    pub async fn create_indirect_storage_border(
-        &self,
-        frame_id: &str,
-        x: f64,
-        y: f64,
-        width: f64,
-        height: f64,
-    ) -> Result<String, MiroError> {
-        let pad = 60.0;
-        let url = self.endpoint("shapes");
-        let body = json!({
-            "data": { "shape": "rectangle" },
-            "style": {
-                "fillOpacity": "0.0",
-                "borderColor": "#f24726",
-                "borderWidth": "24",
-                "borderOpacity": "1.0",
-                "borderStyle": "dashed",
-            },
-            "position": { "x": x, "y": y },
-            "geometry": { "width": width + pad, "height": height + pad },
-            "parent": { "id": frame_id },
-        })
-        .to_string();
-
-        let value = self
-            .execute(LEVEL_2_CREDITS, "create_indirect_storage_border", move |http| {
-                http.post(&url)
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body.clone())
-            })
-            .await?;
-        Ok(value["id"].as_str().unwrap_or_default().to_string())
-    }
-
     /// Whether an item is still on the board.
     ///
     /// The registry records what was deployed, but a board is edited by hand:

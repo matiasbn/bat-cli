@@ -385,15 +385,14 @@ what tells you so.
 
 ## Reading state changes on the diagram
 
-Two markings, and the difference matters:
-
-- **Solid red border, red band on a line** — that function assigns to storage, on that line.
-- **Dashed red border, red band on a call line** — that function assigns nothing itself, but
-  something it calls does. The band sits on the call that reaches the write.
+A red border means the function changes state — whether it holds the assignment or only reaches
+one through what it calls. A red band marks the line responsible: the assignment itself, or the
+call that reaches it.
 
 A chain like `_increaseDebt → DebtToken.mint → ERC20._mint → ERC20._update` has the assignment
-only in `_update`; everything above it is a pass-through. Both markings together are what make
-the state change visible at every step, including when `_update` is not drawn on this frame.
+only in `_update`; everything above it is a pass-through that assigns nothing. Every one of them
+is marked, which is what makes the state change visible at each step — including when `_update`
+is not drawn on this frame at all.
 
 Reachability is computed from the metadata call graph and always crosses into `lib/`, so it does
 not depend on `--include-external`. It does depend on interface resolutions: a call through an
@@ -704,9 +703,8 @@ so you re-open only the docs that actually changed — not everything.
   `PositionManager._increaseDebt` calls `debtToken.mint`, which calls `ERC20._mint`, which in
   OpenZeppelin v5 only validates and delegates to `_update` — the one function in the chain that
   assigns anything. Every hop in between, and the call lines reaching them, were unmarked.
-  Now a function that reaches a storage write through anything it calls gets a **dashed** red
-  border (solid still means "the assignment is here"), and the calling line itself gets the red
-  band. The reachability walk runs over the metadata call graph and always crosses into `lib/`,
+  Now a function that reaches a storage write through anything it calls is marked exactly like
+  one that performs it — red border, and a red band on the line that makes the call. The reachability walk runs over the metadata call graph and always crosses into `lib/`,
   so the mark survives a chain cut short by framing, `--max-depth`, or leaving
   `--include-external` off — you see the state change even when the function that performs it is
   not on the frame. On a real project this moved 293 marked functions to 401, not a flood.

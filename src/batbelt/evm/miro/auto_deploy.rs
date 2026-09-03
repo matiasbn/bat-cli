@@ -1096,11 +1096,13 @@ async fn deploy_one(
         }
     }
 
-    // Storage-write markers: a hollow colored rectangle around every node whose
-    // function mutates contract storage, so state changes stand out on the board.
+    // Storage-write markers: a hollow red rectangle around every node whose function
+    // changes state — whether it holds the assignment or only reaches one through what it
+    // calls. One marking, not two: the question a reader asks is "does this change state",
+    // and a pass-through like `DebtToken.mint` answers yes even though it assigns nothing.
     let borders: Vec<(f64, f64, f64, f64)> = nodes
         .iter()
-        .filter(|n| n.writes_storage)
+        .filter(|n| n.writes_storage || n.leads_to_write)
         .filter_map(|n| layout.node(&n.id).map(|p| (p.x, p.y, p.width, p.height)))
         .collect();
     if !borders.is_empty() {
@@ -1164,42 +1166,6 @@ async fn deploy_one(
         }
         bar.finish_and_clear();
         println!("    {} {} external markers", "✓".green(), n_ext_borders);
-    }
-
-    // Dashed red border: this function writes nothing itself, but something it calls
-    // does. A pass-through like `DebtToken.mint` — whose whole job is to reach
-    // `ERC20._update` — used to read as inert, so the state change was invisible unless
-    // the very node holding the assignment happened to be drawn.
-    let indirect: Vec<(f64, f64, f64, f64)> = nodes
-        .iter()
-        .filter(|n| n.leads_to_write && !n.writes_storage)
-        .filter_map(|n| layout.node(&n.id).map(|p| (p.x, p.y, p.width, p.height)))
-        .collect();
-    if !indirect.is_empty() {
-        let n_indirect = indirect.len();
-        let bar = phase_bar("indirect state markers", n_indirect);
-        let mut border_tasks = tokio::task::JoinSet::new();
-        for (x, y, width, height) in indirect {
-            let client = client.clone();
-            let frame_id = frame_id.clone();
-            let bar = bar.clone();
-            border_tasks.spawn(async move {
-                let result = client
-                    .create_indirect_storage_border(&frame_id, x, y, width, height)
-                    .await;
-                bar.inc(1);
-                result
-            });
-        }
-        while let Some(joined) = border_tasks.join_next().await {
-            let id = joined
-                .into_report()
-                .change_context(EvmMiroError)?
-                .change_context(EvmMiroError)?;
-            record.border_ids.push(id);
-        }
-        bar.finish_and_clear();
-        println!("    {} {} indirect state markers", "✓".green(), n_indirect);
     }
 
     // Line highlights: a translucent red band over each exact statement that
