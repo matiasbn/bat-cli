@@ -2243,6 +2243,33 @@ fn build_graph(
 
         for call in extract_call_sites_from_source(&body_only(&slice).join("\n")) {
             let arity = (call.arg_count != usize::MAX).then_some(call.arg_count);
+
+            // Mark the calling line whenever the call reaches a write, BEFORE deciding
+            // whether the callee is drawn. A target in `lib/` is dropped from the graph
+            // without `--include-external`, but the state change it causes is still real,
+            // and this line is the last place in the frame that can show it.
+            if let Some((reached_contract, reached_function)) = resolve_call(
+                metadata,
+                contract,
+                &call.name,
+                arity,
+                &write_options,
+                &write_definer_map,
+            ) {
+                if leads_to_write(
+                    metadata,
+                    reached_contract,
+                    &reached_function,
+                    &write_options,
+                    &write_definer_map,
+                    &mut write_memo,
+                    &mut HashSet::new(),
+                ) {
+                    caller_write_calls
+                        .push((function.line + call.line - 1, call.symbol.clone()));
+                }
+            }
+
             let Some((target_contract, target_function)) =
                 resolve_call(metadata, contract, &call.name, arity, options, &definer_map)
             else {
@@ -2265,25 +2292,6 @@ fn build_graph(
                 symbol: call.symbol.clone(),
             });
 
-            // A call that reaches a write is a state change at THIS line, even though
-            // nothing is assigned here. `call.line` is 1-based within the slice, which
-            // starts at the declaration, so the file line is the declaration plus it.
-            // NOTE: an interface left unresolved (`bat-cli resolve`) stops this walk the
-            // same way it stops the graph, so its writes stay invisible.
-            if leads_to_write(
-                metadata,
-                target_contract,
-                &target_function,
-                &write_options,
-                &write_definer_map,
-                &mut write_memo,
-                &mut HashSet::new(),
-            ) {
-                caller_write_calls.push((
-                    function.line + call.line - 1,
-                    call.symbol.clone(),
-                ));
-            }
 
             // Seen before: the arrow points at the node already drawn, and there
             // is nothing left to expand.
