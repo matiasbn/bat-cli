@@ -203,6 +203,16 @@ struct GraphNode {
     /// (an interface-typed receiver nothing in the repo implements) via a non-view
     /// method — an unverified external state-change boundary, flagged distinctly.
     external_call_lines: Vec<usize>,
+    /// This function writes no storage itself, but something it calls does.
+    ///
+    /// Without this a pass-through reads as inert: `DebtToken.mint` exists only to reach
+    /// `ERC20._update`, and in OpenZeppelin v5 neither `mint` nor `_mint` assigns anything
+    /// — the write is three hops down. The chain was drawn correctly and looked like it
+    /// changed nothing.
+    leads_to_write: bool,
+    /// File lines (1-based) whose call reaches a storage write, with the called symbol.
+    /// This is what puts a mark on `debtToken.mint(...)` itself.
+    write_call_lines: Vec<(usize, String)>,
     /// Display scale for this placement. Every function is rendered ONCE at the
     /// reference font (`REFERENCE_FONT`, the depth-0 size); a deeper node shows the
     /// same image shrunk by this factor (< 1), so the source is rendered once and
@@ -1156,12 +1166,50 @@ async fn deploy_one(
         println!("    {} {} external markers", "✓".green(), n_ext_borders);
     }
 
+    // Dashed red border: this function writes nothing itself, but something it calls
+    // does. A pass-through like `DebtToken.mint` — whose whole job is to reach
+    // `ERC20._update` — used to read as inert, so the state change was invisible unless
+    // the very node holding the assignment happened to be drawn.
+    let indirect: Vec<(f64, f64, f64, f64)> = nodes
+        .iter()
+        .filter(|n| n.leads_to_write && !n.writes_storage)
+        .filter_map(|n| layout.node(&n.id).map(|p| (p.x, p.y, p.width, p.height)))
+        .collect();
+    if !indirect.is_empty() {
+        let n_indirect = indirect.len();
+        let bar = phase_bar("indirect state markers", n_indirect);
+        let mut border_tasks = tokio::task::JoinSet::new();
+        for (x, y, width, height) in indirect {
+            let client = client.clone();
+            let frame_id = frame_id.clone();
+            let bar = bar.clone();
+            border_tasks.spawn(async move {
+                let result = client
+                    .create_indirect_storage_border(&frame_id, x, y, width, height)
+                    .await;
+                bar.inc(1);
+                result
+            });
+        }
+        while let Some(joined) = border_tasks.join_next().await {
+            let id = joined
+                .into_report()
+                .change_context(EvmMiroError)?
+                .change_context(EvmMiroError)?;
+            record.border_ids.push(id);
+        }
+        bar.finish_and_clear();
+        println!("    {} {} indirect state markers", "✓".green(), n_indirect);
+    }
+
     // Line highlights: a translucent red band over each exact statement that
     // writes storage, so an auditor sees WHICH state a function mutates (not just
     // that it does). Tracked as border ids so a recycle clears them too.
     let mut highlights: Vec<(f64, f64, f64, f64)> = Vec::new();
     for node in nodes.iter() {
-        if node.write_lines.is_empty() || node.png_height == 0 {
+        if (node.write_lines.is_empty() && node.write_call_lines.is_empty())
+            || node.png_height == 0
+        {
             continue;
         }
         let Some(p) = layout.node(&node.id) else {
@@ -1172,6 +1220,7 @@ async fn deploy_one(
         let mut lines: Vec<usize> = node
             .write_lines
             .iter()
+            .chain(node.write_call_lines.iter())
             .map(|(line, _)| *line)
             .filter(|line| *line >= node.start_line && *line <= node.end_line)
             .collect();
@@ -2089,6 +2138,28 @@ fn build_graph(
         }
     }
 
+    // Whether a call changes state is a fact about the code, so the reachability walk
+    // always crosses into `lib/` — independently of whether this deploy draws it.
+    let write_options = AutoDeployOptions {
+        include_external: true,
+        ..options.clone()
+    };
+    let mut write_definer_map: HashMap<String, Vec<String>> = HashMap::new();
+    for contract in &metadata.contracts {
+        if contract.contract_type == EvmContractType::Interface {
+            continue;
+        }
+        for function in &contract.functions {
+            if !function.is_stub {
+                write_definer_map
+                    .entry(function.name.clone())
+                    .or_default()
+                    .push(contract.name.clone());
+            }
+        }
+    }
+    let mut write_memo: HashMap<String, bool> = HashMap::new();
+
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut truncated = 0usize;
@@ -2101,14 +2172,24 @@ fn build_graph(
 
     let root_id = overload_node_key(metadata, &root_contract.name, &root_function);
     drawn.insert(root_id.clone(), root_id.clone());
-    nodes.push(make_node(
+    let mut root_node = make_node(
         root_id.clone(),
         format!("{contract_name}.{function_name}"),
         root_contract,
         &root_function,
         0,
         doc_lines_above(options, &root_contract.file_path, root_function.line),
-    ));
+    );
+    root_node.leads_to_write = leads_to_write(
+        metadata,
+        root_contract,
+        &root_function,
+        &write_options,
+        &write_definer_map,
+        &mut write_memo,
+        &mut HashSet::new(),
+    );
+    nodes.push(root_node);
 
     // Depth-first, so siblings stay in source order and each subtree is built
     // before the next one starts — which is the order the layout wants. `line`
@@ -2151,6 +2232,9 @@ fn build_graph(
         let doc_shift = doc_lines_above(options, &contract.file_path, function.line);
 
         let mut children: Vec<Pending> = Vec::new();
+        // Lines in THIS function whose call reaches a storage write, collected while the
+        // calls are resolved and written back onto the node once the loop is done.
+        let mut caller_write_calls: Vec<(usize, String)> = Vec::new();
 
         // Modifiers count as dependencies; their call site is the line of the
         // signature where the modifier name appears.
@@ -2215,19 +2299,49 @@ fn build_graph(
                 symbol: call.symbol.clone(),
             });
 
+            // A call that reaches a write is a state change at THIS line, even though
+            // nothing is assigned here. `call.line` is 1-based within the slice, which
+            // starts at the declaration, so the file line is the declaration plus it.
+            // NOTE: an interface left unresolved (`bat-cli resolve`) stops this walk the
+            // same way it stops the graph, so its writes stay invisible.
+            if leads_to_write(
+                metadata,
+                target_contract,
+                &target_function,
+                &write_options,
+                &write_definer_map,
+                &mut write_memo,
+                &mut HashSet::new(),
+            ) {
+                caller_write_calls.push((
+                    function.line + call.line - 1,
+                    call.symbol.clone(),
+                ));
+            }
+
             // Seen before: the arrow points at the node already drawn, and there
             // is nothing left to expand.
             if drawn.insert(target_id.clone(), target_id.clone()).is_some() {
                 continue;
             }
-            nodes.push(make_node(
+            let mut child = make_node(
                 target_id.clone(),
                 format!("{}.{}", target_contract.name, target_function.name),
                 target_contract,
                 &target_function,
                 current.depth + 1,
                 doc_lines_above(options, &target_contract.file_path, target_function.line),
-            ));
+            );
+            child.leads_to_write = leads_to_write(
+                metadata,
+                target_contract,
+                &target_function,
+                &write_options,
+                &write_definer_map,
+                &mut write_memo,
+                &mut HashSet::new(),
+            );
+            nodes.push(child);
             children.push(Pending {
                 node_id: target_id,
                 contract: target_contract.name.clone(),
@@ -2286,17 +2400,38 @@ fn build_graph(
                     .unwrap_or(0),
                 symbol: u.method.clone(),
             });
+            if leads_to_write(
+                metadata,
+                tc,
+                &tf,
+                &write_options,
+                &write_definer_map,
+                &mut write_memo,
+                &mut HashSet::new(),
+            ) {
+                caller_write_calls.push((function.line + line_in_slice - 1, u.method.clone()));
+            }
             if drawn.insert(target_id.clone(), target_id.clone()).is_some() {
                 continue;
             }
-            nodes.push(make_node(
+            let mut child = make_node(
                 target_id.clone(),
                 format!("{}.{}", tc.name, tf.name),
                 tc,
                 &tf,
                 current.depth + 1,
                 doc_lines_above(options, &tc.file_path, tf.line),
-            ));
+            );
+            child.leads_to_write = leads_to_write(
+                metadata,
+                tc,
+                &tf,
+                &write_options,
+                &write_definer_map,
+                &mut write_memo,
+                &mut HashSet::new(),
+            );
+            nodes.push(child);
             children.push(Pending {
                 node_id: target_id,
                 contract: tc.name.clone(),
@@ -2327,6 +2462,14 @@ fn build_graph(
                 external_lines.push(function.line + pos);
             }
         }
+        if !caller_write_calls.is_empty() {
+            caller_write_calls.sort_unstable();
+            caller_write_calls.dedup();
+            if let Some(node) = nodes.iter_mut().find(|n| n.id == current.node_id) {
+                node.write_call_lines = caller_write_calls;
+            }
+        }
+
         if !external_lines.is_empty() {
             external_lines.sort_unstable();
             external_lines.dedup();
@@ -2442,6 +2585,8 @@ fn make_node(
             .map(|s| (s.line, s.name.clone()))
             .collect(),
         external_call_lines: Vec::new(),
+        leads_to_write: false,
+        write_call_lines: Vec::new(),
     }
 }
 
@@ -2527,6 +2672,8 @@ fn make_modifier_node(
             .map(|(name, line)| (*line, name.clone()))
             .collect(),
         external_call_lines: Vec::new(),
+        leads_to_write: false,
+        write_call_lines: Vec::new(),
     }
 }
 
@@ -2662,6 +2809,75 @@ fn find_modifier<'a>(
 /// Handles `helper(...)` (same contract or inherited), `Lib.fn(...)`,
 /// `super.fn(...)` and `stateVar.fn(...)` where the variable's declared type is
 /// an interface with a known implementation.
+/// Does this function reach a storage write, directly or through anything it calls?
+///
+/// A node is drawn red only when it holds the assignment itself, and that hides real state
+/// changes: `PositionManager._increaseDebt` calls `debtToken.mint`, which calls
+/// `ERC20._mint`, which in OpenZeppelin v5 only validates and delegates to `_update` —
+/// the single function in the chain that assigns anything. Every hop in between looked
+/// inert on the board.
+///
+/// The walk is over the METADATA call graph, not the drawn one, and it crosses into
+/// `lib/` deliberately: whether a call changes state is a fact about the code, not about
+/// how much of it this deploy chose to draw. That is what keeps the mark visible when the
+/// chain is cut short by framing, `--max-depth`, or leaving `--include-external` off.
+///
+/// `function_dependencies.callees` holds the same call strings `resolve_call` consumes
+/// (`_increaseDebt`, `debtToken.mint`, `PropMath._computeNominalCR`), so resolution here
+/// is exactly the resolution used to draw the graph.
+fn leads_to_write(
+    metadata: &EvmBatMetadata,
+    contract: &ContractMetadata,
+    function: &FunctionMetadata,
+    options: &AutoDeployOptions,
+    definer_map: &HashMap<String, Vec<String>>,
+    memo: &mut HashMap<String, bool>,
+    stack: &mut HashSet<String>,
+) -> bool {
+    if !function.storage_writes.is_empty() {
+        return true;
+    }
+    let id = function.metadata_id.clone();
+    if let Some(&cached) = memo.get(&id) {
+        return cached;
+    }
+    // Recursion is normal in a call graph; a cycle contributes nothing on its own.
+    if !stack.insert(id.clone()) {
+        return false;
+    }
+
+    let callees = metadata
+        .function_dependencies
+        .iter()
+        .find(|dependency| dependency.function_metadata_id == id)
+        .map(|dependency| dependency.callees.clone())
+        .unwrap_or_default();
+
+    let mut reaches = false;
+    for callee in callees {
+        if let Some((target_contract, target_function)) =
+            resolve_call(metadata, contract, &callee, None, options, definer_map)
+        {
+            if leads_to_write(
+                metadata,
+                target_contract,
+                &target_function,
+                options,
+                definer_map,
+                memo,
+                stack,
+            ) {
+                reaches = true;
+                break;
+            }
+        }
+    }
+
+    stack.remove(&id);
+    memo.insert(id, reaches);
+    reaches
+}
+
 fn resolve_call<'a>(
     metadata: &'a EvmBatMetadata,
     caller_contract: &ContractMetadata,
@@ -3176,15 +3392,15 @@ fn print_dry_run(
         frame_y.round()
     );
     println!(
-        "  {:<38} {:>5} {:>9} {:>9} {:>7} {:>7}  {}",
-        "node", "layer", "x", "y", "w", "h", "png"
+        "  {:<38} {:>5} {:>9} {:>9} {:>7} {:>7}  {:<11}  {}",
+        "node", "layer", "x", "y", "w", "h", "png", "state"
     );
     let mut placed: Vec<_> = layout.nodes.iter().collect();
     placed.sort_by_key(|node| (node.layer, node.y as i64));
     for node in placed {
         let source = nodes.iter().find(|n| n.id == node.id);
         println!(
-            "  {:<38} {:>5} {:>9.0} {:>9.0} {:>7.0} {:>7.0}  {}",
+            "  {:<38} {:>5} {:>9.0} {:>9.0} {:>7.0} {:>7.0}  {:<11}  {}",
             truncate(&source.map(|n| n.label.clone()).unwrap_or_default(), 38),
             node.layer,
             node.x,
@@ -3193,8 +3409,35 @@ fn print_dry_run(
             node.height,
             source
                 .map(|n| format!("{}x{}", n.png_width, n.png_height))
+                .unwrap_or_default(),
+            // `write` holds the assignment; `→write` only reaches one through a call.
+            source
+                .map(|n| {
+                    if n.writes_storage {
+                        "write".to_string()
+                    } else if n.leads_to_write {
+                        "→write".to_string()
+                    } else {
+                        String::new()
+                    }
+                })
                 .unwrap_or_default()
         );
+    }
+
+    let marked_lines: Vec<String> = nodes
+        .iter()
+        .flat_map(|node| {
+            node.write_call_lines
+                .iter()
+                .map(move |(line, symbol)| format!("{} L{line} → {symbol}()", node.label))
+        })
+        .collect();
+    if !marked_lines.is_empty() {
+        println!("  {} call line(s) reaching a state change:", marked_lines.len());
+        for line in marked_lines {
+            println!("    {line}");
+        }
     }
 
     println!("  {} connector(s):", edges.len());
@@ -3632,8 +3875,10 @@ mod split_shared_leaves_test {
             rendered_lines: Vec::new(),
             line_offset: 0,
             writes_storage: false,
-            write_lines: Vec::new(),
-            external_call_lines: Vec::new(),
+        write_lines: Vec::new(),
+        external_call_lines: Vec::new(),
+        leads_to_write: false,
+        write_call_lines: Vec::new(),
         }
     }
 
@@ -3748,8 +3993,10 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         rendered_lines: Vec::new(),
         line_offset: 0,
         writes_storage: false,
-            write_lines: Vec::new(),
-            external_call_lines: Vec::new(),
+        write_lines: Vec::new(),
+        external_call_lines: Vec::new(),
+        leads_to_write: false,
+        write_call_lines: Vec::new(),
     });
     edges[index].to = card_id;
     prune_unreachable(nodes, edges);
@@ -3793,8 +4040,10 @@ fn cut_node(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, target_id: &
             rendered_lines: Vec::new(),
             line_offset: 0,
             writes_storage: false,
-            write_lines: Vec::new(),
-            external_call_lines: Vec::new(),
+        write_lines: Vec::new(),
+        external_call_lines: Vec::new(),
+        leads_to_write: false,
+        write_call_lines: Vec::new(),
         });
         edges[idx].to = card_id;
     }
@@ -4011,8 +4260,10 @@ mod cut_test {
             rendered_lines: Vec::new(),
             line_offset: 0,
             writes_storage: false,
-            write_lines: Vec::new(),
-            external_call_lines: Vec::new(),
+        write_lines: Vec::new(),
+        external_call_lines: Vec::new(),
+        leads_to_write: false,
+        write_call_lines: Vec::new(),
         }
     }
 

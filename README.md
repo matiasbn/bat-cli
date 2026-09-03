@@ -200,6 +200,14 @@ instead of a long crossing one. A duplicated copy keeps its own calls to any sha
 function it uses, so the subgraph under it is always complete — never a dead-end
 whose call line points at nothing.
 
+**State changes that happen elsewhere.** A function is drawn with a solid red border when it
+assigns to storage, and each mutating line gets a red band. But a chain of pass-throughs assigns
+nothing on the way down — `mint` calls `_mint` calls `_update`, and only the last one writes —
+so the state change used to be invisible unless the final function happened to be on the frame.
+A function that reaches a write through anything it calls now gets a **dashed** red border, and
+the calling line gets the band. Reachability is computed across the whole call graph, `lib/`
+included, so the mark survives a chain cut short by framing or depth limits.
+
 **Overloaded functions.** When a contract defines the same name several times
 (e.g. a public `quote(...)` forwarding to an internal `quote(curve, ...)`), each
 call is matched to the overload whose argument count fits, and each overload is
