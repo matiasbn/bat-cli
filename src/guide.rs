@@ -383,6 +383,31 @@ what tells you so.
 
 `-v` / `-vv` raise the `env_logger` level (logs go to stderr); `RUST_LOG` works too.
 
+## Reading state changes on the diagram
+
+**One red mark is one state change.** A red band marks either the assignment itself, or — when
+the write happens past the edge of this frame — the call that reaches it. A red border means the
+function contains at least one such mark. Counting the red marks on a frame counts the distinct
+state changes it causes.
+
+The mark sits at the DEEPEST point the frame reaches. In a chain like
+`_increaseDebt → DebtToken.mint → ERC20._mint → ERC20._update`, only `_update` assigns anything;
+if it is drawn, it carries the mark on its own assignments and nothing above it repeats them. If
+it is not drawn, the mark falls on `ERC20._mint`'s call to it — the last place the frame can show
+it. Either way the change appears once, never five times along the chain.
+
+A callee cut out to its own frame (a link card) counts as absent, so the caller marks the
+boundary and the other frame marks the change itself.
+
+Reachability is computed from the metadata call graph and always crosses into `lib/`, so it does
+not depend on `--include-external`. It does depend on interface resolutions: a call through an
+interface you have not resolved (`bat-cli resolve`) stops the walk, so its writes stay invisible
+— which is one more reason to finish the resolution loop rather than deploy with
+`--allow-unresolved`.
+
+`deploy --dry-run` prints a `state` column (`write` for a direct assignment, `→write` for one
+reached through a call) and lists every call line that reaches a state change.
+
 ## When the auditor doesn't know what something is
 
 A function's screenshot names things it does not explain: a state variable it compares against,
@@ -676,6 +701,23 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.25.0
+- **A state change is never invisible again.** A node was drawn red only when it held the
+  assignment itself, so a chain of pass-throughs looked inert:
+  `PositionManager._increaseDebt` calls `debtToken.mint`, which calls `ERC20._mint`, which in
+  OpenZeppelin v5 only validates and delegates to `_update` — the one function in the chain that
+  assigns anything. Every hop in between, and the call lines reaching them, were unmarked.
+  Now the change is marked ONCE, at the deepest point the frame reaches: on the assignment when
+  the function holding it is drawn, otherwise on the call that leaves the frame towards it. One
+  red mark is one state change, so they can be counted. The reachability walk runs over the metadata call graph and always crosses into `lib/`,
+  so the mark survives a chain cut short by framing, `--max-depth`, or leaving
+  `--include-external` off — you see the state change even when the function that performs it is
+  not on the frame. On a real project this moved 293 marked functions to 401, not a flood.
+  `--dry-run` now prints a `state` column (`write` / `→write`) and lists the call lines that
+  reach a state change. One limitation worth knowing: an interface left unresolved
+  (`bat-cli resolve`) stops this walk exactly as it stops the graph.
+  _Re-read: workflow.md._
 
 ## 0.24.0
 - **`bat-cli screenshot` — put any declaration on a frame you are reading.** A function's
