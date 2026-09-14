@@ -509,8 +509,9 @@ resolutions live in the metadata and persist across `sonar`. `bat-cli resolve --
 **Any function can be deployed, not just an entry point.** A shared helper needs a frame of
 its own for anything else to point at, and is worth reading on its own terms. Named with
 `--entry-point`, that includes constructors, `fallback`/`receive`, and contracts under `lib/`
-(the interactive picker still hides `lib/` and constructors). Pass `--include-external` too, or
-everything below a `lib/` root is dropped.
+(the interactive picker still hides `lib/` and constructors). A root under `lib/` turns on
+`--include-external` by itself — everything it calls is dependency code too, and without it the
+diagram would collapse to the root alone.
 
 `--entry-point` accepts three forms: `function`, `Contract.function`, and
 `path/To.sol:Contract.function`. Several matches are narrowed without asking, in this order:
@@ -736,6 +737,8 @@ so you re-open only the docs that actually changed — not everything.
   imports and `remappings.txt`, nearest first. `--entry-point` accepts
   `path/To.sol:Contract.function`, prints `from <file>` when a name is shared, and stops with the
   candidates listed only when the code cannot decide.
+- **A root under `lib/` includes external calls automatically**, so `bat-cli deploy --entry-point
+  BeaconProxy.constructor` draws the whole construction without remembering `--include-external`.
 - Remappings now apply longest prefix first, as forge does.
   _Re-read: workflow.md._
 

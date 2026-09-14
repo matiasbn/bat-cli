@@ -129,7 +129,7 @@ doc updates in the same commit as the code they document. Commit to the working 
 
 ## Architecture
 
-bat-cli is a single binary (`src/main.rs`) whose `BatCommands` clap enum dispatches to `src/commands/*`: `init`, `login`/`logout`, `update`, `config`, `sonar`, `refresh-ai-guide`, `deploy` and `resolve`. Every command first runs `validate_command()`, which only checks that the metadata cache exists for the commands that read it (`deploy`). There is no branch check: bat-cli creates no commits and manages no git.
+bat-cli is a single binary (`src/main.rs`) whose `BatCommands` clap enum dispatches to `src/commands/*`: `init`, `login`/`logout`, `update`, `config`, `sonar`, `refresh-ai-guide`, `deploy`, `screenshot` and `resolve`. Every command first runs `validate_command()`, which only checks that the metadata cache exists for the commands that read it (`deploy`). There is no branch check: bat-cli creates no commits and manages no git.
 
 **`deploy` is where the complexity lives.** `src/batbelt/evm/miro/auto_deploy.rs` (~4.2k lines) plus `src/batbelt/miro/layout.rs` turn a Solidity call graph into a readable Miro diagram, and the design decisions behind it — the pipeline order, framing, localization, overload handling, `--redeploy`, and a list of approaches that were tried and FAILED — live in **`docs/diagram-deploy-design.md`**. Read that before touching either file; it is the "why" the code does not carry.
 
@@ -143,6 +143,8 @@ bat-cli is a single binary (`src/main.rs`) whose `BatCommands` clap enum dispatc
 
 - **SVM (Rust)** — `batbelt::{sonar, parser, metadata}`, persisted to `BatMetadata.json` via `BatMetadata`.
 - **EVM (Solidity/Foundry)** — a mirrored tree under `batbelt::evm/{sonar,parser,metadata,miro,templates}`, persisted via `EvmBatMetadata`. Parsing uses `solar-parse` (real Solidity lexer), with its own import resolver (remappings/`lib/`/`node_modules`), C3-linearization inheritance resolver, and call resolver.
+
+**Contract names are not identities in the EVM stack.** `lib/` routinely vendors several copies of the same library (three `BeaconProxy`s in one audit), and the metadata stores contracts by name. Never resolve a name with `get_contract_by_name` (first match in the whole project) where a caller exists: use `EvmBatMetadata::contract_in_scope(name, from_file)`, which walks `from_file`'s import graph (`evm/parser/import_graph.rs`, built on `ImportResolver` + `remappings.txt`, nearest first) — the rule `solc` applies. The deploy graph threads the concrete contract's file through every lookup (`Pending.file`, `find_function(.., from_file, ..)`, `NodeKind::Link { file }`), so keep carrying it when adding one.
 
 `SonarCommand::execute_run` forks on `ProjectType::Foundry` into `EvmSonar` (a 5-phase scan over `..`) vs. the SVM path. Anything touching metadata must handle both stacks.
 

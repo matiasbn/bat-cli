@@ -91,8 +91,8 @@ Run it with no arguments to pick a function from a fuzzy-searchable list — ent
 points first and marked, then every other function the project defines.
 
 `--entry-point` takes `function`, `Contract.function` or `path/To.sol:Contract.function`, and
-named explicitly it reaches constructors, `fallback`/`receive` and contracts under `lib/` (pair it
-with `--include-external`). A name shared by several contracts resolves the way `solc` resolves
+named explicitly it reaches constructors, `fallback`/`receive` and contracts under `lib/` (a
+`lib/` root includes external calls on its own). A name shared by several contracts resolves the way `solc` resolves
 it — through the audited code's imports and `remappings.txt` — and only stops, listing the
 candidates, when the code itself cannot decide. A constructor is drawn together with the base
 constructors it runs.

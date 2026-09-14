@@ -398,12 +398,34 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             stale_ids,
         };
 
+        // A root under `lib/` implies `--include-external`. Everything such a function calls
+        // is dependency code too, so without the flag the diagram silently collapses to the
+        // root alone — nobody who names `BeaconProxy.constructor` wants that, and nothing
+        // would tell them why it happened.
+        let root_is_external = metadata
+            .contracts
+            .iter()
+            .any(|c| c.name == contract_name && c.file_path == root_file && c.external);
+        let root_options = if root_is_external && !options.include_external {
+            println!(
+                "  {} {} lives under lib/, so its external calls are included",
+                "note:".yellow(),
+                title
+            );
+            AutoDeployOptions {
+                include_external: true,
+                ..options.clone()
+            }
+        } else {
+            options.clone()
+        };
+
         deploy_one(
             &metadata,
             &contract_name,
             &function_name,
             &root_file,
-            &options,
+            &root_options,
             client.as_ref(),
             &mut allocator,
             true,
