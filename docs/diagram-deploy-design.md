@@ -223,6 +223,39 @@ inline" is computable by the CLI: fan-in, subtree size (leaf vs deep), `is_pure`
 
 ---
 
+## 10b. What can be a root, and which contract a name means
+
+**Naming something is a decision already made.** The picker lists the project's own functions,
+minus constructors and `lib/`, because nobody wants to scroll past dependency plumbing. But
+`--entry-point` reaches anything: a constructor, `fallback`/`receive`, a contract under `lib/`.
+The motivating case was `FLAMMProxy.constructor` — an empty body whose entire behaviour is the
+`BeaconProxy` it inherits — which could not be drawn at all.
+
+**A constructor is drawn with the base constructors it runs.** `constructor(...) BeaconProxy(beacon,
+data) {}` parses the base invocation as a modifier, which resolved to nothing, so the diagram
+stopped at the root. Base constructors are edges now: anchored on the header token when invoked
+there, on the signature when implicit, descending through bases that have no constructor of their
+own. Only what construction RUNS is drawn — not every inherited function.
+
+**A `lib/` root implies `--include-external`.** Everything such a function calls is dependency code
+too; without the flag the frame silently collapses to one screenshot, and nothing says why.
+
+**A name resolves through imports, the way `solc` resolves it.** Contract names are not unique:
+`lib/` vendors several copies of the same library, and lookups used to take the first match in
+the project — sometimes a copy the audited code never imports. Every lookup now resolves the name
+through the using file's import graph and `remappings.txt`, nearest first
+(`EvmBatMetadata::contract_in_scope`, `evm/parser/import_graph.rs`). For `--entry-point`,
+several matches narrow deterministically — own entry points, own functions, `lib/`; then the copy
+the audited code reaches — and the deploy prints `from <file>` when the name is shared.
+
+**The CLI decides what the code decides; it stops for what the code cannot** (§10). An ambiguity
+that imports settle is never a question. Two in-scope contracts both defining `poke`, or a library
+nothing imports, stop with each candidate listed as `path/To.sol:Contract.function` — the form that
+selects it. That is different from `bat-cli resolve`: an interface's implementation is bound at
+deploy time, which no amount of reading imports can reveal.
+
+---
+
 ## 11. Board hygiene (Miro side)
 
 - **Board picker lists only boards you OWN** (`?owner=<user id>`), so a big org
@@ -251,4 +284,7 @@ All in `src/batbelt/evm/miro/auto_deploy.rs` unless noted:
 
 Flags: `--inline-all` (one frame, measure size), `--preview <path>` (local PNG, no
 board), `--redeploy` (fresh cluster + report old URLs), `--refresh-links` (surgical
-swap of newly-framed callees), `--undeploy` (remove a frame + its items outright).
+swap of newly-framed callees), `--undeploy` (remove a frame + its items outright),
+`--include-external` (draw `lib/` callees; implied by a `lib/` root).
+
+`--entry-point` forms: `function`, `Contract.function`, `path/To.sol:Contract.function` (§10b).

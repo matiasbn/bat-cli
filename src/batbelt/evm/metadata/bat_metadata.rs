@@ -366,6 +366,33 @@ impl EvmBatMetadata {
             .find(|f| f.entry_point_name == ep_name)
     }
 
+    /// The contract called `name` AS SEEN FROM `from_file`.
+    ///
+    /// Contract names are not unique across a project: `lib/` routinely vendors several
+    /// copies of the same library. When a name matches more than one contract, the right
+    /// one is the one `from_file` actually imports — directly, or through the files it
+    /// imports — nearest first, which is how `solc` resolves it. Only when nothing in that
+    /// import closure decides does this fall back to the first match, the old behaviour.
+    pub fn contract_in_scope(&self, name: &str, from_file: &str) -> Option<&ContractMetadata> {
+        let candidates: Vec<&ContractMetadata> =
+            self.contracts.iter().filter(|c| c.name == name).collect();
+        match candidates.len() {
+            0 => return None,
+            1 => return Some(candidates[0]),
+            _ => {}
+        }
+        if !from_file.is_empty() {
+            use crate::batbelt::evm::parser::import_graph::{import_closure, normalize};
+            for file in import_closure(from_file).iter() {
+                if let Some(found) = candidates.iter().find(|c| normalize(&c.file_path) == *file)
+                {
+                    return Some(found);
+                }
+            }
+        }
+        Some(candidates[0])
+    }
+
     pub fn get_contract_by_name(&self, name: &str) -> Option<&ContractMetadata> {
         self.contracts.iter().find(|c| c.name == name)
     }
