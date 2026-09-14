@@ -166,7 +166,12 @@ enum NodeKind {
     Screenshot,
     /// A card standing in for a function drawn in its own frame, holding a link
     /// that navigates there.
-    Link { target: String },
+    Link {
+        target: String,
+        /// File of the contract the card stands for, so the frame deployed for it is the
+        /// same copy that was drawn here and not another contract with the same name.
+        file: String,
+    },
 }
 
 /// A card is small and fixed: it carries a name and a link, nothing to measure.
@@ -332,7 +337,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             return Err(Report::new(EvmMiroError)
                 .attach_printable("--undeploy needs board access; it can't run under --dry-run"));
         };
-        for (contract_name, function_name) in &targets {
+        for (contract_name, function_name, _) in &targets {
             let title = format!("{contract_name}.{function_name}");
             if undeploy_frame(&title, client).await? {
                 println!("  {} removed frame {}", "✓".green(), title.bold());
@@ -358,7 +363,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         resolve_allocator(client.as_ref().unwrap(), &metadata).await?
     };
 
-    for (contract_name, function_name) in targets {
+    for (contract_name, function_name, root_file) in targets {
         let title = format!("{contract_name}.{function_name}");
 
         // --redeploy: find the PREVIOUS cluster (this entry point's frame + every
@@ -397,6 +402,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             &metadata,
             &contract_name,
             &function_name,
+            &root_file,
             &options,
             client.as_ref(),
             &mut allocator,
@@ -464,10 +470,10 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
 fn select_targets(
     metadata: &EvmBatMetadata,
     options: &AutoDeployOptions,
-) -> Result<Vec<(String, String)>> {
-    // `EntryPointMetadata::name` is stored as `Contract.function`, so strip the
-    // prefix to get the bare function name used to look it up in the contract.
-    let mut entry_points: Vec<(String, String)> = metadata
+) -> Result<Vec<(String, String, String)>> {
+    // A target is `(contract, function, file)`. The file is part of the identity: `lib/`
+    // can vendor three copies of `BeaconProxy`, all with the same name.
+    let entry_names: HashSet<(String, String)> = metadata
         .entry_points
         .iter()
         .map(|ep| {
@@ -479,41 +485,37 @@ fn select_targets(
             (ep.contract_name.clone(), function)
         })
         .collect();
+
+    // The picker and `--all` list what the project itself defines: `lib/` and
+    // constructors are dependency plumbing nobody wants to scroll past. Naming something
+    // explicitly with `--entry-point` reaches everything — see `resolve_named_target`.
+    let mut entry_points: Vec<(String, String, String)> = Vec::new();
+    let mut others: Vec<(String, String, String)> = Vec::new();
+    for contract in metadata.contracts.iter().filter(|c| !c.external) {
+        for function in &contract.functions {
+            let target = (
+                contract.name.clone(),
+                function.name.clone(),
+                contract.file_path.clone(),
+            );
+            if entry_names.contains(&(contract.name.clone(), function.name.clone())) {
+                entry_points.push(target);
+            } else if !function.is_constructor {
+                others.push(target);
+            }
+        }
+    }
     entry_points.sort();
     entry_points.dedup();
+    others.sort();
+    others.dedup();
 
     if options.all {
         return Ok(entry_points);
     }
 
-    // Everything the project defines, minus the constructors and minus `lib/`,
-    // which is dependency code nobody deploys on purpose.
-    let is_entry_point: HashSet<(String, String)> = entry_points.iter().cloned().collect();
-    let mut others: Vec<(String, String)> = metadata
-        .contracts
-        .iter()
-        .filter(|contract| !contract.external)
-        .flat_map(|contract| {
-            contract
-                .functions
-                .iter()
-                .filter(|function| !function.is_constructor)
-                .map(|function| (contract.name.clone(), function.name.clone()))
-        })
-        .filter(|target| !is_entry_point.contains(target))
-        .collect();
-    others.sort();
-    others.dedup();
-
     if let Some(wanted) = &options.entry_point {
-        return Ok(entry_points
-            .into_iter()
-            .chain(others)
-            .filter(|(contract, function)| {
-                *function == *wanted || format!("{contract}.{function}") == *wanted
-            })
-            .take(1)
-            .collect());
+        return resolve_named_target(metadata, &entry_names, wanted);
     }
 
     // Entry points first, since that is where reading usually starts, then
@@ -527,7 +529,7 @@ fn select_targets(
         .map(|frame| frame.entry_point.clone())
         .collect();
 
-    let all: Vec<(String, String)> = entry_points
+    let all: Vec<(String, String, String)> = entry_points
         .iter()
         .cloned()
         .chain(others.iter().cloned())
@@ -536,17 +538,26 @@ fn select_targets(
         return Ok(all);
     }
 
+    // Two in-scope contracts can share a name too; only then is the path worth showing.
+    let mut title_count: HashMap<String, usize> = HashMap::new();
+    for (contract, function, _) in &all {
+        *title_count.entry(format!("{contract}.{function}")).or_default() += 1;
+    }
+
     let entry_point_count = entry_points.len();
     let labels: Vec<String> = all
         .iter()
         .enumerate()
-        .map(|(index, (contract, function))| {
+        .map(|(index, (contract, function, file))| {
             let title = format!("{contract}.{function}");
-            let mut label = if index < entry_point_count {
-                format!("{title}  {}", "[entry point]".blue())
+            let mut label = if title_count[&title] > 1 {
+                format!("{title}  ({file})")
             } else {
                 title.clone()
             };
+            if index < entry_point_count {
+                label = format!("{label}  {}", "[entry point]".blue());
+            }
             if deployed.contains(&title) {
                 label = format!("{label} {}", "(deployed)".green());
             }
@@ -559,6 +570,130 @@ fn select_targets(
             .change_context(EvmMiroError)?;
 
     Ok(vec![all[selection].clone()])
+}
+
+/// Resolve `--entry-point` to exactly one function, or stop and say why.
+///
+/// Accepts `function`, `Contract.function`, and `path/To.sol:Contract.function`. Named
+/// explicitly, anything is reachable: a contract under `lib/`, a constructor, a
+/// `fallback`. Following what a constructor does is a legitimate thing to draw, and the
+/// person who typed the name has already decided it is worth seeing.
+///
+/// Several matches are narrowed in the order a reader would expect, and only what the code
+/// cannot decide becomes a question:
+///
+/// 1. the project's own entry points, then its other functions, then `lib/` — so `mint`
+///    still means the audited `DebtToken.mint`, not one of OpenZeppelin's;
+/// 2. among same-named contracts in different files, the copy the audited code imports,
+///    resolved through the import graph and `remappings.txt` exactly as `solc` resolves it;
+/// 3. anything still ambiguous — two in-scope contracts with a `poke`, or a library nobody
+///    in `src/` imports — stops, listing each candidate in the `path:Contract.function`
+///    form that selects it. That decision needs context the code does not carry, which is
+///    exactly when the assistant (or the auditor) should make it.
+fn resolve_named_target(
+    metadata: &EvmBatMetadata,
+    entry_names: &HashSet<(String, String)>,
+    wanted: &str,
+) -> Result<Vec<(String, String, String)>> {
+    use crate::batbelt::evm::parser::import_graph::{normalize, reachable_from};
+
+    let (wanted_path, rest) = match wanted.rsplit_once(':') {
+        Some((path, rest)) if path.ends_with(".sol") => (Some(normalize(path)), rest),
+        _ => (None, wanted),
+    };
+    let (wanted_contract, wanted_function) = match rest.rsplit_once('.') {
+        Some((contract, function)) => (Some(contract), function),
+        None => (None, rest),
+    };
+
+    // (contract, function, file, external, is entry point)
+    let mut matches: Vec<(String, String, String, bool, bool)> = Vec::new();
+    for contract in &metadata.contracts {
+        // An interface declares, it does not do anything worth drawing.
+        if contract.contract_type == EvmContractType::Interface {
+            continue;
+        }
+        if wanted_contract.is_some_and(|name| name != contract.name) {
+            continue;
+        }
+        if let Some(path) = &wanted_path {
+            let file = normalize(&contract.file_path);
+            if file != *path && !file.ends_with(&format!("/{path}")) {
+                continue;
+            }
+        }
+        for function in contract.functions.iter().filter(|f| f.name == wanted_function) {
+            let entry = !contract.external
+                && entry_names.contains(&(contract.name.clone(), function.name.clone()));
+            matches.push((
+                contract.name.clone(),
+                function.name.clone(),
+                contract.file_path.clone(),
+                contract.external,
+                entry,
+            ));
+        }
+    }
+    // Overloads of one function in one contract are one target; the graph picks the overload.
+    matches.sort();
+    matches.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1 && a.2 == b.2);
+    if matches.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let tier: Vec<&(String, String, String, bool, bool)> = {
+        let entry: Vec<_> = matches.iter().filter(|m| m.4).collect();
+        let own: Vec<_> = matches.iter().filter(|m| !m.3).collect();
+        if !entry.is_empty() {
+            entry
+        } else if !own.is_empty() {
+            own
+        } else {
+            matches.iter().collect()
+        }
+    };
+    let pick = |m: &(String, String, String, bool, bool)| vec![(m.0.clone(), m.1.clone(), m.2.clone())];
+    if tier.len() == 1 {
+        return Ok(pick(tier[0]));
+    }
+
+    // Same name, several files: keep the copies the audited code can actually reach.
+    let reachable = reachable_from(
+        metadata
+            .contracts
+            .iter()
+            .filter(|c| !c.external)
+            .map(|c| c.file_path.as_str()),
+    );
+    let narrowed: Vec<_> = tier
+        .iter()
+        .filter(|m| reachable.contains(&normalize(&m.2)))
+        .copied()
+        .collect();
+    if narrowed.len() == 1 {
+        return Ok(pick(narrowed[0]));
+    }
+
+    let listed = if narrowed.is_empty() { &tier } else { &narrowed };
+    let candidates = listed
+        .iter()
+        .map(|m| format!("{}:{}.{}", normalize(&m.2), m.0, m.1))
+        .collect::<Vec<_>>();
+    let why = if narrowed.is_empty() {
+        "nothing in the audited code imports any of them, so the code cannot decide"
+    } else {
+        "the audited code reaches more than one of them"
+    };
+    Err(Report::new(EvmMiroError)
+        .attach_printable(format!(
+            "`{wanted}` matches {} functions — {why}:\n    {}",
+            listed.len(),
+            candidates.join("\n    ")
+        ))
+        .attach(crate::Suggestion(format!(
+            "pick one and pass it whole, e.g. `bat-cli deploy --entry-point {}`",
+            candidates[0]
+        ))))
 }
 
 /// Reserve (or recover) the board region the automatic frames live in.
@@ -594,6 +729,8 @@ async fn deploy_one(
     metadata: &EvmBatMetadata,
     contract_name: &str,
     function_name: &str,
+    // The file of the selected contract, which is what tells same-named copies apart.
+    root_file: &str,
     options: &AutoDeployOptions,
     client: Option<&MiroClient>,
     allocator: &mut ShelfAllocator,
@@ -604,6 +741,12 @@ async fn deploy_one(
 ) -> Result<()> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
+    // When several contracts share this name, say which copy was picked. The choice is made
+    // from the imports and is deterministic, but nobody reading the output should have to
+    // go re-derive it from `remappings.txt` to trust the diagram.
+    if metadata.contracts.iter().filter(|c| c.name == contract_name).count() > 1 {
+        println!("  {} {}", "from".dimmed(), root_file);
+    }
 
     // One frame per function, board-wide. Asked for as a link target, a function
     // already on the board is pointed at rather than drawn again — that is what
@@ -634,7 +777,7 @@ async fn deploy_one(
     }
 
     let (mut nodes, mut edges, truncated, unresolved) =
-        build_graph(metadata, contract_name, function_name, options)?;
+        build_graph(metadata, contract_name, function_name, root_file, options)?;
     if nodes.is_empty() {
         println!("  no function metadata found, skipping");
         return Ok(());
@@ -1045,7 +1188,7 @@ async fn deploy_one(
         let label = node.label.clone();
         let kind = node.kind.clone();
         let target_url = match &node.kind {
-            NodeKind::Link { target } => target_frames.get(target).cloned().unwrap_or_default(),
+            NodeKind::Link { target, .. } => target_frames.get(target).cloned().unwrap_or_default(),
             NodeKind::Screenshot => String::new(),
         };
         let reused_image = reuse.get(&node.id).map(|(image_id, _, _)| image_id.clone());
@@ -2085,6 +2228,9 @@ fn build_graph(
     metadata: &EvmBatMetadata,
     contract_name: &str,
     function_name: &str,
+    // The file the root contract lives in, so a name shared by several contracts (three
+    // vendored copies of `BeaconProxy`) resolves to the one that was actually selected.
+    root_file: &str,
     options: &AutoDeployOptions,
 ) -> Result<(
     Vec<GraphNode>,
@@ -2093,7 +2239,7 @@ fn build_graph(
     Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall>,
 )> {
     let Some((root_contract, root_function)) =
-        find_function(metadata, contract_name, function_name, None)
+        find_function(metadata, contract_name, root_file, function_name, None)
     else {
         return Ok((Vec::new(), Vec::new(), 0, Vec::new()));
     };
@@ -2150,7 +2296,7 @@ fn build_graph(
     // node that already exists.
     let mut drawn: HashMap<String, String> = HashMap::new();
 
-    let root_id = overload_node_key(metadata, &root_contract.name, &root_function);
+    let root_id = overload_node_key(root_contract, &root_function);
     drawn.insert(root_id.clone(), root_id.clone());
     let mut root_node = make_node(
         root_id.clone(),
@@ -2177,6 +2323,9 @@ fn build_graph(
     struct Pending {
         node_id: String,
         contract: String,
+        // The file of that exact contract. A name alone is not an identity once `lib/`
+        // vendors several copies of a library.
+        file: String,
         function: String,
         line: usize,
         depth: usize,
@@ -2185,6 +2334,7 @@ fn build_graph(
     let mut stack = vec![Pending {
         node_id: root_id,
         contract: root_contract.name.clone(),
+        file: root_contract.file_path.clone(),
         function: function_name.to_string(),
         line: root_function.line,
         depth: 0,
@@ -2197,7 +2347,13 @@ fn build_graph(
         // The contract that defines the function, which is where its source is.
         // Pin the exact overload by line so a re-read never drifts to a sibling.
         let Some((contract, function)) =
-            find_function_at(metadata, &current.contract, &current.function, current.line)
+            find_function_at(
+                metadata,
+                &current.contract,
+                &current.file,
+                &current.function,
+                current.line,
+            )
         else {
             continue;
         };
@@ -2219,8 +2375,11 @@ fn build_graph(
         // Modifiers count as dependencies; their call site is the line of the
         // signature where the modifier name appears.
         for modifier_name in &function.modifiers {
+            // A base constructor invoked in a constructor's header (`BeaconProxy(beacon,
+            // data)`) is parsed as a modifier too. It is not one, so it resolves to nothing
+            // here and is drawn below, as the constructor call it really is.
             let Some((owner, definition)) =
-                find_modifier(metadata, &current.contract, modifier_name)
+                find_modifier(metadata, &current.contract, &current.file, modifier_name)
             else {
                 continue;
             };
@@ -2290,7 +2449,7 @@ fn build_graph(
                         options,
                         &definer_map,
                     )
-                    .map(|(c, f)| overload_node_key(metadata, &c.name, &f))
+                    .map(|(c, f)| overload_node_key(c, &f))
                     .unwrap_or_default();
                     caller_write_calls.push((
                         function.line + call.line - 1,
@@ -2305,7 +2464,7 @@ fn build_graph(
             else {
                 continue;
             };
-            let target_id = overload_node_key(metadata, &target_contract.name, &target_function);
+            let target_id = overload_node_key(target_contract, &target_function);
             if target_id == current.node_id {
                 continue; // a function calling itself needs no arrow
             }
@@ -2349,10 +2508,82 @@ fn build_graph(
             children.push(Pending {
                 node_id: target_id,
                 contract: target_contract.name.clone(),
+                file: target_contract.file_path.clone(),
                 function: target_function.name.clone(),
                 line: target_function.line,
                 depth: current.depth + 1,
             });
+        }
+
+        // A constructor runs its base contracts' constructors before its own body, whether
+        // the header invokes them (`BeaconProxy(beacon, data)`) or not. Without this a
+        // constructor like `FLAMMProxy`'s — empty, everything it does lives in the base —
+        // drew as one lonely screenshot with nothing below it.
+        if function.is_constructor {
+            let header_end = slice
+                .iter()
+                .position(|line| line.contains('{'))
+                .unwrap_or(0);
+            for (base, constructor) in base_constructors(metadata, contract) {
+                if !options.include_external && base.external {
+                    continue;
+                }
+                if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
+                    truncated += 1;
+                    continue;
+                }
+                // Anchor on the header token naming the base when it is invoked there;
+                // an implicit base constructor has no call site, so the signature.
+                let line_in_slice = slice
+                    .iter()
+                    .take(header_end + 1)
+                    .position(|line| line_has_token(line, &base.name))
+                    .map(|index| index + 1)
+                    .unwrap_or(1);
+                let target_id = overload_node_key(base, &constructor);
+                if target_id == current.node_id {
+                    continue;
+                }
+                edges.push(GraphEdge {
+                    from: current.node_id.clone(),
+                    to: target_id.clone(),
+                    line_in_slice: line_in_slice + doc_shift,
+                    column: slice
+                        .get(line_in_slice - 1)
+                        .and_then(|line| line.find(base.name.as_str()))
+                        .unwrap_or(0),
+                    symbol: base.name.clone(),
+                });
+                if drawn.insert(target_id.clone(), target_id.clone()).is_some() {
+                    continue;
+                }
+                let mut child = make_node(
+                    target_id.clone(),
+                    format!("{}.{}", base.name, constructor.name),
+                    base,
+                    &constructor,
+                    current.depth + 1,
+                    doc_lines_above(options, &base.file_path, constructor.line),
+                );
+                child.leads_to_write = leads_to_write(
+                    metadata,
+                    base,
+                    &constructor,
+                    &write_options,
+                    &write_definer_map,
+                    &mut write_memo,
+                    &mut HashSet::new(),
+                );
+                nodes.push(child);
+                children.push(Pending {
+                    node_id: target_id,
+                    contract: base.name.clone(),
+                    file: base.file_path.clone(),
+                    function: constructor.name.clone(),
+                    line: constructor.line,
+                    depth: current.depth + 1,
+                });
+            }
         }
 
         // Cross-contract interface calls: follow the ones the AI has resolved (so the
@@ -2368,7 +2599,9 @@ fn build_graph(
                 unresolved.push(u.clone());
                 continue;
             };
-            let Some((tc, tf)) = find_function(metadata, concrete, &u.method, None) else {
+            let Some((tc, tf)) =
+                find_function(metadata, concrete, &contract.file_path, &u.method, None)
+            else {
                 // A resolution is set but its method isn't there — still unresolved.
                 unresolved.push(u.clone());
                 continue;
@@ -2381,7 +2614,7 @@ fn build_graph(
             if !options.include_external && tc.external {
                 continue;
             }
-            let target_id = overload_node_key(metadata, &tc.name, &tf);
+            let target_id = overload_node_key(tc, &tf);
             if target_id == current.node_id {
                 continue;
             }
@@ -2443,6 +2676,7 @@ fn build_graph(
             children.push(Pending {
                 node_id: target_id,
                 contract: tc.name.clone(),
+                file: tc.file_path.clone(),
                 function: tf.name.clone(),
                 line: tf.line,
                 depth: current.depth + 1,
@@ -2454,7 +2688,13 @@ fn build_graph(
         // mutate, so it is never a state-change risk). Located on the caller's node.
         let mut external_lines: Vec<usize> = Vec::new();
         for uec in &function.unknown_external_calls {
-            let read_only = find_function(metadata, &uec.inferred_type, &uec.method, None)
+            let read_only = find_function(
+                metadata,
+                &uec.inferred_type,
+                &contract.file_path,
+                &uec.method,
+                None,
+            )
                 .map(|(_, f)| {
                     matches!(
                         f.mutability,
@@ -2535,7 +2775,9 @@ fn expand_unresolved(
         });
         if let Some(contract) = target {
             if visited_fns.insert((contract.clone(), u.method.clone())) {
-                if let Some((_, f)) = find_function(metadata, &contract, &u.method, None) {
+                // No caller file survives into this frontier, so an ambiguous name keeps
+                // the old first-match behaviour here.
+                if let Some((_, f)) = find_function(metadata, &contract, "", &u.method, None) {
                     for du in &f.unresolved_calls {
                         frontier.push(du.clone());
                     }
@@ -2718,13 +2960,18 @@ fn function_end(function: &FunctionMetadata, contract: &ContractMetadata) -> usi
 /// inherited: `Settlement.settle` is defined in `Pipeline`, so reading its source
 /// out of `Settlement.sol` lands on unrelated lines, and the screenshot comes out
 /// empty. That silently truncated every diagram at the first inherited call.
+///
+/// `from_file` is the file doing the naming: a contract name is resolved through ITS
+/// imports (see `EvmBatMetadata::contract_in_scope`), and each base contract through the
+/// imports of the contract that inherits it. Pass `""` when there is no such file.
 fn find_function<'a>(
     metadata: &'a EvmBatMetadata,
     contract_name: &str,
+    from_file: &str,
     function_name: &str,
     arg_count: Option<usize>,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
-    let contract = metadata.get_contract_by_name(contract_name)?;
+    let contract = metadata.contract_in_scope(contract_name, from_file)?;
     let overloads: Vec<&FunctionMetadata> =
         contract.functions.iter().filter(|f| f.name == function_name).collect();
     if !overloads.is_empty() {
@@ -2742,7 +2989,9 @@ fn find_function<'a>(
         return Some((contract, chosen.clone()));
     }
     for base in &contract.base_contracts {
-        if let Some(found) = find_function(metadata, base, function_name, arg_count) {
+        if let Some(found) =
+            find_function(metadata, base, &contract.file_path, function_name, arg_count)
+        {
             return Some(found);
         }
     }
@@ -2755,10 +3004,11 @@ fn find_function<'a>(
 fn find_function_at<'a>(
     metadata: &'a EvmBatMetadata,
     contract_name: &str,
+    from_file: &str,
     function_name: &str,
     line: usize,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
-    let contract = metadata.get_contract_by_name(contract_name)?;
+    let contract = metadata.contract_in_scope(contract_name, from_file)?;
     if let Some(function) = contract
         .functions
         .iter()
@@ -2767,7 +3017,9 @@ fn find_function_at<'a>(
         return Some((contract, function.clone()));
     }
     for base in &contract.base_contracts {
-        if let Some(found) = find_function_at(metadata, base, function_name, line) {
+        if let Some(found) =
+            find_function_at(metadata, base, &contract.file_path, function_name, line)
+        {
             return Some(found);
         }
     }
@@ -2779,33 +3031,62 @@ fn find_function_at<'a>(
 /// its own node (otherwise both collapse and a wrapper→overload call looks like a
 /// self-call and is pruned). A single-definition function keeps the plain id, so
 /// non-overloaded graphs are byte-identical to before.
-fn overload_node_key(
-    metadata: &EvmBatMetadata,
-    contract_name: &str,
-    function: &FunctionMetadata,
-) -> String {
-    let overloaded = metadata
-        .get_contract_by_name(contract_name)
-        .map(|c| c.functions.iter().filter(|f| f.name == function.name).count() > 1)
-        .unwrap_or(false);
+fn overload_node_key(contract: &ContractMetadata, function: &FunctionMetadata) -> String {
+    let overloaded = contract.functions.iter().filter(|f| f.name == function.name).count() > 1;
     if overloaded {
-        format!("{}@{}", node_key(contract_name, &function.name), function.line)
+        format!("{}@{}", node_key(&contract.name, &function.name), function.line)
     } else {
-        node_key(contract_name, &function.name)
+        node_key(&contract.name, &function.name)
     }
+}
+
+/// The constructors that run before `contract`'s own, nearest first along each base.
+///
+/// A base without a constructor of its own still runs ITS bases' constructors, so the walk
+/// descends through it. Each base name is resolved through the imports of the contract that
+/// inherits it, so a vendored copy of the library that nobody imports is never picked.
+fn base_constructors<'a>(
+    metadata: &'a EvmBatMetadata,
+    contract: &ContractMetadata,
+) -> Vec<(&'a ContractMetadata, FunctionMetadata)> {
+    let mut found: Vec<(&'a ContractMetadata, FunctionMetadata)> = Vec::new();
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut pending: Vec<(String, String)> = contract
+        .base_contracts
+        .iter()
+        .rev()
+        .map(|base| (base.clone(), contract.file_path.clone()))
+        .collect();
+    while let Some((name, from_file)) = pending.pop() {
+        let Some(base) = metadata.contract_in_scope(&name, &from_file) else {
+            continue;
+        };
+        if !seen.insert((base.name.clone(), base.file_path.clone())) {
+            continue;
+        }
+        if let Some(constructor) = base.functions.iter().find(|f| f.is_constructor) {
+            found.push((base, constructor.clone()));
+        } else {
+            for grand in base.base_contracts.iter().rev() {
+                pending.push((grand.clone(), base.file_path.clone()));
+            }
+        }
+    }
+    found
 }
 
 fn find_modifier<'a>(
     metadata: &'a EvmBatMetadata,
     contract_name: &str,
+    from_file: &str,
     modifier_name: &str,
 ) -> Option<(&'a ContractMetadata, crate::batbelt::evm::types::EvmModifierDef)> {
-    let contract = metadata.get_contract_by_name(contract_name)?;
+    let contract = metadata.contract_in_scope(contract_name, from_file)?;
     if let Some(definition) = contract.modifiers.iter().find(|m| m.name == modifier_name) {
         return Some((contract, definition.clone()));
     }
     for base in &contract.base_contracts {
-        if let Some(found) = find_modifier(metadata, base, modifier_name) {
+        if let Some(found) = find_modifier(metadata, base, &contract.file_path, modifier_name) {
             return Some(found);
         }
     }
@@ -2945,7 +3226,7 @@ fn resolve_call<'a>(
             chain
         }
         Some(target) => {
-            if metadata.get_contract_by_name(target).is_some() {
+            if metadata.contract_in_scope(target, &caller_contract.file_path).is_some() {
                 // Library or contract called by name.
                 vec![target.to_string()]
             } else if let Some(variable) = caller_contract
@@ -2963,17 +3244,22 @@ fn resolve_call<'a>(
     };
 
     for candidate in candidates {
-        let Some(contract) = metadata.get_contract_by_name(&candidate) else {
+        let Some(contract) = metadata.contract_in_scope(&candidate, &caller_contract.file_path)
+        else {
             continue;
         };
         if contract.contract_type == EvmContractType::Interface {
             // An interface has no body worth screenshotting; jump to the impl.
             for implementation in implementations_of(metadata, &contract.name) {
-                if let Some(target) = metadata.get_contract_by_name(&implementation) {
+                if let Some(target) =
+                    metadata.contract_in_scope(&implementation, &caller_contract.file_path)
+                {
                     if !keep(target) {
                         continue;
                     }
-                    if let Some(found) = find_function(metadata, &target.name, method, arg_count) {
+                    if let Some(found) =
+                        find_function(metadata, &target.name, &target.file_path, method, arg_count)
+                    {
                         // Only accept a concrete result; a bodyless stub with no
                         // override falls through to the unique-definer fallback.
                         if let Some(resolved) = destub(metadata, found, options) {
@@ -2987,7 +3273,9 @@ fn resolve_call<'a>(
         if !keep(contract) {
             continue;
         }
-        if let Some(found) = find_function(metadata, &contract.name, method, arg_count) {
+        if let Some(found) =
+            find_function(metadata, &contract.name, &contract.file_path, method, arg_count)
+        {
             if let Some(resolved) = destub(metadata, found, options) {
                 return Some(resolved);
             }
@@ -3004,7 +3292,13 @@ fn resolve_call<'a>(
     if matches!(target_name, Some(t) if t != "super" && t != "this") {
         if let Some(definers) = definer_map.get(method) {
             if definers.len() == 1 {
-                return find_function(metadata, &definers[0], method, arg_count);
+                return find_function(
+                    metadata,
+                    &definers[0],
+                    &caller_contract.file_path,
+                    method,
+                    arg_count,
+                );
             }
         }
     }
@@ -3032,8 +3326,13 @@ fn destub<'a>(
         if impl_name == contract.name {
             continue;
         }
-        if let Some((tc, tf)) =
-            find_function(metadata, &impl_name, &function.name, Some(function.params.len()))
+        if let Some((tc, tf)) = find_function(
+            metadata,
+            &impl_name,
+            &contract.file_path,
+            &function.name,
+            Some(function.params.len()),
+        )
         {
             if !tf.is_stub && keep(tc) {
                 overrides.push((tc, tf));
@@ -4010,10 +4309,10 @@ const DEPTH_PENALTY: f64 = 0.15;
 /// would take away the arrow that was already fine, so only the far call is
 /// replaced — the near caller keeps the screenshot.
 fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize) {
-    let Some(label) = nodes
+    let Some((label, file)) = nodes
         .iter()
         .find(|node| node.id == edges[index].to)
-        .map(|node| node.label.clone())
+        .map(|node| (node.label.clone(), node.file_path.clone()))
     else {
         return;
     };
@@ -4022,7 +4321,7 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
     nodes.push(GraphNode {
         id: card_id.clone(),
         label: label.clone(),
-        kind: NodeKind::Link { target: label },
+        kind: NodeKind::Link { target: label, file },
         file_path: String::new(),
         start_line: 0,
         end_line: 0,
@@ -4051,10 +4350,10 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
 /// reached from several callers — the only way to carve a balanced piece out of a
 /// densely-shared graph, where cutting one edge frees nothing.
 fn cut_node(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, target_id: &str) {
-    let Some(label) = nodes
+    let Some((label, file)) = nodes
         .iter()
         .find(|node| node.id == target_id)
-        .map(|node| node.label.clone())
+        .map(|node| (node.label.clone(), node.file_path.clone()))
     else {
         return;
     };
@@ -4069,7 +4368,7 @@ fn cut_node(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, target_id: &
         nodes.push(GraphNode {
             id: card_id.clone(),
             label: label.clone(),
-            kind: NodeKind::Link { target: label.clone() },
+            kind: NodeKind::Link { target: label.clone(), file: file.clone() },
             file_path: String::new(),
             start_line: 0,
             end_line: 0,
@@ -4446,15 +4745,15 @@ async fn ensure_target_frames(
     allocator: &mut ShelfAllocator,
     cluster: &ClusterCtx,
 ) -> Result<HashMap<String, String>> {
-    let wanted: Vec<String> = {
+    let wanted: Vec<(String, String)> = {
         let mut seen = HashSet::new();
         nodes
             .iter()
             .filter_map(|node| match &node.kind {
-                NodeKind::Link { target } => Some(target.clone()),
+                NodeKind::Link { target, file } => Some((target.clone(), file.clone())),
                 NodeKind::Screenshot => None,
             })
-            .filter(|target| seen.insert(target.clone()))
+            .filter(|(target, _)| seen.insert(target.clone()))
             .collect()
     };
     if wanted.is_empty() {
@@ -4462,7 +4761,7 @@ async fn ensure_target_frames(
     }
 
     let mut resolved = HashMap::new();
-    for target in wanted {
+    for (target, target_file) in wanted {
         // Reuse a frame only if it is genuinely reusable: in --redeploy we skip any
         // frame that belongs to the OLD cluster (a stale id) so it is drawn fresh,
         // but still reuse frames created earlier in THIS run (their new ids aren't
@@ -4504,6 +4803,7 @@ async fn ensure_target_frames(
             &metadata,
             contract,
             function,
+            &target_file,
             options,
             Some(client),
             allocator,

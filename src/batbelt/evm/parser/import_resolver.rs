@@ -31,8 +31,12 @@ impl ImportResolver {
 
     /// Resolve an import path to an absolute file path.
     pub fn resolve(&self, import_path: &str, from_file: &str) -> Option<PathBuf> {
-        // Try remappings first
-        for (prefix, replacement) in &self.remappings {
+        // Try remappings first, longest prefix first — the rule forge applies. The map
+        // is a HashMap, so without this `@openzeppelin/` could shadow the more specific
+        // `@openzeppelin/contracts/` depending on iteration order.
+        let mut remappings: Vec<(&String, &String)> = self.remappings.iter().collect();
+        remappings.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(b.0)));
+        for (prefix, replacement) in remappings {
             if import_path.starts_with(prefix.as_str()) {
                 let resolved = import_path.replacen(prefix.as_str(), replacement.as_str(), 1);
                 let full_path = self.root_dir.join(&resolved);

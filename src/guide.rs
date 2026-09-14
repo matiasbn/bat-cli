@@ -507,7 +507,25 @@ resolutions live in the metadata and persist across `sonar`. `bat-cli resolve --
 `--allow-unresolved` once the real state-changing hops are resolved.
 
 **Any function can be deployed, not just an entry point.** A shared helper needs a frame of
-its own for anything else to point at, and is worth reading on its own terms.
+its own for anything else to point at, and is worth reading on its own terms. Named with
+`--entry-point`, that includes constructors, `fallback`/`receive`, and contracts under `lib/`
+(the interactive picker still hides `lib/` and constructors). Pass `--include-external` too, or
+everything below a `lib/` root is dropped.
+
+`--entry-point` accepts three forms: `function`, `Contract.function`, and
+`path/To.sol:Contract.function`. Several matches are narrowed without asking, in this order:
+the project's own entry points, then its other functions, then `lib/`; then, among same-named
+contracts in different files (three vendored copies of `BeaconProxy`), the one the audited code
+imports, resolved through `remappings.txt` exactly as `solc` does. The deploy prints
+`from <file>` when the name is shared, so you can see which copy it picked. **Only when the
+code cannot decide does it stop** — two in-scope contracts both defining `poke`, or a library
+nothing in `src/` imports — and it lists each candidate in the `path:Contract.function` form.
+Re-run with one of those; do not guess.
+
+**A constructor is drawn with the constructors it runs.** Base constructors execute before the
+body whether the header invokes them (`BeaconProxy(beacon, data)`) or not, so deploying
+`FLAMMProxy.constructor` draws `BeaconProxy.constructor` and what it calls — not every inherited
+function, only what runs during construction.
 
 **One frame per function, board-wide.** A function already on the board is pointed at rather
 than redrawn — that is what lets several diagrams share a helper's frame. Asked for directly,
@@ -701,6 +719,25 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.0
+- **Deploy constructors, `fallback`, and contracts under `lib/` by name.** `--entry-point` used to
+  refuse anything outside the project's own non-constructor functions, so an empty
+  `FLAMMProxy.constructor` — whose whole behaviour lives in the `BeaconProxy` it inherits — could
+  not be drawn at all. Named explicitly, anything is reachable now; the picker is unchanged.
+- **A constructor is drawn with the base constructors it runs.** `constructor(...)
+  BeaconProxy(beacon, data) {}` was parsed as a modifier that resolved to nothing, so the diagram
+  stopped at one screenshot. The base constructor is now an edge anchored on that header token,
+  and implicit base constructors are followed too.
+- **A contract name resolves through imports, like the compiler.** With several vendored copies
+  of a library under `lib/`, a name used to mean the first copy found in the whole project —
+  possibly one the audited code never touches. Every lookup (the root, base contracts, library
+  calls, interface implementations) now picks the copy reachable through the using file's
+  imports and `remappings.txt`, nearest first. `--entry-point` accepts
+  `path/To.sol:Contract.function`, prints `from <file>` when a name is shared, and stops with the
+  candidates listed only when the code cannot decide.
+- Remappings now apply longest prefix first, as forge does.
+  _Re-read: workflow.md._
 
 ## 0.25.0
 - **A state change is never invisible again.** A node was drawn red only when it held the
