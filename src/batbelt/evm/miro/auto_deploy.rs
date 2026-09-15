@@ -2312,6 +2312,10 @@ fn build_graph(
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut truncated = 0usize;
     // Interface calls in this tree still needing an AI resolution (see `resolve`).
+    // Reads through an interface cast with several in-scope implementations, left out of
+    // the graph: `(interface, method) → (candidates, call locations)`, printed once each.
+    let mut left_out_reads: std::collections::BTreeMap<(String, String), (Vec<String>, Vec<String>)> =
+        std::collections::BTreeMap::new();
     let mut unresolved: Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall> =
         Vec::new();
     // One node per function: a second call to the same function points at the
@@ -2525,17 +2529,12 @@ fn build_graph(
                                     },
                                 );
                             } else {
-                                println!(
-                                    "  {} {}.{}() at {}:{} has {} implementations ({}) and is a read, so it is left out — {} draws it",
-                                    "note:".yellow(),
-                                    type_name,
-                                    method,
-                                    contract.name,
-                                    function.line + call.line - 1,
-                                    names.len(),
-                                    names.join(", "),
-                                    format!("bat-cli resolve {type_name} <CONTRACT>").green()
-                                );
+                                let entry = left_out_reads
+                                    .entry((type_name.to_string(), method.to_string()))
+                                    .or_insert_with(|| (names.clone(), Vec::new()));
+                                entry
+                                    .1
+                                    .push(format!("{}:{}", contract.name, function.line + call.line - 1));
                             }
                         }
                     }
@@ -2667,21 +2666,35 @@ fn build_graph(
         // Cross-contract interface calls: follow the ones the AI has resolved (so the
         // concrete downstream function — and its storage writes — appear and recurse),
         // and collect the rest as needing a resolution.
+        //
+        // Two sources feed the same drawing: interface calls the AI resolved with
+        // `bat-cli resolve`, and calls the scan already pinned by type (`resolved_calls`),
+        // such as `$.priceFeed.pegOk` — a storage-struct field the deploy cannot type
+        // itself. The third element is the originating unresolved call, if any.
+        let mut followed: Vec<(String, String, Option<&crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall>)> =
+            Vec::new();
         for u in &function.unresolved_calls {
             let concrete = if u.inferred_type.is_empty() {
                 None
             } else {
                 metadata.resolutions.get(&u.inferred_type)
             };
-            let Some(concrete) = concrete else {
-                unresolved.push(u.clone());
-                continue;
-            };
+            match concrete {
+                Some(concrete) => followed.push((u.method.clone(), concrete.clone(), Some(u))),
+                None => unresolved.push(u.clone()),
+            }
+        }
+        for typed in &function.resolved_calls {
+            followed.push((typed.method.clone(), typed.contract.clone(), None));
+        }
+        for (method, concrete, origin) in &followed {
             let Some((tc, tf)) =
-                find_function(metadata, concrete, &contract.file_path, &u.method, None)
+                find_function(metadata, concrete, &contract.file_path, method, None)
             else {
                 // A resolution is set but its method isn't there — still unresolved.
-                unresolved.push(u.clone());
+                if let Some(u) = origin {
+                    unresolved.push((*u).clone());
+                }
                 continue;
             };
             // A resolution that lands on a virtual/interface stub is redirected to
@@ -2696,13 +2709,22 @@ fn build_graph(
             if target_id == current.node_id {
                 continue;
             }
+            // A plain state-variable receiver (`debtToken.mint`) is typed by the deploy too,
+            // and already has its arrow from the call-site pass; don't draw it twice.
+            if origin.is_none()
+                && edges
+                    .iter()
+                    .any(|edge| edge.from == current.node_id && edge.to == target_id)
+            {
+                continue;
+            }
             if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
                 truncated += 1;
                 continue;
             }
             let line_in_slice = slice
                 .iter()
-                .position(|l| line_has_call(l, &u.method))
+                .position(|l| line_has_call(l, method))
                 .map(|i| i + 1)
                 .unwrap_or(1);
             edges.push(GraphEdge {
@@ -2711,9 +2733,9 @@ fn build_graph(
                 line_in_slice: line_in_slice + doc_shift,
                 column: slice
                     .get(line_in_slice - 1)
-                    .and_then(|l| l.find(u.method.as_str()))
+                    .and_then(|l| l.find(method.as_str()))
                     .unwrap_or(0),
-                symbol: u.method.clone(),
+                symbol: method.clone(),
             });
             if leads_to_write(
                 metadata,
@@ -2726,7 +2748,7 @@ fn build_graph(
             ) {
                 caller_write_calls.push((
                     function.line + line_in_slice - 1,
-                    u.method.clone(),
+                    method.clone(),
                     target_id.clone(),
                 ));
             }
@@ -2820,6 +2842,19 @@ fn build_graph(
     // sit far from a caller and would cross — see `duplicate_crossing_shared`. A
     // blanket duplication here would repeat functions whose callers are adjacent
     // (no crossing) for nothing.
+    for ((type_name, method), (candidates, locations)) in &left_out_reads {
+        println!(
+            "  {} {}.{}() is a read with {} implementations ({}), left out at {} — {} draws it",
+            "note:".yellow(),
+            type_name,
+            method,
+            candidates.len(),
+            candidates.join(", "),
+            locations.join(", "),
+            format!("bat-cli resolve {type_name} <CONTRACT>").green()
+        );
+    }
+
     Ok((nodes, edges, truncated, unresolved))
 }
 
@@ -3272,6 +3307,40 @@ fn leads_to_write(
         }
     }
 
+    // Calls the call-string resolver cannot reach: those pinned by type in the scan
+    // (`$.priceFeed.pegOk`) and interface calls the AI resolved.
+    if !reaches {
+        let followed = function
+            .resolved_calls
+            .iter()
+            .map(|typed| (typed.contract.clone(), typed.method.clone()))
+            .chain(function.unresolved_calls.iter().filter_map(|u| {
+                metadata
+                    .resolutions
+                    .get(&u.inferred_type)
+                    .map(|concrete| (concrete.clone(), u.method.clone()))
+            }))
+            .collect::<Vec<_>>();
+        for (concrete, method) in followed {
+            if let Some((target_contract, target_function)) =
+                find_function(metadata, &concrete, &contract.file_path, &method, None)
+            {
+                if leads_to_write(
+                    metadata,
+                    target_contract,
+                    &target_function,
+                    options,
+                    definer_map,
+                    memo,
+                    stack,
+                ) {
+                    reaches = true;
+                    break;
+                }
+            }
+        }
+    }
+
     stack.remove(&id);
     memo.insert(id, reaches);
     reaches
@@ -3438,8 +3507,8 @@ fn resolve_cast<'a>(
     None
 }
 
-/// Every concrete contract that implements interface `type_name` and defines `method`
-/// with a body, one per name.
+/// Every concrete IN-SCOPE contract that implements interface `type_name` and defines
+/// `method` with a body, one per name. None means the target is an external contract.
 ///
 /// Same-named copies collapse to the one reachable from the caller's imports, so three
 /// vendored `UpgradeableBeacon`s count as one candidate, not three.
@@ -3462,6 +3531,14 @@ fn cast_implementations<'a>(
             continue;
         };
         if contract.contract_type == EvmContractType::Interface {
+            continue;
+        }
+        // The same rule the scan applies (`compute_unresolved_calls`): a generic library
+        // implementation is not what a runtime address points at. `IERC20(token)` is some
+        // deployed token, never OpenZeppelin's `ERC20` template, and offering the template
+        // as a candidate invites a global `bat-cli resolve IERC20 ERC20` that would bind
+        // every IERC20 cast in the project to the wrong code.
+        if contract.external {
             continue;
         }
         if let Some((defining, function)) =

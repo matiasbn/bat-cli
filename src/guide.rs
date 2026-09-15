@@ -507,7 +507,11 @@ resolutions live in the metadata and persist across `sonar`. `bat-cli resolve --
 `--allow-unresolved` once the real state-changing hops are resolved.
 
 **Interface casts** — `IBeacon(addr).implementation()` — are followed when the answer is known: a
-recorded `bat-cli resolve`, or a single implementation defining the method. With several
+recorded `bat-cli resolve`, or a single IN-SCOPE implementation defining the method. Generic
+implementations under `lib/` never count: `IERC20(token)` points at some deployed token, not at
+OpenZeppelin's `ERC20` template, so a cast with no implementation in `src/` is treated as an
+external contract and is never offered for `bat-cli resolve` (a resolution is global — binding
+`IERC20` to a template would rebind every IERC20 call in the project). With several
 implementations the deploy does not guess. If any of them can change state, the call joins the
 unresolved list above and the deploy stops; if none can, it is a read, so the deploy prints a
 `note:` naming the candidates and the `bat-cli resolve` that would draw it, and carries on.
@@ -614,6 +618,8 @@ is in the file, rescan rather than working around it.
 Top level: `contracts`, `entry_points`, `function_dependencies`, `interfaces`, `file_items`,
 `miro`.
 
+- **`contracts[].functions[].resolved_calls[]`** — interface calls the scan pinned by type to a
+  single in-scope implementer, as `{receiver, method, contract}` (e.g. `$.priceFeed` → `PriceFeed`).
 - **`file_items[]`** is the declaration index — structs, enums, errors, type aliases, constants,
   free functions and events — each with `file_path`, `line`, `end_line` and an `owner` naming the
   contract it was declared inside (empty when it sits at file level). Since 0.24 this includes
@@ -730,6 +736,20 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.3
+- **Calls through a storage-struct field are drawn.** `$.priceFeed.pegOk(...)` — a field of a
+  storage struct typed as an interface with ONE in-scope implementation — was typed correctly by
+  the scan and then discarded as "the deploy follows it", which the deploy cannot: only the scan
+  knows the struct's field types. The scan now records these in `resolved_calls` and the deploy
+  draws them (and follows them for state-change marks). On one pool codebase this recovered 53
+  such calls. Rescan with `bat-cli sonar`; a deeper graph can surface interface calls that now
+  need a `bat-cli resolve`.
+- **Interface casts ignore `lib/` implementations**, as the scan always did: `IERC20(token).balanceOf`
+  is no longer reported as "3 implementations (ERC20, ERC20Upgradeable, ERC777)" with a `resolve`
+  suggestion that would bind every IERC20 call to a template. Left-out reads are printed once per
+  interface method, with every call location, instead of once per call.
+  _Re-read: workflow.md, metadata.md._
 
 ## 0.26.2
 - **`new X(...)` is drawn as a call to `X.constructor`.** Contract creation was not recorded as a

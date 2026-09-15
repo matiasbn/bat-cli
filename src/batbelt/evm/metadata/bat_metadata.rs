@@ -102,6 +102,26 @@ pub struct FunctionMetadata {
     /// unverified external state-change boundary.
     #[serde(default)]
     pub unknown_external_calls: Vec<ExternalUnknownCall>,
+    /// Interface calls the scan resolved by TYPE: the receiver's declared type has exactly
+    /// one concrete in-scope implementer defining the method, so no AI decision is needed.
+    ///
+    /// These used to be dropped with a note that "the deploy graph follows it" — true for a
+    /// plain state variable (`debtToken.mint`), which the deploy can type itself, and false
+    /// for a field of a storage struct (`$.priceFeed.pegOk`), which only the scan can type.
+    /// Recording the result is what lets the deploy draw every one of them.
+    #[serde(default)]
+    pub resolved_calls: Vec<TypedCall>,
+}
+
+/// A call the scan pinned to one concrete contract from the receiver's declared type.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TypedCall {
+    /// The receiver as written, e.g. `$.priceFeed`.
+    pub receiver: String,
+    /// The method invoked, e.g. `pegOk`.
+    pub method: String,
+    /// The single in-scope implementer, e.g. `PriceFeed`.
+    pub contract: String,
 }
 
 /// A call whose target contract has no in-scope source: an interface-typed
@@ -626,7 +646,7 @@ impl EvmBatMetadata {
                 for (n, t) in &analysis.local_types {
                     local_var_types.insert(n.clone(), t.clone());
                 }
-                let (unresolved_calls, unknown_external_calls) = compute_unresolved_calls(
+                let (unresolved_calls, unknown_external_calls, resolved_calls) = compute_unresolved_calls(
                     &analysis.call_targets,
                     &local_var_types,
                     &struct_fields,
@@ -658,6 +678,7 @@ impl EvmBatMetadata {
                     storage_write_sites,
                     unresolved_calls,
                     unknown_external_calls,
+                    resolved_calls,
                 });
             }
 
@@ -889,6 +910,13 @@ pub fn prune_unresolved_noise(metadata: &mut EvmBatMetadata) {
                     }
                 }
             }
+            // A typed call is a real edge too; without it a write reached only through
+            // `$.priceFeed.pegOk` would not taint its callers.
+            for r in &f.resolved_calls {
+                if let Some(id) = fid(&r.contract, &r.method) {
+                    out.push(id);
+                }
+            }
         }
     }
 
@@ -965,8 +993,9 @@ fn compute_unresolved_calls(
     external_contracts: &std::collections::HashSet<String>,
     impl_map: &std::collections::HashMap<String, Vec<String>>,
     method_map: &std::collections::HashMap<String, Vec<String>>,
-) -> (Vec<UnresolvedCall>, Vec<ExternalUnknownCall>) {
+) -> (Vec<UnresolvedCall>, Vec<ExternalUnknownCall>, Vec<TypedCall>) {
     let mut out: Vec<UnresolvedCall> = Vec::new();
+    let mut typed: Vec<TypedCall> = Vec::new();
     let mut external: Vec<ExternalUnknownCall> = Vec::new();
     let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     let mut seen_ext: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
@@ -1000,9 +1029,17 @@ fn compute_unresolved_calls(
                 })
                 .unwrap_or_default()
         };
-        // Exactly one type-proven implementer → unambiguous; the deploy graph follows
-        // it. Not AI work.
+        // Exactly one type-proven implementer → unambiguous, not AI work. Record it: the
+        // deploy cannot type a storage-struct field (`$.priceFeed`) on its own.
         if typed_impls.len() == 1 {
+            let call = TypedCall {
+                receiver: receiver.clone(),
+                method: method.clone(),
+                contract: typed_impls[0].clone(),
+            };
+            if !typed.contains(&call) {
+                typed.push(call);
+            }
             continue;
         }
 
@@ -1068,7 +1105,7 @@ fn compute_unresolved_calls(
             });
         }
     }
-    (out, external)
+    (out, external, typed)
 }
 
 /// The declared type of a call receiver expression: a bare variable (`positionManager`)
