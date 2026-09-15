@@ -250,10 +250,39 @@ fn extract_calls_from_stmt(kind: &ast::StmtKind<'_>, calls: &mut Vec<String>) {
     }
 }
 
+/// The contract created by `new X(...)` (or `new X{salt: s}(...)`), and the span of `X`.
+///
+/// Creating a contract runs its constructor, so for the call graph `new X(...)` is a call
+/// to `X.constructor` — rendered that way so the same resolver that follows `Lib.fn(...)`
+/// reaches it. `new bytes(n)` and `new T[](n)` allocate memory and are not calls.
+pub(crate) fn created_contract(
+    callee: &ast::ExprKind<'_>,
+) -> Option<(String, solar_parse::interface::Span)> {
+    match callee {
+        ast::ExprKind::New(ty) => match &ty.kind {
+            ast::TypeKind::Custom(path) => {
+                let ident = path.last();
+                Some((ident.as_str().to_string(), ident.span))
+            }
+            _ => None,
+        },
+        ast::ExprKind::CallOptions(inner, _) => created_contract(&inner.kind),
+        _ => None,
+    }
+}
+
 /// AST walk: extract call names from an expression kind.
 fn extract_calls_from_expr(kind: &ast::ExprKind<'_>, calls: &mut Vec<String>) {
     match kind {
         ast::ExprKind::Call(callee, args) => {
+            // `new X(...)` runs X's constructor. Checked first: its callee is not a name.
+            if let Some((created, _)) = created_contract(&callee.kind) {
+                calls.push(format!("{created}.constructor"));
+                for arg in args.exprs() {
+                    extract_calls_from_expr(&arg.kind, calls);
+                }
+                return;
+            }
             // Extract the callee name
             match &callee.kind {
                 ast::ExprKind::Ident(ident) => {
@@ -599,6 +628,14 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
     match &expr.kind {
         ast::ExprKind::Call(callee, args) => {
             let arg_count = args.exprs().count();
+            // `new X(...)` runs X's constructor; anchor the arrow on `X`.
+            if let Some((created, span)) = created_contract(&callee.kind) {
+                out.push((format!("{created}.constructor"), created, span, arg_count));
+                for arg in args.exprs() {
+                    collect_call_sites_from_expr(arg, out);
+                }
+                return;
+            }
             match &callee.kind {
                 ast::ExprKind::Ident(ident) => {
                     let name = ident.as_str().to_string();
@@ -1568,5 +1605,37 @@ mod cast_call_test {
         for expected in ["bar", "qux"] {
             assert_eq!(names.iter().filter(|n| **n == expected).count(), 1, "{names:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod contract_creation_test {
+    use super::{extract_call_sites_from_source, extract_calls_from_source};
+
+    #[test]
+    fn new_contract_is_a_call_to_its_constructor() {
+        // MorphoAccountDeployer.deploy: the only thing it does is create the account, and the
+        // creation was invisible — no callee, no arrow, one lonely screenshot.
+        let body = "return address(new MorphoBlueAccount(router, pool, f(x), loanAsset, MORPHO));";
+
+        let names = extract_calls_from_source(body);
+        assert!(names.contains(&"MorphoBlueAccount.constructor".to_string()), "{names:?}");
+        assert!(names.contains(&"f".to_string()), "arguments are still walked: {names:?}");
+
+        let sites = extract_call_sites_from_source(body);
+        let site = sites
+            .iter()
+            .find(|s| s.name == "MorphoBlueAccount.constructor")
+            .expect("creation site");
+        assert_eq!(site.symbol, "MorphoBlueAccount");
+        assert_eq!(site.arg_count, 5);
+    }
+
+    #[test]
+    fn salted_creation_and_memory_allocation() {
+        let sites = extract_call_sites_from_source("Pool p = new Pool{salt: s}(a); bytes memory b = new bytes(32);");
+        let names: Vec<&str> = sites.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Pool.constructor"), "{names:?}");
+        assert!(!names.iter().any(|n| n.contains("bytes")), "{names:?}");
     }
 }
