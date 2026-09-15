@@ -534,9 +534,19 @@ impl EvmBatMetadata {
         }
 
         // struct name → (field name → declared type), for typing `$.field` receivers.
+        //
+        // Struct names collide across contracts as freely as contract names do: two
+        // `Venue`s here, one holding `IFinancingAccount account` and the other
+        // `address account`. Keyed by bare name alone the last one parsed wins, and every
+        // call through the other's field is typed wrong — so keep each contract's own
+        // structs separately and prefer them when typing that contract's receivers.
         let mut struct_fields: std::collections::HashMap<
             String,
             std::collections::HashMap<String, String>,
+        > = std::collections::HashMap::new();
+        let mut own_structs: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, std::collections::HashMap<String, String>>,
         > = std::collections::HashMap::new();
         for c in &contracts {
             for s in &c.structs {
@@ -545,6 +555,10 @@ impl EvmBatMetadata {
                     .iter()
                     .map(|f| (f.name.clone(), f.type_name.clone()))
                     .collect();
+                own_structs
+                    .entry(c.name.clone())
+                    .or_default()
+                    .insert(s.name.clone(), fields.clone());
                 struct_fields.insert(s.name.clone(), fields);
             }
         }
@@ -600,6 +614,28 @@ impl EvmBatMetadata {
                 }
             }
 
+            // Structs visible to this contract: the project's, with its own (and its
+            // bases') definitions taking precedence over a same-named struct elsewhere.
+            let mut visible_structs = struct_fields.clone();
+            {
+                let mut chain = vec![contract.name.clone()];
+                let mut seen_struct_owners: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                while let Some(name) = chain.pop() {
+                    if !seen_struct_owners.insert(name.clone()) {
+                        continue;
+                    }
+                    if let Some(bases) = contract_bases.get(&name) {
+                        chain.extend(bases.iter().cloned());
+                    }
+                    if let Some(structs) = own_structs.get(&name) {
+                        for (struct_name, fields) in structs {
+                            visible_structs.insert(struct_name.clone(), fields.clone());
+                        }
+                    }
+                }
+            }
+
             // State variables visible to every function in this contract.
             let mut state_vars: Vec<String> = Vec::new();
             let mut seen_contracts: std::collections::HashSet<String> =
@@ -642,14 +678,27 @@ impl EvmBatMetadata {
                     })
                     .collect();
                 // Receiver types visible here: state vars (inherited) + params + locals.
+                //
+                // Parameters and named returns come from the signature, which `analyze_body`
+                // never sees — it parses the body alone. Without them a library written
+                // against a storage pointer (`read(Venue storage v)` calling
+                // `v.account.tryPosition(...)`) had an untyped receiver, so the call fell
+                // back to a name-only guess and was then pruned as a read. Locals are
+                // inserted after, so a declaration in the body shadows a parameter as it does
+                // in Solidity.
                 let mut local_var_types = var_types.clone();
+                for param in f.params.iter().chain(f.returns.iter()) {
+                    if !param.name.is_empty() {
+                        local_var_types.insert(param.name.clone(), param.type_name.clone());
+                    }
+                }
                 for (n, t) in &analysis.local_types {
                     local_var_types.insert(n.clone(), t.clone());
                 }
                 let (unresolved_calls, unknown_external_calls, resolved_calls) = compute_unresolved_calls(
                     &analysis.call_targets,
                     &local_var_types,
-                    &struct_fields,
+                    &visible_structs,
                     &fn_returns,
                     &contract_names,
                     &is_interface,

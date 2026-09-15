@@ -737,6 +737,16 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.4
+- **Calls through a storage pointer received as a PARAMETER are typed too.** A library written
+  against `read(Venue storage v)` calling `v.account.tryPosition(...)` had an untyped receiver:
+  the body analysis never sees the signature, so parameters and named returns were missing from
+  the type table. They are added now, and struct names are resolved per contract — two different
+  `Venue` structs (one with `IFinancingAccount account`, one with `address account`) used to
+  collide on the bare name, so whichever was parsed last decided the type for both. On one pool
+  codebase the typed-call count went from 53 to 279. Rescan with `bat-cli sonar`.
+  _Re-read: nothing (the scan records more, the shape is unchanged)._
+
 ## 0.26.3
 - **Calls through a storage-struct field are drawn.** `$.priceFeed.pegOk(...)` — a field of a
   storage struct typed as an interface with ONE in-scope implementation — was typed correctly by
