@@ -2484,6 +2484,62 @@ fn build_graph(
             let Some((target_contract, target_function)) =
                 resolve_call(metadata, contract, &call.name, arity, options, &definer_map)
             else {
+                // An interface cast with several implementations and no recorded
+                // resolution. Guessing would draw code that may never run here, so:
+                // - if any candidate can change state, it goes on the list the deploy
+                //   stops on, the same list `bat-cli resolve` works through;
+                // - if none can, it is a read — stopping a deploy for every
+                //   `IERC20(token).balanceOf` is the noise the scan already prunes — so
+                //   say it was left out and how to bring it in, and carry on.
+                if let Some((receiver, method)) = call.name.split_once('.') {
+                    if let Some(type_name) = receiver.strip_suffix("()") {
+                        let candidates = cast_implementations(
+                            metadata,
+                            contract,
+                            type_name,
+                            method,
+                            arity,
+                        );
+                        if candidates.len() > 1 && !metadata.resolutions.contains_key(type_name) {
+                            let names: Vec<String> =
+                                candidates.iter().map(|(c, _)| c.name.clone()).collect();
+                            let writes = candidates.iter().any(|(c, f)| {
+                                leads_to_write(
+                                    metadata,
+                                    c,
+                                    f,
+                                    &write_options,
+                                    &write_definer_map,
+                                    &mut write_memo,
+                                    &mut HashSet::new(),
+                                )
+                            });
+                            if writes {
+                                unresolved.push(
+                                    crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall {
+                                        receiver: receiver.to_string(),
+                                        method: method.to_string(),
+                                        inferred_type: type_name.to_string(),
+                                        candidates: names,
+                                        assigned_in: Vec::new(),
+                                    },
+                                );
+                            } else {
+                                println!(
+                                    "  {} {}.{}() at {}:{} has {} implementations ({}) and is a read, so it is left out — {} draws it",
+                                    "note:".yellow(),
+                                    type_name,
+                                    method,
+                                    contract.name,
+                                    function.line + call.line - 1,
+                                    names.len(),
+                                    names.join(", "),
+                                    format!("bat-cli resolve {type_name} <CONTRACT>").green()
+                                );
+                            }
+                        }
+                    }
+                }
                 continue;
             };
             let target_id = overload_node_key(target_contract, &target_function);
@@ -3247,6 +3303,17 @@ fn resolve_call<'a>(
             chain.push(caller_contract.name.clone());
             chain
         }
+        // `IFace(addr).method()`, rendered `IFace()`: a cast of a runtime address.
+        Some(target) if target.ends_with("()") => {
+            return resolve_cast(
+                metadata,
+                caller_contract,
+                target.trim_end_matches("()"),
+                method,
+                arg_count,
+                options,
+            );
+        }
         Some(target) => {
             if metadata.contract_in_scope(target, &caller_contract.file_path).is_some() {
                 // Library or contract called by name.
@@ -3325,6 +3392,87 @@ fn resolve_call<'a>(
         }
     }
     None
+}
+
+/// Resolve `Type(addr).method()`.
+///
+/// Casting to a concrete contract names the code outright. Casting to an interface does
+/// not: which implementation sits behind the address is decided when the system is
+/// deployed, which no reading of the source can reveal. So an interface cast is followed
+/// only when that question has an answer — a recorded `bat-cli resolve`, or a single
+/// implementation defining the method. Several candidates return `None`; the graph
+/// builder then asks (see `cast_implementations`) instead of drawing a guess.
+fn resolve_cast<'a>(
+    metadata: &'a EvmBatMetadata,
+    caller_contract: &ContractMetadata,
+    type_name: &str,
+    method: &str,
+    arg_count: Option<usize>,
+    options: &AutoDeployOptions,
+) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
+    let keep = |contract: &ContractMetadata| options.include_external || !contract.external;
+    let typed = metadata.contract_in_scope(type_name, &caller_contract.file_path)?;
+
+    if typed.contract_type != EvmContractType::Interface {
+        if !keep(typed) {
+            return None;
+        }
+        let found = find_function(metadata, &typed.name, &typed.file_path, method, arg_count)?;
+        return destub(metadata, found, options);
+    }
+
+    if let Some(concrete) = metadata.resolutions.get(type_name) {
+        let target = metadata.contract_in_scope(concrete, &caller_contract.file_path)?;
+        if !keep(target) {
+            return None;
+        }
+        let found = find_function(metadata, &target.name, &target.file_path, method, arg_count)?;
+        return destub(metadata, found, options);
+    }
+
+    let mut implementations = cast_implementations(metadata, caller_contract, type_name, method, arg_count);
+    implementations.retain(|(contract, _)| keep(contract));
+    if implementations.len() == 1 {
+        return implementations.pop();
+    }
+    None
+}
+
+/// Every concrete contract that implements interface `type_name` and defines `method`
+/// with a body, one per name.
+///
+/// Same-named copies collapse to the one reachable from the caller's imports, so three
+/// vendored `UpgradeableBeacon`s count as one candidate, not three.
+fn cast_implementations<'a>(
+    metadata: &'a EvmBatMetadata,
+    caller_contract: &ContractMetadata,
+    type_name: &str,
+    method: &str,
+    arg_count: Option<usize>,
+) -> Vec<(&'a ContractMetadata, FunctionMetadata)> {
+    let mut names: Vec<String> = implementations_of(metadata, type_name);
+    names.sort();
+    names.dedup();
+    let mut found = Vec::new();
+    for name in names {
+        if name == type_name {
+            continue;
+        }
+        let Some(contract) = metadata.contract_in_scope(&name, &caller_contract.file_path) else {
+            continue;
+        };
+        if contract.contract_type == EvmContractType::Interface {
+            continue;
+        }
+        if let Some((defining, function)) =
+            find_function(metadata, &contract.name, &contract.file_path, method, arg_count)
+        {
+            if !function.is_stub {
+                found.push((defining, function));
+            }
+        }
+    }
+    found
 }
 
 /// Redirect a resolved call that landed on a stub (a bodyless interface/abstract
