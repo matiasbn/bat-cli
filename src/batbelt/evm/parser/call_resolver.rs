@@ -263,13 +263,31 @@ fn extract_calls_from_expr(kind: &ast::ExprKind<'_>, calls: &mut Vec<String>) {
                     }
                 }
                 ast::ExprKind::Member(obj_expr, method_ident) => {
-                    // obj.method() — extract as "obj.method"
-                    if let ast::ExprKind::Ident(obj_ident) = &obj_expr.kind {
-                        let obj_name = obj_ident.as_str().to_string();
-                        let method_name = method_ident.as_str().to_string();
-                        if !is_builtin(&obj_name) {
-                            calls.push(format!("{}.{}", obj_name, method_name));
+                    let method_name = method_ident.as_str().to_string();
+                    match &obj_expr.kind {
+                        // obj.method() — extract as "obj.method"
+                        ast::ExprKind::Ident(obj_ident) => {
+                            let obj_name = obj_ident.as_str().to_string();
+                            if !is_builtin(&obj_name) {
+                                calls.push(format!("{}.{}", obj_name, method_name));
+                            }
                         }
+                        // IFace(addr).method() — the cast renders as `IFace()`, the same
+                        // spelling the deploy extractor and analyze_body use. The address
+                        // expression is a call site in its own right: in
+                        // `IBeacon(_getBeacon()).implementation()`, `_getBeacon()` was lost.
+                        ast::ExprKind::Call(inner_callee, inner_args) => {
+                            if let ast::ExprKind::Ident(id) = &inner_callee.kind {
+                                calls.push(format!("{}().{}", id.as_str(), method_name));
+                            } else {
+                                extract_calls_from_expr(&inner_callee.kind, calls);
+                            }
+                            for arg in inner_args.exprs() {
+                                extract_calls_from_expr(&arg.kind, calls);
+                            }
+                        }
+                        // A longer chain: whatever it contains still gets walked.
+                        other => extract_calls_from_expr(other, calls),
                     }
                 }
                 _ => {
@@ -599,10 +617,21 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
                     // call was dropped and neither drawn nor linked.
                     let receiver = match &obj_expr.kind {
                         ast::ExprKind::Ident(obj_ident) => Some(obj_ident.as_str().to_string()),
-                        ast::ExprKind::Call(inner_callee, _) => match &inner_callee.kind {
-                            ast::ExprKind::Ident(id) => Some(format!("{}()", id.as_str())),
-                            _ => None,
-                        },
+                        ast::ExprKind::Call(inner_callee, inner_args) => {
+                            // The cast's argument is its own call site: in
+                            // `IBeacon(_getBeacon()).implementation()` it is `_getBeacon()`,
+                            // and skipping it dropped the function's only internal call.
+                            for arg in inner_args.exprs() {
+                                collect_call_sites_from_expr(arg, out);
+                            }
+                            match &inner_callee.kind {
+                                ast::ExprKind::Ident(id) => Some(format!("{}()", id.as_str())),
+                                _ => {
+                                    collect_call_sites_from_expr(inner_callee, out);
+                                    None
+                                }
+                            }
+                        }
                         _ => None,
                     };
                     match receiver {
@@ -617,6 +646,9 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
                                 arg_count,
                             ));
                         }
+                        // A call receiver had its callee and arguments walked above;
+                        // walking it again would record every nested call twice.
+                        _ if matches!(obj_expr.kind, ast::ExprKind::Call(..)) => {}
                         _ => collect_call_sites_from_expr(obj_expr, out),
                     }
                 }
@@ -1504,5 +1536,37 @@ mod ast_path_test {
             names.contains(&"ghost".to_string()) || names.contains(&"phantom".to_string()),
             "the regex fallback no longer differs from the AST: {names:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod cast_call_test {
+    use super::{extract_call_sites_from_source, extract_calls_from_source};
+
+    #[test]
+    fn a_cast_receiver_keeps_the_call_inside_its_argument() {
+        // BeaconProxy._implementation: the internal call lives INSIDE the cast, and both
+        // extractors used to drop it — the scan dropped the whole statement.
+        let body = "return IBeacon(_getBeacon()).implementation();";
+
+        let names = extract_calls_from_source(body);
+        assert!(names.contains(&"_getBeacon".to_string()), "{names:?}");
+        assert!(names.contains(&"IBeacon().implementation".to_string()), "{names:?}");
+
+        let sites = extract_call_sites_from_source(body);
+        let site_names: Vec<&str> = sites.iter().map(|s| s.name.as_str()).collect();
+        assert!(site_names.contains(&"_getBeacon"), "{site_names:?}");
+        assert!(site_names.contains(&"IBeacon().implementation"), "{site_names:?}");
+        // Walked once, not twice: a duplicate site would draw a duplicate arrow.
+        assert_eq!(site_names.iter().filter(|n| **n == "_getBeacon").count(), 1);
+    }
+
+    #[test]
+    fn a_nested_chain_is_still_walked() {
+        let sites = extract_call_sites_from_source("foo(bar()).baz(qux());");
+        let names: Vec<&str> = sites.iter().map(|s| s.name.as_str()).collect();
+        for expected in ["bar", "qux"] {
+            assert_eq!(names.iter().filter(|n| **n == expected).count(), 1, "{names:?}");
+        }
     }
 }

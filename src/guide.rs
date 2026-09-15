@@ -506,6 +506,12 @@ resolutions live in the metadata and persist across `sonar`. `bat-cli resolve --
 (`IERC20.balanceOf`, …) surface as name-collision candidates — those are reads, safe to skip with
 `--allow-unresolved` once the real state-changing hops are resolved.
 
+**Interface casts** — `IBeacon(addr).implementation()` — are followed when the answer is known: a
+recorded `bat-cli resolve`, or a single implementation defining the method. With several
+implementations the deploy does not guess. If any of them can change state, the call joins the
+unresolved list above and the deploy stops; if none can, it is a read, so the deploy prints a
+`note:` naming the candidates and the `bat-cli resolve` that would draw it, and carries on.
+
 **Any function can be deployed, not just an entry point.** A shared helper needs a frame of
 its own for anything else to point at, and is worth reading on its own terms. Named with
 `--entry-point`, that includes constructors, `fallback`/`receive`, and contracts under `lib/`
@@ -720,6 +726,17 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.1
+- **Calls inside a cast are no longer lost.** In `return IBeacon(_getBeacon()).implementation();`
+  both call extractors dropped `_getBeacon()` — the deploy walked the cast but not its argument,
+  and the scan ignored any call whose receiver was not a plain name — so
+  `BeaconProxy._implementation` drew as a lone screenshot. Rescan with `bat-cli sonar` to refresh
+  the call graph the scan stores; the deploy picks the argument up without one.
+- **Interface casts resolve like interface-typed variables.** `IFace(addr).method()` follows a
+  `bat-cli resolve` or a single implementation. Several implementations stop the deploy when one
+  can reach a write, and only print a `note:` when they are reads.
+  _Re-read: workflow.md._
 
 ## 0.26.0
 - **Deploy constructors, `fallback`, and contracts under `lib/` by name.** `--entry-point` used to
