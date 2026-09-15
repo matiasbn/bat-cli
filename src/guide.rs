@@ -529,6 +529,10 @@ code cannot decide does it stop** — two in-scope contracts both defining `poke
 nothing in `src/` imports — and it lists each candidate in the `path:Contract.function` form.
 Re-run with one of those; do not guess.
 
+**Creating a contract is a call to its constructor.** `new X(...)` (and `new X{salt: s}(...)`) is
+drawn as an arrow to `X.constructor`, anchored on `X`; `new bytes(n)` and `new T[](n)` allocate
+memory and are not calls.
+
 **A constructor is drawn with the constructors it runs.** Base constructors execute before the
 body whether the header invokes them (`BeaconProxy(beacon, data)`) or not, so deploying
 `FLAMMProxy.constructor` draws `BeaconProxy.constructor` and what it calls — not every inherited
@@ -726,6 +730,14 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.2
+- **`new X(...)` is drawn as a call to `X.constructor`.** Contract creation was not recorded as a
+  call at all, so a factory like `MorphoAccountDeployer.deploy` — whose whole job is
+  `new MorphoBlueAccount(...)` — drew as one screenshot with `callees: []`. Both the deploy and the
+  scan now treat creation (salted too) as a call to the created contract's constructor. Rescan with
+  `bat-cli sonar` to refresh the stored call graph; the deploy sees it without one.
+  _Re-read: workflow.md._
 
 ## 0.26.1
 - **Calls inside a cast are no longer lost.** In `return IBeacon(_getBeacon()).implementation();`
