@@ -33,6 +33,7 @@ use crate::batbelt::evm::miro::auto_deploy::{
     REFERENCE_FONT,
 };
 use crate::batbelt::evm::miro::EvmMiroError;
+use crate::batbelt::evm::types::EvmContractType;
 use crate::batbelt::miro::client::MiroClient;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::silicon;
@@ -55,6 +56,9 @@ pub struct ScreenshotOptions {
     pub frame: Option<String>,
     /// Include the declaration's NatSpec, as `deploy --with-documentation` does.
     pub with_documentation: bool,
+    /// Grow the frame when the screenshot does not fit in it. Off by default: the frame's
+    /// size and position are the auditor's arrangement, not ours.
+    pub grow: bool,
 }
 
 /// Where a named symbol lives.
@@ -107,7 +111,8 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
     let client = MiroClient::new_refreshed()
         .await
         .change_context(EvmMiroError)?;
-    if !client.item_exists(&record.frame_id).await {
+    let live = client.item_geometry(&record.frame_id).await;
+    if live.is_none() {
         return Err(Report::new(EvmMiroError)
             .attach_printable(format!(
                 "the frame for `{frame_name}` is no longer on the board"
@@ -117,16 +122,30 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
             )));
     }
 
+    // Work from where the frame IS, not where the deploy put it: the auditor rearranges the
+    // board, and drawing from the recorded position both misplaced the screenshot and, when
+    // the frame had to grow, dragged the frame back to its birthplace.
+    let mut record = record;
+    if let Some((x, y, width, height)) = live {
+        record.x = x;
+        record.y = y;
+        record.width = width;
+        record.height = height;
+    }
+
     let width = png_width as f64 * BOARD_UNITS_PER_PIXEL;
     let height = png_height as f64 * BOARD_UNITS_PER_PIXEL;
     let (x, y) = free_spot(&record, width, height);
-
-    // Growing the frame keeps its TOP-LEFT fixed: frame-local coordinates are measured
-    // from there, so a frame that grew downward without moving its centre would appear
-    // to shift every child up.
     let needed = y + height / 2.0 + GAP;
-    let mut record = record;
-    if needed > record.height {
+
+    // The frame is left exactly as it is unless `--grow` asks otherwise. Its size and
+    // position are the auditor's arrangement — a frame is dragged where it belongs in the
+    // reading — and resizing it (or worse, resizing it from the position the deploy
+    // recorded) silently undoes that. A screenshot with nowhere to go lands in the corner
+    // instead, overlapping; that is visible and one drag away.
+    if needed > record.height && options.grow {
+        // Growing keeps the TOP-LEFT fixed: frame-local coordinates are measured from it,
+        // so extending downwards without moving the centre would shift every child up.
         let delta = needed - record.height;
         record.height += delta;
         record.y += delta / 2.0;
@@ -235,11 +254,14 @@ fn locate(metadata: &EvmBatMetadata, options: &ScreenshotOptions) -> Result<Loca
         1 => Ok(matches.remove(0)),
         0 => Err(Report::new(EvmMiroError)
             .attach_printable(format!("no declaration named `{name}`"))
-            .attach(crate::Suggestion(
-                "if this project was scanned by an older bat-cli, run `bat-cli sonar` first; \
-                 otherwise pass --file and --lines"
-                    .to_string(),
-            ))),
+            .attach(crate::Suggestion(format!(
+                "draw it by range: --file <path> --lines <start>-<end>{}",
+                if crate::guide::scanned_by_this_binary() {
+                    ""
+                } else {
+                    " (this project was scanned by an older bat-cli; `bat-cli sonar` may index it)"
+                }
+            )))),
         // Several contracts declare the same name — `Data` and `Node` are common. Say
         // which, rather than silently drawing whichever came first.
         _ => {
@@ -307,6 +329,60 @@ fn find_declaration(metadata: &EvmBatMetadata, name: &str) -> Vec<Located> {
                 } else {
                     "state".to_string()
                 },
+                file_path: contract.file_path.clone(),
+                start,
+                end,
+            });
+        }
+
+        // Functions, modifiers and events. A function is normally read as a node in a
+        // deployed graph, but a bodiless one never is: an interface's `market(...)`
+        // declaration is exactly what an auditor wants beside the call that crosses that
+        // boundary, and `deploy` draws the boundary without ever showing the signature.
+        for function in &contract.functions {
+            if function.name != wanted {
+                continue;
+            }
+            found.push(Located {
+                label: qualified(&contract.name, &function.name),
+                kind: if contract.contract_type == EvmContractType::Interface {
+                    "interface fn".to_string()
+                } else {
+                    "fn".to_string()
+                },
+                file_path: contract.file_path.clone(),
+                start: function.line,
+                end: if function.end_line >= function.line {
+                    function.end_line
+                } else {
+                    function.line
+                },
+            });
+        }
+        for modifier in &contract.modifiers {
+            if modifier.name != wanted {
+                continue;
+            }
+            found.push(Located {
+                label: qualified(&contract.name, &modifier.name),
+                kind: "modifier".to_string(),
+                file_path: contract.file_path.clone(),
+                start: modifier.line,
+                end: if modifier.end_line >= modifier.line {
+                    modifier.end_line
+                } else {
+                    modifier.line
+                },
+            });
+        }
+        for event in &contract.events {
+            if event.name != wanted {
+                continue;
+            }
+            let (start, end) = declaration_span(&contract.file_path, event.line);
+            found.push(Located {
+                label: qualified(&contract.name, &event.name),
+                kind: "event".to_string(),
                 file_path: contract.file_path.clone(),
                 start,
                 end,
@@ -459,7 +535,7 @@ fn free_spot(record: &AutoDeployedFrame, width: f64, height: f64) -> (f64, f64) 
     // Walk left to right along the band, dropping down a row when the frame runs out.
     let mut x = left + width / 2.0;
     let mut y = content_bottom + GAP + height / 2.0;
-    loop {
+    while y + height / 2.0 + GAP <= record.height {
         let candidate = (x, y, width, height);
         if !occupied.iter().any(|rect| overlaps(*rect, candidate)) {
             return (x, y);
@@ -470,6 +546,15 @@ fn free_spot(record: &AutoDeployedFrame, width: f64, height: f64) -> (f64, f64) 
             y += height + GAP;
         }
     }
+
+    // Nothing free left. Drop it in the bottom-left corner, on top of whatever is there:
+    // overlapping something is easy to see and one drag away, whereas resizing the frame
+    // silently undoes the arrangement the auditor built, and refusing to draw leaves them
+    // with nothing.
+    (
+        width / 2.0 + GAP,
+        (record.height - height / 2.0 - GAP).max(height / 2.0),
+    )
 }
 
 fn overlaps(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {

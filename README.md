@@ -167,7 +167,8 @@ name is not in the index, `--file` and `--lines` draw the range directly, so the
 blocks on a gap.
 
 The image lands in free space below the frame's content, rendered exactly as `deploy` renders a
-function, and you drag it where you want it. There is deliberately no rule about what deserves
+function. The frame itself is never moved or resized — where it sits is your arrangement; a
+drawing with no room left goes to the bottom-left corner, and `--grow` extends the frame instead. There is deliberately no rule about what deserves
 to be drawn: that judgement is yours. It is a manual enrichment of one diagram, so a redeploy
 does not bring it back, and `--undeploy` cleans it up with the frame.
 

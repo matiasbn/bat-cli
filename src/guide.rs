@@ -224,6 +224,16 @@ pub fn print_ai_setup_hint() {
 /// moved — it records **which binary last scanned this project**, which is what says whether
 /// `BatMetadata.json` came from the parser you are running now. Best-effort: no `Bat.toml`,
 /// or a write failure, is silently nothing. Returns whether the stamp moved.
+/// Was this project scanned by the bat-cli that is running now?
+///
+/// Tells "the index does not model this" apart from "the index is stale", so a message can
+/// stop suggesting a rescan that would change nothing.
+pub fn scanned_by_this_binary() -> bool {
+    crate::config::BatConfig::get_config()
+        .map(|config| config.bat_cli_version == env!("CARGO_PKG_VERSION"))
+        .unwrap_or(false)
+}
+
 pub fn record_bat_cli_version() -> bool {
     let current = env!("CARGO_PKG_VERSION");
     let mut config = match crate::config::BatConfig::get_config() {
@@ -424,16 +434,19 @@ bat-cli screenshot PriceFeed.FeedType --frame CvammALM.poke --with-documentation
 bat-cli screenshot --file src/core/PriceFeed.sol --lines 36-44 --frame CvammALM.poke
 ```
 
-- The symbol is `Name` or `Contract.Name`. Structs and enums (including the ones declared
-  inside a contract), and state variables including `constant` and `immutable`, all resolve
-  from the scan — you do not need to find the line numbers yourself.
+- The symbol is `Name` or `Contract.Name`. Structs, enums, state variables (`constant` and
+  `immutable` included), functions, modifiers and events all resolve from the scan — including a
+  bodiless interface declaration like `IMorphoBlue.market`, which is what you want beside a call
+  that crosses that boundary. You never need to find the line numbers yourself.
 - **A name declared in several contracts stops with the candidates listed.** Re-run with the
   qualified form it prints; do not guess.
 - **`--file` + `--lines` is the escape hatch.** If a name is not in the index, read the source,
   find the range, and pass it — the command never blocks on a gap in the scan.
 - Omitting `--frame` lists the deployed frames, which is how you learn their names.
-- The image lands in free space below the frame's content, never on top of anything, and the
-  auditor drags it where they want it. It is drawn the same way `deploy` draws a function, so
+- The image lands in free space below the frame's content. **The frame itself is never moved or
+  resized** — where a frame sits is the auditor's arrangement. If nothing free is left it goes to
+  the bottom-left corner, overlapping, which is visible and one drag away; `--grow` extends the
+  frame downwards instead. It is drawn the same way `deploy` draws a function, so
   it matches the rest of the diagram.
 - It is a manual enrichment of one diagram, not part of the call graph: a `--redeploy` does not
   bring it back. `--undeploy` cleans it up with the frame.
@@ -736,6 +749,18 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.5
+- **`screenshot` no longer moves the frame.** Growing a frame to fit a drawing sent the position
+  the DEPLOY had recorded, so every added screenshot teleported the frame back from wherever the
+  auditor had dragged it. The frame is now left exactly as it is: a drawing with no room left goes
+  to the bottom-left corner (overlapping, which is visible and one drag away), and `--grow`
+  extends the frame downwards from its LIVE position when that is what you want.
+- **Interface function declarations are indexed.** `bat-cli screenshot IMorphoBlue.market` used to
+  answer "no declaration named", while the same interface's structs resolved. Functions, modifiers
+  and events now resolve too, from any contract or interface. The not-found message also stops
+  suggesting a rescan when the project was already scanned by the running version.
+  _Re-read: workflow.md._
 
 ## 0.26.4
 - **Calls through a storage pointer received as a PARAMETER are typed too.** A library written

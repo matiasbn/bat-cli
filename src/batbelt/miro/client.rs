@@ -646,6 +646,27 @@ impl MiroClient {
     /// a frame deleted in Miro leaves an entry behind that points at nothing.
     /// Trusting the registry alone means refusing to redeploy something that is
     /// no longer there.
+    /// Where an item is RIGHT NOW: `(x, y, width, height)`, with x/y its centre.
+    ///
+    /// The registry records where a frame was put at deploy time, and the auditor drags
+    /// frames around afterwards — arranging the board is half of reading it. Anything that
+    /// resizes a frame has to start from the live geometry, or it teleports the frame back
+    /// to where it was born.
+    pub async fn item_geometry(&self, item_id: &str) -> Option<(f64, f64, f64, f64)> {
+        let url = format!("{}/{}", self.endpoint("items"), item_id);
+        let value = self
+            .execute(LEVEL_1_CREDITS, "item_geometry", move |http| http.get(&url))
+            .await
+            .ok()?;
+        let number = |parent: &str, key: &str| -> Option<f64> { value[parent][key].as_f64() };
+        Some((
+            number("position", "x")?,
+            number("position", "y")?,
+            number("geometry", "width")?,
+            number("geometry", "height")?,
+        ))
+    }
+
     pub async fn item_exists(&self, item_id: &str) -> bool {
         let url = format!("{}/{}", self.endpoint("items"), item_id);
         self.execute(LEVEL_1_CREDITS, "item_exists", move |http| http.get(&url))
