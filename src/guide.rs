@@ -750,6 +750,20 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.6
+- **A struct used from another contract types correctly.** `MMRouterLib.Venue storage v = …` in a
+  contract that does not declare `Venue` itself fell back to a project-wide lookup by bare name,
+  where an unrelated `Venue` (with `address account` instead of `IFinancingAccount account`) could
+  win — so `v.account.supply(...)` typed as `address` and no `bat-cli resolve` could fix it. Struct
+  types now resolve by their qualified spelling first, and a bare name prefers the struct declared
+  in a file this contract imports.
+- **An interface with no in-scope implementation is an external boundary, whatever the receiver.**
+  A call like `MORPHO.supply(...)` on an `IMorphoBlueBorrow` variable asked to be resolved and
+  offered candidates that merely define a method of that name — a resolution with no right answer,
+  since the contract lives outside the repo. The rule that already covered casts (`IERC20(token)`)
+  now covers wired variables too, so these are flagged as the external boundary they are.
+  _Re-read: nothing (fewer false questions; shape unchanged)._
+
 ## 0.26.5
 - **`screenshot` leaves the frame alone and places tightly.** Free space was computed from the
   registry, which stores each screenshot's PNG size — but a deep node is drawn SCALED DOWN, so the
