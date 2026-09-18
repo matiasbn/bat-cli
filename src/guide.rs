@@ -751,11 +751,15 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.26.5
-- **`screenshot` no longer moves the frame.** Growing a frame to fit a drawing sent the position
-  the DEPLOY had recorded, so every added screenshot teleported the frame back from wherever the
-  auditor had dragged it. The frame is now left exactly as it is: a drawing with no room left goes
-  to the bottom-left corner (overlapping, which is visible and one drag away), and `--grow`
-  extends the frame downwards from its LIVE position when that is what you want.
+- **`screenshot` leaves the frame alone and places tightly.** Free space was computed from the
+  registry, which stores each screenshot's PNG size — but a deep node is drawn SCALED DOWN, so the
+  content looked far taller than it is and every addition was pushed below it, stretching the frame
+  by a screenful each time. Placement now asks the board what the frame actually holds, so a small
+  struct lands right under the content. The frame is never moved or resized: a drawing with no room
+  left goes to the bottom-left corner (overlapping, which is visible and one drag away), and
+  `--grow` extends the frame downwards from its LIVE geometry when that is what you want.
+- **Drawing the same symbol twice is a no-op** — it says it is already on that frame instead of
+  stacking an identical copy.
 - **Interface function declarations are indexed.** `bat-cli screenshot IMorphoBlue.market` used to
   answer "no declaration named", while the same interface's structs resolved. Functions, modifiers
   and events now resolve too, from any contract or interface. The not-found message also stops

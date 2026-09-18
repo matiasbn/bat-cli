@@ -646,6 +646,69 @@ impl MiroClient {
     /// a frame deleted in Miro leaves an entry behind that points at nothing.
     /// Trusting the registry alone means refusing to redeploy something that is
     /// no longer there.
+    /// The items inside a frame, as `(x, y, width, height)` in FRAME-LOCAL coordinates
+    /// (origin at the frame's top-left, x/y the item's centre — what `create_image_in_frame`
+    /// expects).
+    ///
+    /// The registry knows where the deploy PUT each screenshot and how big its PNG was, but
+    /// not how big it ended up: a deep node is drawn scaled down, and the auditor moves
+    /// things. Asking the board is the only way to know what space is actually taken.
+    pub async fn frame_children(
+        &self,
+        frame_id: &str,
+        frame: (f64, f64, f64, f64),
+    ) -> Result<Vec<(f64, f64, f64, f64)>, MiroError> {
+        let (frame_x, frame_y, frame_width, frame_height) = frame;
+        let mut children = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let cursor_for_request = cursor.clone();
+            let url = self.endpoint("items");
+            let parent = frame_id.to_string();
+            let value = self
+                .execute(LEVEL_1_CREDITS, "frame_children", move |http| {
+                    let mut request = http
+                        .get(&url)
+                        .query(&[("parent_item_id", parent.as_str()), ("limit", "50")]);
+                    if let Some(ref cursor) = cursor_for_request {
+                        request = request.query(&[("cursor", cursor.as_str())]);
+                    }
+                    request
+                })
+                .await?;
+
+            if let Some(items) = value["data"].as_array() {
+                for item in items {
+                    let width = item["geometry"]["width"].as_f64().unwrap_or(0.0);
+                    let height = item["geometry"]["height"].as_f64().unwrap_or(0.0);
+                    if width <= 0.0 || height <= 0.0 {
+                        continue;
+                    }
+                    let x = item["position"]["x"].as_f64().unwrap_or(0.0);
+                    let y = item["position"]["y"].as_f64().unwrap_or(0.0);
+                    // A child is normally reported relative to the frame's top-left; when
+                    // the board reports canvas coordinates instead, bring them back.
+                    let relative_to = item["position"]["relativeTo"].as_str().unwrap_or("");
+                    let (x, y) = if relative_to == "parent_top_left" {
+                        (x, y)
+                    } else {
+                        (
+                            x - (frame_x - frame_width / 2.0),
+                            y - (frame_y - frame_height / 2.0),
+                        )
+                    };
+                    children.push((x, y, width, height));
+                }
+            }
+
+            match value["cursor"].as_str() {
+                Some(next) if !next.is_empty() => cursor = Some(next.to_string()),
+                _ => break,
+            }
+        }
+        Ok(children)
+    }
+
     /// Where an item is RIGHT NOW: `(x, y, width, height)`, with x/y its centre.
     ///
     /// The registry records where a frame was put at deploy time, and the auditor drags

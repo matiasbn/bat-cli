@@ -98,6 +98,22 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
 
     let located = locate(&metadata, &options)?;
 
+    // Already there: drawing it again would stack an identical copy on the frame.
+    if record
+        .screenshots
+        .iter()
+        .any(|shot| shot.label == located.label)
+    {
+        println!(
+            "  {} {} is already on {} — nothing to do",
+            "note:".yellow(),
+            located.label.clone().bold(),
+            record.entry_point
+        );
+        println!("  {}", record.frame_url.blue());
+        return Ok(());
+    }
+
     // The NatSpec above a declaration is part of what explains it, so the same flag that
     // deploy uses applies here.
     let start = if options.with_documentation {
@@ -133,9 +149,21 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
         record.height = height;
     }
 
+    // What the frame REALLY holds. The registry stores each screenshot's PNG size, but a
+    // deep node is drawn scaled down and the auditor moves things, so placing from the
+    // registry overestimated the content and pushed every new drawing far below it — which
+    // is what made each addition stretch the frame by a screenful.
+    let occupied = client
+        .frame_children(
+            &record.frame_id,
+            (record.x, record.y, record.width, record.height),
+        )
+        .await
+        .unwrap_or_else(|_| recorded_rects(&record));
+
     let width = png_width as f64 * BOARD_UNITS_PER_PIXEL;
     let height = png_height as f64 * BOARD_UNITS_PER_PIXEL;
-    let (x, y) = free_spot(&record, width, height);
+    let (x, y) = free_spot(&occupied, record.width, record.height, width, height);
     let needed = y + height / 2.0 + GAP;
 
     // The frame is left exactly as it is unless `--grow` asks otherwise. Its size and
@@ -506,22 +534,13 @@ fn render(located: &Located, start: usize) -> Result<(String, u32, u32)> {
 /// Screenshots go in a band below the content, left to right, wrapping. That is out of the
 /// way of the call flow (which runs left to right across the layers) and predictable; the
 /// auditor drags it wherever they actually want it.
-fn free_spot(record: &AutoDeployedFrame, width: f64, height: f64) -> (f64, f64) {
-    let mut occupied: Vec<(f64, f64, f64, f64)> = Vec::new();
-    let dims: std::collections::HashMap<&str, (u32, u32)> = record
-        .image_dims
-        .iter()
-        .map(|(id, w, h)| (id.as_str(), (*w, *h)))
-        .collect();
-    for (id, x, y) in &record.node_positions {
-        if let Some((w, h)) = dims.get(id.as_str()) {
-            occupied.push((*x, *y, *w as f64, *h as f64));
-        }
-    }
-    for shot in &record.screenshots {
-        occupied.push((shot.x, shot.y, shot.width, shot.height));
-    }
-
+fn free_spot(
+    occupied: &[(f64, f64, f64, f64)],
+    frame_width: f64,
+    frame_height: f64,
+    width: f64,
+    height: f64,
+) -> (f64, f64) {
     let content_bottom = occupied
         .iter()
         .map(|(_, y, _, h)| y + h / 2.0)
@@ -530,18 +549,18 @@ fn free_spot(record: &AutoDeployedFrame, width: f64, height: f64) -> (f64, f64) 
         .iter()
         .map(|(x, _, w, _)| x - w / 2.0)
         .fold(f64::MAX, f64::min);
-    let left = if left == f64::MAX { GAP } else { left };
+    let left = if left == f64::MAX { GAP } else { left.max(GAP) };
 
     // Walk left to right along the band, dropping down a row when the frame runs out.
     let mut x = left + width / 2.0;
     let mut y = content_bottom + GAP + height / 2.0;
-    while y + height / 2.0 + GAP <= record.height {
+    while y + height / 2.0 + GAP <= frame_height {
         let candidate = (x, y, width, height);
         if !occupied.iter().any(|rect| overlaps(*rect, candidate)) {
             return (x, y);
         }
         x += width + GAP;
-        if x + width / 2.0 > record.width {
+        if x + width / 2.0 > frame_width {
             x = left + width / 2.0;
             y += height + GAP;
         }
@@ -553,8 +572,28 @@ fn free_spot(record: &AutoDeployedFrame, width: f64, height: f64) -> (f64, f64) 
     // with nothing.
     (
         width / 2.0 + GAP,
-        (record.height - height / 2.0 - GAP).max(height / 2.0),
+        (frame_height - height / 2.0 - GAP).max(height / 2.0),
     )
+}
+
+/// The frame's contents as the registry remembers them — the fallback when the board cannot
+/// be asked. PNG pixels overstate a scaled-down node, which is the safe direction here.
+fn recorded_rects(record: &AutoDeployedFrame) -> Vec<(f64, f64, f64, f64)> {
+    let dims: std::collections::HashMap<&str, (u32, u32)> = record
+        .image_dims
+        .iter()
+        .map(|(id, w, h)| (id.as_str(), (*w, *h)))
+        .collect();
+    let mut rects: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for (id, x, y) in &record.node_positions {
+        if let Some((w, h)) = dims.get(id.as_str()) {
+            rects.push((*x, *y, *w as f64, *h as f64));
+        }
+    }
+    for shot in &record.screenshots {
+        rects.push((shot.x, shot.y, shot.width, shot.height));
+    }
+    rects
 }
 
 fn overlaps(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
@@ -718,7 +757,8 @@ mod screenshot_test {
             cluster_root: String::new(),
         };
 
-        let (x, y) = free_spot(&record, 800.0, 300.0);
+        let occupied = recorded_rects(&record);
+        let (x, y) = free_spot(&occupied, record.width, record.height, 800.0, 300.0);
         assert!(!overlaps((700.0, 500.0, 1000.0, 400.0), (x, y, 800.0, 300.0)));
         assert!(y > 700.0, "must sit below the content, not beside it");
 
@@ -731,7 +771,13 @@ mod screenshot_test {
             width: 800.0,
             height: 300.0,
         });
-        let (x2, y2) = free_spot(&record, 800.0, 300.0);
+        let occupied = recorded_rects(&record);
+        let (x2, y2) = free_spot(&occupied, record.width, record.height, 800.0, 300.0);
         assert!(!overlaps((x, y, 800.0, 300.0), (x2, y2, 800.0, 300.0)));
+
+        // A frame with no room left drops the drawing in the bottom-left corner rather than
+        // resizing the auditor's frame or refusing to draw.
+        let (cx, cy) = free_spot(&occupied, record.width, 900.0, 800.0, 300.0);
+        assert!(cx < record.width / 2.0 && cy > 900.0 / 2.0);
     }
 }
