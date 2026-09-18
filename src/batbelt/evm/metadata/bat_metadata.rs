@@ -559,6 +559,10 @@ impl EvmBatMetadata {
                     .entry(c.name.clone())
                     .or_default()
                     .insert(s.name.clone(), fields.clone());
+                // Also under `Owner.Struct`: a contract that uses another's struct writes
+                // the type that way (`MMRouterLib.Venue storage v = …`), and that spelling
+                // is unambiguous even when the bare name is not.
+                struct_fields.insert(format!("{}.{}", c.name, s.name), fields.clone());
                 struct_fields.insert(s.name.clone(), fields);
             }
         }
@@ -618,6 +622,28 @@ impl EvmBatMetadata {
             // bases') definitions taking precedence over a same-named struct elsewhere.
             let mut visible_structs = struct_fields.clone();
             {
+                // Files this contract imports, nearest first: a bare `Venue` in a contract
+                // that imports the library declaring it means THAT one, not a same-named
+                // struct in an unrelated file. Same rule as contract-name resolution.
+                use crate::batbelt::evm::parser::import_graph::{import_closure, normalize};
+                let mut imported_first: Vec<(String, std::collections::HashMap<String, String>)> =
+                    Vec::new();
+                for file in import_closure(&contract.file_path).iter().rev() {
+                    for other in &contracts {
+                        if normalize(&other.file_path) != *file {
+                            continue;
+                        }
+                        if let Some(structs) = own_structs.get(&other.name) {
+                            for (struct_name, fields) in structs {
+                                imported_first.push((struct_name.clone(), fields.clone()));
+                            }
+                        }
+                    }
+                }
+                for (struct_name, fields) in imported_first {
+                    visible_structs.insert(struct_name, fields);
+                }
+
                 let mut chain = vec![contract.name.clone()];
                 let mut seen_struct_owners: std::collections::HashSet<String> =
                     std::collections::HashSet::new();
@@ -1099,10 +1125,13 @@ fn compute_unresolved_calls(
         // `transfer`) is a false lead. Flag it as an external boundary, not a
         // resolvable call. A wired variable receiver (`$.borrowerOps`, `_s().CORE`)
         // is NOT a bare cast and keeps the name-inference path below.
-        if typed_impls.is_empty()
-            && receiver.ends_with("()")
-            && is_interface.contains(&inferred_type)
-        {
+        // No in-scope contract declares `is <interface>`, so the address behind it belongs
+        // to a protocol whose source is not in the repo — `IERC20(token)`, `MORPHO`. The
+        // name-inferred candidates below would be false leads (some unrelated contract that
+        // happens to define `supply`), and resolving to one would draw code that never runs
+        // here. This used to be limited to a bare cast, which left a wired variable of the
+        // same nature asking for a resolution that has no right answer.
+        if typed_impls.is_empty() && is_interface.contains(&inferred_type) {
             if seen_ext.insert((receiver.clone(), method.clone())) {
                 external.push(ExternalUnknownCall {
                     receiver,
@@ -1205,8 +1234,11 @@ fn receiver_type(
     for seg in segments {
         let field = seg.trim_end_matches("[]");
         current = current.and_then(|t| {
+            // `MMRouterLib.Venue` first: the qualified spelling names exactly one struct,
+            // while the bare name can belong to several contracts.
             struct_fields
-                .get(&unqualify(&t))
+                .get(t.trim())
+                .or_else(|| struct_fields.get(&unqualify(&t)))
                 .and_then(|fields| fields.get(field))
                 .cloned()
         });
