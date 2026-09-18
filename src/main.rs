@@ -187,6 +187,10 @@ enum BatCommands {
         /// Include the declaration's NatSpec, as `deploy --with-documentation` does
         #[arg(long = "with-documentation")]
         with_documentation: bool,
+        /// Extend the frame downwards when the drawing does not fit. By default the
+        /// frame is left exactly as the auditor arranged it
+        #[arg(long)]
+        grow: bool,
     },
     /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
     /// interface call to its concrete implementation. `deploy` stops and lists what to
@@ -299,6 +303,7 @@ impl BatCommands {
                 file,
                 lines,
                 with_documentation,
+                grow,
             } => crate::batbelt::evm::miro::screenshot::run(
                 crate::batbelt::evm::miro::screenshot::ScreenshotOptions {
                     name: name.clone(),
@@ -306,6 +311,7 @@ impl BatCommands {
                     file: file.clone(),
                     lines: lines.clone(),
                     with_documentation: *with_documentation,
+                    grow: *grow,
                 },
             )
             .await

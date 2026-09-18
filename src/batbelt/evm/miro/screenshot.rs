@@ -33,6 +33,7 @@ use crate::batbelt::evm::miro::auto_deploy::{
     REFERENCE_FONT,
 };
 use crate::batbelt::evm::miro::EvmMiroError;
+use crate::batbelt::evm::types::EvmContractType;
 use crate::batbelt::miro::client::MiroClient;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::silicon;
@@ -55,6 +56,9 @@ pub struct ScreenshotOptions {
     pub frame: Option<String>,
     /// Include the declaration's NatSpec, as `deploy --with-documentation` does.
     pub with_documentation: bool,
+    /// Grow the frame when the screenshot does not fit in it. Off by default: the frame's
+    /// size and position are the auditor's arrangement, not ours.
+    pub grow: bool,
 }
 
 /// Where a named symbol lives.
@@ -94,6 +98,22 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
 
     let located = locate(&metadata, &options)?;
 
+    // Already there: drawing it again would stack an identical copy on the frame.
+    if record
+        .screenshots
+        .iter()
+        .any(|shot| shot.label == located.label)
+    {
+        println!(
+            "  {} {} is already on {} — nothing to do",
+            "note:".yellow(),
+            located.label.clone().bold(),
+            record.entry_point
+        );
+        println!("  {}", record.frame_url.blue());
+        return Ok(());
+    }
+
     // The NatSpec above a declaration is part of what explains it, so the same flag that
     // deploy uses applies here.
     let start = if options.with_documentation {
@@ -107,7 +127,8 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
     let client = MiroClient::new_refreshed()
         .await
         .change_context(EvmMiroError)?;
-    if !client.item_exists(&record.frame_id).await {
+    let live = client.item_geometry(&record.frame_id).await;
+    if live.is_none() {
         return Err(Report::new(EvmMiroError)
             .attach_printable(format!(
                 "the frame for `{frame_name}` is no longer on the board"
@@ -117,16 +138,42 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
             )));
     }
 
+    // Work from where the frame IS, not where the deploy put it: the auditor rearranges the
+    // board, and drawing from the recorded position both misplaced the screenshot and, when
+    // the frame had to grow, dragged the frame back to its birthplace.
+    let mut record = record;
+    if let Some((x, y, width, height)) = live {
+        record.x = x;
+        record.y = y;
+        record.width = width;
+        record.height = height;
+    }
+
+    // What the frame REALLY holds. The registry stores each screenshot's PNG size, but a
+    // deep node is drawn scaled down and the auditor moves things, so placing from the
+    // registry overestimated the content and pushed every new drawing far below it — which
+    // is what made each addition stretch the frame by a screenful.
+    let occupied = client
+        .frame_children(
+            &record.frame_id,
+            (record.x, record.y, record.width, record.height),
+        )
+        .await
+        .unwrap_or_else(|_| recorded_rects(&record));
+
     let width = png_width as f64 * BOARD_UNITS_PER_PIXEL;
     let height = png_height as f64 * BOARD_UNITS_PER_PIXEL;
-    let (x, y) = free_spot(&record, width, height);
-
-    // Growing the frame keeps its TOP-LEFT fixed: frame-local coordinates are measured
-    // from there, so a frame that grew downward without moving its centre would appear
-    // to shift every child up.
+    let (x, y) = free_spot(&occupied, record.width, record.height, width, height);
     let needed = y + height / 2.0 + GAP;
-    let mut record = record;
-    if needed > record.height {
+
+    // The frame is left exactly as it is unless `--grow` asks otherwise. Its size and
+    // position are the auditor's arrangement — a frame is dragged where it belongs in the
+    // reading — and resizing it (or worse, resizing it from the position the deploy
+    // recorded) silently undoes that. A screenshot with nowhere to go lands in the corner
+    // instead, overlapping; that is visible and one drag away.
+    if needed > record.height && options.grow {
+        // Growing keeps the TOP-LEFT fixed: frame-local coordinates are measured from it,
+        // so extending downwards without moving the centre would shift every child up.
         let delta = needed - record.height;
         record.height += delta;
         record.y += delta / 2.0;
@@ -235,11 +282,14 @@ fn locate(metadata: &EvmBatMetadata, options: &ScreenshotOptions) -> Result<Loca
         1 => Ok(matches.remove(0)),
         0 => Err(Report::new(EvmMiroError)
             .attach_printable(format!("no declaration named `{name}`"))
-            .attach(crate::Suggestion(
-                "if this project was scanned by an older bat-cli, run `bat-cli sonar` first; \
-                 otherwise pass --file and --lines"
-                    .to_string(),
-            ))),
+            .attach(crate::Suggestion(format!(
+                "draw it by range: --file <path> --lines <start>-<end>{}",
+                if crate::guide::scanned_by_this_binary() {
+                    ""
+                } else {
+                    " (this project was scanned by an older bat-cli; `bat-cli sonar` may index it)"
+                }
+            )))),
         // Several contracts declare the same name — `Data` and `Node` are common. Say
         // which, rather than silently drawing whichever came first.
         _ => {
@@ -307,6 +357,60 @@ fn find_declaration(metadata: &EvmBatMetadata, name: &str) -> Vec<Located> {
                 } else {
                     "state".to_string()
                 },
+                file_path: contract.file_path.clone(),
+                start,
+                end,
+            });
+        }
+
+        // Functions, modifiers and events. A function is normally read as a node in a
+        // deployed graph, but a bodiless one never is: an interface's `market(...)`
+        // declaration is exactly what an auditor wants beside the call that crosses that
+        // boundary, and `deploy` draws the boundary without ever showing the signature.
+        for function in &contract.functions {
+            if function.name != wanted {
+                continue;
+            }
+            found.push(Located {
+                label: qualified(&contract.name, &function.name),
+                kind: if contract.contract_type == EvmContractType::Interface {
+                    "interface fn".to_string()
+                } else {
+                    "fn".to_string()
+                },
+                file_path: contract.file_path.clone(),
+                start: function.line,
+                end: if function.end_line >= function.line {
+                    function.end_line
+                } else {
+                    function.line
+                },
+            });
+        }
+        for modifier in &contract.modifiers {
+            if modifier.name != wanted {
+                continue;
+            }
+            found.push(Located {
+                label: qualified(&contract.name, &modifier.name),
+                kind: "modifier".to_string(),
+                file_path: contract.file_path.clone(),
+                start: modifier.line,
+                end: if modifier.end_line >= modifier.line {
+                    modifier.end_line
+                } else {
+                    modifier.line
+                },
+            });
+        }
+        for event in &contract.events {
+            if event.name != wanted {
+                continue;
+            }
+            let (start, end) = declaration_span(&contract.file_path, event.line);
+            found.push(Located {
+                label: qualified(&contract.name, &event.name),
+                kind: "event".to_string(),
                 file_path: contract.file_path.clone(),
                 start,
                 end,
@@ -430,22 +534,13 @@ fn render(located: &Located, start: usize) -> Result<(String, u32, u32)> {
 /// Screenshots go in a band below the content, left to right, wrapping. That is out of the
 /// way of the call flow (which runs left to right across the layers) and predictable; the
 /// auditor drags it wherever they actually want it.
-fn free_spot(record: &AutoDeployedFrame, width: f64, height: f64) -> (f64, f64) {
-    let mut occupied: Vec<(f64, f64, f64, f64)> = Vec::new();
-    let dims: std::collections::HashMap<&str, (u32, u32)> = record
-        .image_dims
-        .iter()
-        .map(|(id, w, h)| (id.as_str(), (*w, *h)))
-        .collect();
-    for (id, x, y) in &record.node_positions {
-        if let Some((w, h)) = dims.get(id.as_str()) {
-            occupied.push((*x, *y, *w as f64, *h as f64));
-        }
-    }
-    for shot in &record.screenshots {
-        occupied.push((shot.x, shot.y, shot.width, shot.height));
-    }
-
+fn free_spot(
+    occupied: &[(f64, f64, f64, f64)],
+    frame_width: f64,
+    frame_height: f64,
+    width: f64,
+    height: f64,
+) -> (f64, f64) {
     let content_bottom = occupied
         .iter()
         .map(|(_, y, _, h)| y + h / 2.0)
@@ -454,22 +549,51 @@ fn free_spot(record: &AutoDeployedFrame, width: f64, height: f64) -> (f64, f64) 
         .iter()
         .map(|(x, _, w, _)| x - w / 2.0)
         .fold(f64::MAX, f64::min);
-    let left = if left == f64::MAX { GAP } else { left };
+    let left = if left == f64::MAX { GAP } else { left.max(GAP) };
 
     // Walk left to right along the band, dropping down a row when the frame runs out.
     let mut x = left + width / 2.0;
     let mut y = content_bottom + GAP + height / 2.0;
-    loop {
+    while y + height / 2.0 + GAP <= frame_height {
         let candidate = (x, y, width, height);
         if !occupied.iter().any(|rect| overlaps(*rect, candidate)) {
             return (x, y);
         }
         x += width + GAP;
-        if x + width / 2.0 > record.width {
+        if x + width / 2.0 > frame_width {
             x = left + width / 2.0;
             y += height + GAP;
         }
     }
+
+    // Nothing free left. Drop it in the bottom-left corner, on top of whatever is there:
+    // overlapping something is easy to see and one drag away, whereas resizing the frame
+    // silently undoes the arrangement the auditor built, and refusing to draw leaves them
+    // with nothing.
+    (
+        width / 2.0 + GAP,
+        (frame_height - height / 2.0 - GAP).max(height / 2.0),
+    )
+}
+
+/// The frame's contents as the registry remembers them — the fallback when the board cannot
+/// be asked. PNG pixels overstate a scaled-down node, which is the safe direction here.
+fn recorded_rects(record: &AutoDeployedFrame) -> Vec<(f64, f64, f64, f64)> {
+    let dims: std::collections::HashMap<&str, (u32, u32)> = record
+        .image_dims
+        .iter()
+        .map(|(id, w, h)| (id.as_str(), (*w, *h)))
+        .collect();
+    let mut rects: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for (id, x, y) in &record.node_positions {
+        if let Some((w, h)) = dims.get(id.as_str()) {
+            rects.push((*x, *y, *w as f64, *h as f64));
+        }
+    }
+    for shot in &record.screenshots {
+        rects.push((shot.x, shot.y, shot.width, shot.height));
+    }
+    rects
 }
 
 fn overlaps(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
@@ -633,7 +757,8 @@ mod screenshot_test {
             cluster_root: String::new(),
         };
 
-        let (x, y) = free_spot(&record, 800.0, 300.0);
+        let occupied = recorded_rects(&record);
+        let (x, y) = free_spot(&occupied, record.width, record.height, 800.0, 300.0);
         assert!(!overlaps((700.0, 500.0, 1000.0, 400.0), (x, y, 800.0, 300.0)));
         assert!(y > 700.0, "must sit below the content, not beside it");
 
@@ -646,7 +771,13 @@ mod screenshot_test {
             width: 800.0,
             height: 300.0,
         });
-        let (x2, y2) = free_spot(&record, 800.0, 300.0);
+        let occupied = recorded_rects(&record);
+        let (x2, y2) = free_spot(&occupied, record.width, record.height, 800.0, 300.0);
         assert!(!overlaps((x, y, 800.0, 300.0), (x2, y2, 800.0, 300.0)));
+
+        // A frame with no room left drops the drawing in the bottom-left corner rather than
+        // resizing the auditor's frame or refusing to draw.
+        let (cx, cy) = free_spot(&occupied, record.width, 900.0, 800.0, 300.0);
+        assert!(cx < record.width / 2.0 && cy > 900.0 / 2.0);
     }
 }
