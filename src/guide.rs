@@ -765,7 +765,11 @@ so you re-open only the docs that actually changed — not everything.
 - **`this.x()` and `super.x()` are drawn.** The call extractor treated `this` and `super` as
   keywords and dropped the whole call, so `try this.cross(base, quote)` in
   `PriceFeed.peekCross` left the diagram with no arrow at all, though the resolver already follows
-  both. They are kept now. _Re-read: workflow.md._
+  both. They are kept now.
+- **Two functions called on one line keep their own colours.** Arrows from the same caller line
+  share one stub, and the whole group took the first callee's colour — so in `_usd(_token(x))` the
+  branch into `_token` was painted `_usd`'s colour, and the two read as one. Each branch now takes
+  the colour of the function it reaches (the shared stub keeps the first). _Re-read: workflow.md._
 
 ## 0.26.6
 - **A struct used from another contract types correctly.** `MMRouterLib.Venue storage v = …` in a

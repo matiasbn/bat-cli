@@ -1475,6 +1475,10 @@ async fn deploy_one(
         node_id: String,
         end_anchor: RelativeAnchor,
         end_point: (f64, f64),
+        /// This callee's own colour. A caller line can call several functions
+        /// (`_usd(_token(x))`); they share one stub, but each branch keeps the colour
+        /// of the function it reaches, so two callees never read as one.
+        color: String,
     }
     struct PendingGroup {
         token_x: f64,
@@ -1548,6 +1552,10 @@ async fn deploy_one(
             node_id: edge.to.clone(),
             end_anchor: RelativeAnchor::new(if exit_right { 0.0 } else { 1.0 }, callee_fraction),
             end_point,
+            color: callee_color
+                .get(&edge.to)
+                .cloned()
+                .unwrap_or_else(|| DEPTH_COLORS[0].to_string()),
         };
 
         let dashed = back_edges.contains(&(edge.from.clone(), edge.to.clone()));
@@ -1682,6 +1690,7 @@ async fn deploy_one(
             for link in &group.callees {
                 let mut route_style = group.style.clone();
                 route_style.arrow = ArrowEnd::None;
+                route_style.stroke_color = link.color.clone();
                 connectors.push(
                     client
                         .create_connector(
