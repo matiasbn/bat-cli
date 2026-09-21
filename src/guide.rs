@@ -594,6 +594,10 @@ and no duplicate frames pile up. Interface/abstract stubs (bodyless declarations
 A callee that ALREADY has its own (still-on-the-board) frame is referenced with a link card pointing
 at that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
 deploy as their own frames, the thinner the parent frame becomes on its next redeploy.
+It never thins a frame into a husk: a callee is linked out only while this frame keeps at least 6
+screenshots; otherwise it is drawn inline, and the deploy says so ("drawn inline despite having a
+frame"). So deploying both callees of a two-line function does NOT turn that function into one
+screenshot and two cards.
 
 **When a branch is linked out to its own frame.** Framing is a size-balanced partition, not a hard
 cap. A call tree under ~20 screenshots is drawn whole. A bigger one is split so each piece lands near
@@ -769,7 +773,12 @@ so you re-open only the docs that actually changed — not everything.
 - **Two functions called on one line keep their own colours.** Arrows from the same caller line
   share one stub, and the whole group took the first callee's colour — so in `_usd(_token(x))` the
   branch into `_token` was painted `_usd`'s colour, and the two read as one. Each branch now takes
-  the colour of the function it reaches (the shared stub keeps the first). _Re-read: workflow.md._
+  the colour of the function it reaches (the shared stub keeps the first).
+- **No husk frames from already-deployed callees.** Deploying a function's callees as their own
+  frames turned the function into a husk on its next redeploy (`FLAMMGateLib.priced`: one
+  screenshot, two link cards). Linking to an existing frame now keeps the same floor as the
+  automatic cut: a callee is linked out only while the frame keeps 6 screenshots, else it is drawn
+  inline. _Re-read: workflow.md._
 
 ## 0.26.6
 - **A struct used from another contract types correctly.** `MMRouterLib.Venue storage v = …` in a
