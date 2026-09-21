@@ -297,7 +297,7 @@ fn extract_calls_from_expr(kind: &ast::ExprKind<'_>, calls: &mut Vec<String>) {
                         // obj.method() — extract as "obj.method"
                         ast::ExprKind::Ident(obj_ident) => {
                             let obj_name = obj_ident.as_str().to_string();
-                            if !is_builtin(&obj_name) {
+                            if !is_builtin_receiver(&obj_name) {
                                 calls.push(format!("{}.{}", obj_name, method_name));
                             }
                         }
@@ -386,6 +386,13 @@ fn extract_calls_regex(source: &str) -> Vec<String> {
     calls.sort();
     calls.dedup();
     calls
+}
+
+/// A receiver that makes `receiver.method()` a builtin (`abi.encode`, `msg.sender`). `this` and
+/// `super` are keywords too, but `this.x()` / `super.x()` call the contract's own code, and the
+/// resolver follows them, so they are kept.
+fn is_builtin_receiver(name: &str) -> bool {
+    is_builtin(name) && name != "this" && name != "super"
 }
 
 fn is_builtin(name: &str) -> bool {
@@ -536,7 +543,8 @@ fn extract_call_sites_regex(source: &str) -> Vec<CallSite> {
         for cap in identifier_pattern.captures_iter(code) {
             let name = cap[1].to_string();
             let head = name.split('.').next().unwrap_or(&name);
-            if is_builtin(&name) || is_builtin(head) {
+            let builtin_head = if name.contains('.') { is_builtin_receiver(head) } else { is_builtin(head) };
+            if is_builtin(&name) || builtin_head {
                 continue;
             }
             let symbol = name.rsplit('.').next().unwrap_or(&name).to_string();
@@ -672,7 +680,7 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
                         _ => None,
                     };
                     match receiver {
-                        Some(obj_name) if !is_builtin(&obj_name) => {
+                        Some(obj_name) if !is_builtin_receiver(&obj_name) => {
                             // Point at the method, not at the receiver: in
                             // `MathLib.wadMul(...)` the interesting token is
                             // `wadMul`.
@@ -1375,6 +1383,20 @@ mod storage_write_test {
 #[cfg(test)]
 mod call_site_test {
     use super::*;
+
+    #[test]
+    fn test_extract_call_sites_self_call_in_try() {
+        // `try this.x()` is an external call to the contract itself; it must be drawn.
+        let source = r#"
+try this.cross(base, quote) returns (uint256 p, uint48 t) {
+    return (true, p, t);
+} catch {
+    return (false, 0, 0);
+}
+"#;
+        let sites = extract_call_sites_from_source(source);
+        assert!(sites.iter().any(|s| s.name == "this.cross" && s.symbol == "cross"), "{sites:?}");
+    }
 
     #[test]
     fn test_extract_call_sites_keeps_line_and_repeats() {

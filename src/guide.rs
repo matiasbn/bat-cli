@@ -761,7 +761,11 @@ so you re-open only the docs that actually changed — not everything.
   call in `unknown_external_calls` — yet the deploy draws its arrow to the in-scope
   `TrancheController.depositFor`. The line was painted as an external boundary anyway; now a call
   with an arrow into in-scope code is never amber. `--dry-run` also lists the amber lines, so you
-  can check them before deploying. _Re-read: workflow.md._
+  can check them before deploying.
+- **`this.x()` and `super.x()` are drawn.** The call extractor treated `this` and `super` as
+  keywords and dropped the whole call, so `try this.cross(base, quote)` in
+  `PriceFeed.peekCross` left the diagram with no arrow at all, though the resolver already follows
+  both. They are kept now. _Re-read: workflow.md._
 
 ## 0.26.6
 - **A struct used from another contract types correctly.** `MMRouterLib.Venue storage v = …` in a
