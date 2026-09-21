@@ -496,7 +496,7 @@ bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only 
 | `--include-external` | include contracts coming from `lib/` |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
 | `--all` | every entry point at once — **discouraged**; it warns and asks first |
-| `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; builds a second frame) |
+| `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; it recycles the frame: same id, same centre) |
 
 **Incremental relink — `--refresh-links`.** After you've hand-arranged a deployed frame, giving one
 of its callees its own frame (by deploying that callee as an entry point) means the callee should
@@ -582,6 +582,10 @@ deliberately distinct from the solid-red proven write. `view`/`pure` calls are n
 A function that makes such a call but writes no storage of its own also gets a **solid amber
 rectangle** around its whole node — the amber counterpart of the red storage border, so
 "probably a state change here" reads at a glance alongside the proven-write nodes.
+A call the deploy itself draws into in-scope code is never amber, even when it is listed in
+`unknown_external_calls` (the scan finds implementers by inheritance only, so a contract that
+matches the interface without declaring `is <interface>` stays listed there). `--dry-run` prints
+the amber lines under "external boundary line(s)".
 
 **Frame recycling.** Redeploying a function reuses its existing frame (same id and position),
 wiping and redrawing the contents — so a diagram that links to the frame by URL keeps working,
@@ -590,6 +594,10 @@ and no duplicate frames pile up. Interface/abstract stubs (bodyless declarations
 A callee that ALREADY has its own (still-on-the-board) frame is referenced with a link card pointing
 at that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
 deploy as their own frames, the thinner the parent frame becomes on its next redeploy.
+It never thins a frame into a husk: a callee is linked out only while this frame keeps at least 6
+screenshots; otherwise it is drawn inline, and the deploy says so ("drawn inline despite having a
+frame"). So deploying both callees of a two-line function does NOT turn that function into one
+screenshot and two cards.
 
 **When a branch is linked out to its own frame.** Framing is a size-balanced partition, not a hard
 cap. A call tree under ~20 screenshots is drawn whole. A bigger one is split so each piece lands near
@@ -749,6 +757,28 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.7
+- **No amber on a call the diagram follows into the repo.** An interface declared next to its
+  caller (`interface ITrancheController` in `TrancheToken.sol`) and implemented by a contract that
+  never writes `is ITrancheController` has no implementer by inheritance, so the scan lists the
+  call in `unknown_external_calls` — yet the deploy draws its arrow to the in-scope
+  `TrancheController.depositFor`. The line was painted as an external boundary anyway; now a call
+  with an arrow into in-scope code is never amber. `--dry-run` also lists the amber lines, so you
+  can check them before deploying.
+- **`this.x()` and `super.x()` are drawn.** The call extractor treated `this` and `super` as
+  keywords and dropped the whole call, so `try this.cross(base, quote)` in
+  `PriceFeed.peekCross` left the diagram with no arrow at all, though the resolver already follows
+  both. They are kept now.
+- **Two functions called on one line keep their own colours.** Arrows from the same caller line
+  share one stub, and the whole group took the first callee's colour — so in `_usd(_token(x))` the
+  branch into `_token` was painted `_usd`'s colour, and the two read as one. Each branch now takes
+  the colour of the function it reaches (the shared stub keeps the first).
+- **No husk frames from already-deployed callees.** Deploying a function's callees as their own
+  frames turned the function into a husk on its next redeploy (`FLAMMGateLib.priced`: one
+  screenshot, two link cards). Linking to an existing frame now keeps the same floor as the
+  automatic cut: a callee is linked out only while the frame keeps 6 screenshots, else it is drawn
+  inline. _Re-read: workflow.md._
 
 ## 0.26.6
 - **A struct used from another contract types correctly.** `MMRouterLib.Venue storage v = …` in a

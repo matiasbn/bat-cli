@@ -847,24 +847,20 @@ async fn deploy_one(
         live
     };
     if !deployed_titles.is_empty() {
-        let root_id = nodes[0].id.clone();
-        let mut linked = 0usize;
-        while let Some(index) = edges.iter().position(|edge| {
-            edge.to != root_id
-                && nodes.iter().any(|node| {
-                    node.id == edge.to
-                        && node.kind == NodeKind::Screenshot
-                        && deployed_titles.contains(&node.label)
-                })
-        }) {
-            cut_edge(&mut nodes, &mut edges, index);
-            linked += 1;
-        }
+        let (linked, kept) = link_deployed_frames(&mut nodes, &mut edges, &deployed_titles);
         if linked > 0 {
             println!(
                 "  {} linked {} call(s) to already-deployed frames",
                 "↻".yellow(),
                 linked
+            );
+        }
+        if !kept.is_empty() {
+            println!(
+                "  {} drawn inline despite having a frame (linking would leave this frame under {} screenshots): {}",
+                "↻".yellow(),
+                FRAME_MIN,
+                kept.join(", ")
             );
         }
     }
@@ -1475,6 +1471,10 @@ async fn deploy_one(
         node_id: String,
         end_anchor: RelativeAnchor,
         end_point: (f64, f64),
+        /// This callee's own colour. A caller line can call several functions
+        /// (`_usd(_token(x))`); they share one stub, but each branch keeps the colour
+        /// of the function it reaches, so two callees never read as one.
+        color: String,
     }
     struct PendingGroup {
         token_x: f64,
@@ -1548,6 +1548,10 @@ async fn deploy_one(
             node_id: edge.to.clone(),
             end_anchor: RelativeAnchor::new(if exit_right { 0.0 } else { 1.0 }, callee_fraction),
             end_point,
+            color: callee_color
+                .get(&edge.to)
+                .cloned()
+                .unwrap_or_else(|| DEPTH_COLORS[0].to_string()),
         };
 
         let dashed = back_edges.contains(&(edge.from.clone(), edge.to.clone()));
@@ -1682,6 +1686,7 @@ async fn deploy_one(
             for link in &group.callees {
                 let mut route_style = group.style.clone();
                 route_style.arrow = ArrowEnd::None;
+                route_style.stroke_color = link.color.clone();
                 connectors.push(
                     client
                         .create_connector(
@@ -2807,6 +2812,18 @@ fn build_graph(
                 continue;
             }
             if let Some(pos) = slice.iter().position(|l| line_has_call(l, &uec.method)) {
+                // The scan finds implementers by inheritance only, so a contract that
+                // matches the interface without declaring `is <interface>` leaves the call
+                // listed here even though the call-site pass above drew its arrow into
+                // in-scope code. That call doesn't leave the audited code: no amber.
+                let drawn_in_scope = edges.iter().any(|e| {
+                    e.from == current.node_id
+                        && e.symbol == uec.method
+                        && e.line_in_slice == pos + 1 + doc_shift
+                });
+                if drawn_in_scope {
+                    continue;
+                }
                 external_lines.push(function.line + pos);
             }
         }
@@ -4027,6 +4044,16 @@ fn print_dry_run(
             println!("    {line}");
         }
     }
+    let external_lines: Vec<String> = nodes
+        .iter()
+        .flat_map(|node| node.external_call_lines.iter().map(move |line| format!("{} L{line}", node.label)))
+        .collect();
+    if !external_lines.is_empty() {
+        println!("  {} external boundary line(s) (amber):", external_lines.len());
+        for line in external_lines {
+            println!("    {line}");
+        }
+    }
 
     println!("  {} connector(s):", edges.len());
     for (edge, anchor) in edges.iter().zip(anchors.iter()) {
@@ -4555,6 +4582,53 @@ const DEPTH_PENALTY: f64 = 0.15;
 /// fine, the one from layer 1 reaches further. Moving the whole function out
 /// would take away the arrow that was already fine, so only the far call is
 /// replaced — the near caller keeps the screenshot.
+/// Swaps each callee that already has its own frame for a link card, except when that would
+/// leave this frame under `FRAME_MIN` screenshots: a frame that is one screenshot and a couple
+/// of link cards shows nothing (the same husk floor as the automatic cut), so such a callee
+/// is drawn inline instead. Returns the calls linked and the callees kept inline.
+fn link_deployed_frames(
+    nodes: &mut Vec<GraphNode>,
+    edges: &mut Vec<GraphEdge>,
+    deployed_titles: &HashSet<String>,
+) -> (usize, Vec<String>) {
+    let Some(root_id) = nodes.first().map(|n| n.id.clone()) else {
+        return (0, Vec::new());
+    };
+    let targets: Vec<String> = {
+        let mut seen = HashSet::new();
+        edges
+            .iter()
+            .filter(|edge| edge.to != root_id)
+            .filter(|edge| {
+                nodes.iter().any(|node| {
+                    node.id == edge.to
+                        && node.kind == NodeKind::Screenshot
+                        && deployed_titles.contains(&node.label)
+                })
+            })
+            .filter_map(|edge| seen.insert(edge.to.clone()).then(|| edge.to.clone()))
+            .collect()
+    };
+    let (mut linked, mut kept) = (0usize, Vec::new());
+    for target in targets {
+        // Already pruned by an earlier link (it was inside that subtree).
+        let Some(label) = nodes.iter().find(|n| n.id == target).map(|n| n.label.clone()) else {
+            continue;
+        };
+        let (mut trial_nodes, mut trial_edges) = (nodes.clone(), edges.clone());
+        let calls = trial_edges.iter().filter(|e| e.to == target).count();
+        cut_node(&mut trial_nodes, &mut trial_edges, &target);
+        if screenshot_count(&trial_nodes) < FRAME_MIN {
+            kept.push(label);
+            continue;
+        }
+        *nodes = trial_nodes;
+        *edges = trial_edges;
+        linked += calls;
+    }
+    (linked, kept)
+}
+
 fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize) {
     let Some((label, file)) = nodes
         .iter()
@@ -4863,6 +4937,32 @@ mod cut_test {
             column: 0,
             symbol: to.to_string(),
         }
+    }
+
+    /// A callee with its own frame becomes a link card only while the frame keeps
+    /// `FRAME_MIN` screenshots: `priced` → `book` + `priceIn`, both framed, used to end
+    /// up as one screenshot and two cards.
+    #[test]
+    fn linking_to_deployed_frames_never_leaves_a_husk() {
+        // priced → book → b1..b5 ; priced → priceIn → p1..p8
+        let mut nodes = vec![node("priced"), node("book"), node("priceIn")];
+        let mut edges = vec![edge("priced", "book"), edge("priced", "priceIn")];
+        for i in 1..=5 {
+            nodes.push(node(&format!("b{i}")));
+            edges.push(edge("book", &format!("b{i}")));
+        }
+        for i in 1..=8 {
+            nodes.push(node(&format!("p{i}")));
+            edges.push(edge("priceIn", &format!("p{i}")));
+        }
+        let framed: HashSet<String> = ["book", "priceIn"].iter().map(|s| s.to_string()).collect();
+        let (linked, kept) = link_deployed_frames(&mut nodes, &mut edges, &framed);
+        // book goes out (10 screenshots stay), priceIn would leave 1: drawn inline.
+        assert_eq!(linked, 1);
+        assert_eq!(kept, vec!["priceIn".to_string()]);
+        assert_eq!(screenshot_count(&nodes), 10);
+        assert!(!nodes.iter().any(|n| n.id == "b1"));
+        assert!(nodes.iter().any(|n| n.id == "p1"));
     }
 
     fn lay(nodes: &[GraphNode], edges: &[GraphEdge]) -> GraphLayout {
