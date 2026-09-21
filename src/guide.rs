@@ -496,7 +496,7 @@ bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only 
 | `--include-external` | include contracts coming from `lib/` |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
 | `--all` | every entry point at once — **discouraged**; it warns and asks first |
-| `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; builds a second frame) |
+| `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; it recycles the frame: same id, same centre) |
 
 **Incremental relink — `--refresh-links`.** After you've hand-arranged a deployed frame, giving one
 of its callees its own frame (by deploying that callee as an entry point) means the callee should
