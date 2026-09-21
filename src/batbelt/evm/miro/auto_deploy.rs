@@ -2807,6 +2807,18 @@ fn build_graph(
                 continue;
             }
             if let Some(pos) = slice.iter().position(|l| line_has_call(l, &uec.method)) {
+                // The scan finds implementers by inheritance only, so a contract that
+                // matches the interface without declaring `is <interface>` leaves the call
+                // listed here even though the call-site pass above drew its arrow into
+                // in-scope code. That call doesn't leave the audited code: no amber.
+                let drawn_in_scope = edges.iter().any(|e| {
+                    e.from == current.node_id
+                        && e.symbol == uec.method
+                        && e.line_in_slice == pos + 1 + doc_shift
+                });
+                if drawn_in_scope {
+                    continue;
+                }
                 external_lines.push(function.line + pos);
             }
         }
@@ -4024,6 +4036,16 @@ fn print_dry_run(
     if !marked_lines.is_empty() {
         println!("  {} call line(s) reaching a state change:", marked_lines.len());
         for line in marked_lines {
+            println!("    {line}");
+        }
+    }
+    let external_lines: Vec<String> = nodes
+        .iter()
+        .flat_map(|node| node.external_call_lines.iter().map(move |line| format!("{} L{line}", node.label)))
+        .collect();
+    if !external_lines.is_empty() {
+        println!("  {} external boundary line(s) (amber):", external_lines.len());
+        for line in external_lines {
             println!("    {line}");
         }
     }

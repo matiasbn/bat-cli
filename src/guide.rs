@@ -582,6 +582,10 @@ deliberately distinct from the solid-red proven write. `view`/`pure` calls are n
 A function that makes such a call but writes no storage of its own also gets a **solid amber
 rectangle** around its whole node — the amber counterpart of the red storage border, so
 "probably a state change here" reads at a glance alongside the proven-write nodes.
+A call the deploy itself draws into in-scope code is never amber, even when it is listed in
+`unknown_external_calls` (the scan finds implementers by inheritance only, so a contract that
+matches the interface without declaring `is <interface>` stays listed there). `--dry-run` prints
+the amber lines under "external boundary line(s)".
 
 **Frame recycling.** Redeploying a function reuses its existing frame (same id and position),
 wiping and redrawing the contents — so a diagram that links to the frame by URL keeps working,
@@ -749,6 +753,15 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.7
+- **No amber on a call the diagram follows into the repo.** An interface declared next to its
+  caller (`interface ITrancheController` in `TrancheToken.sol`) and implemented by a contract that
+  never writes `is ITrancheController` has no implementer by inheritance, so the scan lists the
+  call in `unknown_external_calls` — yet the deploy draws its arrow to the in-scope
+  `TrancheController.depositFor`. The line was painted as an external boundary anyway; now a call
+  with an arrow into in-scope code is never amber. `--dry-run` also lists the amber lines, so you
+  can check them before deploying. _Re-read: workflow.md._
 
 ## 0.26.6
 - **A struct used from another contract types correctly.** `MMRouterLib.Venue storage v = …` in a
