@@ -2418,6 +2418,8 @@ fn build_graph(
         // Lines in THIS function whose call reaches a storage write, collected while the
         // calls are resolved and written back onto the node once the loop is done.
         let mut caller_write_calls: Vec<(usize, String, String)> = Vec::new();
+        // Lines whose call leaves the drawn graph towards `lib/` code that can mutate.
+        let mut lib_boundary_lines: Vec<usize> = Vec::new();
 
         // Modifiers count as dependencies; their call site is the line of the
         // signature where the modifier name appears.
@@ -2516,6 +2518,28 @@ fn build_graph(
                 // - if none can, it is a read — stopping a deploy for every
                 //   `IERC20(token).balanceOf` is the noise the scan already prunes — so
                 //   say it was left out and how to bring it in, and carry on.
+                // A call that resolves only because `lib/` was allowed in: the target is
+                // dependency code this frame does not draw. A non-view one can change state
+                // (`SafeERC20.safeTransferFrom` moves tokens), and it is invisible otherwise
+                // — the write happens in a contract that is not even in the repository.
+                if let Some((lib_contract, lib_function)) = resolve_call(
+                    metadata,
+                    contract,
+                    &call.name,
+                    arity,
+                    &write_options,
+                    &write_definer_map,
+                ) {
+                    let read_only = matches!(
+                        lib_function.mutability,
+                        crate::batbelt::evm::types::EvmMutability::View
+                            | crate::batbelt::evm::types::EvmMutability::Pure
+                    );
+                    if lib_contract.external && !read_only {
+                        lib_boundary_lines.push(function.line + call.line - 1);
+                    }
+                }
+
                 if let Some((receiver, method)) = call.name.split_once('.') {
                     if let Some(type_name) = receiver.strip_suffix("()") {
                         let candidates = cast_implementations(
@@ -2807,7 +2831,7 @@ fn build_graph(
         // Calls to external contracts with no in-scope source: flag the lines that
         // reach a non-view method (a `view`/`pure` one is compiler-guaranteed not to
         // mutate, so it is never a state-change risk). Located on the caller's node.
-        let mut external_lines: Vec<usize> = Vec::new();
+        let mut external_lines: Vec<usize> = std::mem::take(&mut lib_boundary_lines);
         for uec in &function.unknown_external_calls {
             let read_only = find_function(
                 metadata,

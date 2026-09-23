@@ -601,7 +601,9 @@ it guards, so its writes count.
 
 **External-boundary markers.** A **dashed amber band** covers a line that calls an external
 contract with no in-scope source — an interface-typed receiver nothing in the repo implements
-(e.g. an ERC-20 by address), via a non-view method (from `unknown_external_calls`). It means the
+(e.g. an ERC-20 by address), via a non-view method (from `unknown_external_calls`) — **or a call
+that resolves only into `lib/`**, like `SafeERC20.safeTransferFrom(...)`, which moves tokens in a
+contract the repository does not contain. It means the
 flow leaves the audited code and the callee MIGHT mutate its own state — unverified, so it is
 deliberately distinct from the solid-red proven write. `view`/`pure` calls are never flagged.
 A function that makes such a call but writes no storage of its own also gets a **solid amber
@@ -782,6 +784,15 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.9
+- **A transfer through `lib/` is marked as the external boundary it is.**
+  `SafeERC20.safeTransferFrom(...)` — a library call written by name rather than on an
+  interface-typed receiver — passed through both nets: the scan counts `SafeERC20` as a known
+  contract, and the deploy drops it for living in `lib/`. So a line that moves tokens showed
+  nothing at all. Any call that resolves only into `lib/` and is not `view`/`pure` now gets the
+  amber boundary band, the same marking an unresolvable interface call gets.
+  _Re-read: workflow.md._
 
 ## 0.26.8
 - **A frame that was cut and pasted no longer orphans its record.** Miro gives a pasted frame and
