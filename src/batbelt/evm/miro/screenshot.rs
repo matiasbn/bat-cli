@@ -127,16 +127,26 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
     let client = MiroClient::new_refreshed()
         .await
         .change_context(EvmMiroError)?;
-    let live = client.item_geometry(&record.frame_id).await;
-    if live.is_none() {
-        return Err(Report::new(EvmMiroError)
+    // A frame that was cut and pasted has a new id; the record is re-anchored to the copy
+    // on the board rather than failing (see `ensure_frame_record`).
+    let record = crate::batbelt::evm::miro::auto_deploy::ensure_frame_record(
+        &record.entry_point,
+        &client,
+    )
+    .await
+    .change_context(EvmMiroError)?
+    .ok_or_else(|| {
+        Report::new(EvmMiroError)
             .attach_printable(format!(
                 "the frame for `{frame_name}` is no longer on the board"
             ))
             .attach(crate::Suggestion(
-                "deploy it again with `bat-cli deploy --entry-point <name>`".to_string(),
-            )));
-    }
+                "deploy it again with `bat-cli deploy --entry-point <name>`, or point the \
+                 record at the right frame with `bat-cli relink <name> --frame-url <url>`"
+                    .to_string(),
+            ))
+    })?;
+    let live = client.item_geometry(&record.frame_id).await;
 
     // Work from where the frame IS, not where the deploy put it: the auditor rearranges the
     // board, and drawing from the recorded position both misplaced the screenshot and, when
@@ -159,6 +169,12 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
             (record.x, record.y, record.width, record.height),
         )
         .await
+        .map(|children| {
+            children
+                .iter()
+                .map(|child| (child.x, child.y, child.width, child.height))
+                .collect()
+        })
         .unwrap_or_else(|_| recorded_rects(&record));
 
     let width = png_width as f64 * BOARD_UNITS_PER_PIXEL;

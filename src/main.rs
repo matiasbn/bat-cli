@@ -192,6 +192,21 @@ enum BatCommands {
         #[arg(long)]
         grow: bool,
     },
+    /// Point a deployed frame's record at the frame that is actually on the board.
+    ///
+    /// Cutting and pasting a frame in Miro gives every widget a new id, orphaning the
+    /// registry; the titles survive, so the record can be rebuilt without redeploying
+    /// (which would place the frame by auto-layout, losing your arrangement).
+    Relink {
+        /// Entry point naming the frame. Omit it (or pass --check) to review the registry.
+        entry_point: Option<String>,
+        /// The frame's Miro link, when several frames share the title.
+        #[arg(long = "frame-url", value_name = "URL")]
+        frame_url: Option<String>,
+        /// Report which records still match the board instead of changing anything.
+        #[arg(long)]
+        check: bool,
+    },
     /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
     /// interface call to its concrete implementation. `deploy` stops and lists what to
     /// resolve; add them here, then deploy again. Stored in the metadata.
@@ -316,6 +331,17 @@ impl BatCommands {
             )
             .await
             .change_context(CommandError),
+            BatCommands::Relink {
+                entry_point,
+                frame_url,
+                check,
+            } => crate::batbelt::evm::miro::auto_deploy::run_relink(
+                entry_point.clone(),
+                frame_url.clone(),
+                *check,
+            )
+            .await
+            .change_context(CommandError),
             BatCommands::Resolve {
                 interface,
                 contract,
@@ -340,6 +366,7 @@ impl BatCommands {
             BatCommands::Sonar => false,
             BatCommands::Deploy { .. }
             | BatCommands::Screenshot { .. }
+            | BatCommands::Relink { .. }
             | BatCommands::Resolve { .. } => true,
         };
 

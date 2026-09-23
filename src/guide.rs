@@ -374,6 +374,7 @@ ls Bat.toml BatMetadata.json 2>/dev/null; bat-cli --version
 | `bat-cli config` | show the machine preferences (`--edit` re-answers them) | only with `--edit` |
 | `bat-cli update` | install the latest crates.io version (`--check`, `--force`) | no |
 | `bat-cli screenshot` | draw one declaration's source onto a frame already on the board | no |
+| `bat-cli relink` | re-point a frame's record at the frame on the board, after a cut and paste | no |
 
 Machine-wide state lives in `~/.config/bat-cli/` — `config.toml` (auditor name, code editor),
 `miro.toml` (the OAuth credentials, `0600`) and `ai_context/` (this guide). Override the
@@ -417,6 +418,30 @@ interface you have not resolved (`bat-cli resolve`) stops the walk, so its write
 
 `deploy --dry-run` prints a `state` column (`write` for a direct assignment, `→write` for one
 reached through a call) and lists every call line that reaches a state change.
+
+## When a frame's record no longer matches the board
+
+Dragging a frame in Miro keeps its id; **cutting and pasting it (or duplicating it) gives the
+frame and every child a new one**, which orphans the registry — and nothing about the two
+gestures looks different to whoever is arranging the board.
+
+This heals itself: when the recorded id is gone, `deploy` and `screenshot` look for a frame
+titled `auto: <entry point>` and rebuild the record from it, matching each screenshot by the
+title it carries. You only step in when the answer is not obvious:
+
+```bash
+bat-cli relink --check                       # what the registry still matches, and what moved
+bat-cli relink <entry point>                 # re-anchor by title
+bat-cli relink <entry point> --frame-url <url>   # when several frames share the title
+```
+
+Never redeploy to fix this. A redeploy does fix the record, but it places the frame by
+auto-layout — the arrangement the auditor built is the thing being protected.
+
+Link cards, connector markers and borders carry no title, so they cannot be recognised on a
+pasted copy; their ids are dropped from the record. Nothing is stranded by that: `--undeploy`
+deletes the frame's live children rather than the ids it once wrote down. `--refresh-links` on
+a re-anchored frame redraws its connectors instead of reusing them.
 
 ## When the auditor doesn't know what something is
 
@@ -757,6 +782,20 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.8
+- **A frame that was cut and pasted no longer orphans its record.** Miro gives a pasted frame and
+  all its children new ids, and bat-cli reacted by DELETING the registry entry — so by the time
+  anyone noticed, the thing that would have let them repair it was already gone, and the only way
+  back was a redeploy that placed the frame by auto-layout instead of where the auditor had put
+  it. Now `deploy` and `screenshot` find the frame by its title and rebuild the record from the
+  board, matching each screenshot by the title it carries.
+- **`bat-cli relink`** re-anchors on demand: `--check` reviews the whole registry and says what
+  moved, `relink <entry point>` re-anchors by title, and `--frame-url <url>` picks one when
+  several frames share a title (the deploy stops and lists them rather than guessing).
+- **`--undeploy` deletes the frame's live children** instead of the ids it recorded, so a pasted
+  frame is still cleaned up completely.
+  _Re-read: workflow.md._
 
 ## 0.26.7
 - **No amber on a call the diagram follows into the repo.** An interface declared next to its

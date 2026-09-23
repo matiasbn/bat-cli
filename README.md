@@ -172,6 +172,22 @@ drawing with no room left goes to the bottom-left corner, and `--grow` extends t
 to be drawn: that judgement is yours. It is a manual enrichment of one diagram, so a redeploy
 does not bring it back, and `--undeploy` cleans it up with the frame.
 
+### `relink`
+
+Dragging a frame in Miro keeps its id; cutting and pasting it gives the frame and every child a
+new one, which orphans bat-cli's record of it. `deploy` and `screenshot` now find the frame by
+its title and repair the record themselves. When several frames share a title they stop and list
+them, and `relink` settles it:
+
+```bash
+bat-cli relink --check                            # what moved since it was deployed
+bat-cli relink <entry point>                      # re-anchor by title
+bat-cli relink <entry point> --frame-url <url>    # choose, when the title is ambiguous
+```
+
+Redeploying also fixes the record, but it places the frame by auto-layout — which throws away
+the arrangement you built.
+
 ### `config`
 
 Everything that belongs to you rather than to a project lives in
