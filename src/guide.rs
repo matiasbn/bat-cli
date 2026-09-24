@@ -523,8 +523,30 @@ can delete them with one click each in Miro, where a frame takes its contents wi
 | `--with-documentation` | start each screenshot at the function's NatSpec, so the documented intent is on the diagram |
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
+| `--ignore-contract <name-or-path>` | never draw this contract's functions, for this run (repeatable; adds to the saved list — see below) |
 | `--inline-all` | draw the whole graph in ONE frame: no branch is cut out, every function is a screenshot |
 | `--allow-unresolved` | draw the partial graph instead of stopping to list unresolved interface calls |
+
+**"I already know that library" — `bat-cli ignore`.** A fixed-point math library called from
+thirty places is thirty boxes saying the same thing, and it crowds out the code the review is
+actually about: on one real frame, ignoring `Math` took it from 17 screenshots and 49 arrows to 12
+and 15, and every remaining arrow stayed inside its own column.
+
+```bash
+bat-cli ignore Math                                     # by contract name
+bat-cli ignore openzeppelin-contracts/contracts/utils   # or any part of a path
+bat-cli ignore --list
+bat-cli ignore --remove Math
+bat-cli deploy --entry-point <X> --ignore-contract Math # just this run
+```
+
+The list lives in `BatMetadata.json` and survives a re-`sonar`, because it is a reading decision,
+not something a scan can rediscover; a deploy leaves out the union of the saved list and this run's
+flags, and says what it is not drawing. **Nothing about the audited code is hidden**: the calls are
+still there in the callers' own screenshots, with their storage and boundary markings — it is the
+callee's box that is left out. Deploy it as an entry point of its own on the day the question is
+about it. Good candidates are utility maths, logging and string helpers under `lib/`. Bad ones are
+anything that writes storage or moves value: that is the code the diagram exists for.
 
 **Cross-contract resolution loop.** `deploy` follows the tree into other contracts, but a call on
 an interface-typed receiver (`$.borrowerOps.adjustPosition`) has a runtime-bound target it can't
@@ -778,6 +800,21 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.26.11
+- **`bat-cli ignore <NAME_OR_PATH>` — stop drawing a library you have already read.** Saved in
+  `BatMetadata.json` (survives a re-`sonar`), with `--list`/`--remove`, plus
+  `deploy --ignore-contract` for one run; a deploy leaves out the union and prints what it skipped.
+  The calls stay visible in the callers' screenshots, markings included — only the callee's boxes
+  go. On one real frame, ignoring `Math`: 17 screenshots and 49 arrows → 12 and 15.
+- **Every arrow gets its own vertical lane.** Miro routes a connector itself, so every arrow
+  leaving a caller turned on the same x and they stacked into what looked like one line. Forward
+  arrows are now drawn as three straight legs between markers bat-cli places — out at the call
+  line, down this arrow's own lane in the gutter, in at the callee's signature — so nothing is left
+  for Miro to route. Lanes are ordered by where each arrow starts and ends, which keeps arrows that
+  need not cross from crossing, and narrow automatically when a gutter cannot fit them.
+- **A call that flies over a column can become a card.** When a shared callee is too big to copy
+  next to a far caller (its closure reaches the frame floor), that ONE call is replaced by a card to
+  the callee's own frame; the caller sitting next to it keeps reading it as a screenshot.
+  `--dry-run` now reports how many connectors fly over a column, and the worst span.
 - **A frame is cut until it reads, not ten times.** The framing loop gave up two ways without
   saying so: a fixed ten passes, and a cut budget that never moved, so "nothing worth cutting AT
   THIS SIZE" was treated as "nothing worth cutting" and the rest was drawn as one wall —

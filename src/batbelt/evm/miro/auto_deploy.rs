@@ -49,6 +49,10 @@ const REGION_MARGIN: f64 = 5_000.0;
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
 const ANCHOR_MARKER_SIZE: f64 = 24.0;
+/// Horizontal distance between two arrows' vertical lanes in a gutter: five times the
+/// default 8dp stroke, so two arrows at full width still have four strokes of white
+/// between them. Narrowed automatically when a gutter cannot fit them all.
+const LANE_PITCH: f64 = 40.0;
 
 /// A bar that shows what is happening and how far along it is.
 ///
@@ -89,6 +93,10 @@ pub struct AutoDeployOptions {
     /// Draw the partial graph even when interface calls in the tree are unresolved,
     /// instead of stopping to list them.
     pub allow_unresolved: bool,
+    /// Contracts whose functions are never drawn: a name (`Math`) or any part of a
+    /// path (`openzeppelin-contracts/contracts/utils/math`). The call is still shown
+    /// in the caller's screenshot — it is the callee's box that is left out.
+    pub ignore_contracts: Vec<String>,
     /// Draw the ENTIRE call graph inline in one frame: no branch is cut to its own
     /// frame, and no already-deployed frame is linked — every function is a
     /// screenshot. Lets you see how big a large function is with screenshots only
@@ -105,6 +113,7 @@ impl Default for AutoDeployOptions {
             preview: None,
             stroke_width: 8,
             allow_unresolved: false,
+            ignore_contracts: Vec::new(),
             inline_all: false,
         }
     }
@@ -288,6 +297,21 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
 
     // The board is scanned at most once, to pick the region origin.
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+    // What a deploy leaves out is the union of the saved list and this run's flags.
+    let mut options = options;
+    for pattern in &metadata.ignored_contracts {
+        if !options.ignore_contracts.contains(pattern) {
+            options.ignore_contracts.push(pattern.clone());
+        }
+    }
+    let options = options;
+    if !options.ignore_contracts.is_empty() {
+        println!(
+            "  {} not drawing: {}",
+            "note:".yellow(),
+            options.ignore_contracts.join(", ")
+        );
+    }
     let mut allocator = if options.dry_run {
         ShelfAllocator::new(0.0, 0.0)
     } else {
@@ -857,6 +881,20 @@ async fn deploy_one(
     // wall to shorten arrows nobody can follow anyway. Shortening an unreadable diagram
     // is not worth making it bigger, so localization is skipped there.
     if effective_size(&nodes) <= FRAME_MAX {
+        // First the crossers too big to copy: they become frames of their own, with a
+        // card beside each caller, so the long arrow is gone rather than shortened.
+        let cut_crossers = if options.inline_all {
+            0
+        } else {
+            cut_crossing_shared(&mut nodes, &mut edges, &root_id)
+        };
+        if cut_crossers > 0 {
+            println!(
+                "  {} {} call(s) flying over a column replaced by a card to the callee's frame",
+                "↳".blue(),
+                cut_crossers
+            );
+        }
         let before = screenshot_count(&nodes);
         duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
         if screenshot_count(&nodes) > before {
@@ -1228,6 +1266,13 @@ async fn deploy_one(
     // arrow at its end, not two overlapping ones.
     struct CalleeLink {
         end_id: String,
+        /// The x of this arrow's own vertical lane in the gutter, and the y it has to
+        /// reach. Miro routes a connector itself — you give it two endpoints and it
+        /// picks the path — so the only way to stop every arrow leaving a caller from
+        /// turning on the same x is to stop asking Miro to route at all: the arrow is
+        /// drawn as straight segments between markers we place, one lane per arrow.
+        lane_x: f64,
+        end_y: f64,
         /// The callee's graph node id, so the connectors drawn for it can be
         /// attributed to it for surgical removal.
         node_id: String,
@@ -1270,8 +1315,86 @@ async fn deploy_one(
         }
     }
 
+    // One vertical lane per forward arrow, inside the gutter between the two columns
+    // it spans. Lanes are ordered by where the arrow starts and where it ends, which
+    // is what keeps two arrows that do not have to cross from crossing: for two
+    // arrows going the same way, the one starting lower takes the outer lane, so each
+    // one's horizontal leg passes outside the other's vertical leg instead of through
+    // it. Arrows that do have to cross (their start and end order disagree) cross
+    // once, which is unavoidable with one box per function.
+    let lane_of: HashMap<(String, String, usize), f64> = {
+        let mut per_layer_right: HashMap<usize, f64> = HashMap::new();
+        let mut per_layer_left: HashMap<usize, f64> = HashMap::new();
+        for placed in &layout.nodes {
+            let right = placed.x + placed.width / 2.0;
+            let left = placed.x - placed.width / 2.0;
+            per_layer_right
+                .entry(placed.layer)
+                .and_modify(|value| *value = value.max(right))
+                .or_insert(right);
+            per_layer_left
+                .entry(placed.layer)
+                .and_modify(|value| *value = value.min(left))
+                .or_insert(left);
+        }
+        // Group the forward edges by the gutter they cross, carrying (start y, end y).
+        let mut per_gap: HashMap<usize, Vec<((String, String, usize), f64, f64)>> = HashMap::new();
+        for edge in edges.iter() {
+            let (Some(from), Some(to)) = (layout.node(&edge.from), layout.node(&edge.to)) else {
+                continue;
+            };
+            if to.layer <= from.layer {
+                continue; // a cycle: drawn dashed, and left to Miro
+            }
+            let start_y = from.y;
+            let end_y = to.y;
+            per_gap.entry(from.layer).or_default().push((
+                (edge.from.clone(), edge.to.clone(), edge.line_in_slice),
+                start_y,
+                end_y,
+            ));
+        }
+        let mut lanes = HashMap::new();
+        for (layer, mut arrows) in per_gap {
+            let right = per_layer_right.get(&layer).copied().unwrap_or(0.0);
+            let left = per_layer_left
+                .get(&(layer + 1))
+                .copied()
+                .unwrap_or(right + 550.0);
+            // Keep the first turn clear of the screenshot border (and of the red or
+            // amber band drawn on it), and give each lane five stroke widths of air —
+            // narrowing only when the gutter cannot hold them all.
+            let margin = 100.0_f64.min((left - right) / 4.0);
+            let usable = (left - right - 2.0 * margin).max(0.0);
+            let pitch = if arrows.len() > 1 {
+                (usable / (arrows.len() - 1) as f64).min(LANE_PITCH)
+            } else {
+                0.0
+            };
+            arrows.sort_by(|a, b| {
+                let down = |start: f64, end: f64| end >= start;
+                let (a_down, b_down) = (down(a.1, a.2), down(b.1, b.2));
+                // Arrows going up take the inner lanes, ordered by where they start;
+                // arrows going down take the outer ones, the lowest start furthest out.
+                a_down
+                    .cmp(&b_down)
+                    .then_with(|| {
+                        let key = |arrow: &((String, String, usize), f64, f64)| {
+                            if a_down { (-arrow.1, -arrow.2) } else { (arrow.1, arrow.2) }
+                        };
+                        key(a).partial_cmp(&key(b)).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+            });
+            for (index, (key, _, _)) in arrows.into_iter().enumerate() {
+                lanes.insert(key, right + margin + index as f64 * pitch);
+            }
+        }
+        lanes
+    };
+
     let mut groups: HashMap<(String, usize, bool), PendingGroup> = HashMap::new();
     for edge in edges.iter() {
+        let edge_key = (edge.from.clone(), edge.to.clone(), edge.line_in_slice);
         let (Some(_start_id), Some(end_id)) =
             (image_ids.get(&edge.from), image_ids.get(&edge.to))
         else {
@@ -1307,6 +1430,8 @@ async fn deploy_one(
         };
         let link = CalleeLink {
             end_id: end_id.clone(),
+            lane_x: lane_of.get(&edge_key).copied().unwrap_or(f64::NAN),
+            end_y: end_point.1,
             node_id: edge.to.clone(),
             end_anchor: RelativeAnchor::new(if exit_right { 0.0 } else { 1.0 }, callee_fraction),
             end_point,
@@ -1449,13 +1574,62 @@ async fn deploy_one(
                 let mut route_style = group.style.clone();
                 route_style.arrow = ArrowEnd::None;
                 route_style.stroke_color = link.color.clone();
+                // Without a lane (a cycle, drawn dashed, or a gutter too narrow to
+                // hold one) fall back to the single Miro-routed connector.
+                if !group.exit_right || !link.lane_x.is_finite() {
+                    connectors.push(
+                        client
+                            .create_connector(
+                                &link.end_id,
+                                link.end_anchor,
+                                &edge_marker,
+                                facing_anchor((group.edge_x, group.token_y), link.end_point),
+                                route_style,
+                            )
+                            .await?,
+                    );
+                    continue;
+                }
+                // Three straight legs, each between two points that share an axis, so
+                // there is nothing left for Miro to route: out of the caller at the
+                // call line, down (or up) this arrow's own lane, into the callee's
+                // signature line.
+                let lane_top = client
+                    .create_anchor_marker(&frame_id, link.lane_x, group.token_y, ANCHOR_MARKER_SIZE)
+                    .await?;
+                let lane_end = client
+                    .create_anchor_marker(&frame_id, link.lane_x, link.end_y, ANCHOR_MARKER_SIZE)
+                    .await?;
+                markers.push(lane_top.clone());
+                markers.push(lane_end.clone());
+                connectors.push(
+                    client
+                        .create_connector(
+                            &lane_top,
+                            RelativeAnchor::new(0.0, 0.5),
+                            &edge_marker,
+                            RelativeAnchor::new(1.0, 0.5),
+                            route_style.clone(),
+                        )
+                        .await?,
+                );
+                let (top_side, end_side) = if link.end_y >= group.token_y {
+                    (RelativeAnchor::new(0.5, 1.0), RelativeAnchor::new(0.5, 0.0))
+                } else {
+                    (RelativeAnchor::new(0.5, 0.0), RelativeAnchor::new(0.5, 1.0))
+                };
+                connectors.push(
+                    client
+                        .create_connector(&lane_top, top_side, &lane_end, end_side, route_style.clone())
+                        .await?,
+                );
                 connectors.push(
                     client
                         .create_connector(
                             &link.end_id,
                             link.end_anchor,
-                            &edge_marker,
-                            facing_anchor((group.edge_x, group.token_y), link.end_point),
+                            &lane_end,
+                            RelativeAnchor::new(1.0, 0.5),
                             route_style,
                         )
                         .await?,
@@ -1678,6 +1852,22 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge, alone_on_line: bool) -> Rel
 /// screenshots for 27 distinct functions, with `MathLib.mulDiv` — three lines of
 /// arithmetic — repeated fourteen times. Two thirds of that diagram carried no
 /// information.
+/// Is this contract one the auditor said they already know?
+///
+/// The density of a diagram is not evenly useful. A fixed-point math library called
+/// from thirty places is thirty boxes that say the same thing, and the reader knew
+/// what `mulDiv` did before they opened the board. Naming it here removes its boxes
+/// and its arrows — not the calls to it, which stay visible in the callers' own
+/// screenshots, so nothing about the audited code is hidden. Deploy it as an entry
+/// point of its own on the day the question is actually about it.
+fn ignored_contract(options: &AutoDeployOptions, contract: &ContractMetadata) -> bool {
+    options.ignore_contracts.iter().any(|pattern| {
+        let pattern = pattern.trim();
+        !pattern.is_empty()
+            && (contract.name == pattern || contract.file_path.contains(pattern))
+    })
+}
+
 fn build_graph(
     metadata: &EvmBatMetadata,
     contract_name: &str,
@@ -1983,6 +2173,9 @@ fn build_graph(
                 }
                 continue;
             };
+            if ignored_contract(options, target_contract) {
+                continue;
+            }
             let target_id = overload_node_key(target_contract, &target_function);
             if target_id == current.node_id {
                 continue; // a function calling itself needs no arrow
@@ -2040,7 +2233,7 @@ fn build_graph(
                 .position(|line| line.contains('{'))
                 .unwrap_or(0);
             for (base, constructor) in base_constructors(metadata, contract) {
-                if false {
+                if ignored_contract(options, base) {
                     continue;
                 }
                 // Anchor on the header token naming the base when it is invoked there;
@@ -2136,7 +2329,7 @@ fn build_graph(
             let Some((tc, tf)) = destub(metadata, (tc, tf), options) else {
                 continue;
             };
-            if false {
+            if ignored_contract(options, tc) {
                 continue;
             }
             let target_id = overload_node_key(tc, &tf);
@@ -3480,6 +3673,11 @@ fn print_dry_run(
         }
     }
 
+    // The span is how many columns the arrow flies over, computed from the placed
+    // NODES rather than their labels: a copied helper shares its label with every
+    // other copy, so counting by name reports the shortest arrow that could have been
+    // drawn instead of the one that will be.
+    let mut spans: Vec<usize> = Vec::new();
     println!("  {} connector(s):", edges.len());
     for (edge, anchor) in edges.iter().zip(anchors.iter()) {
         let Some(caller) = nodes.iter().find(|n| n.id == edge.from) else {
@@ -3490,15 +3688,28 @@ fn print_dry_run(
             .find(|n| n.id == edge.to)
             .map(|n| n.label.clone())
             .unwrap_or_default();
+        let span = match (layout.node(&edge.from), layout.node(&edge.to)) {
+            (Some(from), Some(to)) => to.layer.saturating_sub(from.layer),
+            _ => 0,
+        };
+        spans.push(span);
         println!(
-            "    {:<34} L{:<5} → {:<34} start ({:.2}%, {:.2}%)",
+            "    {:<34} L{:<5} → {:<34} start ({:.2}%, {:.2}%){}",
             truncate(&caller.label, 34),
             caller.start_line + edge.line_in_slice - 1,
             truncate(&callee_label, 34),
             anchor.x_fraction * 100.0,
-            anchor.y_fraction * 100.0
+            anchor.y_fraction * 100.0,
+            if span > 1 { format!("  spans {span} columns") } else { String::new() }
         );
     }
+    let crossing = spans.iter().filter(|span| **span > 1).count();
+    println!(
+        "  {} of {} connector(s) fly over a column (worst {})",
+        crossing,
+        spans.len(),
+        spans.iter().max().copied().unwrap_or(0)
+    );
     if !layout.back_edges.is_empty() {
         println!(
             "  {} cycle(s) will be drawn dashed: {:?}",
@@ -3655,17 +3866,126 @@ fn private_closure(
 /// caller left, layering places the node adjacent, so it no longer crosses).
 /// Re-lays-out each round because a copy changes the columns; bounded by closure
 /// size and a box budget.
+/// Replace the CROSSING CALL — not the callee — with a card, when the callee is too
+/// big to copy next to its far caller.
+///
+/// Framing cuts for SPACE: a branch leaves the frame when the frame is too big to
+/// read. That left a whole class of mess untouched — a helper called from columns 1
+/// and 3 is pinned to the far right by the longest-path layering, so its arrow from
+/// column 1 flies over everything in between, and no amount of space made that
+/// arrow shorter. The only two ways to shorten it are a copy next to each caller or
+/// a card next to each caller, and a card is what a callee too big to copy gets.
+///
+/// It cuts the offending EDGE, not the node: the caller sitting next to the callee
+/// keeps reading it as a screenshot, and only the caller that was flying an arrow
+/// over two columns gets a card instead. Replacing the node would take the drawing
+/// away from the near caller too, to fix a problem that caller never had.
+///
+/// Returns how many calls were cut, so the caller can say so.
+fn cut_crossing_shared(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, root_id: &str) -> usize {
+    const CROSS_LAYERS: usize = 2;
+    let mut done = 0usize;
+    loop {
+        let layout_nodes: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|node| LayoutNode {
+                id: node.id.clone(),
+                width: node.board_width(),
+                height: node.board_height(),
+            })
+            .collect();
+        let anchors = compute_anchors(nodes, edges);
+        let layout_edges: Vec<LayoutEdge> = edges
+            .iter()
+            .zip(anchors.iter())
+            .map(|(edge, anchor)| LayoutEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                from_line_fraction: anchor.y_fraction,
+            })
+            .collect();
+        let layout = layout_graph(root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+        let layer_of: HashMap<&str, usize> =
+            layout.nodes.iter().map(|p| (p.id.as_str(), p.layer)).collect();
+
+        let mut callers: HashMap<String, Vec<String>> = HashMap::new();
+        let mut out: HashMap<String, Vec<String>> = HashMap::new();
+        for edge in edges.iter() {
+            callers.entry(edge.to.clone()).or_default().push(edge.from.clone());
+            out.entry(edge.from.clone()).or_default().push(edge.to.clone());
+        }
+        let shared: HashSet<String> = callers
+            .iter()
+            .filter(|(_, cs)| cs.len() >= 2)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        // The biggest crosser first: it is the one whose frame is most worth having,
+        // and cutting it often takes several other crossers with it.
+        let mut victim: Option<(usize, String)> = None;
+        for id in &shared {
+            let is_screenshot = nodes
+                .iter()
+                .any(|node| node.id == *id && matches!(node.kind, NodeKind::Screenshot));
+            if !is_screenshot || id == root_id {
+                continue;
+            }
+            let worst = callers
+                .get(id)
+                .map(|cs| {
+                    cs.iter()
+                        .map(|c| match (layer_of.get(id.as_str()), layer_of.get(c.as_str())) {
+                            (Some(&vl), Some(&cl)) => vl.saturating_sub(cl),
+                            _ => 0,
+                        })
+                        .max()
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0);
+            if worst < CROSS_LAYERS {
+                continue;
+            }
+            let clen = private_closure(id, &out, &shared).len();
+            if clen < FRAME_MIN {
+                continue; // small enough to copy; localization handles it
+            }
+            if victim.as_ref().map_or(true, |(best, _)| clen > *best) {
+                victim = Some((clen, id.clone()));
+            }
+        }
+        let Some((_, id)) = victim else {
+            break;
+        };
+        // The far calls only. `cut_edge` prunes and renumbers, so one per pass and
+        // re-measure: the copy it removes can change every other node's column.
+        let Some(index) = edges.iter().position(|edge| {
+            edge.to == id
+                && match (layer_of.get(id.as_str()), layer_of.get(edge.from.as_str())) {
+                    (Some(&vl), Some(&cl)) => vl.saturating_sub(cl) >= CROSS_LAYERS,
+                    _ => false,
+                }
+        }) else {
+            break;
+        };
+        cut_edge(nodes, edges, index);
+        done += 1;
+    }
+    done
+}
+
 fn duplicate_crossing_shared(
     nodes: &mut Vec<GraphNode>,
     edges: &mut Vec<GraphEdge>,
     root_id: &str,
 ) {
     const CROSS_LAYERS: usize = 2; // a caller this many columns back skips a column
-    // Copy only SMALL helpers (leaves + tiny subtrees) — those are cheap to repeat
-    // and are the mesh floor (sqrt, mul512, getters). A big subtree is never copied
-    // here (it would explode); it stays shared, externalised to a frame by the cut
-    // pass that ran BEFORE this.
-    const MAX_CLOSURE: usize = 3;
+    // Copy helpers small enough that a frame of their own would be a husk. The two
+    // bands MEET at FRAME_MIN, which is the whole point: under it a crossing callee
+    // is copied next to each far caller, at or over it `cut_crossing_shared` has
+    // already given it a frame and a card per caller. Nothing falls between them and
+    // keeps crossing, which is what the old cap of 3 left behind — a helper with four
+    // callees of its own was too big to copy and never big enough to be cut.
+    const MAX_CLOSURE: usize = FRAME_MIN - 1;
     // Effectively uncapped copies: a leaf used 56× needs 56 local copies, or it
     // still draws long crossing arrows. Small copies, so the box budget (below)
     // is the real bound.

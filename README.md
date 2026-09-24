@@ -121,6 +121,7 @@ Useful flags, though none are needed:
 | `--with-documentation` | start each screenshot at the function's NatSpec, so the documented intent rides along with the code |
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--stroke-width` | connector thickness in dp |
+| `--ignore-contract <name-or-path>` | never draw this contract's functions for this run (adds to the list saved by `bat-cli ignore`) |
 | `--inline-all` | draw the whole graph in one frame: no branch is cut out |
 | `--allow-unresolved` | draw the partial graph instead of stopping to list unresolved interface calls |
 
