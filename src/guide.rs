@@ -817,6 +817,11 @@ so you re-open only the docs that actually changed — not everything.
   reach the SAME function still share one colour, so a helper drawn in several places stays
   recognisable. (Ranking by depth gave the same colour to the first callee of one column and the
   first of the next, which are usually the two arrows side by side in the gutter.)
+- **Repeating a callee and enlarging one are charged separately.** A copy beside a far caller is
+  what removes a crossing arrow, and one constant decided both how big a thing could be copied and,
+  implicitly, how often — so a helper the size of a getter was still copied for every caller that
+  reached it (one contract: 203 boxes for 30 functions). Past three far callers a callee now gets a
+  frame of its own and a card beside each caller, however small it is.
 - **A call that flies over a column can become a card.** When a shared callee is too big to copy
   next to a far caller (its closure reaches the frame floor), that ONE call is replaced by a card to
   the callee's own frame; the caller sitting next to it keeps reading it as a screenshot.

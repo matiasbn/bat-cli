@@ -53,6 +53,13 @@ const ANCHOR_MARKER_SIZE: f64 = 24.0;
 /// default 8dp stroke, so two arrows at full width still have four strokes of white
 /// between them. Narrowed automatically when a gutter cannot fit them all.
 const LANE_PITCH: f64 = 40.0;
+/// How many far callers may each get their OWN copy of a callee before it is given a
+/// frame instead. Copying is what removes a crossing arrow, and for a leaf it is
+/// cheap — but the cost is paid once per caller, so the same rule that keeps `sqrt`
+/// beside its two callers puts nine copies of a helper on a frame when nine callers
+/// reach it. Past this, one drawing in a frame of its own and a card beside each
+/// caller is both smaller and easier to read.
+const MAX_COPIES_OF_ONE_CALLEE: usize = 3;
 
 /// A bar that shows what is happening and how far along it is.
 ///
@@ -4062,9 +4069,29 @@ fn cut_crossing_shared(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, r
             if worst < CROSS_LAYERS {
                 continue;
             }
+            // Two different costs, so two different thresholds. Copying a callee costs
+            // its closure ONCE PER far caller, so a helper the size of a getter is still
+            // expensive when nine callers need their own copy — that is how one contract
+            // put 203 boxes on a board for 30 functions. Either cost alone is enough to
+            // prefer a frame: one drawing, a card beside each caller.
             let clen = private_closure(id, &out, &shared).len();
-            if clen < FRAME_MIN {
-                continue; // small enough to copy; localization handles it
+            let far = callers
+                .get(id)
+                .map(|cs| {
+                    let mut distinct: Vec<&String> = cs.iter().collect();
+                    distinct.sort();
+                    distinct.dedup();
+                    distinct
+                        .iter()
+                        .filter(|c| match (layer_of.get(id.as_str()), layer_of.get(c.as_str())) {
+                            (Some(&vl), Some(&cl)) => vl.saturating_sub(cl) >= CROSS_LAYERS,
+                            _ => false,
+                        })
+                        .count()
+                })
+                .unwrap_or(0);
+            if clen < FRAME_MIN && far <= MAX_COPIES_OF_ONE_CALLEE {
+                continue; // cheap enough to copy; localization handles it
             }
             if victim.as_ref().map_or(true, |(best, _)| clen > *best) {
                 victim = Some((clen, id.clone()));
@@ -4173,6 +4200,21 @@ fn duplicate_crossing_shared(
             }
             let clen = private_closure(v, &out, &shared).len();
             if clen > MAX_CLOSURE {
+                continue;
+            }
+            // Repeating one callee past this is `cut_crossing_shared`'s business: it
+            // gave the callee a frame, and copying it here as well would put the
+            // drawing back beside every caller and undo that.
+            let far = callers
+                .get(v)
+                .map(|cs| {
+                    let mut distinct: Vec<&String> = cs.iter().collect();
+                    distinct.sort();
+                    distinct.dedup();
+                    distinct.iter().filter(|c| skip(v, c) >= CROSS_LAYERS).count()
+                })
+                .unwrap_or(0);
+            if far > MAX_COPIES_OF_ONE_CALLEE {
                 continue;
             }
             // Prefer smaller closure, then larger skip.
