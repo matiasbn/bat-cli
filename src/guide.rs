@@ -778,6 +778,21 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.26.11
+- **A frame is cut until it reads, not ten times.** The framing loop gave up two ways without
+  saying so: a fixed ten passes, and a cut budget that never moved, so "nothing worth cutting AT
+  THIS SIZE" was treated as "nothing worth cutting" and the rest was drawn as one wall —
+  `FLAMMSwapLib.execute` landed on the board as 250 screenshots and 641 connectors. It now lowers
+  the budget (down to the husk floor) before giving up, and says so when it truly cannot cut.
+  Same function, same rules: 16 screenshots.
+- **Localization checks its premise.** Copying a small helper next to each far caller is cheap
+  *because the frame is already small*. On a frame framing could not bring under the readable max
+  that premise is false, so it is skipped rather than adding screenshots to a wall.
+- **Callees are drawn in call order.** The crossing count keyed each edge by its caller's slot, so
+  two edges leaving the SAME caller were never counted as crossing — the metric was blind to the
+  disorder a reader notices first, and a leaf (no successors) was sorted to the bottom of its
+  column. Both fixed: on one real entry point the root's 18 callees now sit in source order, with
+  the only exception a function genuinely called from two lines.
+- **The per-column x stagger is gone**, along with the frame width it cost.
 - **`deploy` is one command with six flags, and it is always fresh.** A deploy no longer recycles
   the frame it finds, and no longer links a callee that already has a frame somewhere else: the
   entry point and every branch cut out of it are drawn again, together, in a clean region. The

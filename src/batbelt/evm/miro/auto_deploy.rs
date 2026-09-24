@@ -779,23 +779,41 @@ async fn deploy_one(
     // Functions with a frame already on the board: cutting to one is free (no new
     // frame is created), so `best_cut` may target them at any size.
     let framed: HashSet<&str> = deployed_titles.iter().map(|s| s.as_str()).collect();
-    // Aim each piece AT a readable size: the budget is the target, raised only when
-    // the graph is so big that even `MAX_CUTS_PER_FRAME` target-sized cuts wouldn't
+    // Aim each piece AT a readable size: the budget starts at the target, raised only
+    // when the graph is so big that even `MAX_CUTS_PER_FRAME` target-sized cuts wouldn't
     // fit it — then the pieces are bigger and split again by their own deploy.
     let total = screenshot_count(&nodes);
-    let budget = FRAME_TARGET.max(total.div_ceil(MAX_CUTS_PER_FRAME + 1));
+    let mut budget = FRAME_TARGET.max(total.div_ceil(MAX_CUTS_PER_FRAME + 1));
     let mut anchors = anchors;
-    let cut_passes = if options.inline_all { 0 } else { MAX_CUTS_PER_FRAME };
+    // Cut until the frame READS, not a fixed number of times. The cap was a fixed ten
+    // passes and a budget that never moved, so a graph whose branches are all smaller
+    // than the budget — or all shared — exhausted its passes (or found nothing to cut
+    // at all) and shipped whatever was left: `FLAMMSwapLib.execute` landed on the board
+    // as 250 screenshots and 641 connectors. The bound is now the node count, which no
+    // run can reach: every pass removes at least one screenshot.
+    let cut_passes = if options.inline_all { 0 } else { nodes.len() };
     for _ in 0..cut_passes {
-        // Split while the frame is over the readable MAX (depth included). The loop
-        // bound is the per-frame cut cap itself, so a huge graph gets enough cuts to
-        // shrink instead of shipping a wall; a piece that stays big becomes its own
-        // frame and is split again.
         if effective_size(&nodes) <= FRAME_MAX {
             break;
         }
-        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges, &framed, budget) else {
-            // Nothing left worth cutting into a readable, non-husk piece.
+        // Nothing worth cutting AT THIS BUDGET is not the same as nothing worth
+        // cutting: aiming at readable pieces first, then smaller ones, beats giving up
+        // and drawing a wall. FRAME_MIN is the floor — below it a cut buys a husk frame
+        // and costs a card, which is worse than the screenshot it replaced.
+        let mut found = None;
+        while found.is_none() {
+            found = best_cut(&nodes, &edges, &framed, budget);
+            if found.is_some() || budget <= FRAME_MIN {
+                break;
+            }
+            budget = (budget * 3 / 4).max(FRAME_MIN);
+        }
+        let Some((cut_nodes, cut_edges)) = found else {
+            println!(
+                "  {} {} screenshots and nothing left that can be cut into a readable\n  frame — every branch is either shared or too small to be worth its own",
+                "warning:".yellow(),
+                screenshot_count(&nodes)
+            );
             break;
         };
         println!(
@@ -833,7 +851,12 @@ async fn deploy_one(
     // — no longer whack-a-mole (the deep floor those copies would re-call is gone).
     // Uses the measured layout (a caller ≥2 columns back = a crossing arrow), copies
     // only SMALL closures, then re-lays-out.
-    {
+    //
+    // That first sentence is a PREMISE, not a description, so it is checked: on a frame
+    // framing could not bring under FRAME_MAX, copying helpers adds screenshots to a
+    // wall to shorten arrows nobody can follow anyway. Shortening an unreadable diagram
+    // is not worth making it bigger, so localization is skipped there.
+    if effective_size(&nodes) <= FRAME_MAX {
         let before = screenshot_count(&nodes);
         duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
         if screenshot_count(&nodes) > before {

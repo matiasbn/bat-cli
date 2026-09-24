@@ -289,7 +289,14 @@ swap of newly-framed callees), `--undeploy` (remove a frame + its items outright
 
 `--entry-point` forms: `function`, `Contract.function`, `path/To.sol:Contract.function` (§10b).
 
-## 13. Not implemented: call-ordered columns, connector lanes, no stagger
+## 13. Connector lanes (parked) — the ordering and the stagger are DONE
+
+**Status:** the call-order fix and the stagger removal shipped in 0.26.11 (`count_crossings` keys
+each edge by `slot + from_line_fraction`, `sort_layer` leaves keyless nodes in their slot, and the
+per-column x nudge is gone). Measured after: the root's 18 callees on a real frame sit in source
+order, inverted pairs 32 → 8, and the 8 are one callee called from two lines. **Lanes are still
+parked** — everything below about the shared corridor stands.
+
 
 Three cosmetic defects survive in a wide fan-out, and all three force the reader to
 rearrange the board by hand to follow the graph. Measured on a 33-node / 36-edge
