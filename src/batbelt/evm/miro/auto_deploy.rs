@@ -54,6 +54,13 @@ const ANCHOR_MARKER_SIZE: f64 = 24.0;
 /// default 8dp stroke, so two arrows at full width still have four strokes of white
 /// between them. Narrowed automatically when a gutter cannot fit them all.
 const LANE_PITCH: f64 = 40.0;
+/// A frame's background when something in it changes state, and when something in it
+/// only might — the same red and amber as the per-node markings, several steps lighter.
+/// The job is to be legible from far enough out that a whole cluster fits on screen;
+/// up close the screenshots are what is being read, and a strong tint behind them
+/// competes with the code. Miro's own "light red" (`#ffc6c6`) is already too much.
+const FRAME_FILL_WRITES: &str = "#fff0ef";
+const FRAME_FILL_MAY_WRITE: &str = "#fff7ec";
 /// How many far callers may each get their OWN copy of a callee before it is given a
 /// frame instead. Copying is what removes a crossing arrow, and for a leaf it is
 /// cheap — but the cost is paid once per caller, so the same rule that keeps `sqrt`
@@ -980,6 +987,25 @@ async fn deploy_one(
     }
 
     let client = client.expect("client is present when not in dry-run mode");
+    // The frame carries the same answer its nodes do, in its own background: red when
+    // something drawn here changes state, amber when something here probably does, and
+    // red wins when both are true — a frame that changes state IS one, whatever else it
+    // also might do. That is the same precedence a node has, where the amber border is
+    // only drawn on a node the red one skipped.
+    //
+    // A cluster is thirty frames on a board and "where does state change" is asked from
+    // that distance, where a node's own border is two pixels. It is the frame's own
+    // fill, not a shape laid over it: nothing extra to create, register or clean up.
+    let frame_fill = if nodes
+        .iter()
+        .any(|n| n.writes_storage || !n.write_call_lines.is_empty())
+    {
+        Some(FRAME_FILL_WRITES)
+    } else if nodes.iter().any(|n| !n.external_call_lines.is_empty()) {
+        Some(FRAME_FILL_MAY_WRITE)
+    } else {
+        None
+    };
     let frame_id = client
         .create_frame(
             &format!("auto: {title}"),
@@ -987,6 +1013,7 @@ async fn deploy_one(
             frame_y,
             layout.frame_width,
             layout.frame_height,
+            frame_fill,
         )
         .await
         .change_context(EvmMiroError)?;
@@ -1098,6 +1125,14 @@ async fn deploy_one(
     // calls. One marking, not two: the question a reader asks is "does this change state",
     // and a pass-through like `DebtToken.mint` answers yes even though it assigns nothing.
     let drawn_screens = drawn_screen_ids(&nodes);
+    let frame_writes: Vec<&GraphNode> = nodes
+        .iter()
+        .filter(|n| n.writes_storage || surviving_write_calls(n, &drawn_screens).next().is_some())
+        .collect();
+    let frame_external: Vec<&GraphNode> = nodes
+        .iter()
+        .filter(|n| !n.external_call_lines.is_empty())
+        .collect();
     let borders: Vec<(f64, f64, f64, f64)> = nodes
         .iter()
         .filter(|n| {

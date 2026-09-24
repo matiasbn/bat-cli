@@ -811,6 +811,16 @@ so you re-open only the docs that actually changed — not everything.
   line, down this arrow's own lane in the gutter, in at the callee's signature — so nothing is left
   for Miro to route. Lanes are ordered by where each arrow starts and ends, which keeps arrows that
   need not cross from crossing, and narrow automatically when a gutter cannot fit them.
+- **A frame says whether it changes state, in its own background.** Red (`#ffc6c6`) when something
+  drawn in it writes storage or reaches a write, amber (`#ffe2c2`) when something in it only calls
+  out past the audited code. The per-node red border answers that question once you are inside a
+  frame; from a cluster of thirty frames, which is where you decide what to open, it is two pixels.
+- **A frame says whether it changes state, in its own background.** A very pale red (`#fff0ef`)
+  when something drawn in it writes storage or reaches a write, a pale amber (`#fff7ec`) when
+  something in it only calls out past the audited code; red wins when both are true, the same
+  precedence a node's borders have. The per-node border answers that question once you are inside a
+  frame — from the distance where a whole cluster fits on screen, which is where you decide what to
+  open, it is two pixels wide.
 - **Arrow colours come from a conflict graph, not a ranking.** Two arrows never share a colour when
   a reader has to tell them apart — running in neighbouring lanes of one gutter, leaving the same
   screenshot, or landing on boxes that sit next to each other in the next column. Two arrows that
