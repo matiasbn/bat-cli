@@ -105,18 +105,6 @@ enum BatCommands {
         /// one from a list.
         #[arg(long)]
         entry_point: Option<String>,
-        /// Deploy every entry point at once. Not recommended: a real project
-        /// puts thousands of objects on the board, and review happens one entry
-        /// point at a time.
-        #[arg(long)]
-        all: bool,
-        /// Stop expanding the call graph past this depth. Unset follows it to
-        /// the end
-        #[arg(long)]
-        max_depth: Option<usize>,
-        /// Cap the screenshots per frame. Unset draws the whole tree
-        #[arg(long)]
-        max_nodes: Option<usize>,
         /// Print the computed layout without sending anything to Miro
         #[arg(long)]
         dry_run: bool,
@@ -124,51 +112,23 @@ enum BatCommands {
         /// diagram carries the documented intent next to the code
         #[arg(long = "with-documentation")]
         with_documentation: bool,
-        /// Include contracts coming from lib/
-        #[arg(long)]
-        include_external: bool,
         /// Write a local PNG preview of the composed frame to this path
         #[arg(long)]
         preview: Option<String>,
         /// Connector thickness in dp (1-24)
         #[arg(long, default_value_t = 8)]
         stroke_width: u32,
-        /// Answer the "already on the board — deploy again?" prompt with yes, so a
-        /// redeploy runs non-interactively (for scripts / AI). Builds a second frame.
-        #[arg(long)]
-        yes: bool,
         /// Draw the frame even if some interface calls in the tree are unresolved,
         /// instead of stopping to list them. Downstream nodes behind those calls are
         /// simply omitted.
         #[arg(long)]
         allow_unresolved: bool,
-        /// Incremental refresh of an already-deployed frame: reuse its uploaded
-        /// screenshots (render only new ones), re-lay-out and redraw connectors, so
-        /// a callee that now has its own frame becomes a link card — without
-        /// re-rendering the whole frame.
-        #[arg(long)]
-        refresh_links: bool,
-        /// Remove the entry point's frame from the board and the registry entirely
-        /// (the frame, its screenshots/markers/borders, its link cards + arrows, and
-        /// its metadata entry) instead of deploying. Use it to clean up a small
-        /// helper that should never have been its own frame.
-        #[arg(long)]
-        undeploy: bool,
         /// Draw the whole call graph inline in ONE frame: never cut a branch out to
         /// its own frame, never link an already-deployed frame — every function is a
         /// screenshot. Use it to see how large a big function is with screenshots
         /// only (and how Miro handles it).
         #[arg(long)]
         inline_all: bool,
-        /// Give this deploy its OWN frames and ignore every frame already on the
-        /// board: the entry point's own previous frame is not recycled and no
-        /// pre-existing frame is linked, so the whole cluster (entry point + every
-        /// dependency frame) is drawn fresh in a clean zone; only frames created
-        /// within this same run are shared. The previous cluster's frame URLs are
-        /// printed at the end so you can delete them with one click in Miro (the web
-        /// UI deletes a frame with its contents; the API can't/is slow).
-        #[arg(long, visible_alias = "fresh-frames")]
-        redeploy: bool,
     },
     /// Draw one declaration's source onto a frame that is already on the board.
     ///
@@ -278,38 +238,22 @@ impl BatCommands {
             }
             BatCommands::Deploy {
                 entry_point,
-                all,
-                max_depth,
-                max_nodes,
                 dry_run,
                 with_documentation,
-                include_external,
                 preview,
                 stroke_width,
-                yes,
                 allow_unresolved,
-                refresh_links,
-                undeploy,
                 inline_all,
-                redeploy,
             } => {
                 crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
-                    all: *all,
-                    max_depth: *max_depth,
-                    max_nodes: *max_nodes,
                     dry_run: *dry_run,
                     with_documentation: *with_documentation,
-                    include_external: *include_external,
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
-                    assume_yes: *yes,
                     allow_unresolved: *allow_unresolved,
-                    refresh_links: *refresh_links,
-                    undeploy: *undeploy,
                     inline_all: *inline_all,
-                    redeploy: *redeploy,
                     },
                 )
                 .await

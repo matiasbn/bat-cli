@@ -76,86 +76,47 @@ const DEPTH_COLORS: &[&str] = &[
 pub struct AutoDeployOptions {
     /// Deploy only this entry point (`name` or `Contract.name`).
     pub entry_point: Option<String>,
-    /// Deploy every entry point in the project.
-    pub all: bool,
-    /// Optional depth limit. Unset follows the tree until it ends, which it
-    /// does on its own: recursion is cut per path and the leaves are functions
-    /// that call nothing.
-    pub max_depth: Option<usize>,
-    /// Optional cap on screenshots per frame. Unset means draw the whole tree.
-    pub max_nodes: Option<usize>,
     /// Compute and print the layout without touching Miro.
     pub dry_run: bool,
     /// Extend each screenshot upward to include the function's NatSpec block, so
     /// the diagram carries the documented intent next to the code.
     pub with_documentation: bool,
-    /// Include contracts coming from `lib/`.
-    pub include_external: bool,
     /// Compose a local preview PNG of the frame at this path.
     pub preview: Option<String>,
     /// Connector thickness in dp, 1 to 24. Miro's UI snaps this to its own
     /// preset levels, so 12 lands on roughly "level 5".
     pub stroke_width: u32,
-    /// Skip the "already on the board — deploy again?" confirmation (assume yes),
-    /// so a redeploy runs non-interactively.
-    pub assume_yes: bool,
     /// Draw the partial graph even when interface calls in the tree are unresolved,
     /// instead of stopping to list them.
     pub allow_unresolved: bool,
-    /// Incremental refresh: reuse the frame's already-uploaded screenshots (only
-    /// render ones that are new), re-lay-out, and redraw connectors — so a callee
-    /// that has since gained its own frame becomes a link card without the whole
-    /// frame being re-rendered. Requires the entry point to already have a frame.
-    pub refresh_links: bool,
-    /// Remove the entry point's frame from the board and the registry entirely
-    /// (frame shell, all its items, its link cards + arrows, and its metadata
-    /// entry) instead of deploying. Cleans up a frame that should never have been
-    /// its own — e.g. a small helper fragmenting the board.
-    pub undeploy: bool,
     /// Draw the ENTIRE call graph inline in one frame: no branch is cut to its own
     /// frame, and no already-deployed frame is linked — every function is a
     /// screenshot. Lets you see how big a large function is with screenshots only
     /// (and how Miro copes), and gives a step-through-able single frame.
     pub inline_all: bool,
-    /// Redeploy from scratch into a CLEAN zone: deploy the whole cluster (the entry
-    /// point and every dependency frame) FRESH, reusing nothing already on the board
-    /// (not even this entry point's own previous frames), and at the end print the
-    /// URLs of the PREVIOUS cluster's frames so you can delete them with one click in
-    /// Miro (the web UI deletes a frame and its contents together; the API can't).
-    /// Deleting is slow and one-by-one via the API, so this hands that back to you.
-    pub redeploy: bool,
 }
 
 impl Default for AutoDeployOptions {
     fn default() -> Self {
         Self {
             entry_point: None,
-            all: false,
-            max_depth: None,
-            max_nodes: None,
             dry_run: false,
             with_documentation: false,
-            include_external: false,
             preview: None,
             stroke_width: 8,
-            assume_yes: false,
             allow_unresolved: false,
-            refresh_links: false,
-            undeploy: false,
             inline_all: false,
-            redeploy: false,
         }
     }
 }
 
-/// Shared context for a fresh-cluster deploy (`--redeploy`): the entry point that
-/// owns the whole cluster, and the ids of the PREVIOUS cluster's frames so a
-/// still-live old frame is never reused (we want everything fresh) and can be
-/// reported for manual deletion afterwards. Threaded through the recursive deploy.
+/// Shared context for a deploy: the entry point that owns the whole cluster, and
+/// the ids of the PREVIOUS cluster's frames, so a still-live old frame is never
+/// reused (every deploy is fresh) and can be reported for manual deletion
+/// afterwards. Threaded through the recursive deploy.
 #[derive(Clone)]
 struct ClusterCtx {
     root: String,
-    fresh: bool,
     stale_ids: HashSet<String>,
 }
 
@@ -297,19 +258,6 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             .attach_printable("no entry point matched; run `bat-cli sonar` first"));
     }
 
-    if options.all && !options.dry_run && targets.len() > 1 {
-        println!(
-            "{} deploying {} entry points at once puts thousands of objects on the\nboard, which Miro starts to slow down past a thousand. Reviewing happens one\nentry point at a time, so consider deploying on demand instead.",
-            "warning:".yellow(),
-            targets.len()
-        );
-        if !BatDialoguer::select_yes_or_no("Deploy all of them anyway?".to_string())
-            .change_context(EvmMiroError)?
-        {
-            return Ok(());
-        }
-    }
-
     println!(
         "Auto-deploying {} entry point(s){}",
         targets.len().to_string().green(),
@@ -331,26 +279,9 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         )
     };
 
-    // Undeploy mode: remove each target's frame outright, then stop.
-    if options.undeploy {
-        let Some(client) = client.as_ref() else {
-            return Err(Report::new(EvmMiroError)
-                .attach_printable("--undeploy needs board access; it can't run under --dry-run"));
-        };
-        for (contract_name, function_name, _) in &targets {
-            let title = format!("{contract_name}.{function_name}");
-            if undeploy_frame(&title, client).await? {
-                println!("  {} removed frame {}", "✓".green(), title.bold());
-            } else {
-                println!("  {} no recorded frame for {}", "note:".yellow(), title);
-            }
-        }
-        return Ok(());
-    }
-
-    // --redeploy draws into a CLEAN zone: forget the cached region so the allocator
+    // A fresh deploy draws into a CLEAN zone: forget the cached region so the allocator
     // re-scans and places the fresh cluster below everything currently on the board.
-    if options.redeploy && !options.dry_run {
+    if !options.dry_run {
         EvmBatMetadata::update_metadata(|m| m.miro.auto.region = None)
             .change_context(EvmMiroError)?;
     }
@@ -366,11 +297,11 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     for (contract_name, function_name, root_file) in targets {
         let title = format!("{contract_name}.{function_name}");
 
-        // --redeploy: find the PREVIOUS cluster (this entry point's frame + every
-        // dependency frame its last deploy spawned), keep only the ones still on the
+        // A fresh deploy finds the PREVIOUS cluster (this entry point's frame + every
+        // dependency frame its last deploy spawned), keeps only the ones still on the
         // board, so we can (a) never reuse them and (b) hand you their URLs to delete.
         let mut stale: Vec<(String, String)> = Vec::new(); // (entry_point, url)
-        if options.redeploy && !options.dry_run {
+        if !options.dry_run {
             if let Some(client) = client.as_ref() {
                 let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
                 for f in &meta.miro.auto.frames {
@@ -393,32 +324,11 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
                 .collect()
         };
         let cluster = ClusterCtx {
-            root: if options.redeploy { title.clone() } else { String::new() },
-            fresh: options.redeploy && !options.dry_run,
+            root: title.clone(),
             stale_ids,
         };
 
-        // A root under `lib/` implies `--include-external`. Everything such a function calls
-        // is dependency code too, so without the flag the diagram silently collapses to the
-        // root alone — nobody who names `BeaconProxy.constructor` wants that, and nothing
-        // would tell them why it happened.
-        let root_is_external = metadata
-            .contracts
-            .iter()
-            .any(|c| c.name == contract_name && c.file_path == root_file && c.external);
-        let root_options = if root_is_external && !options.include_external {
-            println!(
-                "  {} {} lives under lib/, so its external calls are included",
-                "note:".yellow(),
-                title
-            );
-            AutoDeployOptions {
-                include_external: true,
-                ..options.clone()
-            }
-        } else {
-            options.clone()
-        };
+        let root_options = options.clone();
 
         deploy_one(
             &metadata,
@@ -433,10 +343,10 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         )
         .await?;
 
-        // --redeploy: drop the old cluster's now-orphaned records and print their
+        // A fresh deploy drops the old cluster's now-orphaned records and prints their
         // URLs for one-click manual deletion (a frame + its contents delete together
         // in Miro's web UI; the API can't, and one-by-one deletion is slow).
-        if options.redeploy && !options.dry_run {
+        if !options.dry_run {
             let owner = title.clone();
             let old_ids: HashSet<String> = cluster.stale_ids.clone();
             EvmBatMetadata::update_metadata(move |m| {
@@ -531,10 +441,6 @@ fn select_targets(
     entry_points.dedup();
     others.sort();
     others.dedup();
-
-    if options.all {
-        return Ok(entry_points);
-    }
 
     if let Some(wanted) = &options.entry_point {
         return resolve_named_target(metadata, &entry_names, wanted);
@@ -775,105 +681,17 @@ async fn deploy_one(
     // lets several diagrams share a helper's frame and keeps the fan-in readable.
     // Asked for directly, RECYCLE it: delete the old frame and its items, then
     // redraw — so a redeploy replaces the frame instead of piling up duplicates.
-    let mut reused_frame: Option<AutoDeployedFrame> = None;
-    // --redeploy: never reuse an existing frame — the whole cluster is drawn fresh
-    // in a clean zone, and the old one is reported for manual deletion.
-    if !options.dry_run && !cluster.fresh {
-        if let Some(url) = live_frame_url(&title, client).await? {
-            if !is_primary {
-                return Ok(());
-            }
-            if let Some(client) = client {
-                if options.refresh_links {
-                    // Surgical refresh: DON'T recycle (that would wipe the manual
-                    // layout). The diff-and-patch happens after the link pass below.
-                    let _ = client;
-                } else {
-                    println!("  {} recycling the existing frame", "↻".yellow());
-                    reused_frame = recycle_recorded_frame(&title, client, false).await?;
-                }
-            } else {
-                let _ = url;
-            }
-        }
-    }
-
-    let (mut nodes, mut edges, truncated, unresolved) =
+    let (mut nodes, mut edges, unresolved) =
         build_graph(metadata, contract_name, function_name, root_file, options)?;
     if nodes.is_empty() {
         println!("  no function metadata found, skipping");
         return Ok(());
     }
 
-    // Recycle already-deployed frames: any callee in this tree that ALREADY has
-    // its own frame on the board is referenced with a link card pointing at that
-    // frame, instead of being redrawn (with its whole subtree) inside this one —
-    // so a redeploy reuses what is already there rather than cluttering the frame
-    // with duplicates. The root being deployed is always drawn. A card whose
-    // frame has since been deleted is re-deployed on demand by
-    // `ensure_target_frames`, so a stale record is self-healing.
-    // Only frames that are STILL on the board count: a metadata entry outlives a
-    // frame the auditor deleted by hand, and recycling to a dead frame would make
-    // `ensure_target_frames` RE-CREATE it — resurrecting exactly the tiny husk
-    // frames the auditor just cleaned up. So we recycle (and treat as "free to cut
-    // to") only frames confirmed live on the board.
-    let deployed_titles: HashSet<String> = if options.inline_all || cluster.fresh {
-        // --inline-all / --redeploy: link nothing pre-existing — every dependency is
-        // drawn fresh in this cluster (reuse happens only within this run, via
-        // `ensure_target_frames`, which skips the stale old-cluster frames).
-        HashSet::new()
-    } else {
-        let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        let in_graph: HashSet<&str> = nodes.iter().map(|n| n.label.as_str()).collect();
-        let candidates: Vec<String> = meta
-            .miro
-            .auto
-            .frames
-            .iter()
-            .map(|frame| frame.entry_point.clone())
-            .filter(|entry_point| *entry_point != title && in_graph.contains(entry_point.as_str()))
-            .collect();
-        let mut live = HashSet::new();
-        if client.is_some() {
-            for candidate in candidates {
-                if live_frame_url(&candidate, client).await?.is_some() {
-                    live.insert(candidate);
-                }
-            }
-        } else {
-            // No board access (dry run): fall back to the registry as-is.
-            live.extend(candidates);
-        }
-        live
-    };
-    if !deployed_titles.is_empty() {
-        let (linked, kept) = link_deployed_frames(&mut nodes, &mut edges, &deployed_titles);
-        if linked > 0 {
-            println!(
-                "  {} linked {} call(s) to already-deployed frames",
-                "↻".yellow(),
-                linked
-            );
-        }
-        if !kept.is_empty() {
-            println!(
-                "  {} drawn inline despite having a frame (linking would leave this frame under {} screenshots): {}",
-                "↻".yellow(),
-                FRAME_MIN,
-                kept.join(", ")
-            );
-        }
-    }
-
-    // Surgical refresh: with the link pass applied, patch ONLY the difference from
-    // what is already on the board — swap the newly-framed callees for link cards,
-    // delete exactly their arrows, and leave every other item (and every manual
-    // edit) untouched. Never re-lay-out or redraw the whole frame.
-    if options.refresh_links && !options.dry_run {
-        if let Some(client) = client {
-            return refresh_links_surgical(&title, &nodes, &edges, client).await;
-        }
-    }
+    // Every deploy is fresh: nothing already on the board is linked, so the cluster
+    // you are about to read has all of its frames together, drawn by the rules in
+    // force today. Sharing happens only WITHIN this run, via `ensure_target_frames`.
+    let deployed_titles: HashSet<String> = HashSet::new();
 
     // Cross-contract calls this tree reaches through an interface, whose concrete
     // target static analysis cannot pin. By default STOP so the AI (or auditor) can
@@ -925,40 +743,8 @@ async fn deploy_one(
         edges.len().to_string().green(),
         (depth + 1).to_string().green()
     );
-    if truncated > 0 {
-        println!(
-            "  {} {} call site(s) left out by --max-nodes {}",
-            "note:".yellow(),
-            truncated,
-            options.max_nodes.unwrap_or_default()
-        );
-    }
 
-
-    // In --refresh-links mode, map each graph node to its already-uploaded image
-    // and measured size, so render_and_measure can skip re-rendering it.
-    let reuse: HashMap<String, (String, u32, u32)> = if options.refresh_links {
-        reused_frame
-            .as_ref()
-            .map(|record| {
-                let dims: HashMap<&str, (u32, u32)> = record
-                    .image_dims
-                    .iter()
-                    .map(|(id, w, h)| (id.as_str(), (*w, *h)))
-                    .collect();
-                record
-                    .images
-                    .iter()
-                    .filter_map(|(node_id, image_id)| {
-                        dims.get(node_id.as_str())
-                            .map(|(w, h)| (node_id.clone(), (image_id.clone(), *w, *h)))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    } else {
-        HashMap::new()
-    };
+    let reuse: HashMap<String, (String, u32, u32)> = HashMap::new();
 
     render_and_measure(&mut nodes, &title, &reuse)?;
 
@@ -1046,8 +832,8 @@ async fn deploy_one(
     // copying a leaf (sqrt, a getter) next to each far caller is cheap and — crucial
     // — no longer whack-a-mole (the deep floor those copies would re-call is gone).
     // Uses the measured layout (a caller ≥2 columns back = a crossing arrow), copies
-    // only SMALL closures, then re-lays-out. Skipped in --refresh-links.
-    if !options.refresh_links {
+    // only SMALL closures, then re-lays-out.
+    {
         let before = screenshot_count(&nodes);
         duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
         if screenshot_count(&nodes) > before {
@@ -1081,22 +867,13 @@ async fn deploy_one(
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
     // board positions instead of repeating the first one.
-    // A recycled frame keeps its board position (other diagrams may point a
-    // viewport link at it); only a brand-new frame consumes a slot from the
-    // allocator. Item coordinates are relative to the frame, so reusing the
-    // same centre keeps the layout identical regardless of the new size.
-    let (frame_x, frame_y) = match &reused_frame {
-        Some(record) => (record.x, record.y),
-        None => allocator.place(layout.frame_width, layout.frame_height),
-    };
+    // Every frame is brand new, so it always takes a slot from the allocator — which
+    // is what puts a cluster's frames next to each other instead of wherever an
+    // earlier deploy happened to leave them.
+    let (frame_x, frame_y) = allocator.place(layout.frame_width, layout.frame_height);
 
     if let Some(preview_path) = &options.preview {
-        let path = if options.all {
-            let safe = title.replace(['.', '/'], "_");
-            format!("{}/{}.png", preview_path.trim_end_matches('/'), safe)
-        } else {
-            preview_path.clone()
-        };
+        let path = preview_path.clone();
         render_preview(&nodes, &edges, &anchors, &layout, &path)?;
         println!("  preview written to {}", path.blue());
         // A preview is a LOCAL composition for eyeballing the layout — it never
@@ -1113,34 +890,16 @@ async fn deploy_one(
     }
 
     let client = client.expect("client is present when not in dry-run mode");
-    let frame_id = match &reused_frame {
-        Some(record) => {
-            // Keep the id (so viewport links survive) but resize to the new
-            // layout, so the frame always fits its fresh contents exactly.
-            client
-                .update_frame(
-                    &record.frame_id,
-                    &format!("auto: {title}"),
-                    frame_x,
-                    frame_y,
-                    layout.frame_width,
-                    layout.frame_height,
-                )
-                .await
-                .change_context(EvmMiroError)?;
-            record.frame_id.clone()
-        }
-        None => client
-            .create_frame(
-                &format!("auto: {title}"),
-                frame_x,
-                frame_y,
-                layout.frame_width,
-                layout.frame_height,
-            )
-            .await
-            .change_context(EvmMiroError)?,
-    };
+    let frame_id = client
+        .create_frame(
+            &format!("auto: {title}"),
+            frame_x,
+            frame_y,
+            layout.frame_width,
+            layout.frame_height,
+        )
+        .await
+        .change_context(EvmMiroError)?;
     println!(
         "  frame {} ({}x{}) at ({}, {})",
         frame_id.green(),
@@ -1175,16 +934,12 @@ async fn deploy_one(
         connector_ids: Vec::new(),
         marker_ids: Vec::new(),
         border_ids: Vec::new(),
-        // Declaration screenshots survive a redeploy INTO THE SAME FRAME: the images are
-        // not ours to delete here, so dropping the record would strand them on the board
-        // with nothing left that knows how to clean them up. A `--redeploy` builds a new
-        // frame instead, and legitimately starts with none.
-        screenshots: reused_frame
-            .as_ref()
-            .map(|record| record.screenshots.clone())
-            .unwrap_or_default(),
-        // Every frame in a fresh deploy belongs to the named entry point's cluster,
-        // so a later --redeploy can find and report the whole previous cluster.
+        // A brand-new frame carries no declaration screenshots: the ones added with
+        // `bat-cli screenshot` belong to the frame they were placed on, which this
+        // deploy leaves untouched on the board.
+        screenshots: Vec::new(),
+        // Every frame belongs to the named entry point's cluster, so the next deploy
+        // of that entry point can find and report the whole previous cluster.
         cluster_root: if cluster.root.is_empty() { title.clone() } else { cluster.root.clone() },
     };
     save_frame_record(&record)?;
@@ -1247,22 +1002,6 @@ async fn deploy_one(
     }
     bar.finish_and_clear();
     println!("    {} {} screenshots uploaded", "✓".green(), image_ids.len());
-
-    // Refresh: any old screenshot that is no longer used (its node became a link
-    // card, or dropped out of the graph) is now an orphan on the board — delete it.
-    if options.refresh_links {
-        if let Some(old) = &reused_frame {
-            let mut orphans = tokio::task::JoinSet::new();
-            for (node_id, old_image_id) in &old.images {
-                if image_ids.get(node_id) != Some(old_image_id) {
-                    let client = client.clone();
-                    let id = old_image_id.clone();
-                    orphans.spawn(async move { client.delete_item(&id).await });
-                }
-            }
-            while orphans.join_next().await.is_some() {}
-        }
-    }
 
     // Storage-write markers: a hollow red rectangle around every node whose function
     // changes state — whether it holds the assignment or only reaches one through what it
@@ -1764,357 +1503,6 @@ async fn deploy_one(
     Ok(())
 }
 
-/// Wipe a recorded frame's CONTENTS (images, connectors, markers, storage
-/// borders) but KEEP the frame itself, returning its record so the redraw can
-/// reuse the same frame id and position.
-///
-/// The frame is deliberately not deleted: other diagrams may link to it by URL
-/// (`?moveToWidget=<frame_id>`), and a fresh frame would break those links. The
-/// metadata record is dropped here and a new one is saved during the redraw.
-///
-/// The deletes fan out concurrently (like the create side): every item is
-/// independent and best-effort, so there is no reason to wait one at a time.
-/// Surgically patch an already-deployed frame: swap the callees that have GAINED
-/// their own frame for link cards, deleting exactly their arrows and screenshots
-/// and NOTHING else — every other item, position and manual edit is left as-is.
-///
-/// `nodes`/`edges` are the freshly-built graph with the link pass already applied,
-/// so a node that used to be a screenshot but is now a link card is the diff to
-/// apply. Requires the frame to have been deployed once since the record started
-/// storing positions + per-callee connector ownership.
-async fn refresh_links_surgical(
-    title: &str,
-    nodes: &[GraphNode],
-    edges: &[GraphEdge],
-    client: &MiroClient,
-) -> Result<()> {
-    let (mut record, frame_urls) = {
-        let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        let record = meta
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == title)
-            .cloned();
-        let urls: HashMap<String, String> = meta
-            .miro
-            .auto
-            .frames
-            .iter()
-            .map(|frame| (frame.entry_point.clone(), frame.frame_url.clone()))
-            .collect();
-        (record, urls)
-    };
-    let Some(record) = record.take() else {
-        println!("  {} no recorded frame — deploy it once first", "note:".yellow());
-        return Ok(());
-    };
-    let mut record = record;
-    if record.node_positions.is_empty() {
-        println!(
-            "  {} this frame predates --refresh-links; deploy it once (full) to enable surgical refresh",
-            "note:".yellow()
-        );
-        return Ok(());
-    }
-
-    let current_screens: HashSet<&str> = nodes
-        .iter()
-        .filter(|node| node.kind == NodeKind::Screenshot)
-        .map(|node| node.id.as_str())
-        .collect();
-    let old_images: HashMap<String, String> = record.images.iter().cloned().collect();
-    let positions: HashMap<String, (f64, f64)> = record
-        .node_positions
-        .iter()
-        .map(|(id, x, y)| (id.clone(), (*x, *y)))
-        .collect();
-    let mut callee_conns: HashMap<String, Vec<String>> =
-        record.callee_connectors.iter().cloned().collect();
-    let already_carded: HashSet<String> =
-        record.link_cards.iter().map(|(id, _, _)| id.clone()).collect();
-
-    // Nodes that USED to be screenshots but are gone now (linked away / removed).
-    // Skip link-card entries (their `\0link{n}` id is a throwaway and they must be
-    // kept) and anything we've already carded.
-    let removed: Vec<String> = old_images
-        .keys()
-        .filter(|id| {
-            !id.starts_with('\u{0}')
-                && !current_screens.contains(id.as_str())
-                && !already_carded.contains(*id)
-        })
-        .cloned()
-        .collect();
-    if removed.is_empty() {
-        println!("  {} nothing to refresh — no new frames to link", "note:".yellow());
-        return Ok(());
-    }
-
-    // Delete each removed screenshot and exactly its own arrows.
-    let mut deleted_ids: HashSet<String> = HashSet::new();
-    let mut tasks = tokio::task::JoinSet::new();
-    for node_id in &removed {
-        if let Some(image_id) = old_images.get(node_id) {
-            let client = client.clone();
-            let id = image_id.clone();
-            deleted_ids.insert(id.clone());
-            tasks.spawn(async move { client.delete_item(&id).await });
-        }
-        if let Some(ids) = callee_conns.remove(node_id) {
-            for id in ids {
-                deleted_ids.insert(id.clone());
-                // A connector or a marker — try both endpoints, best-effort.
-                let client_a = client.clone();
-                let a = id.clone();
-                tasks.spawn(async move { client_a.delete_connector(&a).await });
-                let client_b = client.clone();
-                let b = id.clone();
-                tasks.spawn(async move { client_b.delete_item(&b).await });
-            }
-        }
-    }
-    while tasks.join_next().await.is_some() {}
-
-    // Add a link card where each newly-linked callee used to sit, and one arrow
-    // from its caller's call line into the card.
-    let node_by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-    let dims: HashMap<&str, (u32, u32)> = record
-        .image_dims
-        .iter()
-        .map(|(id, w, h)| (id.as_str(), (*w, *h)))
-        .collect();
-    let mut new_cards: Vec<(String, String, String)> = Vec::new();
-    let mut added_conn_ids: Vec<String> = Vec::new();
-    for node in nodes.iter() {
-        let NodeKind::Link { .. } = &node.kind else {
-            continue;
-        };
-        // The original node id this card stands in for.
-        let original_id = node.label.replacen('.', "::", 1);
-        if already_carded.contains(&original_id) {
-            continue;
-        }
-        let Some(&(px, py)) = positions.get(&original_id) else {
-            continue;
-        };
-        let Some(caller_edge) = edges.iter().find(|edge| edge.to == node.id) else {
-            continue;
-        };
-        let target_url = frame_urls.get(&node.label).cloned().unwrap_or_default();
-        let card = client
-            .create_link_card(
-                &record.frame_id,
-                &node.label,
-                &target_url,
-                px,
-                py,
-                LINK_CARD_WIDTH,
-                LINK_CARD_HEIGHT,
-            )
-            .await
-            .change_context(EvmMiroError)?;
-
-        // Arrow from the caller's call line into the card.
-        if let (Some(caller_image), Some(caller_node), Some(&(_, caller_h))) = (
-            old_images.get(&caller_edge.from),
-            node_by_id.get(caller_edge.from.as_str()),
-            dims.get(caller_edge.from.as_str()),
-        ) {
-            let line_index = caller_edge.line_in_slice.saturating_sub(1) + PATH_HEADER_LINES;
-            let y_fraction = silicon::line_geometry(Some(caller_node.font_size))
-                .line_center_fraction(line_index, caller_h);
-            let style = ConnectorStyle {
-                stroke_color: DEPTH_COLORS[caller_node.depth % DEPTH_COLORS.len()].to_string(),
-                stroke_width: "8".to_string(),
-                dashed: false,
-                caption: None,
-                arrow: ArrowEnd::Start,
-            };
-            let conn = client
-                .create_connector(
-                    caller_image,
-                    RelativeAnchor::new(1.0, y_fraction),
-                    &card,
-                    RelativeAnchor::new(0.0, 0.5),
-                    style,
-                )
-                .await
-                .change_context(EvmMiroError)?;
-            added_conn_ids.push(conn.clone());
-            new_cards.push((original_id.clone(), card.clone(), conn));
-        } else {
-            new_cards.push((original_id.clone(), card.clone(), String::new()));
-        }
-    }
-
-    // Update the record: drop removed items, keep everything else exactly, add cards.
-    record
-        .images
-        .retain(|(node_id, _)| !removed.contains(node_id));
-    record.image_dims.retain(|(id, _, _)| !removed.contains(id));
-    record.node_positions.retain(|(id, _, _)| !removed.contains(id));
-    record.callee_connectors = callee_conns.into_iter().collect();
-    record.connector_ids.retain(|id| !deleted_ids.contains(id));
-    record.connector_ids.extend(added_conn_ids);
-    record.marker_ids.retain(|id| !deleted_ids.contains(id));
-    record.link_cards.extend(new_cards.iter().cloned());
-    // The card's own connector is owned by the card's original id, so a future
-    // refresh (or a full redeploy) cleans it up too.
-    for (original_id, _card, conn) in &new_cards {
-        if !conn.is_empty() {
-            record
-                .callee_connectors
-                .push((original_id.clone(), vec![conn.clone()]));
-        }
-    }
-    save_frame_record(&record)?;
-
-    println!(
-        "  {} refreshed: {} linked, {} removed (no re-render, layout untouched)",
-        "✓".green(),
-        new_cards.len(),
-        removed.len()
-    );
-    println!("  {}", record.frame_url.blue());
-    Ok(())
-}
-
-async fn recycle_recorded_frame(
-    title: &str,
-    client: &MiroClient,
-    keep_images: bool,
-) -> Result<Option<AutoDeployedFrame>> {
-    let record = {
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == title)
-            .cloned()
-    };
-    let Some(record) = record else {
-        return Ok(None);
-    };
-    let mut delete_tasks = tokio::task::JoinSet::new();
-    for id in record.connector_ids.clone() {
-        let client = client.clone();
-        delete_tasks.spawn(async move { client.delete_connector(&id).await });
-    }
-    // In a --refresh-links pass the screenshots are reused (repositioned), not
-    // re-rendered, so we keep them; only the connectors/markers/borders are redrawn.
-    let images = if keep_images {
-        Vec::new()
-    } else {
-        record.images.iter().map(|(_, id)| id.clone()).collect::<Vec<_>>()
-    };
-    let item_ids = record
-        .marker_ids
-        .iter()
-        .cloned()
-        .chain(record.border_ids.iter().cloned())
-        .chain(images);
-    for id in item_ids {
-        let client = client.clone();
-        delete_tasks.spawn(async move { client.delete_item(&id).await });
-    }
-    // Best-effort: drain the set, ignoring per-item failures (a hand-deleted
-    // item 404s and that is fine — the goal is an empty frame).
-    while delete_tasks.join_next().await.is_some() {}
-    // The frame itself is kept on purpose — only its contents are cleared.
-
-    let owner = title.to_string();
-    EvmBatMetadata::update_metadata(move |metadata| {
-        metadata
-            .miro
-            .auto
-            .frames
-            .retain(|frame| frame.entry_point != owner);
-    })
-    .change_context(EvmMiroError)?;
-    Ok(Some(record))
-}
-
-/// Completely remove a deployed frame from the board and the registry: its
-/// contents (connectors, markers, borders, images, link cards + their arrows) AND
-/// the frame shell itself, then drop its metadata entry. Best-effort per item (a
-/// hand-deleted item 404s, which is fine). Use it to clean up a frame that should
-/// never have been its own frame — e.g. a small helper that fragments the board.
-async fn undeploy_frame(title: &str, client: &MiroClient) -> Result<bool> {
-    let record = {
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == title)
-            .cloned()
-    };
-    let Some(record) = record else {
-        return Ok(false);
-    };
-    let mut tasks = tokio::task::JoinSet::new();
-    // Connectors (route/stub) and each link card's caller arrow.
-    for id in record
-        .connector_ids
-        .iter()
-        .cloned()
-        .chain(record.link_cards.iter().map(|(_, _, conn)| conn.clone()))
-        .filter(|id| !id.is_empty())
-    {
-        let client = client.clone();
-        tasks.spawn(async move { client.delete_connector(&id).await });
-    }
-    // Everything the frame actually holds. The recorded ids follow, but they are no longer
-    // the source of truth: a cut-and-paste rewrites every one of them, and a shape carries no
-    // title to be recognised by, so only the board knows what is really in there.
-    let live_children: Vec<String> = client
-        .frame_children(
-            &record.frame_id,
-            (record.x, record.y, record.width, record.height),
-        )
-        .await
-        .map(|children| children.into_iter().map(|child| child.id).collect())
-        .unwrap_or_default();
-    for id in live_children {
-        let client = client.clone();
-        tasks.spawn(async move { client.delete_item(&id).await });
-    }
-
-    // Items: markers, borders, screenshots, link cards.
-    for id in record
-        .marker_ids
-        .iter()
-        .cloned()
-        .chain(record.border_ids.iter().cloned())
-        .chain(record.images.iter().map(|(_, id)| id.clone()))
-        .chain(record.link_cards.iter().map(|(_, card, _)| card.clone()))
-        .chain(record.screenshots.iter().map(|shot| shot.item_id.clone()))
-        .filter(|id| !id.is_empty())
-    {
-        let client = client.clone();
-        tasks.spawn(async move { client.delete_item(&id).await });
-    }
-    while tasks.join_next().await.is_some() {}
-    // The frame shell last, once it is empty.
-    let _ = client.delete_item(&record.frame_id).await;
-
-    let owner = title.to_string();
-    EvmBatMetadata::update_metadata(move |metadata| {
-        metadata
-            .miro
-            .auto
-            .frames
-            .retain(|frame| frame.entry_point != owner);
-    })
-    .change_context(EvmMiroError)?;
-    Ok(true)
-}
-
 /// Store what a deployment owns, replacing any earlier record for the same
 /// entry point.
 pub(crate) fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
@@ -2278,13 +1666,12 @@ fn build_graph(
 ) -> Result<(
     Vec<GraphNode>,
     Vec<GraphEdge>,
-    usize,
     Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall>,
 )> {
     let Some((root_contract, root_function)) =
         find_function(metadata, contract_name, root_file, function_name, None)
     else {
-        return Ok((Vec::new(), Vec::new(), 0, Vec::new()));
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
     };
 
     // Method name → in-scope, non-stub contracts that directly define it, built
@@ -2292,9 +1679,7 @@ fn build_graph(
     // of scanning every contract each time.
     let mut definer_map: HashMap<String, Vec<String>> = HashMap::new();
     for contract in &metadata.contracts {
-        if (contract.external && !options.include_external)
-            || contract.contract_type == EvmContractType::Interface
-        {
+        if contract.contract_type == EvmContractType::Interface {
             continue;
         }
         for function in &contract.functions {
@@ -2309,10 +1694,7 @@ fn build_graph(
 
     // Whether a call changes state is a fact about the code, so the reachability walk
     // always crosses into `lib/` — independently of whether this deploy draws it.
-    let write_options = AutoDeployOptions {
-        include_external: true,
-        ..options.clone()
-    };
+    let write_options = options.clone();
     let mut write_definer_map: HashMap<String, Vec<String>> = HashMap::new();
     for contract in &metadata.contracts {
         if contract.contract_type == EvmContractType::Interface {
@@ -2331,7 +1713,6 @@ fn build_graph(
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
-    let mut truncated = 0usize;
     // Interface calls in this tree still needing an AI resolution (see `resolve`).
     // Reads through an interface cast with several in-scope implementations, left out of
     // the graph: `(interface, method) → (candidates, call locations)`, printed once each.
@@ -2388,9 +1769,6 @@ fn build_graph(
     }];
 
     while let Some(current) = stack.pop() {
-        if options.max_depth.is_some_and(|limit| current.depth >= limit) {
-            continue;
-        }
         // The contract that defines the function, which is where its source is.
         // Pin the exact overload by line so a re-read never drifts to a sibling.
         let Some((contract, function)) =
@@ -2432,10 +1810,6 @@ fn build_graph(
             else {
                 continue;
             };
-            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
-                truncated += 1;
-                continue;
-            }
             let line_in_slice = slice
                 .iter()
                 .position(|line| line_has_token(line, modifier_name))
@@ -2590,10 +1964,6 @@ fn build_graph(
             if target_id == current.node_id {
                 continue; // a function calling itself needs no arrow
             }
-            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
-                truncated += 1;
-                continue;
-            }
 
             edges.push(GraphEdge {
                 from: current.node_id.clone(),
@@ -2647,11 +2017,7 @@ fn build_graph(
                 .position(|line| line.contains('{'))
                 .unwrap_or(0);
             for (base, constructor) in base_constructors(metadata, contract) {
-                if !options.include_external && base.external {
-                    continue;
-                }
-                if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
-                    truncated += 1;
+                if false {
                     continue;
                 }
                 // Anchor on the header token naming the base when it is invoked there;
@@ -2747,7 +2113,7 @@ fn build_graph(
             let Some((tc, tf)) = destub(metadata, (tc, tf), options) else {
                 continue;
             };
-            if !options.include_external && tc.external {
+            if false {
                 continue;
             }
             let target_id = overload_node_key(tc, &tf);
@@ -2761,10 +2127,6 @@ fn build_graph(
                     .iter()
                     .any(|edge| edge.from == current.node_id && edge.to == target_id)
             {
-                continue;
-            }
-            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
-                truncated += 1;
                 continue;
             }
             let line_in_slice = slice
@@ -2912,7 +2274,7 @@ fn build_graph(
         );
     }
 
-    Ok((nodes, edges, truncated, unresolved))
+    Ok((nodes, edges, unresolved))
 }
 
 /// Transitively collect every unresolved interface call reachable from `seed`,
@@ -3411,7 +2773,7 @@ fn resolve_call<'a>(
     options: &AutoDeployOptions,
     definer_map: &HashMap<String, Vec<String>>,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
-    let keep = |contract: &ContractMetadata| options.include_external || !contract.external;
+    let keep = |_contract: &ContractMetadata| true;
 
     let (target_name, method) = match call_name.split_once('.') {
         Some((target, method)) => (Some(target), method),
@@ -3536,7 +2898,7 @@ fn resolve_cast<'a>(
     arg_count: Option<usize>,
     options: &AutoDeployOptions,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
-    let keep = |contract: &ContractMetadata| options.include_external || !contract.external;
+    let keep = |_contract: &ContractMetadata| true;
     let typed = metadata.contract_in_scope(type_name, &caller_contract.file_path)?;
 
     if typed.contract_type != EvmContractType::Interface {
@@ -3624,7 +2986,7 @@ fn destub<'a>(
     if !function.is_stub {
         return Some((contract, function));
     }
-    let keep = |c: &ContractMetadata| options.include_external || !c.external;
+    let keep = |_c: &ContractMetadata| true;
     let mut overrides: Vec<(&'a ContractMetadata, FunctionMetadata)> = Vec::new();
     for impl_name in implementations_of(metadata, &contract.name) {
         if impl_name == contract.name {
@@ -5149,15 +4511,12 @@ async fn ensure_target_frames(
 
     let mut resolved = HashMap::new();
     for (target, target_file) in wanted {
-        // Reuse a frame only if it is genuinely reusable: in --redeploy we skip any
-        // frame that belongs to the OLD cluster (a stale id) so it is drawn fresh,
-        // but still reuse frames created earlier in THIS run (their new ids aren't
-        // stale) so a helper shared inside the cluster is drawn once.
-        let reusable = if cluster.fresh {
-            // Reuse ONLY a frame created earlier in THIS run for THIS cluster
-            // (cluster_root == root AND a fresh, non-stale id). Anything else — the
-            // old cluster, or a frame from another entry point's deploy — is drawn
-            // fresh, so the cluster is fully self-contained in its clean zone.
+        // Reuse ONLY a frame created earlier in THIS run for THIS cluster
+        // (cluster_root == root AND a fresh, non-stale id). Anything else — the old
+        // cluster, or a frame from another entry point's deploy — is drawn fresh, so
+        // the cluster is fully self-contained in its clean zone and a helper shared
+        // inside it is still drawn once.
+        let reusable = {
             let created_here = EvmBatMetadata::read_metadata().ok().is_some_and(|m| {
                 m.miro.auto.frames.iter().any(|f| {
                     f.entry_point == target
@@ -5170,8 +4529,6 @@ async fn ensure_target_frames(
             } else {
                 None
             }
-        } else {
-            live_frame_url(&target, Some(client)).await?
         };
         if let Some(url) = reusable {
             println!("  {} reuses its frame", target.blue());

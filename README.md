@@ -120,11 +120,9 @@ Useful flags, though none are needed:
 | `--dry-run` | print the computed layout without contacting Miro |
 | `--with-documentation` | start each screenshot at the function's NatSpec, so the documented intent rides along with the code |
 | `--preview <path>` | compose the frame locally as a PNG |
-| `--max-depth` / `--max-nodes` | bound a graph by hand; unset draws all of it |
 | `--stroke-width` | connector thickness in dp |
-| `--refresh-links` | after a callee gains its own frame, swap it for a link card in place — no re-render, no re-layout, your manual arrangement untouched |
-| `--undeploy` | remove this entry point's frame from the board and registry entirely (a helper that shouldn't be its own frame) |
-| `--fresh-frames` (a.k.a. `--redeploy`) | give this deploy its own frames: recycle nothing, link no pre-existing frame, draw the whole cluster fresh in a clean zone |
+| `--inline-all` | draw the whole graph in one frame: no branch is cut out |
+| `--allow-unresolved` | draw the partial graph instead of stopping to list unresolved interface calls |
 
 ### `sonar`
 
@@ -170,8 +168,8 @@ blocks on a gap.
 The image lands in free space below the frame's content, rendered exactly as `deploy` renders a
 function. The frame itself is never moved or resized — where it sits is your arrangement; a
 drawing with no room left goes to the bottom-left corner, and `--grow` extends the frame instead. There is deliberately no rule about what deserves
-to be drawn: that judgement is yours. It is a manual enrichment of one diagram, so a redeploy
-does not bring it back, and `--undeploy` cleans it up with the frame.
+to be drawn: that judgement is yours. It is a manual enrichment of one diagram, so a later
+deploy draws a new cluster and does not bring it back; deleting the frame in Miro takes it along.
 
 ### `relink`
 

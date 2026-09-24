@@ -410,8 +410,8 @@ it. Either way the change appears once, never five times along the chain.
 A callee cut out to its own frame (a link card) counts as absent, so the caller marks the
 boundary and the other frame marks the change itself.
 
-Reachability is computed from the metadata call graph and always crosses into `lib/`, so it does
-not depend on `--include-external`. It does depend on interface resolutions: a call through an
+Reachability is computed from the metadata call graph and always crosses into `lib/`. It does
+depend on interface resolutions: a call through an
 interface you have not resolved (`bat-cli resolve`) stops the walk, so its writes stay invisible
 — which is one more reason to finish the resolution loop rather than deploy with
 `--allow-unresolved`.
@@ -435,13 +435,12 @@ bat-cli relink <entry point>                 # re-anchor by title
 bat-cli relink <entry point> --frame-url <url>   # when several frames share the title
 ```
 
-Never redeploy to fix this. A redeploy does fix the record, but it places the frame by
-auto-layout — the arrangement the auditor built is the thing being protected.
+Never deploy again to fix this. A deploy does write a correct record, but it draws a NEW cluster
+somewhere else — the arrangement the auditor built is the thing being protected.
 
 Link cards, connector markers and borders carry no title, so they cannot be recognised on a
-pasted copy; their ids are dropped from the record. Nothing is stranded by that: `--undeploy`
-deletes the frame's live children rather than the ids it once wrote down. `--refresh-links` on
-a re-anchored frame redraws its connectors instead of reusing them.
+pasted copy; their ids are dropped from the record. Nothing on the board is stranded by that: the
+frame and its items are still there, and deleting the frame in Miro takes its contents with it.
 
 ## When the auditor doesn't know what something is
 
@@ -473,8 +472,8 @@ bat-cli screenshot --file src/core/PriceFeed.sol --lines 36-44 --frame CvammALM.
   the bottom-left corner, overlapping, which is visible and one drag away; `--grow` extends the
   frame downwards instead. It is drawn the same way `deploy` draws a function, so
   it matches the rest of the diagram.
-- It is a manual enrichment of one diagram, not part of the call graph: a `--redeploy` does not
-  bring it back. `--undeploy` cleans it up with the frame.
+- It is a manual enrichment of one diagram, not part of the call graph: a later deploy draws a
+  new cluster and does not bring it back. Deleting the frame in Miro cleans it up with the frame.
 
 ## Interactive prompts — you cannot answer them
 
@@ -493,11 +492,11 @@ to scan.) So the AI-drivable setup is: the auditor runs `! bat-cli login` ONCE, 
 
 A bare `deploy` shows a fuzzy list: entry points first and marked `[entry point]`, then every
 other function, with `(deployed)` on what is already on the board — pass `--entry-point` to skip
-it. If that entry point is ALREADY on the board, `deploy` asks a yes/no before drawing a second
-frame — pass `--yes` to answer it and redeploy non-interactively.
+it. Deploying an entry point that is already on the board asks nothing and touches nothing that
+is there: it draws a NEW cluster in a clean zone and hands you the old frames' URLs to delete.
 
 Safe to run unattended: `init --yes`, `sonar`, `config` (no flag), `update --check`,
-`login --status`, `deploy --entry-point <X>` (add `--yes` to redeploy, or `--dry-run`).
+`login --status`, `deploy --entry-point <X>` (add `--dry-run` to see the layout first).
 
 ## deploy
 
@@ -506,8 +505,16 @@ bat-cli deploy                                        # fuzzy-pick (interactive)
 bat-cli deploy --entry-point Vault.deposit            # Contract.function, or a bare function name
 bat-cli deploy --entry-point Vault.deposit --dry-run  # print the layout, contact nothing
 bat-cli deploy --entry-point Vault.deposit --preview /tmp/frame.png
-bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only swap newly-framed callees
 ```
+
+**Every deploy is fresh.** It never recycles a frame and never links a frame that is already on
+the board: the entry point and every branch cut out of it are drawn again, together, in a clean
+region below everything else. That is the point — a diagram you are about to read should have its
+frames next to each other and drawn by the rules in force today, not scattered across the board by
+the deploys that happened to come before. Frames created earlier in the SAME run are still shared,
+so a helper called from two branches is drawn once. The previous cluster is not deleted (the API
+deletes one item at a time, and slowly): its still-live frame URLs are printed at the end so you
+can delete them with one click each in Miro, where a frame takes its contents with it.
 
 | flag | |
 |---|---|
@@ -515,36 +522,9 @@ bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only 
 | `--dry-run` | compute and print the layout, never touch Miro (no login needed) |
 | `--with-documentation` | start each screenshot at the function's NatSpec, so the documented intent is on the diagram |
 | `--preview <path>` | compose the frame locally as a PNG |
-| `--refresh-links` | incrementally swap callees that gained their own frame for link cards, WITHOUT re-deploying (see below) |
-| `--undeploy` | remove this entry point's frame from the board and registry entirely (frame, items, link cards, metadata) — to clean up a helper that should never have been its own frame |
-| `--max-depth <n>` / `--max-nodes <n>` | bound the graph by hand; unset draws all of it |
-| `--include-external` | include contracts coming from `lib/` |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
-| `--all` | every entry point at once — **discouraged**; it warns and asks first |
-| `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; it recycles the frame: same id, same centre) |
-| `--redeploy` (alias `--fresh-frames`) | give this deploy its OWN frames: recycle nothing, link no pre-existing frame, draw the whole cluster fresh in a clean zone (see below) |
-
-**Own frames — `--redeploy` / `--fresh-frames`.** The two names are the same flag. A plain deploy
-REUSES the board: it recycles this entry point's existing frame, and any callee that already has a
-frame of its own becomes a link card pointing at it. Pass `--fresh-frames` when you want the
-opposite — a self-contained cluster that ignores everything already there: nothing is recycled,
-nothing pre-existing is linked, every dependency is drawn again inside this cluster, and the whole
-thing lands in a clean region below the rest of the board. Frames created earlier in the SAME run
-are still shared, so a helper called twice is drawn once. The registry holds one frame per entry
-point, so the previous cluster's records are dropped and its still-live frame URLs are printed for
-you to delete with one click in Miro (the web UI deletes a frame with its contents; the API can't).
-Use it when a diagram has drifted — hand-moved boxes, half-deleted frames, links into frames you no
-longer trust — and you want one built from scratch instead of patched.
-
-**Incremental relink — `--refresh-links`.** After you've hand-arranged a deployed frame, giving one
-of its callees its own frame (by deploying that callee as an entry point) means the callee should
-become a link card in the parent. A plain redeploy would rebuild the whole frame and DESTROY your
-manual layout. `deploy --entry-point <fn> --refresh-links` instead updates ONLY what changed: for
-each callee that gained a frame since the last deploy it deletes that callee's screenshot + its
-connectors and drops a link card + one arrow in its place, leaving every other box, connector and
-your manual positioning untouched (no re-render, no re-layout). It's idempotent (re-running reports
-"nothing to refresh") and never deletes existing link cards. A frame first deployed by bat-cli <
-0.22.9 has no recorded box positions, so refresh will ask you to deploy it once (full) first.
+| `--inline-all` | draw the whole graph in ONE frame: no branch is cut out, every function is a screenshot |
+| `--allow-unresolved` | draw the partial graph instead of stopping to list unresolved interface calls |
 
 **Cross-contract resolution loop.** `deploy` follows the tree into other contracts, but a call on
 an interface-typed receiver (`$.borrowerOps.adjustPosition`) has a runtime-bound target it can't
@@ -570,9 +550,8 @@ unresolved list above and the deploy stops; if none can, it is a read, so the de
 **Any function can be deployed, not just an entry point.** A shared helper needs a frame of
 its own for anything else to point at, and is worth reading on its own terms. Named with
 `--entry-point`, that includes constructors, `fallback`/`receive`, and contracts under `lib/`
-(the interactive picker still hides `lib/` and constructors). A root under `lib/` turns on
-`--include-external` by itself — everything it calls is dependency code too, and without it the
-diagram would collapse to the root alone.
+(the interactive picker still hides `lib/` and constructors). Contracts under `lib/` are drawn
+like any other: if the code is in the repo, it is part of what runs.
 
 `--entry-point` accepts three forms: `function`, `Contract.function`, and
 `path/To.sol:Contract.function`. Several matches are narrowed without asking, in this order:
@@ -797,6 +776,23 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.11
+- **`deploy` is one command with six flags, and it is always fresh.** A deploy no longer recycles
+  the frame it finds, and no longer links a callee that already has a frame somewhere else: the
+  entry point and every branch cut out of it are drawn again, together, in a clean region. The
+  reason is that a recycled frame is not reproducible — what it drew depended on which frames
+  happened to exist and where they sat — while the diagram you are about to read wants its frames
+  next to each other and drawn by today's rules. The previous cluster's URLs are printed for
+  one-click deletion in Miro.
+- **Gone: `--redeploy`/`--fresh-frames` (now the only behaviour), `--recycle`, `--refresh-links`,
+  `--undeploy`, `--yes`, `--all`, `--max-depth`, `--max-nodes`.** Delete a frame in Miro yourself —
+  the web UI deletes it with its contents, which the API cannot do. `--max-depth`/`--max-nodes`
+  truncated the graph, which hides code from an audit; the frame is bounded by cutting branches
+  out to their own frames instead.
+- **`lib/` is always drawn.** `--include-external` is gone: if the code is in the repo it is part
+  of what runs, so a call into a vendored library is followed like any other.
+  _Re-read: workflow.md._
 
 ## 0.26.10
 - **`--fresh-frames`: deploy with its own frames, ignoring the board.** Nothing new happens — this
