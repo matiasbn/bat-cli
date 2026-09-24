@@ -124,6 +124,7 @@ Useful flags, though none are needed:
 | `--stroke-width` | connector thickness in dp |
 | `--refresh-links` | after a callee gains its own frame, swap it for a link card in place — no re-render, no re-layout, your manual arrangement untouched |
 | `--undeploy` | remove this entry point's frame from the board and registry entirely (a helper that shouldn't be its own frame) |
+| `--fresh-frames` (a.k.a. `--redeploy`) | give this deploy its own frames: recycle nothing, link no pre-existing frame, draw the whole cluster fresh in a clean zone |
 
 ### `sonar`
 
@@ -171,6 +172,22 @@ function. The frame itself is never moved or resized — where it sits is your a
 drawing with no room left goes to the bottom-left corner, and `--grow` extends the frame instead. There is deliberately no rule about what deserves
 to be drawn: that judgement is yours. It is a manual enrichment of one diagram, so a redeploy
 does not bring it back, and `--undeploy` cleans it up with the frame.
+
+### `relink`
+
+Dragging a frame in Miro keeps its id; cutting and pasting it gives the frame and every child a
+new one, which orphans bat-cli's record of it. `deploy` and `screenshot` now find the frame by
+its title and repair the record themselves. When several frames share a title they stop and list
+them, and `relink` settles it:
+
+```bash
+bat-cli relink --check                            # what moved since it was deployed
+bat-cli relink <entry point>                      # re-anchor by title
+bat-cli relink <entry point> --frame-url <url>    # choose, when the title is ambiguous
+```
+
+Redeploying also fixes the record, but it places the frame by auto-layout — which throws away
+the arrangement you built.
 
 ### `config`
 

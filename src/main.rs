@@ -160,11 +160,14 @@ enum BatCommands {
         /// only (and how Miro handles it).
         #[arg(long)]
         inline_all: bool,
-        /// Redeploy the whole cluster FRESH into a clean zone: reuse nothing already
-        /// on the board (not even this entry point's own previous frames), and print
-        /// the previous cluster's frame URLs so you can delete them with one click in
-        /// Miro (the web UI deletes a frame with its contents; the API can't/is slow).
-        #[arg(long)]
+        /// Give this deploy its OWN frames and ignore every frame already on the
+        /// board: the entry point's own previous frame is not recycled and no
+        /// pre-existing frame is linked, so the whole cluster (entry point + every
+        /// dependency frame) is drawn fresh in a clean zone; only frames created
+        /// within this same run are shared. The previous cluster's frame URLs are
+        /// printed at the end so you can delete them with one click in Miro (the web
+        /// UI deletes a frame with its contents; the API can't/is slow).
+        #[arg(long, visible_alias = "fresh-frames")]
         redeploy: bool,
     },
     /// Draw one declaration's source onto a frame that is already on the board.
@@ -191,6 +194,21 @@ enum BatCommands {
         /// frame is left exactly as the auditor arranged it
         #[arg(long)]
         grow: bool,
+    },
+    /// Point a deployed frame's record at the frame that is actually on the board.
+    ///
+    /// Cutting and pasting a frame in Miro gives every widget a new id, orphaning the
+    /// registry; the titles survive, so the record can be rebuilt without redeploying
+    /// (which would place the frame by auto-layout, losing your arrangement).
+    Relink {
+        /// Entry point naming the frame. Omit it (or pass --check) to review the registry.
+        entry_point: Option<String>,
+        /// The frame's Miro link, when several frames share the title.
+        #[arg(long = "frame-url", value_name = "URL")]
+        frame_url: Option<String>,
+        /// Report which records still match the board instead of changing anything.
+        #[arg(long)]
+        check: bool,
     },
     /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
     /// interface call to its concrete implementation. `deploy` stops and lists what to
@@ -316,6 +334,17 @@ impl BatCommands {
             )
             .await
             .change_context(CommandError),
+            BatCommands::Relink {
+                entry_point,
+                frame_url,
+                check,
+            } => crate::batbelt::evm::miro::auto_deploy::run_relink(
+                entry_point.clone(),
+                frame_url.clone(),
+                *check,
+            )
+            .await
+            .change_context(CommandError),
             BatCommands::Resolve {
                 interface,
                 contract,
@@ -340,6 +369,7 @@ impl BatCommands {
             BatCommands::Sonar => false,
             BatCommands::Deploy { .. }
             | BatCommands::Screenshot { .. }
+            | BatCommands::Relink { .. }
             | BatCommands::Resolve { .. } => true,
         };
 

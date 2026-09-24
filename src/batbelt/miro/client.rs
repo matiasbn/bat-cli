@@ -51,6 +51,20 @@ pub struct MiroClient {
 
 /// A frame as returned by the board.
 #[derive(Debug, Clone)]
+pub struct FrameChild {
+    pub id: String,
+    /// What the item was created with: a screenshot carries its function's label, a shape
+    /// (link card, connector marker, border) carries nothing.
+    pub title: String,
+    pub kind: String,
+    /// Frame-local: origin at the frame's top-left, x/y the item's centre.
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone)]
 pub struct BoardFrame {
     pub id: String,
     pub title: String,
@@ -657,7 +671,7 @@ impl MiroClient {
         &self,
         frame_id: &str,
         frame: (f64, f64, f64, f64),
-    ) -> Result<Vec<(f64, f64, f64, f64)>, MiroError> {
+    ) -> Result<Vec<FrameChild>, MiroError> {
         let (frame_x, frame_y, frame_width, frame_height) = frame;
         let mut children = Vec::new();
         let mut cursor: Option<String> = None;
@@ -697,7 +711,15 @@ impl MiroClient {
                             y - (frame_y - frame_height / 2.0),
                         )
                     };
-                    children.push((x, y, width, height));
+                    children.push(FrameChild {
+                        id: item["id"].as_str().unwrap_or_default().to_string(),
+                        title: item["data"]["title"].as_str().unwrap_or_default().to_string(),
+                        kind: item["type"].as_str().unwrap_or_default().to_string(),
+                        x,
+                        y,
+                        width,
+                        height,
+                    });
                 }
             }
 

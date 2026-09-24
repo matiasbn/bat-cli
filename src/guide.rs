@@ -374,6 +374,7 @@ ls Bat.toml BatMetadata.json 2>/dev/null; bat-cli --version
 | `bat-cli config` | show the machine preferences (`--edit` re-answers them) | only with `--edit` |
 | `bat-cli update` | install the latest crates.io version (`--check`, `--force`) | no |
 | `bat-cli screenshot` | draw one declaration's source onto a frame already on the board | no |
+| `bat-cli relink` | re-point a frame's record at the frame on the board, after a cut and paste | no |
 
 Machine-wide state lives in `~/.config/bat-cli/` — `config.toml` (auditor name, code editor),
 `miro.toml` (the OAuth credentials, `0600`) and `ai_context/` (this guide). Override the
@@ -417,6 +418,30 @@ interface you have not resolved (`bat-cli resolve`) stops the walk, so its write
 
 `deploy --dry-run` prints a `state` column (`write` for a direct assignment, `→write` for one
 reached through a call) and lists every call line that reaches a state change.
+
+## When a frame's record no longer matches the board
+
+Dragging a frame in Miro keeps its id; **cutting and pasting it (or duplicating it) gives the
+frame and every child a new one**, which orphans the registry — and nothing about the two
+gestures looks different to whoever is arranging the board.
+
+This heals itself: when the recorded id is gone, `deploy` and `screenshot` look for a frame
+titled `auto: <entry point>` and rebuild the record from it, matching each screenshot by the
+title it carries. You only step in when the answer is not obvious:
+
+```bash
+bat-cli relink --check                       # what the registry still matches, and what moved
+bat-cli relink <entry point>                 # re-anchor by title
+bat-cli relink <entry point> --frame-url <url>   # when several frames share the title
+```
+
+Never redeploy to fix this. A redeploy does fix the record, but it places the frame by
+auto-layout — the arrangement the auditor built is the thing being protected.
+
+Link cards, connector markers and borders carry no title, so they cannot be recognised on a
+pasted copy; their ids are dropped from the record. Nothing is stranded by that: `--undeploy`
+deletes the frame's live children rather than the ids it once wrote down. `--refresh-links` on
+a re-anchored frame redraws its connectors instead of reusing them.
 
 ## When the auditor doesn't know what something is
 
@@ -497,6 +522,19 @@ bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only 
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
 | `--all` | every entry point at once — **discouraged**; it warns and asks first |
 | `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; it recycles the frame: same id, same centre) |
+| `--redeploy` (alias `--fresh-frames`) | give this deploy its OWN frames: recycle nothing, link no pre-existing frame, draw the whole cluster fresh in a clean zone (see below) |
+
+**Own frames — `--redeploy` / `--fresh-frames`.** The two names are the same flag. A plain deploy
+REUSES the board: it recycles this entry point's existing frame, and any callee that already has a
+frame of its own becomes a link card pointing at it. Pass `--fresh-frames` when you want the
+opposite — a self-contained cluster that ignores everything already there: nothing is recycled,
+nothing pre-existing is linked, every dependency is drawn again inside this cluster, and the whole
+thing lands in a clean region below the rest of the board. Frames created earlier in the SAME run
+are still shared, so a helper called twice is drawn once. The registry holds one frame per entry
+point, so the previous cluster's records are dropped and its still-live frame URLs are printed for
+you to delete with one click in Miro (the web UI deletes a frame with its contents; the API can't).
+Use it when a diagram has drifted — hand-moved boxes, half-deleted frames, links into frames you no
+longer trust — and you want one built from scratch instead of patched.
 
 **Incremental relink — `--refresh-links`.** After you've hand-arranged a deployed frame, giving one
 of its callees its own frame (by deploying that callee as an entry point) means the callee should
@@ -576,7 +614,9 @@ it guards, so its writes count.
 
 **External-boundary markers.** A **dashed amber band** covers a line that calls an external
 contract with no in-scope source — an interface-typed receiver nothing in the repo implements
-(e.g. an ERC-20 by address), via a non-view method (from `unknown_external_calls`). It means the
+(e.g. an ERC-20 by address), via a non-view method (from `unknown_external_calls`) — **or a call
+that resolves only into `lib/`**, like `SafeERC20.safeTransferFrom(...)`, which moves tokens in a
+contract the repository does not contain. It means the
 flow leaves the audited code and the callee MIGHT mutate its own state — unverified, so it is
 deliberately distinct from the solid-red proven write. `view`/`pure` calls are never flagged.
 A function that makes such a call but writes no storage of its own also gets a **solid amber
@@ -757,6 +797,38 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.10
+- **`--fresh-frames`: deploy with its own frames, ignoring the board.** Nothing new happens — this
+  is the existing `--redeploy` under a name that says what it does. A plain deploy reuses the board
+  (it recycles this entry point's frame and turns an already-framed callee into a link card);
+  `deploy --entry-point <X> --fresh-frames` draws a self-contained cluster instead, recycling
+  nothing and linking no pre-existing frame. Reach for it when a diagram has drifted and you want
+  one built from scratch rather than patched. `--redeploy` keeps working and means exactly the same.
+  _Re-read: workflow.md._
+
+## 0.26.9
+- **A transfer through `lib/` is marked as the external boundary it is.**
+  `SafeERC20.safeTransferFrom(...)` — a library call written by name rather than on an
+  interface-typed receiver — passed through both nets: the scan counts `SafeERC20` as a known
+  contract, and the deploy drops it for living in `lib/`. So a line that moves tokens showed
+  nothing at all. Any call that resolves only into `lib/` and is not `view`/`pure` now gets the
+  amber boundary band, the same marking an unresolvable interface call gets.
+  _Re-read: workflow.md._
+
+## 0.26.8
+- **A frame that was cut and pasted no longer orphans its record.** Miro gives a pasted frame and
+  all its children new ids, and bat-cli reacted by DELETING the registry entry — so by the time
+  anyone noticed, the thing that would have let them repair it was already gone, and the only way
+  back was a redeploy that placed the frame by auto-layout instead of where the auditor had put
+  it. Now `deploy` and `screenshot` find the frame by its title and rebuild the record from the
+  board, matching each screenshot by the title it carries.
+- **`bat-cli relink`** re-anchors on demand: `--check` reviews the whole registry and says what
+  moved, `relink <entry point>` re-anchors by title, and `--frame-url <url>` picks one when
+  several frames share a title (the deploy stops and lists them rather than guessing).
+- **`--undeploy` deletes the frame's live children** instead of the ids it recorded, so a pasted
+  frame is still cleaned up completely.
+  _Re-read: workflow.md._
 
 ## 0.26.7
 - **No amber on a call the diagram follows into the repo.** An interface declared next to its

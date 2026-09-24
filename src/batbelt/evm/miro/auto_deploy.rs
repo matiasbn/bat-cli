@@ -2069,6 +2069,22 @@ async fn undeploy_frame(title: &str, client: &MiroClient) -> Result<bool> {
         let client = client.clone();
         tasks.spawn(async move { client.delete_connector(&id).await });
     }
+    // Everything the frame actually holds. The recorded ids follow, but they are no longer
+    // the source of truth: a cut-and-paste rewrites every one of them, and a shape carries no
+    // title to be recognised by, so only the board knows what is really in there.
+    let live_children: Vec<String> = client
+        .frame_children(
+            &record.frame_id,
+            (record.x, record.y, record.width, record.height),
+        )
+        .await
+        .map(|children| children.into_iter().map(|child| child.id).collect())
+        .unwrap_or_default();
+    for id in live_children {
+        let client = client.clone();
+        tasks.spawn(async move { client.delete_item(&id).await });
+    }
+
     // Items: markers, borders, screenshots, link cards.
     for id in record
         .marker_ids
@@ -2402,6 +2418,8 @@ fn build_graph(
         // Lines in THIS function whose call reaches a storage write, collected while the
         // calls are resolved and written back onto the node once the loop is done.
         let mut caller_write_calls: Vec<(usize, String, String)> = Vec::new();
+        // Lines whose call leaves the drawn graph towards `lib/` code that can mutate.
+        let mut lib_boundary_lines: Vec<usize> = Vec::new();
 
         // Modifiers count as dependencies; their call site is the line of the
         // signature where the modifier name appears.
@@ -2500,6 +2518,28 @@ fn build_graph(
                 // - if none can, it is a read — stopping a deploy for every
                 //   `IERC20(token).balanceOf` is the noise the scan already prunes — so
                 //   say it was left out and how to bring it in, and carry on.
+                // A call that resolves only because `lib/` was allowed in: the target is
+                // dependency code this frame does not draw. A non-view one can change state
+                // (`SafeERC20.safeTransferFrom` moves tokens), and it is invisible otherwise
+                // — the write happens in a contract that is not even in the repository.
+                if let Some((lib_contract, lib_function)) = resolve_call(
+                    metadata,
+                    contract,
+                    &call.name,
+                    arity,
+                    &write_options,
+                    &write_definer_map,
+                ) {
+                    let read_only = matches!(
+                        lib_function.mutability,
+                        crate::batbelt::evm::types::EvmMutability::View
+                            | crate::batbelt::evm::types::EvmMutability::Pure
+                    );
+                    if lib_contract.external && !read_only {
+                        lib_boundary_lines.push(function.line + call.line - 1);
+                    }
+                }
+
                 if let Some((receiver, method)) = call.name.split_once('.') {
                     if let Some(type_name) = receiver.strip_suffix("()") {
                         let candidates = cast_implementations(
@@ -2791,7 +2831,7 @@ fn build_graph(
         // Calls to external contracts with no in-scope source: flag the lines that
         // reach a non-view method (a `view`/`pure` one is compiler-guaranteed not to
         // mutate, so it is never a state-change risk). Located on the caller's node.
-        let mut external_lines: Vec<usize> = Vec::new();
+        let mut external_lines: Vec<usize> = std::mem::take(&mut lib_boundary_lines);
         for uec in &function.unknown_external_calls {
             let read_only = find_function(
                 metadata,
@@ -5180,24 +5220,301 @@ async fn ensure_target_frames(
 /// one read and turns "you already deployed this" into something true, rather
 /// than a refusal to redeploy what is no longer there. A stale entry is dropped
 /// on the way past, so the question is only asked once.
-async fn live_frame_url(title: &str, client: Option<&MiroClient>) -> Result<Option<String>> {
+/// `bat-cli relink`: point a record at the frame it belongs to, or report the drift.
+///
+/// Arranging a board is part of reading it, and cutting a frame and pasting it elsewhere gives
+/// every widget a new id — so the registry ends up describing frames that no longer exist,
+/// while the frames themselves are right there under the same titles. Deploying again would
+/// fix the record and lose the arrangement, which is the wrong trade.
+pub async fn run_relink(
+    entry_point: Option<String>,
+    frame_url: Option<String>,
+    check: bool,
+) -> Result<()> {
+    let client = MiroClient::new_refreshed()
+        .await
+        .change_context(EvmMiroError)?;
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+
+    if check || entry_point.is_none() {
+        let frames = client.list_frames().await.change_context(EvmMiroError)?;
+        let mut alive = 0usize;
+        let mut fixable: Vec<(String, usize)> = Vec::new();
+        let mut gone: Vec<String> = Vec::new();
+        for record in &metadata.miro.auto.frames {
+            if frames.iter().any(|frame| frame.id == record.frame_id) {
+                alive += 1;
+                continue;
+            }
+            let wanted = format!("auto: {}", record.entry_point);
+            let matches = frames.iter().filter(|frame| frame.title == wanted).count();
+            if matches == 0 {
+                gone.push(record.entry_point.clone());
+            } else {
+                fixable.push((record.entry_point.clone(), matches));
+            }
+        }
+        println!("{} frame(s) recorded, {alive} still where the registry says", metadata.miro.auto.frames.len());
+        for (entry_point, matches) in &fixable {
+            if *matches == 1 {
+                println!(
+                    "  {} {} moved — {} re-anchors it",
+                    "↻".yellow(),
+                    entry_point,
+                    format!("bat-cli relink {entry_point}").green()
+                );
+            } else {
+                println!(
+                    "  {} {} has {matches} frames with its title — {} picks one",
+                    "?".yellow(),
+                    entry_point,
+                    format!("bat-cli relink {entry_point} --frame-url <url>").green()
+                );
+            }
+        }
+        for entry_point in &gone {
+            println!("  {} {} is not on the board at all", "✗".red(), entry_point);
+        }
+        if fixable.is_empty() && gone.is_empty() {
+            println!("  {} nothing to relink", "✓".green());
+        }
+        return Ok(());
+    }
+
+    let entry_point = entry_point.expect("checked above");
     let Some(record) = metadata
         .miro
         .auto
         .frames
         .iter()
-        .find(|frame| frame.entry_point == title)
+        .find(|frame| frame.entry_point == entry_point)
+        .cloned()
     else {
+        return Err(Report::new(EvmMiroError)
+            .attach_printable(format!("no frame recorded for `{entry_point}`"))
+            .attach(crate::Suggestion(
+                "run `bat-cli relink --check` to see what is recorded".to_string(),
+            )));
+    };
+
+    // Named frame: take the widget id straight out of the URL the board hands out.
+    if let Some(url) = frame_url {
+        let Some(id) = url
+            .split("moveToWidget=")
+            .nth(1)
+            .map(|rest| rest.split(['&', '#']).next().unwrap_or(rest).to_string())
+        else {
+            return Err(Report::new(EvmMiroError)
+                .attach_printable(format!("no `moveToWidget=` id in `{url}`"))
+                .attach(crate::Suggestion(
+                    "copy the frame's link from Miro (right-click → Copy link)".to_string(),
+                )));
+        };
+        let frames = client.list_frames().await.change_context(EvmMiroError)?;
+        let Some(frame) = frames.iter().find(|frame| frame.id == id) else {
+            return Err(Report::new(EvmMiroError)
+                .attach_printable(format!("no frame with id {id} on this board")));
+        };
+        let record = rebuild_record(record, frame, &client).await?;
+        println!(
+            "{} {} → {}",
+            "✓".green(),
+            entry_point.bold(),
+            record.frame_url.blue()
+        );
+        return Ok(());
+    }
+
+    match reanchor_frame(&entry_point, &client).await? {
+        Some(record) => {
+            println!(
+                "{} {} → {}",
+                "✓".green(),
+                entry_point.bold(),
+                record.frame_url.blue()
+            );
+            Ok(())
+        }
+        None => Err(Report::new(EvmMiroError)
+            .attach_printable(format!(
+                "no frame titled `auto: {entry_point}` on the board"
+            ))
+            .attach(crate::Suggestion(
+                "pass --frame-url <url> if it was renamed, or deploy it again".to_string(),
+            ))),
+    }
+}
+
+/// The label a node's screenshot was uploaded with, which is what survives on the board.
+///
+/// Node ids are `Contract::function` (plus `@line` when the name is overloaded); the image's
+/// title is the dotted `Contract.function`. A link card has neither — it is a shape, and the
+/// board keeps no title for it, so it cannot be recognised after a paste.
+fn label_for_node(node_id: &str) -> Option<String> {
+    if node_id.starts_with('\u{0}') {
+        return None;
+    }
+    let base = node_id.split('@').next().unwrap_or(node_id);
+    Some(base.replace("::", "."))
+}
+
+/// Re-point a frame's record at the copy that is actually on the board.
+///
+/// Cutting and pasting a frame in Miro gives it and every child a NEW id, which orphans the
+/// registry — and dragging does not, so the difference is invisible to whoever is arranging
+/// the board. The paste keeps the titles, though: the frame is still `auto: <entry point>`
+/// and each screenshot still carries its function's label, so the record can be rebuilt from
+/// what is there.
+///
+/// Shapes cannot: link cards, connector markers and borders carry no title. Their recorded
+/// ids are dropped, which is safe because `undeploy` deletes the frame's live children rather
+/// than the ids it once wrote down.
+async fn reanchor_frame(
+    title: &str,
+    client: &MiroClient,
+) -> Result<Option<AutoDeployedFrame>> {
+    let record = {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+            .cloned()
+    };
+    let Some(record) = record else {
         return Ok(None);
     };
-    let (frame_id, url) = (record.frame_id.clone(), record.frame_url.clone());
 
-    let Some(client) = client else {
-        return Ok(Some(url));
+    let wanted = format!("auto: {title}");
+    let frames = client.list_frames().await.change_context(EvmMiroError)?;
+    let candidates: Vec<_> = frames.iter().filter(|frame| frame.title == wanted).collect();
+
+    match candidates.len() {
+        0 => Ok(None),
+        // A duplicated frame (or a paste whose original is still there) makes this a
+        // question about which one the auditor means, and that is theirs to answer.
+        _ if candidates.len() > 1 => Err(Report::new(EvmMiroError)
+            .attach_printable(format!(
+                "{} frames on the board are titled `{wanted}`:\n    {}",
+                candidates.len(),
+                candidates
+                    .iter()
+                    .map(|frame| client.frame_url(&frame.id))
+                    .collect::<Vec<_>>()
+                    .join("\n    ")
+            ))
+            .attach(crate::Suggestion(format!(
+                "pick one: `bat-cli relink {title} --frame-url <url>`"
+            )))),
+        _ => {
+            let frame = candidates[0];
+            let record = rebuild_record(record, frame, client).await?;
+            println!(
+                "  {} re-anchored {} to the frame now on the board (its id changed, so it was cut and pasted)",
+                "↻".yellow(),
+                title.bold()
+            );
+            Ok(Some(record))
+        }
+    }
+}
+
+/// Rewrite a record against a frame that is really on the board, matching every screenshot by
+/// the title it carries.
+async fn rebuild_record(
+    mut record: AutoDeployedFrame,
+    frame: &crate::batbelt::miro::client::BoardFrame,
+    client: &MiroClient,
+) -> Result<AutoDeployedFrame> {
+    let children = client
+        .frame_children(&frame.id, (frame.x, frame.y, frame.width, frame.height))
+        .await
+        .unwrap_or_default();
+    let by_title: HashMap<&str, &crate::batbelt::miro::client::FrameChild> = children
+        .iter()
+        .filter(|child| !child.title.is_empty())
+        .map(|child| (child.title.as_str(), child))
+        .collect();
+
+    let mut images = Vec::new();
+    let mut image_dims = Vec::new();
+    let mut node_positions = Vec::new();
+    for (node_id, _) in &record.images {
+        let Some(label) = label_for_node(node_id) else {
+            continue;
+        };
+        let Some(child) = by_title.get(label.as_str()) else {
+            continue;
+        };
+        images.push((node_id.clone(), child.id.clone()));
+        image_dims.push((node_id.clone(), child.width as u32, child.height as u32));
+        node_positions.push((node_id.clone(), child.x, child.y));
+    }
+    let screenshots = record
+        .screenshots
+        .iter()
+        .filter_map(|shot| {
+            by_title.get(shot.label.as_str()).map(|child| {
+                crate::batbelt::evm::metadata::bat_metadata::ExtraScreenshot {
+                    label: shot.label.clone(),
+                    item_id: child.id.clone(),
+                    x: child.x,
+                    y: child.y,
+                    width: child.width,
+                    height: child.height,
+                }
+            })
+        })
+        .collect();
+
+    record.frame_id = frame.id.clone();
+    record.frame_url = client.frame_url(&frame.id);
+    record.x = frame.x;
+    record.y = frame.y;
+    record.width = frame.width;
+    record.height = frame.height;
+    record.images = images;
+    record.image_dims = image_dims;
+    record.node_positions = node_positions;
+    record.screenshots = screenshots;
+    // Untitled items (link cards, markers, borders) and the connectors between them cannot be
+    // recognised on the pasted copy. Their old ids point at nothing, so drop them rather than
+    // keep a list that would delete items on somebody else's frame.
+    record.link_cards.clear();
+    record.callee_connectors.clear();
+    record.connector_ids.clear();
+    record.marker_ids.clear();
+    record.border_ids.clear();
+    save_frame_record(&record)?;
+    Ok(record)
+}
+
+/// The record for `title`, re-anchored if the board moved underneath it, or `None` when the
+/// frame really is gone (in which case the record is forgotten, as before).
+pub(crate) async fn ensure_frame_record(
+    title: &str,
+    client: &MiroClient,
+) -> Result<Option<AutoDeployedFrame>> {
+    let record = {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+            .cloned()
     };
-    if client.item_exists(&frame_id).await {
-        return Ok(Some(url));
+    let Some(record) = record else {
+        return Ok(None);
+    };
+    if client.item_exists(&record.frame_id).await {
+        return Ok(Some(record));
+    }
+    if let Some(reanchored) = reanchor_frame(title, client).await? {
+        return Ok(Some(reanchored));
     }
 
     println!(
@@ -5215,6 +5532,22 @@ async fn live_frame_url(title: &str, client: Option<&MiroClient>) -> Result<Opti
     })
     .change_context(EvmMiroError)?;
     Ok(None)
+}
+
+async fn live_frame_url(title: &str, client: Option<&MiroClient>) -> Result<Option<String>> {
+    let Some(client) = client else {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        return Ok(metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == title)
+            .map(|frame| frame.frame_url.clone()));
+    };
+    Ok(ensure_frame_record(title, client)
+        .await?
+        .map(|record| record.frame_url))
 }
 
 #[cfg(test)]
