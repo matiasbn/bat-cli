@@ -105,18 +105,6 @@ enum BatCommands {
         /// one from a list.
         #[arg(long)]
         entry_point: Option<String>,
-        /// Deploy every entry point at once. Not recommended: a real project
-        /// puts thousands of objects on the board, and review happens one entry
-        /// point at a time.
-        #[arg(long)]
-        all: bool,
-        /// Stop expanding the call graph past this depth. Unset follows it to
-        /// the end
-        #[arg(long)]
-        max_depth: Option<usize>,
-        /// Cap the screenshots per frame. Unset draws the whole tree
-        #[arg(long)]
-        max_nodes: Option<usize>,
         /// Print the computed layout without sending anything to Miro
         #[arg(long)]
         dry_run: bool,
@@ -124,51 +112,30 @@ enum BatCommands {
         /// diagram carries the documented intent next to the code
         #[arg(long = "with-documentation")]
         with_documentation: bool,
-        /// Include contracts coming from lib/
-        #[arg(long)]
-        include_external: bool,
         /// Write a local PNG preview of the composed frame to this path
         #[arg(long)]
         preview: Option<String>,
         /// Connector thickness in dp (1-24)
         #[arg(long, default_value_t = 8)]
         stroke_width: u32,
-        /// Answer the "already on the board — deploy again?" prompt with yes, so a
-        /// redeploy runs non-interactively (for scripts / AI). Builds a second frame.
-        #[arg(long)]
-        yes: bool,
+        /// Never draw this contract's functions: pass a contract name (`Math`) or any
+        /// part of a path (`openzeppelin-contracts/contracts/utils/math`). Repeatable.
+        /// The calls to it stay visible in the callers' screenshots — only its own
+        /// boxes are left out, which is how you thin a diagram full of a library you
+        /// already know. Deploy it as its own entry point when you do need to read it.
+        #[arg(long = "ignore-contract", value_name = "NAME_OR_PATH")]
+        ignore_contract: Vec<String>,
         /// Draw the frame even if some interface calls in the tree are unresolved,
         /// instead of stopping to list them. Downstream nodes behind those calls are
         /// simply omitted.
         #[arg(long)]
         allow_unresolved: bool,
-        /// Incremental refresh of an already-deployed frame: reuse its uploaded
-        /// screenshots (render only new ones), re-lay-out and redraw connectors, so
-        /// a callee that now has its own frame becomes a link card — without
-        /// re-rendering the whole frame.
-        #[arg(long)]
-        refresh_links: bool,
-        /// Remove the entry point's frame from the board and the registry entirely
-        /// (the frame, its screenshots/markers/borders, its link cards + arrows, and
-        /// its metadata entry) instead of deploying. Use it to clean up a small
-        /// helper that should never have been its own frame.
-        #[arg(long)]
-        undeploy: bool,
         /// Draw the whole call graph inline in ONE frame: never cut a branch out to
         /// its own frame, never link an already-deployed frame — every function is a
         /// screenshot. Use it to see how large a big function is with screenshots
         /// only (and how Miro handles it).
         #[arg(long)]
         inline_all: bool,
-        /// Give this deploy its OWN frames and ignore every frame already on the
-        /// board: the entry point's own previous frame is not recycled and no
-        /// pre-existing frame is linked, so the whole cluster (entry point + every
-        /// dependency frame) is drawn fresh in a clean zone; only frames created
-        /// within this same run are shared. The previous cluster's frame URLs are
-        /// printed at the end so you can delete them with one click in Miro (the web
-        /// UI deletes a frame with its contents; the API can't/is slow).
-        #[arg(long, visible_alias = "fresh-frames")]
-        redeploy: bool,
     },
     /// Draw one declaration's source onto a frame that is already on the board.
     ///
@@ -213,6 +180,18 @@ enum BatCommands {
     /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
     /// interface call to its concrete implementation. `deploy` stops and lists what to
     /// resolve; add them here, then deploy again. Stored in the metadata.
+    /// Never draw a contract's functions again (a library you have already read)
+    Ignore {
+        /// Contract name (`Math`) or any part of a path
+        /// (`openzeppelin-contracts/contracts/utils/math`). Omit to list.
+        pattern: Option<String>,
+        /// List what is ignored instead of adding one.
+        #[arg(long)]
+        list: bool,
+        /// Stop ignoring <pattern>.
+        #[arg(long)]
+        remove: bool,
+    },
     Resolve {
         /// Interface type to resolve, e.g. `IBorrowerOperations`.
         interface: Option<String>,
@@ -278,38 +257,24 @@ impl BatCommands {
             }
             BatCommands::Deploy {
                 entry_point,
-                all,
-                max_depth,
-                max_nodes,
                 dry_run,
                 with_documentation,
-                include_external,
                 preview,
                 stroke_width,
-                yes,
                 allow_unresolved,
-                refresh_links,
-                undeploy,
+                ignore_contract,
                 inline_all,
-                redeploy,
             } => {
                 crate::batbelt::evm::miro::auto_deploy::run(
                 crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
                     entry_point: entry_point.clone(),
-                    all: *all,
-                    max_depth: *max_depth,
-                    max_nodes: *max_nodes,
                     dry_run: *dry_run,
                     with_documentation: *with_documentation,
-                    include_external: *include_external,
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
-                    assume_yes: *yes,
                     allow_unresolved: *allow_unresolved,
-                    refresh_links: *refresh_links,
-                    undeploy: *undeploy,
+                    ignore_contracts: ignore_contract.clone(),
                     inline_all: *inline_all,
-                    redeploy: *redeploy,
                     },
                 )
                 .await
@@ -345,6 +310,11 @@ impl BatCommands {
             )
             .await
             .change_context(CommandError),
+            BatCommands::Ignore {
+                pattern,
+                list,
+                remove,
+            } => run_ignore(pattern.clone(), *list, *remove),
             BatCommands::Resolve {
                 interface,
                 contract,
@@ -370,7 +340,8 @@ impl BatCommands {
             BatCommands::Deploy { .. }
             | BatCommands::Screenshot { .. }
             | BatCommands::Relink { .. }
-            | BatCommands::Resolve { .. } => true,
+            | BatCommands::Resolve { .. }
+            | BatCommands::Ignore { .. } => true,
         };
 
         if check_metadata {
@@ -439,6 +410,45 @@ async fn run() -> CommandResult<()> {
 }
 
 /// `bat-cli resolve` — read/update the metadata's interface→contract resolutions.
+/// `bat-cli ignore` — the list of contracts a deploy never draws.
+///
+/// It is a reading decision, so it lives with the project (in `BatMetadata.json`,
+/// preserved across a re-scan) rather than being retyped on every deploy. The flag
+/// `deploy --ignore-contract` adds to this list for one run; what a deploy leaves
+/// out is the union of the two.
+fn run_ignore(pattern: Option<String>, list: bool, remove: bool) -> CommandResult<()> {
+    use crate::batbelt::evm::metadata::bat_metadata::EvmBatMetadata;
+    let mut md = EvmBatMetadata::read_metadata().change_context(CommandError)?;
+
+    if list || pattern.is_none() {
+        if md.ignored_contracts.is_empty() {
+            println!("nothing ignored yet.");
+        } else {
+            println!("never drawn:");
+            for pattern in &md.ignored_contracts {
+                println!("  {pattern}");
+            }
+        }
+        return Ok(());
+    }
+    let pattern = pattern.expect("checked above");
+
+    if remove {
+        md.ignored_contracts.retain(|existing| existing != &pattern);
+        md.save_metadata().change_context(CommandError)?;
+        println!("no longer ignoring {pattern}");
+        return Ok(());
+    }
+    if md.ignored_contracts.iter().any(|existing| existing == &pattern) {
+        println!("{pattern} is already ignored");
+        return Ok(());
+    }
+    md.ignored_contracts.push(pattern.clone());
+    md.save_metadata().change_context(CommandError)?;
+    println!("✓ {pattern} will not be drawn (deploy it as an entry point to read it)");
+    Ok(())
+}
+
 fn run_resolve(
     interface: Option<String>,
     contract: Option<String>,

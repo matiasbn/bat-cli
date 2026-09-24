@@ -105,17 +105,6 @@ impl GraphLayout {
     }
 }
 
-/// A slight per-node horizontal nudge inside a column (0 for a column too small to
-/// need it). Kept small and bounded so the frame barely widens — just enough that
-/// each box's incoming connector leaves from a distinct x.
-fn stagger_step(node_count: usize) -> f64 {
-    if node_count >= 3 {
-        (300.0 / (node_count - 1) as f64).min(50.0)
-    } else {
-        0.0
-    }
-}
-
 /// Lay out the dependency graph of a single entry point.
 ///
 /// Layers come from the **longest** path to the root, not the shortest: a helper
@@ -170,7 +159,6 @@ pub fn layout_graph(
             .iter()
             .map(|column| {
                 column_width(column, &by_id)
-                    + stagger_step(column.len()) * column.len().saturating_sub(1) as f64
             })
             .sum::<f64>()
             + sub_gutter * (layer_columns.len().saturating_sub(1)) as f64;
@@ -195,8 +183,6 @@ pub fn layout_graph(
         for column in layer_columns {
             let this_column_width = column_width(column, &by_id);
             let this_column_height = column_height(column, &by_id, config);
-            let stagger_step = stagger_step(column.len());
-            let stagger_span = stagger_step * column.len().saturating_sub(1) as f64;
             // Every layer starts at the TOP, not centred. A caller (tall entry point)
             // sits at the top-left; centring its callees would push them to the middle
             // of the frame, so arrows from the caller's top AND bottom call sites both
@@ -210,24 +196,17 @@ pub fn layout_graph(
                     Some(node) => *node,
                     None => continue,
                 };
-                // Stagger the column in x by vertical rank: the TOP box sits furthest
-                // RIGHT, the bottom box furthest LEFT. The caller is to the left, so an
-                // incoming connector to a lower box turns left sooner and one to a
-                // higher box runs further right before turning — the elbows nest with
-                // space between them instead of stacking on one x and crossing. Just
-                // moving the real screenshots, no invisible anchors.
-                let stagger_rank = column.len().saturating_sub(1).saturating_sub(rank);
                 placed.push(PlacedNode {
                     id: id.clone(),
                     layer: layer_index,
-                    x: column_x + stagger_rank as f64 * stagger_step + node.width / 2.0,
+                    x: column_x + node.width / 2.0,
                     y: y_cursor + node.height / 2.0,
                     width: node.width,
                     height: node.height,
                 });
                 y_cursor += node.height + config.gutter_y;
             }
-            column_x += this_column_width + stagger_span + sub_gutter;
+            column_x += this_column_width + sub_gutter;
         }
         layer_x += layer_widths[layer_index] + config.gutter_x;
     }
@@ -668,7 +647,13 @@ fn count_crossings(layers: &[Vec<String>], edges: &[LayoutEdge]) -> usize {
         }
     }
     // Group edges by the (upper) layer they leave, keeping (from_order, to_order).
-    let mut per_gap: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
+    // The from key carries the CALL LINE: an edge leaves its caller at the height of
+    // the call, not at a point, so two edges out of one caller cross whenever call
+    // order and callee order disagree. Keying on the integer slot alone made those
+    // pairs equal and therefore never counted — the metric was blind to the one
+    // defect a reader notices first, and the call-line order survived only as a
+    // tie-break that any gain elsewhere overrode.
+    let mut per_gap: HashMap<usize, Vec<(f64, f64)>> = HashMap::new();
     for edge in edges {
         let (Some(&(fl, fo)), Some(&(tl, to))) =
             (pos.get(edge.from.as_str()), pos.get(edge.to.as_str()))
@@ -678,7 +663,10 @@ fn count_crossings(layers: &[Vec<String>], edges: &[LayoutEdge]) -> usize {
         // Only count strictly adjacent forward edges; bend points make long edges
         // adjacent, so this covers the whole routed graph.
         if tl == fl + 1 {
-            per_gap.entry(fl).or_default().push((fo, to));
+            per_gap
+                .entry(fl)
+                .or_default()
+                .push((fo as f64 + edge.from_line_fraction, to as f64));
         }
     }
     let mut total = 0usize;
@@ -703,24 +691,27 @@ fn mean(values: &[f64]) -> Option<f64> {
     Some(values.iter().sum::<f64>() / values.len() as f64)
 }
 
-/// Stable sort by an optional key; nodes without a key keep their relative order
-/// at the end, so the layout stays deterministic run to run.
+/// Stable sort by an optional key, leaving the nodes that have NO key exactly where
+/// they are: only the keyed ones are re-ordered, among the slots they already hold.
+///
+/// A node with no neighbour on the side being swept has no opinion about where it
+/// belongs, and the previous version read that silence as "put it last". In a
+/// downward sweep every leaf is keyless, so a whole layer came out as "the callees
+/// that call something, then every leaf" — the order of the calls in the source was
+/// lost for exactly the nodes that were easiest to place.
 fn sort_layer<F>(layer: &mut [String], key_of: F)
 where
     F: Fn(&str) -> Option<f64>,
 {
-    let mut keyed: Vec<(Option<f64>, String)> = layer
+    let keys: Vec<Option<f64>> = layer.iter().map(|id| key_of(id.as_str())).collect();
+    let slots: Vec<usize> = (0..layer.len()).filter(|index| keys[*index].is_some()).collect();
+    let mut keyed: Vec<(f64, String)> = slots
         .iter()
-        .map(|id| (key_of(id.as_str()), id.clone()))
+        .map(|&index| (keys[index].unwrap_or_default(), layer[index].clone()))
         .collect();
-    keyed.sort_by(|a, b| match (a.0, b.0) {
-        (Some(left), Some(right)) => left.partial_cmp(&right).unwrap_or(std::cmp::Ordering::Equal),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => std::cmp::Ordering::Equal,
-    });
-    for (slot, (_, id)) in layer.iter_mut().zip(keyed.into_iter()) {
-        *slot = id;
+    keyed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    for (&slot, (_, id)) in slots.iter().zip(keyed.into_iter()) {
+        layer[slot] = id;
     }
 }
 

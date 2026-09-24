@@ -30,6 +30,7 @@ use crate::batbelt::miro::layout::{
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::silicon;
+use rand::seq::SliceRandom;
 use rayon::prelude::*;
 
 type Result<T> = error_stack::Result<T, EvmMiroError>;
@@ -49,6 +50,24 @@ const REGION_MARGIN: f64 = 5_000.0;
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
 const ANCHOR_MARKER_SIZE: f64 = 24.0;
+/// Horizontal distance between two arrows' vertical lanes in a gutter: five times the
+/// default 8dp stroke, so two arrows at full width still have four strokes of white
+/// between them. Narrowed automatically when a gutter cannot fit them all.
+const LANE_PITCH: f64 = 40.0;
+/// A frame's background when something in it changes state, and when something in it
+/// only might — the same red and amber as the per-node markings, several steps lighter.
+/// The job is to be legible from far enough out that a whole cluster fits on screen;
+/// up close the screenshots are what is being read, and a strong tint behind them
+/// competes with the code. Miro's own "light red" (`#ffc6c6`) is already too much.
+const FRAME_FILL_WRITES: &str = "#fff0ef";
+const FRAME_FILL_MAY_WRITE: &str = "#fff7ec";
+/// How many far callers may each get their OWN copy of a callee before it is given a
+/// frame instead. Copying is what removes a crossing arrow, and for a leaf it is
+/// cheap — but the cost is paid once per caller, so the same rule that keeps `sqrt`
+/// beside its two callers puts nine copies of a helper on a frame when nine callers
+/// reach it. Past this, one drawing in a frame of its own and a card beside each
+/// caller is both smaller and easier to read.
+const MAX_COPIES_OF_ONE_CALLEE: usize = 3;
 
 /// A bar that shows what is happening and how far along it is.
 ///
@@ -76,86 +95,52 @@ const DEPTH_COLORS: &[&str] = &[
 pub struct AutoDeployOptions {
     /// Deploy only this entry point (`name` or `Contract.name`).
     pub entry_point: Option<String>,
-    /// Deploy every entry point in the project.
-    pub all: bool,
-    /// Optional depth limit. Unset follows the tree until it ends, which it
-    /// does on its own: recursion is cut per path and the leaves are functions
-    /// that call nothing.
-    pub max_depth: Option<usize>,
-    /// Optional cap on screenshots per frame. Unset means draw the whole tree.
-    pub max_nodes: Option<usize>,
     /// Compute and print the layout without touching Miro.
     pub dry_run: bool,
     /// Extend each screenshot upward to include the function's NatSpec block, so
     /// the diagram carries the documented intent next to the code.
     pub with_documentation: bool,
-    /// Include contracts coming from `lib/`.
-    pub include_external: bool,
     /// Compose a local preview PNG of the frame at this path.
     pub preview: Option<String>,
     /// Connector thickness in dp, 1 to 24. Miro's UI snaps this to its own
     /// preset levels, so 12 lands on roughly "level 5".
     pub stroke_width: u32,
-    /// Skip the "already on the board — deploy again?" confirmation (assume yes),
-    /// so a redeploy runs non-interactively.
-    pub assume_yes: bool,
     /// Draw the partial graph even when interface calls in the tree are unresolved,
     /// instead of stopping to list them.
     pub allow_unresolved: bool,
-    /// Incremental refresh: reuse the frame's already-uploaded screenshots (only
-    /// render ones that are new), re-lay-out, and redraw connectors — so a callee
-    /// that has since gained its own frame becomes a link card without the whole
-    /// frame being re-rendered. Requires the entry point to already have a frame.
-    pub refresh_links: bool,
-    /// Remove the entry point's frame from the board and the registry entirely
-    /// (frame shell, all its items, its link cards + arrows, and its metadata
-    /// entry) instead of deploying. Cleans up a frame that should never have been
-    /// its own — e.g. a small helper fragmenting the board.
-    pub undeploy: bool,
+    /// Contracts whose functions are never drawn: a name (`Math`) or any part of a
+    /// path (`openzeppelin-contracts/contracts/utils/math`). The call is still shown
+    /// in the caller's screenshot — it is the callee's box that is left out.
+    pub ignore_contracts: Vec<String>,
     /// Draw the ENTIRE call graph inline in one frame: no branch is cut to its own
     /// frame, and no already-deployed frame is linked — every function is a
     /// screenshot. Lets you see how big a large function is with screenshots only
     /// (and how Miro copes), and gives a step-through-able single frame.
     pub inline_all: bool,
-    /// Redeploy from scratch into a CLEAN zone: deploy the whole cluster (the entry
-    /// point and every dependency frame) FRESH, reusing nothing already on the board
-    /// (not even this entry point's own previous frames), and at the end print the
-    /// URLs of the PREVIOUS cluster's frames so you can delete them with one click in
-    /// Miro (the web UI deletes a frame and its contents together; the API can't).
-    /// Deleting is slow and one-by-one via the API, so this hands that back to you.
-    pub redeploy: bool,
 }
 
 impl Default for AutoDeployOptions {
     fn default() -> Self {
         Self {
             entry_point: None,
-            all: false,
-            max_depth: None,
-            max_nodes: None,
             dry_run: false,
             with_documentation: false,
-            include_external: false,
             preview: None,
             stroke_width: 8,
-            assume_yes: false,
             allow_unresolved: false,
-            refresh_links: false,
-            undeploy: false,
+            ignore_contracts: Vec::new(),
             inline_all: false,
-            redeploy: false,
         }
     }
 }
 
-/// Shared context for a fresh-cluster deploy (`--redeploy`): the entry point that
-/// owns the whole cluster, and the ids of the PREVIOUS cluster's frames so a
-/// still-live old frame is never reused (we want everything fresh) and can be
-/// reported for manual deletion afterwards. Threaded through the recursive deploy.
+/// Shared context for a deploy: the entry point that owns the whole cluster, and
+/// the ids of the PREVIOUS cluster's frames, so a still-live old frame is never
+/// reused (every deploy is fresh) and can be reported for manual deletion
+/// afterwards. Threaded through the recursive deploy.
 #[derive(Clone)]
 struct ClusterCtx {
     root: String,
-    fresh: bool,
     stale_ids: HashSet<String>,
 }
 
@@ -297,19 +282,6 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             .attach_printable("no entry point matched; run `bat-cli sonar` first"));
     }
 
-    if options.all && !options.dry_run && targets.len() > 1 {
-        println!(
-            "{} deploying {} entry points at once puts thousands of objects on the\nboard, which Miro starts to slow down past a thousand. Reviewing happens one\nentry point at a time, so consider deploying on demand instead.",
-            "warning:".yellow(),
-            targets.len()
-        );
-        if !BatDialoguer::select_yes_or_no("Deploy all of them anyway?".to_string())
-            .change_context(EvmMiroError)?
-        {
-            return Ok(());
-        }
-    }
-
     println!(
         "Auto-deploying {} entry point(s){}",
         targets.len().to_string().green(),
@@ -331,32 +303,30 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         )
     };
 
-    // Undeploy mode: remove each target's frame outright, then stop.
-    if options.undeploy {
-        let Some(client) = client.as_ref() else {
-            return Err(Report::new(EvmMiroError)
-                .attach_printable("--undeploy needs board access; it can't run under --dry-run"));
-        };
-        for (contract_name, function_name, _) in &targets {
-            let title = format!("{contract_name}.{function_name}");
-            if undeploy_frame(&title, client).await? {
-                println!("  {} removed frame {}", "✓".green(), title.bold());
-            } else {
-                println!("  {} no recorded frame for {}", "note:".yellow(), title);
-            }
-        }
-        return Ok(());
-    }
-
-    // --redeploy draws into a CLEAN zone: forget the cached region so the allocator
+    // A fresh deploy draws into a CLEAN zone: forget the cached region so the allocator
     // re-scans and places the fresh cluster below everything currently on the board.
-    if options.redeploy && !options.dry_run {
+    if !options.dry_run {
         EvmBatMetadata::update_metadata(|m| m.miro.auto.region = None)
             .change_context(EvmMiroError)?;
     }
 
     // The board is scanned at most once, to pick the region origin.
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+    // What a deploy leaves out is the union of the saved list and this run's flags.
+    let mut options = options;
+    for pattern in &metadata.ignored_contracts {
+        if !options.ignore_contracts.contains(pattern) {
+            options.ignore_contracts.push(pattern.clone());
+        }
+    }
+    let options = options;
+    if !options.ignore_contracts.is_empty() {
+        println!(
+            "  {} not drawing: {}",
+            "note:".yellow(),
+            options.ignore_contracts.join(", ")
+        );
+    }
     let mut allocator = if options.dry_run {
         ShelfAllocator::new(0.0, 0.0)
     } else {
@@ -366,11 +336,11 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     for (contract_name, function_name, root_file) in targets {
         let title = format!("{contract_name}.{function_name}");
 
-        // --redeploy: find the PREVIOUS cluster (this entry point's frame + every
-        // dependency frame its last deploy spawned), keep only the ones still on the
+        // A fresh deploy finds the PREVIOUS cluster (this entry point's frame + every
+        // dependency frame its last deploy spawned), keeps only the ones still on the
         // board, so we can (a) never reuse them and (b) hand you their URLs to delete.
         let mut stale: Vec<(String, String)> = Vec::new(); // (entry_point, url)
-        if options.redeploy && !options.dry_run {
+        if !options.dry_run {
             if let Some(client) = client.as_ref() {
                 let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
                 for f in &meta.miro.auto.frames {
@@ -393,32 +363,11 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
                 .collect()
         };
         let cluster = ClusterCtx {
-            root: if options.redeploy { title.clone() } else { String::new() },
-            fresh: options.redeploy && !options.dry_run,
+            root: title.clone(),
             stale_ids,
         };
 
-        // A root under `lib/` implies `--include-external`. Everything such a function calls
-        // is dependency code too, so without the flag the diagram silently collapses to the
-        // root alone — nobody who names `BeaconProxy.constructor` wants that, and nothing
-        // would tell them why it happened.
-        let root_is_external = metadata
-            .contracts
-            .iter()
-            .any(|c| c.name == contract_name && c.file_path == root_file && c.external);
-        let root_options = if root_is_external && !options.include_external {
-            println!(
-                "  {} {} lives under lib/, so its external calls are included",
-                "note:".yellow(),
-                title
-            );
-            AutoDeployOptions {
-                include_external: true,
-                ..options.clone()
-            }
-        } else {
-            options.clone()
-        };
+        let root_options = options.clone();
 
         deploy_one(
             &metadata,
@@ -433,10 +382,10 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         )
         .await?;
 
-        // --redeploy: drop the old cluster's now-orphaned records and print their
+        // A fresh deploy drops the old cluster's now-orphaned records and prints their
         // URLs for one-click manual deletion (a frame + its contents delete together
         // in Miro's web UI; the API can't, and one-by-one deletion is slow).
-        if options.redeploy && !options.dry_run {
+        if !options.dry_run {
             let owner = title.clone();
             let old_ids: HashSet<String> = cluster.stale_ids.clone();
             EvmBatMetadata::update_metadata(move |m| {
@@ -531,10 +480,6 @@ fn select_targets(
     entry_points.dedup();
     others.sort();
     others.dedup();
-
-    if options.all {
-        return Ok(entry_points);
-    }
 
     if let Some(wanted) = &options.entry_point {
         return resolve_named_target(metadata, &entry_names, wanted);
@@ -775,105 +720,38 @@ async fn deploy_one(
     // lets several diagrams share a helper's frame and keeps the fan-in readable.
     // Asked for directly, RECYCLE it: delete the old frame and its items, then
     // redraw — so a redeploy replaces the frame instead of piling up duplicates.
-    let mut reused_frame: Option<AutoDeployedFrame> = None;
-    // --redeploy: never reuse an existing frame — the whole cluster is drawn fresh
-    // in a clean zone, and the old one is reported for manual deletion.
-    if !options.dry_run && !cluster.fresh {
-        if let Some(url) = live_frame_url(&title, client).await? {
-            if !is_primary {
-                return Ok(());
-            }
-            if let Some(client) = client {
-                if options.refresh_links {
-                    // Surgical refresh: DON'T recycle (that would wipe the manual
-                    // layout). The diff-and-patch happens after the link pass below.
-                    let _ = client;
-                } else {
-                    println!("  {} recycling the existing frame", "↻".yellow());
-                    reused_frame = recycle_recorded_frame(&title, client, false).await?;
-                }
-            } else {
-                let _ = url;
-            }
-        }
-    }
-
-    let (mut nodes, mut edges, truncated, unresolved) =
+    let (mut nodes, mut edges, unresolved) =
         build_graph(metadata, contract_name, function_name, root_file, options)?;
     if nodes.is_empty() {
         println!("  no function metadata found, skipping");
         return Ok(());
     }
 
-    // Recycle already-deployed frames: any callee in this tree that ALREADY has
-    // its own frame on the board is referenced with a link card pointing at that
-    // frame, instead of being redrawn (with its whole subtree) inside this one —
-    // so a redeploy reuses what is already there rather than cluttering the frame
-    // with duplicates. The root being deployed is always drawn. A card whose
-    // frame has since been deleted is re-deployed on demand by
-    // `ensure_target_frames`, so a stale record is self-healing.
-    // Only frames that are STILL on the board count: a metadata entry outlives a
-    // frame the auditor deleted by hand, and recycling to a dead frame would make
-    // `ensure_target_frames` RE-CREATE it — resurrecting exactly the tiny husk
-    // frames the auditor just cleaned up. So we recycle (and treat as "free to cut
-    // to") only frames confirmed live on the board.
-    let deployed_titles: HashSet<String> = if options.inline_all || cluster.fresh {
-        // --inline-all / --redeploy: link nothing pre-existing — every dependency is
-        // drawn fresh in this cluster (reuse happens only within this run, via
-        // `ensure_target_frames`, which skips the stale old-cluster frames).
+    // Every deploy is fresh, so nothing another deploy left on the board is linked —
+    // but a frame THIS run already drew for THIS cluster is a different matter. It is
+    // the same rule `ensure_target_frames` reuses by (`cluster_root` matches, id is not
+    // the old cluster's), and it is what keeps a helper two branches reach from being
+    // drawn twice: the second branch cards it. Cutting to one of these is free — the
+    // frame exists — so `best_cut` may target it at any size, which is what you want
+    // for a big callee that keeps coming back.
+    let deployed_titles: HashSet<String> = if cluster.root.is_empty() {
         HashSet::new()
     } else {
         let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        let in_graph: HashSet<&str> = nodes.iter().map(|n| n.label.as_str()).collect();
-        let candidates: Vec<String> = meta
-            .miro
+        let in_graph: HashSet<&str> = nodes.iter().map(|node| node.label.as_str()).collect();
+        meta.miro
             .auto
             .frames
             .iter()
+            .filter(|frame| {
+                frame.cluster_root == cluster.root
+                    && !cluster.stale_ids.contains(&frame.frame_id)
+                    && frame.entry_point != title
+                    && in_graph.contains(frame.entry_point.as_str())
+            })
             .map(|frame| frame.entry_point.clone())
-            .filter(|entry_point| *entry_point != title && in_graph.contains(entry_point.as_str()))
-            .collect();
-        let mut live = HashSet::new();
-        if client.is_some() {
-            for candidate in candidates {
-                if live_frame_url(&candidate, client).await?.is_some() {
-                    live.insert(candidate);
-                }
-            }
-        } else {
-            // No board access (dry run): fall back to the registry as-is.
-            live.extend(candidates);
-        }
-        live
+            .collect()
     };
-    if !deployed_titles.is_empty() {
-        let (linked, kept) = link_deployed_frames(&mut nodes, &mut edges, &deployed_titles);
-        if linked > 0 {
-            println!(
-                "  {} linked {} call(s) to already-deployed frames",
-                "↻".yellow(),
-                linked
-            );
-        }
-        if !kept.is_empty() {
-            println!(
-                "  {} drawn inline despite having a frame (linking would leave this frame under {} screenshots): {}",
-                "↻".yellow(),
-                FRAME_MIN,
-                kept.join(", ")
-            );
-        }
-    }
-
-    // Surgical refresh: with the link pass applied, patch ONLY the difference from
-    // what is already on the board — swap the newly-framed callees for link cards,
-    // delete exactly their arrows, and leave every other item (and every manual
-    // edit) untouched. Never re-lay-out or redraw the whole frame.
-    if options.refresh_links && !options.dry_run {
-        if let Some(client) = client {
-            return refresh_links_surgical(&title, &nodes, &edges, client).await;
-        }
-    }
 
     // Cross-contract calls this tree reaches through an interface, whose concrete
     // target static analysis cannot pin. By default STOP so the AI (or auditor) can
@@ -925,40 +803,8 @@ async fn deploy_one(
         edges.len().to_string().green(),
         (depth + 1).to_string().green()
     );
-    if truncated > 0 {
-        println!(
-            "  {} {} call site(s) left out by --max-nodes {}",
-            "note:".yellow(),
-            truncated,
-            options.max_nodes.unwrap_or_default()
-        );
-    }
 
-
-    // In --refresh-links mode, map each graph node to its already-uploaded image
-    // and measured size, so render_and_measure can skip re-rendering it.
-    let reuse: HashMap<String, (String, u32, u32)> = if options.refresh_links {
-        reused_frame
-            .as_ref()
-            .map(|record| {
-                let dims: HashMap<&str, (u32, u32)> = record
-                    .image_dims
-                    .iter()
-                    .map(|(id, w, h)| (id.as_str(), (*w, *h)))
-                    .collect();
-                record
-                    .images
-                    .iter()
-                    .filter_map(|(node_id, image_id)| {
-                        dims.get(node_id.as_str())
-                            .map(|(w, h)| (node_id.clone(), (image_id.clone(), *w, *h)))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    } else {
-        HashMap::new()
-    };
+    let reuse: HashMap<String, (String, u32, u32)> = HashMap::new();
 
     render_and_measure(&mut nodes, &title, &reuse)?;
 
@@ -993,23 +839,41 @@ async fn deploy_one(
     // Functions with a frame already on the board: cutting to one is free (no new
     // frame is created), so `best_cut` may target them at any size.
     let framed: HashSet<&str> = deployed_titles.iter().map(|s| s.as_str()).collect();
-    // Aim each piece AT a readable size: the budget is the target, raised only when
-    // the graph is so big that even `MAX_CUTS_PER_FRAME` target-sized cuts wouldn't
+    // Aim each piece AT a readable size: the budget starts at the target, raised only
+    // when the graph is so big that even `MAX_CUTS_PER_FRAME` target-sized cuts wouldn't
     // fit it — then the pieces are bigger and split again by their own deploy.
     let total = screenshot_count(&nodes);
-    let budget = FRAME_TARGET.max(total.div_ceil(MAX_CUTS_PER_FRAME + 1));
+    let mut budget = FRAME_TARGET.max(total.div_ceil(MAX_CUTS_PER_FRAME + 1));
     let mut anchors = anchors;
-    let cut_passes = if options.inline_all { 0 } else { MAX_CUTS_PER_FRAME };
+    // Cut until the frame READS, not a fixed number of times. The cap was a fixed ten
+    // passes and a budget that never moved, so a graph whose branches are all smaller
+    // than the budget — or all shared — exhausted its passes (or found nothing to cut
+    // at all) and shipped whatever was left: `FLAMMSwapLib.execute` landed on the board
+    // as 250 screenshots and 641 connectors. The bound is now the node count, which no
+    // run can reach: every pass removes at least one screenshot.
+    let cut_passes = if options.inline_all { 0 } else { nodes.len() };
     for _ in 0..cut_passes {
-        // Split while the frame is over the readable MAX (depth included). The loop
-        // bound is the per-frame cut cap itself, so a huge graph gets enough cuts to
-        // shrink instead of shipping a wall; a piece that stays big becomes its own
-        // frame and is split again.
         if effective_size(&nodes) <= FRAME_MAX {
             break;
         }
-        let Some((cut_nodes, cut_edges)) = best_cut(&nodes, &edges, &framed, budget) else {
-            // Nothing left worth cutting into a readable, non-husk piece.
+        // Nothing worth cutting AT THIS BUDGET is not the same as nothing worth
+        // cutting: aiming at readable pieces first, then smaller ones, beats giving up
+        // and drawing a wall. FRAME_MIN is the floor — below it a cut buys a husk frame
+        // and costs a card, which is worse than the screenshot it replaced.
+        let mut found = None;
+        while found.is_none() {
+            found = best_cut(&nodes, &edges, &framed, budget);
+            if found.is_some() || budget <= FRAME_MIN {
+                break;
+            }
+            budget = (budget * 3 / 4).max(FRAME_MIN);
+        }
+        let Some((cut_nodes, cut_edges)) = found else {
+            println!(
+                "  {} {} screenshots and nothing left that can be cut into a readable\n  frame — every branch is either shared or too small to be worth its own",
+                "warning:".yellow(),
+                screenshot_count(&nodes)
+            );
             break;
         };
         println!(
@@ -1046,8 +910,27 @@ async fn deploy_one(
     // copying a leaf (sqrt, a getter) next to each far caller is cheap and — crucial
     // — no longer whack-a-mole (the deep floor those copies would re-call is gone).
     // Uses the measured layout (a caller ≥2 columns back = a crossing arrow), copies
-    // only SMALL closures, then re-lays-out. Skipped in --refresh-links.
-    if !options.refresh_links {
+    // only SMALL closures, then re-lays-out.
+    //
+    // That first sentence is a PREMISE, not a description, so it is checked: on a frame
+    // framing could not bring under FRAME_MAX, copying helpers adds screenshots to a
+    // wall to shorten arrows nobody can follow anyway. Shortening an unreadable diagram
+    // is not worth making it bigger, so localization is skipped there.
+    if effective_size(&nodes) <= FRAME_MAX {
+        // First the crossers too big to copy: they become frames of their own, with a
+        // card beside each caller, so the long arrow is gone rather than shortened.
+        let cut_crossers = if options.inline_all {
+            0
+        } else {
+            cut_crossing_shared(&mut nodes, &mut edges, &root_id)
+        };
+        if cut_crossers > 0 {
+            println!(
+                "  {} {} call(s) flying over a column replaced by a card to the callee's frame",
+                "↳".blue(),
+                cut_crossers
+            );
+        }
         let before = screenshot_count(&nodes);
         duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
         if screenshot_count(&nodes) > before {
@@ -1081,22 +964,13 @@ async fn deploy_one(
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
     // board positions instead of repeating the first one.
-    // A recycled frame keeps its board position (other diagrams may point a
-    // viewport link at it); only a brand-new frame consumes a slot from the
-    // allocator. Item coordinates are relative to the frame, so reusing the
-    // same centre keeps the layout identical regardless of the new size.
-    let (frame_x, frame_y) = match &reused_frame {
-        Some(record) => (record.x, record.y),
-        None => allocator.place(layout.frame_width, layout.frame_height),
-    };
+    // Every frame is brand new, so it always takes a slot from the allocator — which
+    // is what puts a cluster's frames next to each other instead of wherever an
+    // earlier deploy happened to leave them.
+    let (frame_x, frame_y) = allocator.place(layout.frame_width, layout.frame_height);
 
     if let Some(preview_path) = &options.preview {
-        let path = if options.all {
-            let safe = title.replace(['.', '/'], "_");
-            format!("{}/{}.png", preview_path.trim_end_matches('/'), safe)
-        } else {
-            preview_path.clone()
-        };
+        let path = preview_path.clone();
         render_preview(&nodes, &edges, &anchors, &layout, &path)?;
         println!("  preview written to {}", path.blue());
         // A preview is a LOCAL composition for eyeballing the layout — it never
@@ -1113,34 +987,36 @@ async fn deploy_one(
     }
 
     let client = client.expect("client is present when not in dry-run mode");
-    let frame_id = match &reused_frame {
-        Some(record) => {
-            // Keep the id (so viewport links survive) but resize to the new
-            // layout, so the frame always fits its fresh contents exactly.
-            client
-                .update_frame(
-                    &record.frame_id,
-                    &format!("auto: {title}"),
-                    frame_x,
-                    frame_y,
-                    layout.frame_width,
-                    layout.frame_height,
-                )
-                .await
-                .change_context(EvmMiroError)?;
-            record.frame_id.clone()
-        }
-        None => client
-            .create_frame(
-                &format!("auto: {title}"),
-                frame_x,
-                frame_y,
-                layout.frame_width,
-                layout.frame_height,
-            )
-            .await
-            .change_context(EvmMiroError)?,
+    // The frame carries the same answer its nodes do, in its own background: red when
+    // something drawn here changes state, amber when something here probably does, and
+    // red wins when both are true — a frame that changes state IS one, whatever else it
+    // also might do. That is the same precedence a node has, where the amber border is
+    // only drawn on a node the red one skipped.
+    //
+    // A cluster is thirty frames on a board and "where does state change" is asked from
+    // that distance, where a node's own border is two pixels. It is the frame's own
+    // fill, not a shape laid over it: nothing extra to create, register or clean up.
+    let frame_fill = if nodes
+        .iter()
+        .any(|n| n.writes_storage || !n.write_call_lines.is_empty())
+    {
+        Some(FRAME_FILL_WRITES)
+    } else if nodes.iter().any(|n| !n.external_call_lines.is_empty()) {
+        Some(FRAME_FILL_MAY_WRITE)
+    } else {
+        None
     };
+    let frame_id = client
+        .create_frame(
+            &format!("auto: {title}"),
+            frame_x,
+            frame_y,
+            layout.frame_width,
+            layout.frame_height,
+            frame_fill,
+        )
+        .await
+        .change_context(EvmMiroError)?;
     println!(
         "  frame {} ({}x{}) at ({}, {})",
         frame_id.green(),
@@ -1175,16 +1051,12 @@ async fn deploy_one(
         connector_ids: Vec::new(),
         marker_ids: Vec::new(),
         border_ids: Vec::new(),
-        // Declaration screenshots survive a redeploy INTO THE SAME FRAME: the images are
-        // not ours to delete here, so dropping the record would strand them on the board
-        // with nothing left that knows how to clean them up. A `--redeploy` builds a new
-        // frame instead, and legitimately starts with none.
-        screenshots: reused_frame
-            .as_ref()
-            .map(|record| record.screenshots.clone())
-            .unwrap_or_default(),
-        // Every frame in a fresh deploy belongs to the named entry point's cluster,
-        // so a later --redeploy can find and report the whole previous cluster.
+        // A brand-new frame carries no declaration screenshots: the ones added with
+        // `bat-cli screenshot` belong to the frame they were placed on, which this
+        // deploy leaves untouched on the board.
+        screenshots: Vec::new(),
+        // Every frame belongs to the named entry point's cluster, so the next deploy
+        // of that entry point can find and report the whole previous cluster.
         cluster_root: if cluster.root.is_empty() { title.clone() } else { cluster.root.clone() },
     };
     save_frame_record(&record)?;
@@ -1248,27 +1120,19 @@ async fn deploy_one(
     bar.finish_and_clear();
     println!("    {} {} screenshots uploaded", "✓".green(), image_ids.len());
 
-    // Refresh: any old screenshot that is no longer used (its node became a link
-    // card, or dropped out of the graph) is now an orphan on the board — delete it.
-    if options.refresh_links {
-        if let Some(old) = &reused_frame {
-            let mut orphans = tokio::task::JoinSet::new();
-            for (node_id, old_image_id) in &old.images {
-                if image_ids.get(node_id) != Some(old_image_id) {
-                    let client = client.clone();
-                    let id = old_image_id.clone();
-                    orphans.spawn(async move { client.delete_item(&id).await });
-                }
-            }
-            while orphans.join_next().await.is_some() {}
-        }
-    }
-
     // Storage-write markers: a hollow red rectangle around every node whose function
     // changes state — whether it holds the assignment or only reaches one through what it
     // calls. One marking, not two: the question a reader asks is "does this change state",
     // and a pass-through like `DebtToken.mint` answers yes even though it assigns nothing.
     let drawn_screens = drawn_screen_ids(&nodes);
+    let frame_writes: Vec<&GraphNode> = nodes
+        .iter()
+        .filter(|n| n.writes_storage || surviving_write_calls(n, &drawn_screens).next().is_some())
+        .collect();
+    let frame_external: Vec<&GraphNode> = nodes
+        .iter()
+        .filter(|n| !n.external_call_lines.is_empty())
+        .collect();
     let borders: Vec<(f64, f64, f64, f64)> = nodes
         .iter()
         .filter(|n| {
@@ -1466,6 +1330,13 @@ async fn deploy_one(
     // arrow at its end, not two overlapping ones.
     struct CalleeLink {
         end_id: String,
+        /// The x of this arrow's own vertical lane in the gutter, and the y it has to
+        /// reach. Miro routes a connector itself — you give it two endpoints and it
+        /// picks the path — so the only way to stop every arrow leaving a caller from
+        /// turning on the same x is to stop asking Miro to route at all: the arrow is
+        /// drawn as straight segments between markers we place, one lane per arrow.
+        lane_x: f64,
+        end_y: f64,
         /// The callee's graph node id, so the connectors drawn for it can be
         /// attributed to it for surgical removal.
         node_id: String,
@@ -1485,31 +1356,230 @@ async fn deploy_one(
         callees: Vec<CalleeLink>,
     }
 
-    // Colour each connector by its CALLEE, ranked WITHIN ITS DEPTH (layer) — so two
-    // DIFFERENT functions at the same depth never share a hue (e.g. `mint` and
-    // `burn` on layer 2), while the SAME function keeps ONE colour on all its arrows
-    // (one entry per callee). A layer rarely has more than the palette's worth of
-    // distinct callees. Depth itself is read off the column, so the hue is free.
-    let depth_of: HashMap<&str, usize> = nodes.iter().map(|n| (n.id.as_str(), n.depth)).collect();
-    let mut callee_color: HashMap<String, String> = HashMap::new();
-    {
-        let mut rank_in_depth: HashMap<usize, usize> = HashMap::new();
+    // One vertical lane per forward arrow, inside the gutter between the two columns
+    // it spans. Lanes are ordered by where the arrow starts and where it ends, which
+    // is what keeps two arrows that do not have to cross from crossing: for two
+    // arrows going the same way, the one starting lower takes the outer lane, so each
+    // one's horizontal leg passes outside the other's vertical leg instead of through
+    // it. Arrows that do have to cross (their start and end order disagree) cross
+    // once, which is unavoidable with one box per function.
+    let lane_of: HashMap<(String, String, usize), f64> = {
+        let mut per_layer_right: HashMap<usize, f64> = HashMap::new();
+        let mut per_layer_left: HashMap<usize, f64> = HashMap::new();
+        for placed in &layout.nodes {
+            let right = placed.x + placed.width / 2.0;
+            let left = placed.x - placed.width / 2.0;
+            per_layer_right
+                .entry(placed.layer)
+                .and_modify(|value| *value = value.max(right))
+                .or_insert(right);
+            per_layer_left
+                .entry(placed.layer)
+                .and_modify(|value| *value = value.min(left))
+                .or_insert(left);
+        }
+        // Group the forward edges by the gutter they cross, carrying (start y, end y).
+        let mut per_gap: HashMap<usize, Vec<((String, String, usize), f64, f64)>> = HashMap::new();
         for edge in edges.iter() {
-            if callee_color.contains_key(&edge.to) {
+            let (Some(from), Some(to)) = (layout.node(&edge.from), layout.node(&edge.to)) else {
+                continue;
+            };
+            if to.layer <= from.layer {
+                continue; // a cycle: drawn dashed, and left to Miro
+            }
+            let start_y = from.y;
+            let end_y = to.y;
+            per_gap.entry(from.layer).or_default().push((
+                (edge.from.clone(), edge.to.clone(), edge.line_in_slice),
+                start_y,
+                end_y,
+            ));
+        }
+        let mut lanes = HashMap::new();
+        for (layer, mut arrows) in per_gap {
+            let right = per_layer_right.get(&layer).copied().unwrap_or(0.0);
+            let left = per_layer_left
+                .get(&(layer + 1))
+                .copied()
+                .unwrap_or(right + 550.0);
+            // Keep the first turn clear of the screenshot border (and of the red or
+            // amber band drawn on it), and give each lane five stroke widths of air —
+            // narrowing only when the gutter cannot hold them all.
+            let margin = 100.0_f64.min((left - right) / 4.0);
+            let usable = (left - right - 2.0 * margin).max(0.0);
+            let pitch = if arrows.len() > 1 {
+                (usable / (arrows.len() - 1) as f64).min(LANE_PITCH)
+            } else {
+                0.0
+            };
+            arrows.sort_by(|a, b| {
+                let down = |start: f64, end: f64| end >= start;
+                let (a_down, b_down) = (down(a.1, a.2), down(b.1, b.2));
+                // Arrows going up take the inner lanes, ordered by where they start;
+                // arrows going down take the outer ones, the lowest start furthest out.
+                a_down
+                    .cmp(&b_down)
+                    .then_with(|| {
+                        let key = |arrow: &((String, String, usize), f64, f64)| {
+                            if a_down { (-arrow.1, -arrow.2) } else { (arrow.1, arrow.2) }
+                        };
+                        key(a).partial_cmp(&key(b)).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+            });
+            for (index, (key, _, _)) in arrows.into_iter().enumerate() {
+                lanes.insert(key, right + margin + index as f64 * pitch);
+            }
+        }
+        lanes
+    };
+
+    // Colour the ARROWS, by colouring a conflict graph rather than by ranking boxes.
+    //
+    // What a colour is for is telling two arrows apart where a reader has to compare
+    // them, and that is two places only: arrows running side by side in the same
+    // gutter, and arrows leaving the same screenshot. Every rank-based rule collided
+    // somewhere else — ranking by depth put the same colour on the two arrows most
+    // likely to be side by side, ranking by column position left repeats a palette
+    // apart that can still end up in neighbouring lanes. So: build the conflicts, walk
+    // the arrows in a fixed order (gutter, then lane), and give each the first colour
+    // none of its conflicting neighbours already has. Two arrows that reach the SAME
+    // function are not in conflict — sharing their colour is what lets a reader
+    // recognise a helper drawn in several places.
+    let edge_color: Vec<String> = {
+        let lane_index: HashMap<usize, (usize, f64)> = edges
+            .iter()
+            .enumerate()
+            .filter_map(|(index, edge)| {
+                let from = layout.node(&edge.from)?;
+                let lane = lane_of.get(&(edge.from.clone(), edge.to.clone(), edge.line_in_slice))?;
+                Some((index, (from.layer, *lane)))
+            })
+            .collect();
+        // A fixed walk order, so the same graph always comes out the same colours.
+        let mut order: Vec<usize> = (0..edges.len()).collect();
+        order.sort_by(|a, b| {
+            let key = |index: &usize| lane_index.get(index).copied().unwrap_or((usize::MAX, 0.0));
+            let (la, xa) = key(a);
+            let (lb, xb) = key(b);
+            la.cmp(&lb)
+                .then(xa.partial_cmp(&xb).unwrap_or(std::cmp::Ordering::Equal))
+                .then(a.cmp(b))
+        });
+        // Neighbours in the gutter: the two lanes on either side are what a reader's
+        // eye actually puts next to each other.
+        const LANE_NEIGHBOURHOOD: usize = 2;
+        let mut per_gap: HashMap<usize, Vec<usize>> = HashMap::new();
+        for index in &order {
+            if let Some((layer, _)) = lane_index.get(index) {
+                per_gap.entry(*layer).or_default().push(*index);
+            }
+        }
+        let mut conflicts: Vec<HashSet<usize>> = vec![HashSet::new(); edges.len()];
+        for arrows in per_gap.values() {
+            for (position, index) in arrows.iter().enumerate() {
+                let lower = position.saturating_sub(LANE_NEIGHBOURHOOD);
+                let upper = (position + LANE_NEIGHBOURHOOD + 1).min(arrows.len());
+                for other in &arrows[lower..upper] {
+                    if other != index && edges[*other].to != edges[*index].to {
+                        conflicts[*index].insert(*other);
+                        conflicts[*other].insert(*index);
+                    }
+                }
+            }
+        }
+        // Leaving the same screenshot: those the reader compares directly, at the call
+        // lines. And ARRIVING at boxes that sit next to each other in the next column:
+        // their last horizontal legs run parallel, a stone's throw apart, which is the
+        // same comparison at the other end of the arrow.
+        for (index, edge) in edges.iter().enumerate() {
+            for (other, sibling) in edges.iter().enumerate() {
+                if other != index && sibling.from == edge.from && sibling.to != edge.to {
+                    conflicts[index].insert(other);
+                }
+            }
+        }
+        let mut column: HashMap<usize, Vec<(f64, String)>> = HashMap::new();
+        for placed in &layout.nodes {
+            column
+                .entry(placed.layer)
+                .or_default()
+                .push((placed.y, placed.id.clone()));
+        }
+        let mut neighbour_of: HashMap<&str, HashSet<String>> = HashMap::new();
+        for boxes in column.values_mut() {
+            boxes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            for (position, (_, id)) in boxes.iter().enumerate() {
+                let lower = position.saturating_sub(1);
+                let upper = (position + 2).min(boxes.len());
+                neighbour_of.insert(
+                    id.as_str(),
+                    boxes[lower..upper]
+                        .iter()
+                        .filter(|(_, other)| other != id)
+                        .map(|(_, other)| other.clone())
+                        .collect(),
+                );
+            }
+        }
+        for (index, edge) in edges.iter().enumerate() {
+            let Some(neighbours) = neighbour_of.get(edge.to.as_str()) else {
+                continue;
+            };
+            for (other, sibling) in edges.iter().enumerate() {
+                if other != index && neighbours.contains(&sibling.to) {
+                    conflicts[index].insert(other);
+                    conflicts[other].insert(index);
+                }
+            }
+        }
+        let mut palette_of: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut colors: Vec<Option<usize>> = vec![None; edges.len()];
+        let mut by_callee: HashMap<&str, usize> = HashMap::new();
+        for index in order {
+            // The same callee keeps one colour wherever it is reached from.
+            if let Some(taken) = by_callee.get(edges[index].to.as_str()) {
+                colors[index] = Some(*taken);
                 continue;
             }
-            let depth = depth_of.get(edge.to.as_str()).copied().unwrap_or(0);
-            let rank = rank_in_depth.entry(depth).or_insert(0);
-            callee_color.insert(
-                edge.to.clone(),
-                DEPTH_COLORS[*rank % DEPTH_COLORS.len()].to_string(),
-            );
-            *rank += 1;
+            let used: HashSet<usize> = conflicts[index]
+                .iter()
+                .filter_map(|other| colors[*other])
+                .collect();
+            // Each gutter tries the palette in its own SHUFFLED order. The conflict
+            // rule alone always reached for colour 0 first, so every column opened on
+            // the same hue and a frame read as one repeated pattern — correct, and
+            // monotonous. The shuffle is drawn per run rather than derived from the
+            // graph: a deploy draws a fresh cluster anyway, so there is nothing to keep
+            // stable between runs, and a diagram that looks different each time is the
+            // point of asking for it.
+            let gutter = lane_index.get(&index).map(|(layer, _)| *layer).unwrap_or(usize::MAX);
+            let palette = palette_of.entry(gutter).or_insert_with(|| {
+                let mut order: Vec<usize> = (0..DEPTH_COLORS.len()).collect();
+                order.shuffle(&mut rand::thread_rng());
+                order
+            });
+            let choice = palette
+                .iter()
+                .copied()
+                .find(|color| !used.contains(color))
+                .unwrap_or(index % DEPTH_COLORS.len());
+            colors[index] = Some(choice);
+            by_callee.insert(edges[index].to.as_str(), choice);
         }
-    }
+        colors
+            .into_iter()
+            .map(|color| DEPTH_COLORS[color.unwrap_or(0)].to_string())
+            .collect()
+    };
+    let callee_color: HashMap<String, String> = edges
+        .iter()
+        .enumerate()
+        .map(|(index, edge)| (edge.to.clone(), edge_color[index].clone()))
+        .collect();
 
     let mut groups: HashMap<(String, usize, bool), PendingGroup> = HashMap::new();
     for edge in edges.iter() {
+        let edge_key = (edge.from.clone(), edge.to.clone(), edge.line_in_slice);
         let (Some(_start_id), Some(end_id)) =
             (image_ids.get(&edge.from), image_ids.get(&edge.to))
         else {
@@ -1545,6 +1615,8 @@ async fn deploy_one(
         };
         let link = CalleeLink {
             end_id: end_id.clone(),
+            lane_x: lane_of.get(&edge_key).copied().unwrap_or(f64::NAN),
+            end_y: end_point.1,
             node_id: edge.to.clone(),
             end_anchor: RelativeAnchor::new(if exit_right { 0.0 } else { 1.0 }, callee_fraction),
             end_point,
@@ -1675,25 +1747,86 @@ async fn deploy_one(
             } else {
                 (RelativeAnchor::new(1.0, 0.5), RelativeAnchor::new(0.0, 0.5))
             };
-            let mut stub_style = group.style.clone();
-            stub_style.arrow = ArrowEnd::End;
-            connectors.push(
-                client
-                    .create_connector(&edge_marker, edge_side, &token_marker, token_side, stub_style)
-                    .await?,
-            );
+            // The shared stub exists for the arrows Miro still routes. A lane-routed
+            // arrow reaches the call line by itself, and drawing the stub as well put
+            // a second horizontal on the same y — the little hook the reader sees at
+            // the caller's edge is that duplicate, plus the elbow Miro adds to join
+            // them.
+            let lane_routed = group.exit_right && group.callees.iter().all(|link| link.lane_x.is_finite());
+            if !lane_routed {
+                let mut stub_style = group.style.clone();
+                stub_style.arrow = ArrowEnd::End;
+                connectors.push(
+                    client
+                        .create_connector(&edge_marker, edge_side, &token_marker, token_side, stub_style)
+                        .await?,
+                );
+            }
 
             for link in &group.callees {
                 let mut route_style = group.style.clone();
                 route_style.arrow = ArrowEnd::None;
                 route_style.stroke_color = link.color.clone();
+                // Without a lane (a cycle, drawn dashed, or a gutter too narrow to
+                // hold one) fall back to the single Miro-routed connector.
+                if !group.exit_right || !link.lane_x.is_finite() {
+                    connectors.push(
+                        client
+                            .create_connector(
+                                &link.end_id,
+                                link.end_anchor,
+                                &edge_marker,
+                                facing_anchor((group.edge_x, group.token_y), link.end_point),
+                                route_style,
+                            )
+                            .await?,
+                    );
+                    continue;
+                }
+                // Three straight legs, each between two points that share an axis, so
+                // there is nothing left for Miro to route: out of the caller at the
+                // call line, down (or up) this arrow's own lane, into the callee's
+                // signature line.
+                let lane_top = client
+                    .create_anchor_marker(&frame_id, link.lane_x, group.token_y, ANCHOR_MARKER_SIZE)
+                    .await?;
+                let lane_end = client
+                    .create_anchor_marker(&frame_id, link.lane_x, link.end_y, ANCHOR_MARKER_SIZE)
+                    .await?;
+                markers.push(lane_top.clone());
+                markers.push(lane_end.clone());
+                // Straight into the call line itself, carrying this arrow's head: the
+                // edge marker is not on the path at all.
+                let mut head_style = route_style.clone();
+                head_style.arrow = ArrowEnd::End;
+                connectors.push(
+                    client
+                        .create_connector(
+                            &lane_top,
+                            RelativeAnchor::new(0.0, 0.5),
+                            &token_marker,
+                            RelativeAnchor::new(1.0, 0.5),
+                            head_style,
+                        )
+                        .await?,
+                );
+                let (top_side, end_side) = if link.end_y >= group.token_y {
+                    (RelativeAnchor::new(0.5, 1.0), RelativeAnchor::new(0.5, 0.0))
+                } else {
+                    (RelativeAnchor::new(0.5, 0.0), RelativeAnchor::new(0.5, 1.0))
+                };
+                connectors.push(
+                    client
+                        .create_connector(&lane_top, top_side, &lane_end, end_side, route_style.clone())
+                        .await?,
+                );
                 connectors.push(
                     client
                         .create_connector(
                             &link.end_id,
                             link.end_anchor,
-                            &edge_marker,
-                            facing_anchor((group.edge_x, group.token_y), link.end_point),
+                            &lane_end,
+                            RelativeAnchor::new(1.0, 0.5),
                             route_style,
                         )
                         .await?,
@@ -1762,357 +1895,6 @@ async fn deploy_one(
     // in this run (see render_and_measure), so the whole figures folder is wiped once
     // at the end of `run()`.
     Ok(())
-}
-
-/// Wipe a recorded frame's CONTENTS (images, connectors, markers, storage
-/// borders) but KEEP the frame itself, returning its record so the redraw can
-/// reuse the same frame id and position.
-///
-/// The frame is deliberately not deleted: other diagrams may link to it by URL
-/// (`?moveToWidget=<frame_id>`), and a fresh frame would break those links. The
-/// metadata record is dropped here and a new one is saved during the redraw.
-///
-/// The deletes fan out concurrently (like the create side): every item is
-/// independent and best-effort, so there is no reason to wait one at a time.
-/// Surgically patch an already-deployed frame: swap the callees that have GAINED
-/// their own frame for link cards, deleting exactly their arrows and screenshots
-/// and NOTHING else — every other item, position and manual edit is left as-is.
-///
-/// `nodes`/`edges` are the freshly-built graph with the link pass already applied,
-/// so a node that used to be a screenshot but is now a link card is the diff to
-/// apply. Requires the frame to have been deployed once since the record started
-/// storing positions + per-callee connector ownership.
-async fn refresh_links_surgical(
-    title: &str,
-    nodes: &[GraphNode],
-    edges: &[GraphEdge],
-    client: &MiroClient,
-) -> Result<()> {
-    let (mut record, frame_urls) = {
-        let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        let record = meta
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == title)
-            .cloned();
-        let urls: HashMap<String, String> = meta
-            .miro
-            .auto
-            .frames
-            .iter()
-            .map(|frame| (frame.entry_point.clone(), frame.frame_url.clone()))
-            .collect();
-        (record, urls)
-    };
-    let Some(record) = record.take() else {
-        println!("  {} no recorded frame — deploy it once first", "note:".yellow());
-        return Ok(());
-    };
-    let mut record = record;
-    if record.node_positions.is_empty() {
-        println!(
-            "  {} this frame predates --refresh-links; deploy it once (full) to enable surgical refresh",
-            "note:".yellow()
-        );
-        return Ok(());
-    }
-
-    let current_screens: HashSet<&str> = nodes
-        .iter()
-        .filter(|node| node.kind == NodeKind::Screenshot)
-        .map(|node| node.id.as_str())
-        .collect();
-    let old_images: HashMap<String, String> = record.images.iter().cloned().collect();
-    let positions: HashMap<String, (f64, f64)> = record
-        .node_positions
-        .iter()
-        .map(|(id, x, y)| (id.clone(), (*x, *y)))
-        .collect();
-    let mut callee_conns: HashMap<String, Vec<String>> =
-        record.callee_connectors.iter().cloned().collect();
-    let already_carded: HashSet<String> =
-        record.link_cards.iter().map(|(id, _, _)| id.clone()).collect();
-
-    // Nodes that USED to be screenshots but are gone now (linked away / removed).
-    // Skip link-card entries (their `\0link{n}` id is a throwaway and they must be
-    // kept) and anything we've already carded.
-    let removed: Vec<String> = old_images
-        .keys()
-        .filter(|id| {
-            !id.starts_with('\u{0}')
-                && !current_screens.contains(id.as_str())
-                && !already_carded.contains(*id)
-        })
-        .cloned()
-        .collect();
-    if removed.is_empty() {
-        println!("  {} nothing to refresh — no new frames to link", "note:".yellow());
-        return Ok(());
-    }
-
-    // Delete each removed screenshot and exactly its own arrows.
-    let mut deleted_ids: HashSet<String> = HashSet::new();
-    let mut tasks = tokio::task::JoinSet::new();
-    for node_id in &removed {
-        if let Some(image_id) = old_images.get(node_id) {
-            let client = client.clone();
-            let id = image_id.clone();
-            deleted_ids.insert(id.clone());
-            tasks.spawn(async move { client.delete_item(&id).await });
-        }
-        if let Some(ids) = callee_conns.remove(node_id) {
-            for id in ids {
-                deleted_ids.insert(id.clone());
-                // A connector or a marker — try both endpoints, best-effort.
-                let client_a = client.clone();
-                let a = id.clone();
-                tasks.spawn(async move { client_a.delete_connector(&a).await });
-                let client_b = client.clone();
-                let b = id.clone();
-                tasks.spawn(async move { client_b.delete_item(&b).await });
-            }
-        }
-    }
-    while tasks.join_next().await.is_some() {}
-
-    // Add a link card where each newly-linked callee used to sit, and one arrow
-    // from its caller's call line into the card.
-    let node_by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-    let dims: HashMap<&str, (u32, u32)> = record
-        .image_dims
-        .iter()
-        .map(|(id, w, h)| (id.as_str(), (*w, *h)))
-        .collect();
-    let mut new_cards: Vec<(String, String, String)> = Vec::new();
-    let mut added_conn_ids: Vec<String> = Vec::new();
-    for node in nodes.iter() {
-        let NodeKind::Link { .. } = &node.kind else {
-            continue;
-        };
-        // The original node id this card stands in for.
-        let original_id = node.label.replacen('.', "::", 1);
-        if already_carded.contains(&original_id) {
-            continue;
-        }
-        let Some(&(px, py)) = positions.get(&original_id) else {
-            continue;
-        };
-        let Some(caller_edge) = edges.iter().find(|edge| edge.to == node.id) else {
-            continue;
-        };
-        let target_url = frame_urls.get(&node.label).cloned().unwrap_or_default();
-        let card = client
-            .create_link_card(
-                &record.frame_id,
-                &node.label,
-                &target_url,
-                px,
-                py,
-                LINK_CARD_WIDTH,
-                LINK_CARD_HEIGHT,
-            )
-            .await
-            .change_context(EvmMiroError)?;
-
-        // Arrow from the caller's call line into the card.
-        if let (Some(caller_image), Some(caller_node), Some(&(_, caller_h))) = (
-            old_images.get(&caller_edge.from),
-            node_by_id.get(caller_edge.from.as_str()),
-            dims.get(caller_edge.from.as_str()),
-        ) {
-            let line_index = caller_edge.line_in_slice.saturating_sub(1) + PATH_HEADER_LINES;
-            let y_fraction = silicon::line_geometry(Some(caller_node.font_size))
-                .line_center_fraction(line_index, caller_h);
-            let style = ConnectorStyle {
-                stroke_color: DEPTH_COLORS[caller_node.depth % DEPTH_COLORS.len()].to_string(),
-                stroke_width: "8".to_string(),
-                dashed: false,
-                caption: None,
-                arrow: ArrowEnd::Start,
-            };
-            let conn = client
-                .create_connector(
-                    caller_image,
-                    RelativeAnchor::new(1.0, y_fraction),
-                    &card,
-                    RelativeAnchor::new(0.0, 0.5),
-                    style,
-                )
-                .await
-                .change_context(EvmMiroError)?;
-            added_conn_ids.push(conn.clone());
-            new_cards.push((original_id.clone(), card.clone(), conn));
-        } else {
-            new_cards.push((original_id.clone(), card.clone(), String::new()));
-        }
-    }
-
-    // Update the record: drop removed items, keep everything else exactly, add cards.
-    record
-        .images
-        .retain(|(node_id, _)| !removed.contains(node_id));
-    record.image_dims.retain(|(id, _, _)| !removed.contains(id));
-    record.node_positions.retain(|(id, _, _)| !removed.contains(id));
-    record.callee_connectors = callee_conns.into_iter().collect();
-    record.connector_ids.retain(|id| !deleted_ids.contains(id));
-    record.connector_ids.extend(added_conn_ids);
-    record.marker_ids.retain(|id| !deleted_ids.contains(id));
-    record.link_cards.extend(new_cards.iter().cloned());
-    // The card's own connector is owned by the card's original id, so a future
-    // refresh (or a full redeploy) cleans it up too.
-    for (original_id, _card, conn) in &new_cards {
-        if !conn.is_empty() {
-            record
-                .callee_connectors
-                .push((original_id.clone(), vec![conn.clone()]));
-        }
-    }
-    save_frame_record(&record)?;
-
-    println!(
-        "  {} refreshed: {} linked, {} removed (no re-render, layout untouched)",
-        "✓".green(),
-        new_cards.len(),
-        removed.len()
-    );
-    println!("  {}", record.frame_url.blue());
-    Ok(())
-}
-
-async fn recycle_recorded_frame(
-    title: &str,
-    client: &MiroClient,
-    keep_images: bool,
-) -> Result<Option<AutoDeployedFrame>> {
-    let record = {
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == title)
-            .cloned()
-    };
-    let Some(record) = record else {
-        return Ok(None);
-    };
-    let mut delete_tasks = tokio::task::JoinSet::new();
-    for id in record.connector_ids.clone() {
-        let client = client.clone();
-        delete_tasks.spawn(async move { client.delete_connector(&id).await });
-    }
-    // In a --refresh-links pass the screenshots are reused (repositioned), not
-    // re-rendered, so we keep them; only the connectors/markers/borders are redrawn.
-    let images = if keep_images {
-        Vec::new()
-    } else {
-        record.images.iter().map(|(_, id)| id.clone()).collect::<Vec<_>>()
-    };
-    let item_ids = record
-        .marker_ids
-        .iter()
-        .cloned()
-        .chain(record.border_ids.iter().cloned())
-        .chain(images);
-    for id in item_ids {
-        let client = client.clone();
-        delete_tasks.spawn(async move { client.delete_item(&id).await });
-    }
-    // Best-effort: drain the set, ignoring per-item failures (a hand-deleted
-    // item 404s and that is fine — the goal is an empty frame).
-    while delete_tasks.join_next().await.is_some() {}
-    // The frame itself is kept on purpose — only its contents are cleared.
-
-    let owner = title.to_string();
-    EvmBatMetadata::update_metadata(move |metadata| {
-        metadata
-            .miro
-            .auto
-            .frames
-            .retain(|frame| frame.entry_point != owner);
-    })
-    .change_context(EvmMiroError)?;
-    Ok(Some(record))
-}
-
-/// Completely remove a deployed frame from the board and the registry: its
-/// contents (connectors, markers, borders, images, link cards + their arrows) AND
-/// the frame shell itself, then drop its metadata entry. Best-effort per item (a
-/// hand-deleted item 404s, which is fine). Use it to clean up a frame that should
-/// never have been its own frame — e.g. a small helper that fragments the board.
-async fn undeploy_frame(title: &str, client: &MiroClient) -> Result<bool> {
-    let record = {
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == title)
-            .cloned()
-    };
-    let Some(record) = record else {
-        return Ok(false);
-    };
-    let mut tasks = tokio::task::JoinSet::new();
-    // Connectors (route/stub) and each link card's caller arrow.
-    for id in record
-        .connector_ids
-        .iter()
-        .cloned()
-        .chain(record.link_cards.iter().map(|(_, _, conn)| conn.clone()))
-        .filter(|id| !id.is_empty())
-    {
-        let client = client.clone();
-        tasks.spawn(async move { client.delete_connector(&id).await });
-    }
-    // Everything the frame actually holds. The recorded ids follow, but they are no longer
-    // the source of truth: a cut-and-paste rewrites every one of them, and a shape carries no
-    // title to be recognised by, so only the board knows what is really in there.
-    let live_children: Vec<String> = client
-        .frame_children(
-            &record.frame_id,
-            (record.x, record.y, record.width, record.height),
-        )
-        .await
-        .map(|children| children.into_iter().map(|child| child.id).collect())
-        .unwrap_or_default();
-    for id in live_children {
-        let client = client.clone();
-        tasks.spawn(async move { client.delete_item(&id).await });
-    }
-
-    // Items: markers, borders, screenshots, link cards.
-    for id in record
-        .marker_ids
-        .iter()
-        .cloned()
-        .chain(record.border_ids.iter().cloned())
-        .chain(record.images.iter().map(|(_, id)| id.clone()))
-        .chain(record.link_cards.iter().map(|(_, card, _)| card.clone()))
-        .chain(record.screenshots.iter().map(|shot| shot.item_id.clone()))
-        .filter(|id| !id.is_empty())
-    {
-        let client = client.clone();
-        tasks.spawn(async move { client.delete_item(&id).await });
-    }
-    while tasks.join_next().await.is_some() {}
-    // The frame shell last, once it is empty.
-    let _ = client.delete_item(&record.frame_id).await;
-
-    let owner = title.to_string();
-    EvmBatMetadata::update_metadata(move |metadata| {
-        metadata
-            .miro
-            .auto
-            .frames
-            .retain(|frame| frame.entry_point != owner);
-    })
-    .change_context(EvmMiroError)?;
-    Ok(true)
 }
 
 /// Store what a deployment owns, replacing any earlier record for the same
@@ -2267,6 +2049,22 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge, alone_on_line: bool) -> Rel
 /// screenshots for 27 distinct functions, with `MathLib.mulDiv` — three lines of
 /// arithmetic — repeated fourteen times. Two thirds of that diagram carried no
 /// information.
+/// Is this contract one the auditor said they already know?
+///
+/// The density of a diagram is not evenly useful. A fixed-point math library called
+/// from thirty places is thirty boxes that say the same thing, and the reader knew
+/// what `mulDiv` did before they opened the board. Naming it here removes its boxes
+/// and its arrows — not the calls to it, which stay visible in the callers' own
+/// screenshots, so nothing about the audited code is hidden. Deploy it as an entry
+/// point of its own on the day the question is actually about it.
+fn ignored_contract(options: &AutoDeployOptions, contract: &ContractMetadata) -> bool {
+    options.ignore_contracts.iter().any(|pattern| {
+        let pattern = pattern.trim();
+        !pattern.is_empty()
+            && (contract.name == pattern || contract.file_path.contains(pattern))
+    })
+}
+
 fn build_graph(
     metadata: &EvmBatMetadata,
     contract_name: &str,
@@ -2278,13 +2076,12 @@ fn build_graph(
 ) -> Result<(
     Vec<GraphNode>,
     Vec<GraphEdge>,
-    usize,
     Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall>,
 )> {
     let Some((root_contract, root_function)) =
         find_function(metadata, contract_name, root_file, function_name, None)
     else {
-        return Ok((Vec::new(), Vec::new(), 0, Vec::new()));
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
     };
 
     // Method name → in-scope, non-stub contracts that directly define it, built
@@ -2292,9 +2089,7 @@ fn build_graph(
     // of scanning every contract each time.
     let mut definer_map: HashMap<String, Vec<String>> = HashMap::new();
     for contract in &metadata.contracts {
-        if (contract.external && !options.include_external)
-            || contract.contract_type == EvmContractType::Interface
-        {
+        if contract.contract_type == EvmContractType::Interface {
             continue;
         }
         for function in &contract.functions {
@@ -2309,10 +2104,7 @@ fn build_graph(
 
     // Whether a call changes state is a fact about the code, so the reachability walk
     // always crosses into `lib/` — independently of whether this deploy draws it.
-    let write_options = AutoDeployOptions {
-        include_external: true,
-        ..options.clone()
-    };
+    let write_options = options.clone();
     let mut write_definer_map: HashMap<String, Vec<String>> = HashMap::new();
     for contract in &metadata.contracts {
         if contract.contract_type == EvmContractType::Interface {
@@ -2331,7 +2123,6 @@ fn build_graph(
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
-    let mut truncated = 0usize;
     // Interface calls in this tree still needing an AI resolution (see `resolve`).
     // Reads through an interface cast with several in-scope implementations, left out of
     // the graph: `(interface, method) → (candidates, call locations)`, printed once each.
@@ -2388,9 +2179,6 @@ fn build_graph(
     }];
 
     while let Some(current) = stack.pop() {
-        if options.max_depth.is_some_and(|limit| current.depth >= limit) {
-            continue;
-        }
         // The contract that defines the function, which is where its source is.
         // Pin the exact overload by line so a re-read never drifts to a sibling.
         let Some((contract, function)) =
@@ -2432,10 +2220,6 @@ fn build_graph(
             else {
                 continue;
             };
-            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
-                truncated += 1;
-                continue;
-            }
             let line_in_slice = slice
                 .iter()
                 .position(|line| line_has_token(line, modifier_name))
@@ -2586,13 +2370,12 @@ fn build_graph(
                 }
                 continue;
             };
+            if ignored_contract(options, target_contract) {
+                continue;
+            }
             let target_id = overload_node_key(target_contract, &target_function);
             if target_id == current.node_id {
                 continue; // a function calling itself needs no arrow
-            }
-            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
-                truncated += 1;
-                continue;
             }
 
             edges.push(GraphEdge {
@@ -2647,11 +2430,7 @@ fn build_graph(
                 .position(|line| line.contains('{'))
                 .unwrap_or(0);
             for (base, constructor) in base_constructors(metadata, contract) {
-                if !options.include_external && base.external {
-                    continue;
-                }
-                if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
-                    truncated += 1;
+                if ignored_contract(options, base) {
                     continue;
                 }
                 // Anchor on the header token naming the base when it is invoked there;
@@ -2747,7 +2526,7 @@ fn build_graph(
             let Some((tc, tf)) = destub(metadata, (tc, tf), options) else {
                 continue;
             };
-            if !options.include_external && tc.external {
+            if ignored_contract(options, tc) {
                 continue;
             }
             let target_id = overload_node_key(tc, &tf);
@@ -2761,10 +2540,6 @@ fn build_graph(
                     .iter()
                     .any(|edge| edge.from == current.node_id && edge.to == target_id)
             {
-                continue;
-            }
-            if options.max_nodes.is_some_and(|cap| nodes.len() >= cap) {
-                truncated += 1;
                 continue;
             }
             let line_in_slice = slice
@@ -2912,7 +2687,7 @@ fn build_graph(
         );
     }
 
-    Ok((nodes, edges, truncated, unresolved))
+    Ok((nodes, edges, unresolved))
 }
 
 /// Transitively collect every unresolved interface call reachable from `seed`,
@@ -3411,7 +3186,7 @@ fn resolve_call<'a>(
     options: &AutoDeployOptions,
     definer_map: &HashMap<String, Vec<String>>,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
-    let keep = |contract: &ContractMetadata| options.include_external || !contract.external;
+    let keep = |_contract: &ContractMetadata| true;
 
     let (target_name, method) = match call_name.split_once('.') {
         Some((target, method)) => (Some(target), method),
@@ -3536,7 +3311,7 @@ fn resolve_cast<'a>(
     arg_count: Option<usize>,
     options: &AutoDeployOptions,
 ) -> Option<(&'a ContractMetadata, FunctionMetadata)> {
-    let keep = |contract: &ContractMetadata| options.include_external || !contract.external;
+    let keep = |_contract: &ContractMetadata| true;
     let typed = metadata.contract_in_scope(type_name, &caller_contract.file_path)?;
 
     if typed.contract_type != EvmContractType::Interface {
@@ -3624,7 +3399,7 @@ fn destub<'a>(
     if !function.is_stub {
         return Some((contract, function));
     }
-    let keep = |c: &ContractMetadata| options.include_external || !c.external;
+    let keep = |_c: &ContractMetadata| true;
     let mut overrides: Vec<(&'a ContractMetadata, FunctionMetadata)> = Vec::new();
     for impl_name in implementations_of(metadata, &contract.name) {
         if impl_name == contract.name {
@@ -4095,6 +3870,11 @@ fn print_dry_run(
         }
     }
 
+    // The span is how many columns the arrow flies over, computed from the placed
+    // NODES rather than their labels: a copied helper shares its label with every
+    // other copy, so counting by name reports the shortest arrow that could have been
+    // drawn instead of the one that will be.
+    let mut spans: Vec<usize> = Vec::new();
     println!("  {} connector(s):", edges.len());
     for (edge, anchor) in edges.iter().zip(anchors.iter()) {
         let Some(caller) = nodes.iter().find(|n| n.id == edge.from) else {
@@ -4105,15 +3885,28 @@ fn print_dry_run(
             .find(|n| n.id == edge.to)
             .map(|n| n.label.clone())
             .unwrap_or_default();
+        let span = match (layout.node(&edge.from), layout.node(&edge.to)) {
+            (Some(from), Some(to)) => to.layer.saturating_sub(from.layer),
+            _ => 0,
+        };
+        spans.push(span);
         println!(
-            "    {:<34} L{:<5} → {:<34} start ({:.2}%, {:.2}%)",
+            "    {:<34} L{:<5} → {:<34} start ({:.2}%, {:.2}%){}",
             truncate(&caller.label, 34),
             caller.start_line + edge.line_in_slice - 1,
             truncate(&callee_label, 34),
             anchor.x_fraction * 100.0,
-            anchor.y_fraction * 100.0
+            anchor.y_fraction * 100.0,
+            if span > 1 { format!("  spans {span} columns") } else { String::new() }
         );
     }
+    let crossing = spans.iter().filter(|span| **span > 1).count();
+    println!(
+        "  {} of {} connector(s) fly over a column (worst {})",
+        crossing,
+        spans.len(),
+        spans.iter().max().copied().unwrap_or(0)
+    );
     if !layout.back_edges.is_empty() {
         println!(
             "  {} cycle(s) will be drawn dashed: {:?}",
@@ -4270,17 +4063,146 @@ fn private_closure(
 /// caller left, layering places the node adjacent, so it no longer crosses).
 /// Re-lays-out each round because a copy changes the columns; bounded by closure
 /// size and a box budget.
+/// Replace the CROSSING CALL — not the callee — with a card, when the callee is too
+/// big to copy next to its far caller.
+///
+/// Framing cuts for SPACE: a branch leaves the frame when the frame is too big to
+/// read. That left a whole class of mess untouched — a helper called from columns 1
+/// and 3 is pinned to the far right by the longest-path layering, so its arrow from
+/// column 1 flies over everything in between, and no amount of space made that
+/// arrow shorter. The only two ways to shorten it are a copy next to each caller or
+/// a card next to each caller, and a card is what a callee too big to copy gets.
+///
+/// It cuts the offending EDGE, not the node: the caller sitting next to the callee
+/// keeps reading it as a screenshot, and only the caller that was flying an arrow
+/// over two columns gets a card instead. Replacing the node would take the drawing
+/// away from the near caller too, to fix a problem that caller never had.
+///
+/// Returns how many calls were cut, so the caller can say so.
+fn cut_crossing_shared(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, root_id: &str) -> usize {
+    const CROSS_LAYERS: usize = 2;
+    let mut done = 0usize;
+    loop {
+        let layout_nodes: Vec<LayoutNode> = nodes
+            .iter()
+            .map(|node| LayoutNode {
+                id: node.id.clone(),
+                width: node.board_width(),
+                height: node.board_height(),
+            })
+            .collect();
+        let anchors = compute_anchors(nodes, edges);
+        let layout_edges: Vec<LayoutEdge> = edges
+            .iter()
+            .zip(anchors.iter())
+            .map(|(edge, anchor)| LayoutEdge {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                from_line_fraction: anchor.y_fraction,
+            })
+            .collect();
+        let layout = layout_graph(root_id, &layout_nodes, &layout_edges, LayoutConfig::default());
+        let layer_of: HashMap<&str, usize> =
+            layout.nodes.iter().map(|p| (p.id.as_str(), p.layer)).collect();
+
+        let mut callers: HashMap<String, Vec<String>> = HashMap::new();
+        let mut out: HashMap<String, Vec<String>> = HashMap::new();
+        for edge in edges.iter() {
+            callers.entry(edge.to.clone()).or_default().push(edge.from.clone());
+            out.entry(edge.from.clone()).or_default().push(edge.to.clone());
+        }
+        let shared: HashSet<String> = callers
+            .iter()
+            .filter(|(_, cs)| cs.len() >= 2)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        // The biggest crosser first: it is the one whose frame is most worth having,
+        // and cutting it often takes several other crossers with it.
+        let mut victim: Option<(usize, String)> = None;
+        for id in &shared {
+            let is_screenshot = nodes
+                .iter()
+                .any(|node| node.id == *id && matches!(node.kind, NodeKind::Screenshot));
+            if !is_screenshot || id == root_id {
+                continue;
+            }
+            let worst = callers
+                .get(id)
+                .map(|cs| {
+                    cs.iter()
+                        .map(|c| match (layer_of.get(id.as_str()), layer_of.get(c.as_str())) {
+                            (Some(&vl), Some(&cl)) => vl.saturating_sub(cl),
+                            _ => 0,
+                        })
+                        .max()
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0);
+            if worst < CROSS_LAYERS {
+                continue;
+            }
+            // Two different costs, so two different thresholds. Copying a callee costs
+            // its closure ONCE PER far caller, so a helper the size of a getter is still
+            // expensive when nine callers need their own copy — that is how one contract
+            // put 203 boxes on a board for 30 functions. Either cost alone is enough to
+            // prefer a frame: one drawing, a card beside each caller.
+            let clen = private_closure(id, &out, &shared).len();
+            let far = callers
+                .get(id)
+                .map(|cs| {
+                    let mut distinct: Vec<&String> = cs.iter().collect();
+                    distinct.sort();
+                    distinct.dedup();
+                    distinct
+                        .iter()
+                        .filter(|c| match (layer_of.get(id.as_str()), layer_of.get(c.as_str())) {
+                            (Some(&vl), Some(&cl)) => vl.saturating_sub(cl) >= CROSS_LAYERS,
+                            _ => false,
+                        })
+                        .count()
+                })
+                .unwrap_or(0);
+            if clen < FRAME_MIN && far <= MAX_COPIES_OF_ONE_CALLEE {
+                continue; // cheap enough to copy; localization handles it
+            }
+            if victim.as_ref().map_or(true, |(best, _)| clen > *best) {
+                victim = Some((clen, id.clone()));
+            }
+        }
+        let Some((_, id)) = victim else {
+            break;
+        };
+        // The far calls only. `cut_edge` prunes and renumbers, so one per pass and
+        // re-measure: the copy it removes can change every other node's column.
+        let Some(index) = edges.iter().position(|edge| {
+            edge.to == id
+                && match (layer_of.get(id.as_str()), layer_of.get(edge.from.as_str())) {
+                    (Some(&vl), Some(&cl)) => vl.saturating_sub(cl) >= CROSS_LAYERS,
+                    _ => false,
+                }
+        }) else {
+            break;
+        };
+        cut_edge(nodes, edges, index);
+        done += 1;
+    }
+    done
+}
+
 fn duplicate_crossing_shared(
     nodes: &mut Vec<GraphNode>,
     edges: &mut Vec<GraphEdge>,
     root_id: &str,
 ) {
     const CROSS_LAYERS: usize = 2; // a caller this many columns back skips a column
-    // Copy only SMALL helpers (leaves + tiny subtrees) — those are cheap to repeat
-    // and are the mesh floor (sqrt, mul512, getters). A big subtree is never copied
-    // here (it would explode); it stays shared, externalised to a frame by the cut
-    // pass that ran BEFORE this.
-    const MAX_CLOSURE: usize = 3;
+    // Copy helpers small enough that a frame of their own would be a husk. The two
+    // bands MEET at FRAME_MIN, which is the whole point: under it a crossing callee
+    // is copied next to each far caller, at or over it `cut_crossing_shared` has
+    // already given it a frame and a card per caller. Nothing falls between them and
+    // keeps crossing, which is what the old cap of 3 left behind — a helper with four
+    // callees of its own was too big to copy and never big enough to be cut.
+    const MAX_CLOSURE: usize = FRAME_MIN - 1;
     // Effectively uncapped copies: a leaf used 56× needs 56 local copies, or it
     // still draws long crossing arrows. Small copies, so the box budget (below)
     // is the real bound.
@@ -4351,6 +4273,21 @@ fn duplicate_crossing_shared(
             }
             let clen = private_closure(v, &out, &shared).len();
             if clen > MAX_CLOSURE {
+                continue;
+            }
+            // Repeating one callee past this is `cut_crossing_shared`'s business: it
+            // gave the callee a frame, and copying it here as well would put the
+            // drawing back beside every caller and undo that.
+            let far = callers
+                .get(v)
+                .map(|cs| {
+                    let mut distinct: Vec<&String> = cs.iter().collect();
+                    distinct.sort();
+                    distinct.dedup();
+                    distinct.iter().filter(|c| skip(v, c) >= CROSS_LAYERS).count()
+                })
+                .unwrap_or(0);
+            if far > MAX_COPIES_OF_ONE_CALLEE {
                 continue;
             }
             // Prefer smaller closure, then larger skip.
@@ -5149,15 +5086,12 @@ async fn ensure_target_frames(
 
     let mut resolved = HashMap::new();
     for (target, target_file) in wanted {
-        // Reuse a frame only if it is genuinely reusable: in --redeploy we skip any
-        // frame that belongs to the OLD cluster (a stale id) so it is drawn fresh,
-        // but still reuse frames created earlier in THIS run (their new ids aren't
-        // stale) so a helper shared inside the cluster is drawn once.
-        let reusable = if cluster.fresh {
-            // Reuse ONLY a frame created earlier in THIS run for THIS cluster
-            // (cluster_root == root AND a fresh, non-stale id). Anything else — the
-            // old cluster, or a frame from another entry point's deploy — is drawn
-            // fresh, so the cluster is fully self-contained in its clean zone.
+        // Reuse ONLY a frame created earlier in THIS run for THIS cluster
+        // (cluster_root == root AND a fresh, non-stale id). Anything else — the old
+        // cluster, or a frame from another entry point's deploy — is drawn fresh, so
+        // the cluster is fully self-contained in its clean zone and a helper shared
+        // inside it is still drawn once.
+        let reusable = {
             let created_here = EvmBatMetadata::read_metadata().ok().is_some_and(|m| {
                 m.miro.auto.frames.iter().any(|f| {
                     f.entry_point == target
@@ -5170,8 +5104,6 @@ async fn ensure_target_frames(
             } else {
                 None
             }
-        } else {
-            live_frame_url(&target, Some(client)).await?
         };
         if let Some(url) = reusable {
             println!("  {} reuses its frame", target.blue());

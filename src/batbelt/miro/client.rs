@@ -320,6 +320,8 @@ impl MiroClient {
 
     /// Create a frame sized to the computed layout. `x`/`y` are the center, in
     /// board coordinates.
+    /// `fill` tints the frame's own background — the API offers no border on a frame,
+    /// and a shape laid over one is an extra item to create, track and delete.
     pub async fn create_frame(
         &self,
         title: &str,
@@ -327,14 +329,19 @@ impl MiroClient {
         y: f64,
         width: f64,
         height: f64,
+        fill: Option<&str>,
     ) -> Result<String, MiroError> {
         let url = self.endpoint("frames");
-        let body = json!({
-            "data": { "title": title, "format": "custom", "type": "freeform" },
+        let mut data = json!({ "title": title, "format": "custom", "type": "freeform" });
+        let mut body = json!({
+            "data": data.take(),
             "position": { "x": x, "y": y },
             "geometry": { "width": width, "height": height },
-        })
-        .to_string();
+        });
+        if let Some(fill) = fill {
+            body["style"] = json!({ "fillColor": fill });
+        }
+        let body = body.to_string();
 
         let value = self
             .execute(LEVEL_2_CREDITS, "create_frame", move |http| {

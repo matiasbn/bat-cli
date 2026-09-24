@@ -40,6 +40,14 @@ pub struct EvmBatMetadata {
     /// across `sonar` regeneration (like `miro`); written by `bat-cli resolve`.
     #[serde(default)]
     pub resolutions: std::collections::HashMap<String, String>,
+    /// Contracts the auditor has already read and does not want drawn again: a
+    /// contract name (`Math`) or any part of a path. A deploy leaves their boxes out
+    /// — the calls to them stay visible in the callers' own screenshots, so nothing
+    /// about the audited code is hidden, and one of them can always be deployed as
+    /// its own entry point. Preserved across `sonar` regeneration (like `miro` and
+    /// `resolutions`); written by `bat-cli ignore`.
+    #[serde(default)]
+    pub ignored_contracts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -440,6 +448,13 @@ impl EvmBatMetadata {
                 if let Some(miro_val) = json.get("miro") {
                     if let Ok(miro) = serde_json::from_value::<MiroMetadataRef>(miro_val.clone()) {
                         metadata.miro = miro;
+                    }
+                }
+                // Preserve the ignore list across regeneration: it is the auditor's
+                // reading decision, not something the scan can rediscover.
+                if let Some(ignored) = json.get("ignored_contracts") {
+                    if let Ok(list) = serde_json::from_value::<Vec<String>>(ignored.clone()) {
+                        metadata.ignored_contracts = list;
                     }
                 }
                 // Preserve AI-supplied interface resolutions across regeneration.
