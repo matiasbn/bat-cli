@@ -30,6 +30,7 @@ use crate::batbelt::miro::layout::{
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::path::BatFolder;
 use crate::batbelt::silicon;
+use rand::seq::SliceRandom;
 use rayon::prelude::*;
 
 type Result<T> = error_stack::Result<T, EvmMiroError>;
@@ -719,10 +720,31 @@ async fn deploy_one(
         return Ok(());
     }
 
-    // Every deploy is fresh: nothing already on the board is linked, so the cluster
-    // you are about to read has all of its frames together, drawn by the rules in
-    // force today. Sharing happens only WITHIN this run, via `ensure_target_frames`.
-    let deployed_titles: HashSet<String> = HashSet::new();
+    // Every deploy is fresh, so nothing another deploy left on the board is linked —
+    // but a frame THIS run already drew for THIS cluster is a different matter. It is
+    // the same rule `ensure_target_frames` reuses by (`cluster_root` matches, id is not
+    // the old cluster's), and it is what keeps a helper two branches reach from being
+    // drawn twice: the second branch cards it. Cutting to one of these is free — the
+    // frame exists — so `best_cut` may target it at any size, which is what you want
+    // for a big callee that keeps coming back.
+    let deployed_titles: HashSet<String> = if cluster.root.is_empty() {
+        HashSet::new()
+    } else {
+        let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        let in_graph: HashSet<&str> = nodes.iter().map(|node| node.label.as_str()).collect();
+        meta.miro
+            .auto
+            .frames
+            .iter()
+            .filter(|frame| {
+                frame.cluster_root == cluster.root
+                    && !cluster.stale_ids.contains(&frame.frame_id)
+                    && frame.entry_point != title
+                    && in_graph.contains(frame.entry_point.as_str())
+            })
+            .map(|frame| frame.entry_point.clone())
+            .collect()
+    };
 
     // Cross-contract calls this tree reaches through an interface, whose concrete
     // target static analysis cannot pin. By default STOP so the AI (or auditor) can
@@ -1475,6 +1497,7 @@ async fn deploy_one(
                 }
             }
         }
+        let mut palette_of: HashMap<usize, Vec<usize>> = HashMap::new();
         let mut colors: Vec<Option<usize>> = vec![None; edges.len()];
         let mut by_callee: HashMap<&str, usize> = HashMap::new();
         for index in order {
@@ -1487,7 +1510,22 @@ async fn deploy_one(
                 .iter()
                 .filter_map(|other| colors[*other])
                 .collect();
-            let choice = (0..DEPTH_COLORS.len())
+            // Each gutter tries the palette in its own SHUFFLED order. The conflict
+            // rule alone always reached for colour 0 first, so every column opened on
+            // the same hue and a frame read as one repeated pattern — correct, and
+            // monotonous. The shuffle is drawn per run rather than derived from the
+            // graph: a deploy draws a fresh cluster anyway, so there is nothing to keep
+            // stable between runs, and a diagram that looks different each time is the
+            // point of asking for it.
+            let gutter = lane_index.get(&index).map(|(layer, _)| *layer).unwrap_or(usize::MAX);
+            let palette = palette_of.entry(gutter).or_insert_with(|| {
+                let mut order: Vec<usize> = (0..DEPTH_COLORS.len()).collect();
+                order.shuffle(&mut rand::thread_rng());
+                order
+            });
+            let choice = palette
+                .iter()
+                .copied()
                 .find(|color| !used.contains(color))
                 .unwrap_or(index % DEPTH_COLORS.len());
             colors[index] = Some(choice);

@@ -463,3 +463,30 @@ framing could not bring under `FRAME_MAX` it is skipped rather than adding 74 co
 **A deploy's own temp dir is shared per project** (`$TMPDIR/bat-cli/<project>/`) and the rendered
 PNG name carries no run id, so two deploys of the same project at once delete each other's
 screenshots mid-upload. Known, not fixed: run one at a time.
+
+## 16. Not implemented: a planning phase before drawing
+
+`deploy_one` interleaves deciding and drawing: it builds the graph, frames it, creates the frame on
+the board, and only THEN discovers its children — `ensure_target_frames` deploys each missing
+target inside the parent's own deploy. Three consequences, all felt:
+
+- **The size of a run is unknowable until it ends.** Nobody can say how many frames a cluster will
+  have, so there is no total, no progress over frames, and `--dry-run` cannot tell you either: it
+  expands the root frame and returns.
+- **Frames are drawn strictly one at a time.** Uploads inside a frame already run concurrently
+  (bounded by the client's 6 permits and the credit budget), but the network sits idle while the
+  next frame renders and lays out. A 30-frame cluster pays that gap 30 times.
+- **A frame cannot card a sibling that does not exist yet.** Reuse within a run is discovered as it
+  goes, so a branch framed later is redrawn by a branch framed earlier. The current fix reads the
+  registry for frames this run already wrote (§15) — real, but it only ever knows the past.
+
+The shape of the fix: split `deploy_one` into `plan_frame` (graph → framing → localize → layout →
+measured size; no client, all local and already `rayon`-parallel in the render) and `draw_frame`
+(allocate, create, upload). Then `plan_cluster` recurses over the plans, deduplicating targets by
+title, so the whole cluster is known before the first API call: the total is printable, the
+allocator can place every frame in one pass, the unresolved-interface check can stop the run before
+anything is drawn, and the frames can be created and filled concurrently.
+
+Two things to get right when it is done: the rendered PNGs of the whole cluster now exist at once
+(cleanup must move to the end of the run), and the shared temp dir means a per-run subdirectory is
+needed anyway (§15).
