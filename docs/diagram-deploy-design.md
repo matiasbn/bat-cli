@@ -288,3 +288,67 @@ swap of newly-framed callees), `--undeploy` (remove a frame + its items outright
 `--include-external` (draw `lib/` callees; implied by a `lib/` root).
 
 `--entry-point` forms: `function`, `Contract.function`, `path/To.sol:Contract.function` (§10b).
+
+## 13. Not implemented: call-ordered columns, connector lanes, no stagger
+
+Three cosmetic defects survive in a wide fan-out, and all three force the reader to
+rearrange the board by hand to follow the graph. Measured on a 33-node / 36-edge
+frame (`--dry-run`), root fan-out of 18 edges:
+
+- **Columns are not in call order.** 14 of 18 callees sat off their call-order slot,
+  32 inverted `(call line, callee y)` pairs, plus the same defect in three deeper
+  callers. Root cause is not the sweep count: `count_crossings` keys an edge by the
+  integer *slot* of caller and callee, so two edges leaving the **same** caller have
+  equal keys and can never count as crossing — the metric is blind to precisely this
+  defect, and the call-order signal (`from_line_fraction`, used by the downward
+  sweep) only ever survives as a tie-break. Compounding it, `sort_layer` sends
+  keyless nodes to the END of the layer, which is what puts every leaf below every
+  non-leaf.
+- **Outgoing connectors collapse into one line.** Every group leaving a caller shares
+  one vertical corridor x (the caller's right border, `+200` only when the call token
+  itself reaches it), so with 18 edges the verticals fell inside 150px — 8.8px apart
+  at 8px stroke.
+- **Boxes' x forces crossings.** The per-column stagger (top box furthest right, ≤50px
+  per rank / 300px total) exists only to un-stack Miro-chosen elbows; it spreads left
+  edges by 300px and costs 700px of frame width, and the differing screenshot widths
+  spread right edges by ~1500px, so arrows cross for no graph reason.
+
+The design that fixes all three as one mechanism:
+
+1. Make the crossing count honest — key each edge by `slot + from_line_fraction`, and
+   let keyless nodes hold their slot instead of sinking. Then an out-of-call-order
+   pair costs exactly 1, the same as any other crossing, so the layout trades it only
+   when it genuinely saves crossings elsewhere.
+2. **Lanes.** `layout.rs` fills the `routes` contract it already declares (nothing
+   consumes it today) with real waypoints: each forward edge gets its own vertical
+   lane in the gutter, `x_k = R_g + LANE_MARGIN + k · LANE_PITCH` (100 / 40 — five
+   stroke widths apart, first turn clear of the red storage border), with the gutter
+   widened to `max(gutter_x, 2·margin + (n-1)·pitch)`. Lanes are assigned by
+   `(source y, target y)` so that non-inverted pairs provably never cross; inverted
+   pairs cross once, which is topologically unavoidable. Upload draws a polyline of
+   collinear marker-to-marker segments, so **Miro routes nothing** — the same
+   invisible-marker trick already used for the call-token anchor, extended to the
+   vertical leg. Layer-skipping edges reuse the gap already reserved by
+   `insert_bend_points`, which today reserves a corridor and then drops it.
+3. **Delete the stagger**, whose only job was separating elbows Miro no longer picks.
+
+Simulated on that frame: inverted pairs 32 → 8 (the residue is one callee called from
+two lines — one box cannot sit in two places), visual crossings 40 → 18, frame width
+−160px net (the wider gutters cost less than the stagger did).
+
+Why it is parked rather than shipped: it is a large change to the one pure, load-bearing
+module for a purely aesthetic gain, and it carries real costs — ~1.6× API calls in the
+connector phase (213 vs 135 here), a changed vertical order in deep layers so every
+redeployed frame looks different from today's, an unverified minimum shape size for an
+8px corner marker, and `refresh_links_surgical` keeping its one auto-routed connector
+unless the registry also stores `callee_routes`. Nothing else moves: framing, localize,
+pipeline order, the red/amber marks, `screenshot`, `undeploy`, `relink`, `resolve`.
+
+A related idea, also parked: a `deploy_id` stamped inside the frame as content (not an
+id), so a cut-and-pasted or re-deployed frame can be told apart from its twin. Children
+already re-pair by content — every image carries `title` = node label, which is what
+`rebuild_record` uses — so the gap is only the frame's own identity: today two frames
+titled `auto: X` make `reanchor_frame` stop and ask for `--frame-url`, and the registry
+holds one record per entry point. Keying the registry by a stamp instead would allow two
+live frames of the same function, and would let a sweep repair inbound link cards, whose
+`<a href=…moveToWidget=<frame_id>>` still points at the id the paste invalidated.
