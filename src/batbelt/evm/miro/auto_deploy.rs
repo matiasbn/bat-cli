@@ -1292,29 +1292,6 @@ async fn deploy_one(
         callees: Vec<CalleeLink>,
     }
 
-    // Colour each connector by its CALLEE, ranked WITHIN ITS DEPTH (layer) — so two
-    // DIFFERENT functions at the same depth never share a hue (e.g. `mint` and
-    // `burn` on layer 2), while the SAME function keeps ONE colour on all its arrows
-    // (one entry per callee). A layer rarely has more than the palette's worth of
-    // distinct callees. Depth itself is read off the column, so the hue is free.
-    let depth_of: HashMap<&str, usize> = nodes.iter().map(|n| (n.id.as_str(), n.depth)).collect();
-    let mut callee_color: HashMap<String, String> = HashMap::new();
-    {
-        let mut rank_in_depth: HashMap<usize, usize> = HashMap::new();
-        for edge in edges.iter() {
-            if callee_color.contains_key(&edge.to) {
-                continue;
-            }
-            let depth = depth_of.get(edge.to.as_str()).copied().unwrap_or(0);
-            let rank = rank_in_depth.entry(depth).or_insert(0);
-            callee_color.insert(
-                edge.to.clone(),
-                DEPTH_COLORS[*rank % DEPTH_COLORS.len()].to_string(),
-            );
-            *rank += 1;
-        }
-    }
-
     // One vertical lane per forward arrow, inside the gutter between the two columns
     // it spans. Lanes are ordered by where the arrow starts and where it ends, which
     // is what keeps two arrows that do not have to cross from crossing: for two
@@ -1391,6 +1368,134 @@ async fn deploy_one(
         }
         lanes
     };
+
+    // Colour the ARROWS, by colouring a conflict graph rather than by ranking boxes.
+    //
+    // What a colour is for is telling two arrows apart where a reader has to compare
+    // them, and that is two places only: arrows running side by side in the same
+    // gutter, and arrows leaving the same screenshot. Every rank-based rule collided
+    // somewhere else — ranking by depth put the same colour on the two arrows most
+    // likely to be side by side, ranking by column position left repeats a palette
+    // apart that can still end up in neighbouring lanes. So: build the conflicts, walk
+    // the arrows in a fixed order (gutter, then lane), and give each the first colour
+    // none of its conflicting neighbours already has. Two arrows that reach the SAME
+    // function are not in conflict — sharing their colour is what lets a reader
+    // recognise a helper drawn in several places.
+    let edge_color: Vec<String> = {
+        let lane_index: HashMap<usize, (usize, f64)> = edges
+            .iter()
+            .enumerate()
+            .filter_map(|(index, edge)| {
+                let from = layout.node(&edge.from)?;
+                let lane = lane_of.get(&(edge.from.clone(), edge.to.clone(), edge.line_in_slice))?;
+                Some((index, (from.layer, *lane)))
+            })
+            .collect();
+        // A fixed walk order, so the same graph always comes out the same colours.
+        let mut order: Vec<usize> = (0..edges.len()).collect();
+        order.sort_by(|a, b| {
+            let key = |index: &usize| lane_index.get(index).copied().unwrap_or((usize::MAX, 0.0));
+            let (la, xa) = key(a);
+            let (lb, xb) = key(b);
+            la.cmp(&lb)
+                .then(xa.partial_cmp(&xb).unwrap_or(std::cmp::Ordering::Equal))
+                .then(a.cmp(b))
+        });
+        // Neighbours in the gutter: the two lanes on either side are what a reader's
+        // eye actually puts next to each other.
+        const LANE_NEIGHBOURHOOD: usize = 2;
+        let mut per_gap: HashMap<usize, Vec<usize>> = HashMap::new();
+        for index in &order {
+            if let Some((layer, _)) = lane_index.get(index) {
+                per_gap.entry(*layer).or_default().push(*index);
+            }
+        }
+        let mut conflicts: Vec<HashSet<usize>> = vec![HashSet::new(); edges.len()];
+        for arrows in per_gap.values() {
+            for (position, index) in arrows.iter().enumerate() {
+                let lower = position.saturating_sub(LANE_NEIGHBOURHOOD);
+                let upper = (position + LANE_NEIGHBOURHOOD + 1).min(arrows.len());
+                for other in &arrows[lower..upper] {
+                    if other != index && edges[*other].to != edges[*index].to {
+                        conflicts[*index].insert(*other);
+                        conflicts[*other].insert(*index);
+                    }
+                }
+            }
+        }
+        // Leaving the same screenshot: those the reader compares directly, at the call
+        // lines. And ARRIVING at boxes that sit next to each other in the next column:
+        // their last horizontal legs run parallel, a stone's throw apart, which is the
+        // same comparison at the other end of the arrow.
+        for (index, edge) in edges.iter().enumerate() {
+            for (other, sibling) in edges.iter().enumerate() {
+                if other != index && sibling.from == edge.from && sibling.to != edge.to {
+                    conflicts[index].insert(other);
+                }
+            }
+        }
+        let mut column: HashMap<usize, Vec<(f64, String)>> = HashMap::new();
+        for placed in &layout.nodes {
+            column
+                .entry(placed.layer)
+                .or_default()
+                .push((placed.y, placed.id.clone()));
+        }
+        let mut neighbour_of: HashMap<&str, HashSet<String>> = HashMap::new();
+        for boxes in column.values_mut() {
+            boxes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            for (position, (_, id)) in boxes.iter().enumerate() {
+                let lower = position.saturating_sub(1);
+                let upper = (position + 2).min(boxes.len());
+                neighbour_of.insert(
+                    id.as_str(),
+                    boxes[lower..upper]
+                        .iter()
+                        .filter(|(_, other)| other != id)
+                        .map(|(_, other)| other.clone())
+                        .collect(),
+                );
+            }
+        }
+        for (index, edge) in edges.iter().enumerate() {
+            let Some(neighbours) = neighbour_of.get(edge.to.as_str()) else {
+                continue;
+            };
+            for (other, sibling) in edges.iter().enumerate() {
+                if other != index && neighbours.contains(&sibling.to) {
+                    conflicts[index].insert(other);
+                    conflicts[other].insert(index);
+                }
+            }
+        }
+        let mut colors: Vec<Option<usize>> = vec![None; edges.len()];
+        let mut by_callee: HashMap<&str, usize> = HashMap::new();
+        for index in order {
+            // The same callee keeps one colour wherever it is reached from.
+            if let Some(taken) = by_callee.get(edges[index].to.as_str()) {
+                colors[index] = Some(*taken);
+                continue;
+            }
+            let used: HashSet<usize> = conflicts[index]
+                .iter()
+                .filter_map(|other| colors[*other])
+                .collect();
+            let choice = (0..DEPTH_COLORS.len())
+                .find(|color| !used.contains(color))
+                .unwrap_or(index % DEPTH_COLORS.len());
+            colors[index] = Some(choice);
+            by_callee.insert(edges[index].to.as_str(), choice);
+        }
+        colors
+            .into_iter()
+            .map(|color| DEPTH_COLORS[color.unwrap_or(0)].to_string())
+            .collect()
+    };
+    let callee_color: HashMap<String, String> = edges
+        .iter()
+        .enumerate()
+        .map(|(index, edge)| (edge.to.clone(), edge_color[index].clone()))
+        .collect();
 
     let mut groups: HashMap<(String, usize, bool), PendingGroup> = HashMap::new();
     for edge in edges.iter() {
@@ -1562,13 +1667,21 @@ async fn deploy_one(
             } else {
                 (RelativeAnchor::new(1.0, 0.5), RelativeAnchor::new(0.0, 0.5))
             };
-            let mut stub_style = group.style.clone();
-            stub_style.arrow = ArrowEnd::End;
-            connectors.push(
-                client
-                    .create_connector(&edge_marker, edge_side, &token_marker, token_side, stub_style)
-                    .await?,
-            );
+            // The shared stub exists for the arrows Miro still routes. A lane-routed
+            // arrow reaches the call line by itself, and drawing the stub as well put
+            // a second horizontal on the same y — the little hook the reader sees at
+            // the caller's edge is that duplicate, plus the elbow Miro adds to join
+            // them.
+            let lane_routed = group.exit_right && group.callees.iter().all(|link| link.lane_x.is_finite());
+            if !lane_routed {
+                let mut stub_style = group.style.clone();
+                stub_style.arrow = ArrowEnd::End;
+                connectors.push(
+                    client
+                        .create_connector(&edge_marker, edge_side, &token_marker, token_side, stub_style)
+                        .await?,
+                );
+            }
 
             for link in &group.callees {
                 let mut route_style = group.style.clone();
@@ -1602,14 +1715,18 @@ async fn deploy_one(
                     .await?;
                 markers.push(lane_top.clone());
                 markers.push(lane_end.clone());
+                // Straight into the call line itself, carrying this arrow's head: the
+                // edge marker is not on the path at all.
+                let mut head_style = route_style.clone();
+                head_style.arrow = ArrowEnd::End;
                 connectors.push(
                     client
                         .create_connector(
                             &lane_top,
                             RelativeAnchor::new(0.0, 0.5),
-                            &edge_marker,
+                            &token_marker,
                             RelativeAnchor::new(1.0, 0.5),
-                            route_style.clone(),
+                            head_style,
                         )
                         .await?,
                 );

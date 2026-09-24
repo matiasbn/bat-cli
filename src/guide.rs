@@ -811,6 +811,12 @@ so you re-open only the docs that actually changed — not everything.
   line, down this arrow's own lane in the gutter, in at the callee's signature — so nothing is left
   for Miro to route. Lanes are ordered by where each arrow starts and ends, which keeps arrows that
   need not cross from crossing, and narrow automatically when a gutter cannot fit them.
+- **Arrow colours come from a conflict graph, not a ranking.** Two arrows never share a colour when
+  a reader has to tell them apart — running in neighbouring lanes of one gutter, leaving the same
+  screenshot, or landing on boxes that sit next to each other in the next column. Two arrows that
+  reach the SAME function still share one colour, so a helper drawn in several places stays
+  recognisable. (Ranking by depth gave the same colour to the first callee of one column and the
+  first of the next, which are usually the two arrows side by side in the gutter.)
 - **A call that flies over a column can become a card.** When a shared callee is too big to copy
   next to a far caller (its closure reaches the frame floor), that ONE call is replaced by a card to
   the callee's own frame; the caller sitting next to it keeps reading it as a screenshot.
