@@ -177,9 +177,6 @@ enum BatCommands {
         #[arg(long)]
         check: bool,
     },
-    /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
-    /// interface call to its concrete implementation. `deploy` stops and lists what to
-    /// resolve; add them here, then deploy again. Stored in the metadata.
     /// Never draw a contract's functions again (a library you have already read)
     Ignore {
         /// Contract name (`Math`) or any part of a path
@@ -192,6 +189,9 @@ enum BatCommands {
         #[arg(long)]
         remove: bool,
     },
+    /// Record an interface→contract resolution so `deploy` can follow a runtime-bound
+    /// interface call to its concrete implementation. `deploy` stops and lists what to
+    /// resolve; add them here, then deploy again. Stored in the metadata.
     Resolve {
         /// Interface type to resolve, e.g. `IBorrowerOperations`.
         interface: Option<String>,
