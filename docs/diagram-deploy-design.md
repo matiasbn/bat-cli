@@ -276,26 +276,58 @@ All in `src/batbelt/evm/miro/auto_deploy.rs` unless noted:
 | `FRAME_TARGET` | 15 | screenshots a frame is aimed at |
 | `FRAME_MAX` | 20 | effective size above which a frame is split |
 | `FRAME_MIN` | 6 | husk floor (piece AND residual) |
-| `MAX_CUTS_PER_FRAME` | 10 | max sub-frames carved from one frame |
+| `MAX_CUTS_PER_FRAME` | 10 | sets the initial cut budget; NOT a cap on passes (§13) |
 | `DEPTH_FREE_LAYERS` / `DEPTH_PENALTY` | 5 / 0.15 | depth surcharge in `effective_size` |
 | `CROSS_LAYERS` | 2 | caller columns-back that counts as a crossing |
-| `MAX_CLOSURE` (localize) | 3 | only SMALL helpers are copied local |
+| `MAX_CLOSURE` (localize) | `FRAME_MIN - 1` | biggest closure copied local (§14) |
+| `MAX_COPIES_OF_ONE_CALLEE` | 3 | far callers that may each get a copy before the callee gets a frame (§14) |
+| `LANE_PITCH` | 40 | x between two arrows' vertical lanes; narrows to fit (§13) |
+| `ANCHOR_MARKER_SIZE` | 24 | invisible shape a connector endpoint anchors to |
 | `REFERENCE_FONT` | 32 | the one font everything renders at; depth = scale |
 
-Flags: `--inline-all` (one frame, measure size), `--preview <path>` (local PNG, no
-board), `--redeploy` (fresh cluster + report old URLs), `--refresh-links` (surgical
-swap of newly-framed callees), `--undeploy` (remove a frame + its items outright),
-`--include-external` (draw `lib/` callees; implied by a `lib/` root).
+Flags: `--dry-run`, `--preview <path>` (local PNG, no board), `--with-documentation`,
+`--stroke-width`, `--allow-unresolved`, `--ignore-contract <name-or-path>` (§14),
+`--inline-all` (one frame, measure size).
+
+Removed in 0.26.11 (§15): `--redeploy`/`--fresh-frames` (every deploy is fresh now),
+`--recycle`, `--refresh-links`, `--undeploy`, `--yes`, `--all`, `--max-depth`,
+`--max-nodes`, `--include-external` (`lib/` is always drawn).
 
 `--entry-point` forms: `function`, `Contract.function`, `path/To.sol:Contract.function` (§10b).
 
-## 13. Connector lanes (parked) — the ordering and the stagger are DONE
+## 13. Readable arrows: call order, lanes, no stagger — ALL SHIPPED (0.26.11)
 
-**Status:** the call-order fix and the stagger removal shipped in 0.26.11 (`count_crossings` keys
-each edge by `slot + from_line_fraction`, `sort_layer` leaves keyless nodes in their slot, and the
-per-column x nudge is gone). Measured after: the root's 18 callees on a real frame sit in source
-order, inverted pairs 32 → 8, and the 8 are one callee called from two lines. **Lanes are still
-parked** — everything below about the shared corridor stands.
+All three parts below shipped. What they replaced, and what they cost, is worth keeping because
+each was a rule the code stated and then failed to enforce.
+
+**Call order.** `count_crossings` keyed an edge by the integer slot of its caller, so two edges
+leaving the SAME caller compared equal and could never count as crossing — the metric was blind to
+the disorder a reader notices first, and the call-line signal (`from_line_fraction`) survived only
+as a tie-break that any gain elsewhere overrode. It now keys by `slot + from_line_fraction`.
+`sort_layer` also sent keyless nodes to the END of a layer, and in a downward sweep every leaf is
+keyless, so a column came out as "callees that call something, then every leaf"; keyless nodes now
+hold their slot. Measured on a real frame: the root's 18 callees in source order, inverted pairs
+32 → 8, and those 8 are one callee genuinely called from two lines (one box cannot sit at two
+heights).
+
+**Lanes.** Miro routes a connector itself (§1), so every arrow leaving a caller turned on the same
+x and the verticals stacked into what read as one thick line. A forward arrow is now drawn as three
+straight legs between markers bat-cli places — out at the call line, down (or up) this arrow's OWN
+lane in the gutter, in at the callee's signature line — so there is nothing left for Miro to route.
+Lanes sit at `layer_right + margin + k · LANE_PITCH` and narrow automatically when a gutter cannot
+hold them all. They are ordered by (start y, end y): of two arrows going the same way, the one
+starting lower takes the outer lane, so each one's horizontal leg passes outside the other's
+vertical leg. Two arrows whose start and end order disagree cross once, which is unavoidable with
+one box per function. Cycles keep the single Miro-routed connector. Cost: roughly 1.6× calls in the
+connector phase — bounded in practice by the client's 6 concurrent requests, not by the count.
+
+A detail worth remembering: the shared stub (one arrow head per call line, into the edge marker) is
+drawn ONLY when something still needs Miro to route. Drawing it as well as a lane put a second
+horizontal on the same y, and the hook the reader saw at the caller's border was that duplicate
+plus the elbow Miro added to join them.
+
+**Stagger, gone.** The per-column x nudge existed only to separate elbows Miro chose; with lanes it
+had no job, and it cost up to 300px of spread per column.
 
 
 Three cosmetic defects survive in a wide fan-out, and all three force the reader to
@@ -359,3 +391,75 @@ titled `auto: X` make `reanchor_frame` stop and ask for `--frame-url`, and the r
 holds one record per entry point. Keying the registry by a stamp instead would allow two
 live frames of the same function, and would let a sweep repair inbound link cards, whose
 `<a href=…moveToWidget=<frame_id>>` still points at the id the paste invalidated.
+
+## 14. Density: what is NOT worth drawing
+
+Three rules, all about the same thing — a diagram is for reading, and a box that teaches nothing
+costs the reader more than it gives.
+
+**An ignore list (`bat-cli ignore`).** A fixed-point maths library called from thirty places is
+thirty boxes saying the same thing. On one real cluster `Math` was **205 of 747 drawn boxes, for 5
+distinct functions**. The list takes a contract name or any part of a path, lives in
+`BatMetadata.json` (preserved across a re-`sonar`, like `miro` and `resolutions`), and
+`--ignore-contract` adds to it for one run; a deploy leaves out the union and prints what it
+skipped. **It hides nothing about the audited code**: the calls stay in the callers' own
+screenshots with their storage and boundary markings — only the callee's box is left out, and it
+can always be deployed as an entry point of its own. Good candidates are utility maths and logging.
+Bad ones are anything that writes storage or moves value (`SafeERC20`), which is what the diagram
+exists for.
+
+**Repetition and size are different costs.** Copying a callee next to its far caller is the only
+thing that removes a crossing arrow (§1), and the decision to copy weighed only the callee's
+closure. But the cost is paid once per caller: a helper the size of a getter was copied for every
+caller that reached it, and one contract drew **203 boxes for 30 functions**. So two thresholds —
+`MAX_CLOSURE` for how big one copy may be, `MAX_COPIES_OF_ONE_CALLEE` for how many callers may each
+have one. Over either, the callee gets a frame of its own and a card beside each caller: one
+drawing instead of seven, and the arrow is gone rather than shortened.
+
+**A crossing is a reason to cut, and only the crossing call is cut.** Framing cuts for SPACE, which
+left long arrows untouched however much room the frame had. `cut_crossing_shared` now replaces the
+offending CALL — via `cut_edge`, not `cut_node` — so the caller sitting next to the callee keeps
+reading it as a screenshot and only the caller that was flying over two columns gets a card. The
+two bands meet at `FRAME_MIN`: under it a crossing callee is copied, at or over it it is carded, so
+nothing falls between them and keeps crossing (the old `MAX_CLOSURE = 3` left exactly that gap).
+
+**Colours are a graph colouring, not a ranking.** A colour exists to tell two arrows apart where a
+reader compares them, which is three places: neighbouring lanes in one gutter, arrows leaving the
+same screenshot, and arrows landing on boxes that neighbour each other in the next column. Every
+rank-based rule collided somewhere — ranking by depth gave the same colour to the first callee of
+one column and the first of the next, which after lanes are usually the two arrows side by side.
+So the arrows are a conflict graph, walked in a fixed order (gutter, then lane) and given the first
+colour no conflicting neighbour holds. Two arrows reaching the SAME function deliberately share a
+colour, which is what makes a helper drawn in several places recognisable.
+
+## 15. One deploy, always fresh (0.26.11)
+
+`deploy` used to reuse the board: it recycled the entry point's existing frame (wiping its contents
+and redrawing in place) and turned an already-framed callee into a link card pointing at whatever
+frame existed. Both were dropped, for the same reason: **what it drew depended on which frames
+happened to exist and where earlier deploys had left them**, so a deploy was not reproducible and
+its output was scattered across the board — while the thing an auditor wants is a cluster they are
+about to read, together, drawn by the rules in force today. Every deploy now draws the whole
+cluster fresh in a clean region. Sharing happens only WITHIN a run (`ensure_target_frames`, keyed on
+`cluster_root` + a non-stale id), so a helper two branches reach is still drawn once. The previous
+cluster is not deleted — the API deletes one item at a time, slowly (§8) — its still-live frame
+URLs are printed for one-click deletion in Miro.
+
+That removed `--redeploy`/`--fresh-frames` (now the only behaviour) and `--recycle`. Removed with
+them: `--refresh-links` and `--undeploy` (delete a frame in Miro yourself; the web UI takes its
+contents with it), `--yes` (its prompt no longer existed — `assume_yes` was declared and never
+read), `--all`, and `--max-depth`/`--max-nodes`, which truncated the graph and so hid code from an
+audit. `--include-external` went too: if the code is in the repo it is part of what runs.
+
+**Framing now cuts until the frame reads.** It gave up two ways in silence — a fixed ten passes,
+and a cut budget computed once — so "nothing worth cutting AT THIS SIZE" was treated as "nothing
+worth cutting" and the rest shipped as one wall: `FLAMMSwapLib.execute` went to the board as **250
+screenshots and 641 connectors**. It now lowers the budget to the husk floor before giving up,
+bounds itself by the node count (no run reaches it; every pass removes a screenshot), and SAYS so
+when it genuinely cannot cut. Same function, same rules: 16 screenshots. Localization then checks
+its own premise — copying a helper is cheap *because the frame is already small*, so on a frame
+framing could not bring under `FRAME_MAX` it is skipped rather than adding 74 copies to a wall.
+
+**A deploy's own temp dir is shared per project** (`$TMPDIR/bat-cli/<project>/`) and the rendered
+PNG name carries no run id, so two deploys of the same project at once delete each other's
+screenshots mid-upload. Known, not fixed: run one at a time.
