@@ -522,6 +522,19 @@ bat-cli deploy --entry-point Vault.deposit --refresh-links  # incremental: only 
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
 | `--all` | every entry point at once — **discouraged**; it warns and asks first |
 | `--yes` | skip the "already on the board — deploy again?" confirmation (redeploy non-interactively; it recycles the frame: same id, same centre) |
+| `--redeploy` (alias `--fresh-frames`) | give this deploy its OWN frames: recycle nothing, link no pre-existing frame, draw the whole cluster fresh in a clean zone (see below) |
+
+**Own frames — `--redeploy` / `--fresh-frames`.** The two names are the same flag. A plain deploy
+REUSES the board: it recycles this entry point's existing frame, and any callee that already has a
+frame of its own becomes a link card pointing at it. Pass `--fresh-frames` when you want the
+opposite — a self-contained cluster that ignores everything already there: nothing is recycled,
+nothing pre-existing is linked, every dependency is drawn again inside this cluster, and the whole
+thing lands in a clean region below the rest of the board. Frames created earlier in the SAME run
+are still shared, so a helper called twice is drawn once. The registry holds one frame per entry
+point, so the previous cluster's records are dropped and its still-live frame URLs are printed for
+you to delete with one click in Miro (the web UI deletes a frame with its contents; the API can't).
+Use it when a diagram has drifted — hand-moved boxes, half-deleted frames, links into frames you no
+longer trust — and you want one built from scratch instead of patched.
 
 **Incremental relink — `--refresh-links`.** After you've hand-arranged a deployed frame, giving one
 of its callees its own frame (by deploying that callee as an entry point) means the callee should
@@ -784,6 +797,15 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.10
+- **`--fresh-frames`: deploy with its own frames, ignoring the board.** Nothing new happens — this
+  is the existing `--redeploy` under a name that says what it does. A plain deploy reuses the board
+  (it recycles this entry point's frame and turns an already-framed callee into a link card);
+  `deploy --entry-point <X> --fresh-frames` draws a self-contained cluster instead, recycling
+  nothing and linking no pre-existing frame. Reach for it when a diagram has drifted and you want
+  one built from scratch rather than patched. `--redeploy` keeps working and means exactly the same.
+  _Re-read: workflow.md._
 
 ## 0.26.9
 - **A transfer through `lib/` is marked as the external boundary it is.**

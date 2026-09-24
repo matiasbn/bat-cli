@@ -160,11 +160,14 @@ enum BatCommands {
         /// only (and how Miro handles it).
         #[arg(long)]
         inline_all: bool,
-        /// Redeploy the whole cluster FRESH into a clean zone: reuse nothing already
-        /// on the board (not even this entry point's own previous frames), and print
-        /// the previous cluster's frame URLs so you can delete them with one click in
-        /// Miro (the web UI deletes a frame with its contents; the API can't/is slow).
-        #[arg(long)]
+        /// Give this deploy its OWN frames and ignore every frame already on the
+        /// board: the entry point's own previous frame is not recycled and no
+        /// pre-existing frame is linked, so the whole cluster (entry point + every
+        /// dependency frame) is drawn fresh in a clean zone; only frames created
+        /// within this same run are shared. The previous cluster's frame URLs are
+        /// printed at the end so you can delete them with one click in Miro (the web
+        /// UI deletes a frame with its contents; the API can't/is slow).
+        #[arg(long, visible_alias = "fresh-frames")]
         redeploy: bool,
     },
     /// Draw one declaration's source onto a frame that is already on the board.

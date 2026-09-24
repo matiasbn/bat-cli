@@ -124,6 +124,7 @@ Useful flags, though none are needed:
 | `--stroke-width` | connector thickness in dp |
 | `--refresh-links` | after a callee gains its own frame, swap it for a link card in place — no re-render, no re-layout, your manual arrangement untouched |
 | `--undeploy` | remove this entry point's frame from the board and registry entirely (a helper that shouldn't be its own frame) |
+| `--fresh-frames` (a.k.a. `--redeploy`) | give this deploy its own frames: recycle nothing, link no pre-existing frame, draw the whole cluster fresh in a clean zone |
 
 ### `sonar`
 
