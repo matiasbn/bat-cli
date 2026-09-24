@@ -594,10 +594,10 @@ body whether the header invokes them (`BeaconProxy(beacon, data)`) or not, so de
 `FLAMMProxy.constructor` draws `BeaconProxy.constructor` and what it calls — not every inherited
 function, only what runs during construction.
 
-**One frame per function, board-wide.** A function already on the board is pointed at rather
-than redrawn — that is what lets several diagrams share a helper's frame. Asked for directly,
-though, it is the auditor's call: a redeploy prompts yes/no, so `--entry-point` on an
-already-deployed function still blocks. Add `--dry-run`, or hand the command over.
+**One frame per function, per cluster.** Inside a run, a function already drawn is pointed at
+rather than redrawn, so a helper two branches reach is drawn once. Across runs nothing is reused:
+deploying a function that is already on the board draws a new cluster and asks nothing (there is no
+prompt any more), and prints the previous cluster's frame URLs for you to delete.
 
 What lands on the board: one frame per entry point, one image per function already positioned,
 and one connector per call site anchored to the exact line — past the end of the line when it
@@ -628,17 +628,21 @@ A call the deploy itself draws into in-scope code is never amber, even when it i
 matches the interface without declaring `is <interface>` stays listed there). `--dry-run` prints
 the amber lines under "external boundary line(s)".
 
-**Frame recycling.** Redeploying a function reuses its existing frame (same id and position),
-wiping and redrawing the contents — so a diagram that links to the frame by URL keeps working,
-and no duplicate frames pile up. Interface/abstract stubs (bodyless declarations, empty
-`virtual {}`) are never drawn on their own: a stub is redirected to its concrete override.
-A callee that ALREADY has its own (still-on-the-board) frame is referenced with a link card pointing
-at that frame instead of being redrawn with its subtree — so the more of a big tree's functions you
-deploy as their own frames, the thinner the parent frame becomes on its next redeploy.
-It never thins a frame into a husk: a callee is linked out only while this frame keeps at least 6
-screenshots; otherwise it is drawn inline, and the deploy says so ("drawn inline despite having a
-frame"). So deploying both callees of a two-line function does NOT turn that function into one
-screenshot and two cards.
+**What is reused, and what is not.** Nothing another deploy left on the board is reused: a deploy
+draws its whole cluster fresh (see "Every deploy is fresh" above). Within one run, a callee that
+this run already gave a frame is referenced with a link card instead of being redrawn with its
+subtree. Interface/abstract stubs (bodyless declarations, empty `virtual {}`) are never drawn on
+their own: a stub is redirected to its concrete override. Linking never thins a frame into a husk —
+a callee is linked out only while this frame keeps at least 6 screenshots; otherwise it is drawn
+inline and the deploy says so ("drawn inline despite having a frame"). So a two-line function does
+NOT become one screenshot and two cards.
+
+**A frame's background says whether it changes state.** Very pale red (`#fff0ef`) when something
+drawn in it writes storage or reaches a write, pale amber (`#fff7ec`) when something in it only
+calls out past the audited code, and red wins when both are true — the same precedence the per-node
+markings have. It is the frame's own fill, and it exists for the distance where a whole cluster fits
+on screen and a node's own red border is two pixels wide. Inside the frame, the per-function
+markings are what answer the question precisely. Frames drawn before 0.26.11 stay white.
 
 **When a branch is linked out to its own frame.** Framing is a size-balanced partition, not a hard
 cap. A call tree under ~20 screenshots is drawn whole. A bigger one is split so each piece lands near
@@ -799,6 +803,15 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.12
+- **Fixes to what 0.26.11 SAID, not to what it did.** `ignore --help` opened with `resolve`'s
+  description (a misplaced doc comment); the workflow guide still described frame recycling and a
+  "redeploy prompts yes/no" that no longer exist; the frame tinting shipped in 0.26.11 was only in
+  the changelog, not in the workflow guide; and `deploy` was called a six-flag command when it has
+  eight (`--allow-unresolved` and `--ignore-contract` were missed). `bat-cli ignore` also lists when
+  given no pattern, so `--list` is a synonym rather than the only way.
+  _Re-read: workflow.md._
+
 ## 0.26.11
 - **`bat-cli ignore <NAME_OR_PATH>` — stop drawing a library you have already read.** Saved in
   `BatMetadata.json` (survives a re-`sonar`), with `--list`/`--remove`, plus
@@ -851,7 +864,7 @@ so you re-open only the docs that actually changed — not everything.
   column. Both fixed: on one real entry point the root's 18 callees now sit in source order, with
   the only exception a function genuinely called from two lines.
 - **The per-column x stagger is gone**, along with the frame width it cost.
-- **`deploy` is one command with six flags, and it is always fresh.** A deploy no longer recycles
+- **`deploy` is one command with eight flags, and it is always fresh.** A deploy no longer recycles
   the frame it finds, and no longer links a callee that already has a frame somewhere else: the
   entry point and every branch cut out of it are drawn again, together, in a clean region. The
   reason is that a recycled frame is not reproducible — what it drew depended on which frames
