@@ -108,6 +108,9 @@ pub struct AutoDeployOptions {
     /// Draw the partial graph even when interface calls in the tree are unresolved,
     /// instead of stopping to list them.
     pub allow_unresolved: bool,
+    /// Answer the "this entry point already has a deployment — deploy again?" question
+    /// with yes, so a re-deploy runs unattended.
+    pub assume_yes: bool,
     /// Contracts whose functions are never drawn: a name (`Math`) or any part of a
     /// path (`openzeppelin-contracts/contracts/utils/math`). The call is still shown
     /// in the caller's screenshot — it is the callee's box that is left out.
@@ -128,6 +131,7 @@ impl Default for AutoDeployOptions {
             preview: None,
             stroke_width: 8,
             allow_unresolved: false,
+            assume_yes: false,
             ignore_contracts: Vec::new(),
             inline_all: false,
         }
@@ -336,29 +340,15 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     for (contract_name, function_name, root_file) in targets {
         let title = format!("{contract_name}.{function_name}");
 
-        // A fresh deploy finds the PREVIOUS cluster (this entry point's frame + every
-        // dependency frame its last deploy spawned), keeps only the ones still on the
-        // board, so we can (a) never reuse them and (b) hand you their URLs to delete.
-        let mut stale: Vec<(String, String)> = Vec::new(); // (entry_point, url)
-        if !options.dry_run {
-            if let Some(client) = client.as_ref() {
-                let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-                for f in &meta.miro.auto.frames {
-                    if f.cluster_root == title || f.entry_point == title {
-                        if client.item_exists(&f.frame_id).await {
-                            stale.push((f.entry_point.clone(), f.frame_url.clone()));
-                        }
-                    }
-                }
-            }
-        }
         let stale_ids: HashSet<String> = {
             let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
             meta.miro
                 .auto
                 .frames
                 .iter()
-                .filter(|f| f.cluster_root == title || f.entry_point == title)
+                // A deployment is its cluster, nothing else: a frame named after this
+                // function inside SOMEBODY ELSE's deployment belongs to them.
+                .filter(|f| f.cluster_root == title)
                 .map(|f| f.frame_id.clone())
                 .collect()
         };
@@ -366,6 +356,33 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             root: title.clone(),
             stale_ids,
         };
+
+        // Deploying an entry point that already has a deployment REPLACES it: the new
+        // cluster is drawn fresh and the old frames are left on the board for you to
+        // delete. That is a big enough thing to happen by surprise that it asks first.
+        let previous: Vec<String> = {
+            let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+            meta.miro
+                .auto
+                .frames
+                .iter()
+                .filter(|f| f.cluster_root == title)
+                .map(|f| f.entry_point.clone())
+                .collect()
+        };
+        if !previous.is_empty() && !options.dry_run && !options.assume_yes {
+            println!(
+                "  {} {} already has a deployment of {} frame(s). Deploying again draws a NEW\n  cluster and leaves the old frames on the board for you to delete.",
+                "note:".yellow(),
+                title.bold(),
+                previous.len()
+            );
+            if !BatDialoguer::select_yes_or_no("Deploy it again?".to_string())
+                .change_context(EvmMiroError)?
+            {
+                continue;
+            }
+        }
 
         let root_options = options.clone();
 
@@ -382,29 +399,16 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         )
         .await?;
 
-        // A fresh deploy drops the old cluster's now-orphaned records and prints their
-        // URLs for one-click manual deletion (a frame + its contents delete together
-        // in Miro's web UI; the API can't, and one-by-one deletion is slow).
+        // The new deployment REPLACES the previous deployment of this entry point: its
+        // records go, whole, identified by the frame ids they carried before this run
+        // started. The frames themselves stay on the board — the API deletes one item at
+        // a time and slowly — so their URLs are printed for one-click deletion by hand.
         if !options.dry_run {
-            let owner = title.clone();
             let old_ids: HashSet<String> = cluster.stale_ids.clone();
             EvmBatMetadata::update_metadata(move |m| {
-                m.miro.auto.frames.retain(|f| {
-                    !((f.cluster_root == owner || f.entry_point == owner)
-                        && old_ids.contains(&f.frame_id))
-                });
+                m.miro.auto.frames.retain(|f| !old_ids.contains(&f.frame_id));
             })
             .change_context(EvmMiroError)?;
-            if !stale.is_empty() {
-                println!(
-                    "\n  {} {} old frame(s) from the previous deploy — delete them in Miro (one click each; the frame takes its contents with it):",
-                    "⚠".yellow(),
-                    stale.len()
-                );
-                for (ep, url) in &stale {
-                    println!("    {} {}", ep.dimmed(), url.blue());
-                }
-            }
         }
 
         // Persist the cursor after every entry point, not once at the end: a run
@@ -1899,14 +1903,25 @@ async fn deploy_one(
 
 /// Store what a deployment owns, replacing any earlier record for the same
 /// entry point.
+/// A record belongs to a DEPLOYMENT, and a deployment is an entry point.
+///
+/// The registry used to hold one record per function name, board-wide, which was true
+/// while a callee already on the board was linked rather than redrawn. Now that every
+/// deploy is fresh, a helper cut to its own frame is drawn once per deployment: the
+/// board carries several frames titled `auto: FLAMMFlowLib.requireFlat`, one per entry
+/// point that reaches it, with different ids and the same title. Keyed by name alone,
+/// the second deployment's record displaced the first's and the first's frames became
+/// unreachable from the CLI although they were right there on the board.
+///
+/// So the key is (deployment, frame), where the deployment is `cluster_root` — the
+/// entry point the whole cluster was drawn for — and the frame is the function it
+/// shows. Re-deploying an entry point replaces that deployment's records and no other.
 pub(crate) fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
     let record = record.clone();
     EvmBatMetadata::update_metadata(move |metadata| {
-        metadata
-            .miro
-            .auto
-            .frames
-            .retain(|frame| frame.entry_point != record.entry_point);
+        metadata.miro.auto.frames.retain(|frame| {
+            frame.cluster_root != record.cluster_root || frame.entry_point != record.entry_point
+        });
         metadata.miro.auto.frames.push(record.clone());
     })
     .change_context(EvmMiroError)
@@ -2394,7 +2409,7 @@ fn build_graph(
             }
             let mut child = make_node(
                 target_id.clone(),
-                format!("{}.{}", target_contract.name, target_function.name),
+                display_label(target_contract, &target_function),
                 target_contract,
                 &target_function,
                 current.depth + 1,
@@ -2460,7 +2475,7 @@ fn build_graph(
                 }
                 let mut child = make_node(
                     target_id.clone(),
-                    format!("{}.{}", base.name, constructor.name),
+                    display_label(base, &constructor),
                     base,
                     &constructor,
                     current.depth + 1,
@@ -2577,7 +2592,7 @@ fn build_graph(
             }
             let mut child = make_node(
                 target_id.clone(),
-                format!("{}.{}", tc.name, tf.name),
+                display_label(tc, &tf),
                 tc,
                 &tf,
                 current.depth + 1,
@@ -2977,11 +2992,38 @@ fn find_function_at<'a>(
 /// self-call and is pruned). A single-definition function keeps the plain id, so
 /// non-overloaded graphs are byte-identical to before.
 fn overload_node_key(contract: &ContractMetadata, function: &FunctionMetadata) -> String {
-    let overloaded = contract.functions.iter().filter(|f| f.name == function.name).count() > 1;
-    if overloaded {
-        format!("{}@{}", node_key(&contract.name, &function.name), function.line)
-    } else {
-        node_key(&contract.name, &function.name)
+    match overload_signature(contract, function) {
+        Some(signature) => format!("{}{signature}", node_key(&contract.name, &function.name)),
+        None => node_key(&contract.name, &function.name),
+    }
+}
+
+/// `(uint256,address)` when this contract declares the name more than once, else nothing.
+///
+/// Solidity requires overloads to differ in their parameter types, so the signature tells
+/// them apart — and unlike the line number that did this job before, it is the thing
+/// somebody reading the source would use to say WHICH `read` they mean. The node id and
+/// the label a frame is titled with then differ only by `::` versus `.`, which is what
+/// lets a pasted frame be re-paired by its title.
+fn overload_signature(contract: &ContractMetadata, function: &FunctionMetadata) -> Option<String> {
+    if contract.functions.iter().filter(|f| f.name == function.name).count() <= 1 {
+        return None;
+    }
+    let types = function
+        .params
+        .iter()
+        .map(|param| param.type_name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    Some(format!("({types})"))
+}
+
+/// What a frame is called: `Contract.function`, plus the signature when the name alone
+/// would not say which one.
+fn display_label(contract: &ContractMetadata, function: &FunctionMetadata) -> String {
+    match overload_signature(contract, function) {
+        Some(signature) => format!("{}.{}{signature}", contract.name, function.name),
+        None => format!("{}.{}", contract.name, function.name),
     }
 }
 

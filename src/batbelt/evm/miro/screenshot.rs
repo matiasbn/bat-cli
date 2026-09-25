@@ -52,8 +52,11 @@ pub struct ScreenshotOptions {
     pub file: Option<String>,
     /// `start-end`, 1-based and inclusive.
     pub lines: Option<String>,
-    /// Entry point naming the frame to draw into.
-    pub frame: Option<String>,
+    /// The deployment to draw into: the entry point it was deployed for.
+    pub deployment: Option<String>,
+    /// Which frame of that deployment: a dependency's name. Omitted means the
+    /// deployment's own root frame.
+    pub dependency: Option<String>,
     /// Include the declaration's NatSpec, as `deploy --with-documentation` does.
     pub with_documentation: bool,
     /// Grow the frame when the screenshot does not fit in it. Off by default: the frame's
@@ -76,25 +79,11 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
 
     // No frame named: say which ones exist rather than guessing. This is also how an
     // assistant discovers the frame names without being told them.
-    let Some(frame_name) = options.frame.clone() else {
+    let Some(deployment) = options.deployment.clone() else {
         return list_frames(&metadata);
     };
-
-    let record = metadata
-        .miro
-        .auto
-        .frames
-        .iter()
-        .find(|frame| frame.entry_point == frame_name)
-        .cloned()
-        .ok_or_else(|| {
-            Report::new(EvmMiroError)
-                .attach_printable(format!("no deployed frame named `{frame_name}`"))
-                .attach(crate::Suggestion(
-                    "run `bat-cli screenshot` with no --frame to list the deployed frames"
-                        .to_string(),
-                ))
-        })?;
+    let record = resolve_frame(&metadata, &deployment, options.dependency.as_deref())?;
+    let frame_name = record.entry_point.clone();
 
     let located = locate(&metadata, &options)?;
 
@@ -177,6 +166,68 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
         })
         .unwrap_or_else(|_| recorded_rects(&record));
 
+    // A type whose fields are themselves types is a tree, not a screenshot. Drawing it
+    // inline would bury the function the frame is about under a stack of declarations, so
+    // it becomes its own frame beside this one and leaves a card here pointing at it.
+    if let Some((mut nodes, edges)) = crate::batbelt::evm::miro::struct_frame::resolve_tree(
+        &metadata,
+        &located.label,
+        &located.file_path,
+        start,
+        located.end,
+    ) {
+        silicon::delete_png_file(png_path);
+        for node in nodes.iter_mut() {
+            let piece = Located {
+                label: node.label.clone(),
+                kind: "struct".to_string(),
+                file_path: node.file_path.clone(),
+                start: node.start,
+                end: node.end,
+            };
+            let begin = if options.with_documentation {
+                natspec_start(&piece.file_path, piece.start)
+            } else {
+                piece.start
+            };
+            let (path, width, height) = render(&piece, begin)?;
+            node.png_path = path;
+            node.png_width = width;
+            node.png_height = height;
+        }
+        let nested = nodes.len() - 1;
+        let url = crate::batbelt::evm::miro::struct_frame::draw(
+            &client,
+            &record,
+            nodes,
+            edges,
+            REFERENCE_FONT,
+        )
+        .await?;
+
+        let (card_width, card_height) = crate::batbelt::evm::miro::struct_frame::card_size();
+        let (card_x, card_y) =
+            free_spot(&occupied, record.width, record.height, card_width, card_height);
+        crate::batbelt::evm::miro::struct_frame::place_card(
+            &client,
+            &mut record,
+            &located.label,
+            &url,
+            card_x,
+            card_y,
+        )
+        .await?;
+        println!(
+            "  {} {} and the {} type(s) it holds",
+            "✓".green(),
+            located.label.bold(),
+            nested
+        );
+        crate::batbelt::evm::miro::struct_frame::announce(&located.label, &url);
+        println!("  card on {}", record.frame_url.blue());
+        return Ok(());
+    }
+
     let width = png_width as f64 * BOARD_UNITS_PER_PIXEL;
     let height = png_height as f64 * BOARD_UNITS_PER_PIXEL;
     let (x, y) = free_spot(&occupied, record.width, record.height, width, height);
@@ -237,6 +288,89 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
     Ok(())
 }
 
+/// Which frame to draw into: a deployment, and a dependency inside it.
+///
+/// A frame's title is not an address any more. Every deploy is fresh, so a helper two
+/// entry points reach is drawn once per deployment and several frames on the board
+/// share a title — by design. What IS unique is a name inside one deployment: a
+/// deployment draws one frame per function, so `--deployment FLAMM.previewMint
+/// --dependency FLAMMFlowLib.requireFlat` names exactly one frame, and no `--dependency`
+/// means the deployment's own root frame.
+fn resolve_frame(
+    metadata: &EvmBatMetadata,
+    deployment: &str,
+    dependency: Option<&str>,
+) -> Result<AutoDeployedFrame> {
+    let frames = &metadata.miro.auto.frames;
+    let in_deployment: Vec<&AutoDeployedFrame> = frames
+        .iter()
+        .filter(|record| record.cluster_root == deployment)
+        .collect();
+    if in_deployment.is_empty() {
+        let mut deployments: Vec<&str> = frames.iter().map(|r| r.cluster_root.as_str()).collect();
+        deployments.sort_unstable();
+        deployments.dedup();
+        return Err(Report::new(EvmMiroError)
+            .attach_printable(format!(
+                "nothing is deployed for `{deployment}`. Deployed: {}",
+                if deployments.is_empty() { "nothing yet".to_string() } else { deployments.join(", ") }
+            ))
+            .attach(crate::Suggestion(
+                "deploy it first: `bat-cli deploy --entry-point <name>`".to_string(),
+            )));
+    }
+
+    // No dependency named: the deployment's own frame, the one it was deployed for.
+    let wanted = dependency.unwrap_or(deployment);
+    if let Some(exact) = in_deployment.iter().find(|record| record.entry_point == wanted) {
+        return Ok((*exact).clone());
+    }
+    // An overloaded function carries its signature — `MMRouterLib.read(uint256,address)` —
+    // so that two frames for one name can be told apart. Nobody should have to type that
+    // when there is only one: the bare name is matched against the part before the `(`,
+    // and only a name that really was drawn twice asks for the signature.
+    let by_name: Vec<&&AutoDeployedFrame> = in_deployment
+        .iter()
+        .filter(|record| record.entry_point.split('(').next() == Some(wanted))
+        .collect();
+    match by_name.len() {
+        1 => return Ok((**by_name[0]).clone()),
+        n if n > 1 => {
+            let candidates = by_name
+                .iter()
+                .map(|record| format!("    {}", record.entry_point))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(Report::new(EvmMiroError)
+                .attach_printable(format!(
+                    "`{wanted}` is overloaded in this deployment:\n{candidates}"
+                ))
+                .attach(crate::Suggestion(
+                    "name it with its parameter types, as printed above".to_string(),
+                )));
+        }
+        _ => {}
+    }
+    in_deployment
+        .iter()
+        .find(|record| record.entry_point == wanted)
+        .map(|record| (*record).clone())
+        .ok_or_else(|| {
+            let mut names: Vec<&str> = in_deployment.iter().map(|r| r.entry_point.as_str()).collect();
+            names.sort_unstable();
+            Report::new(EvmMiroError)
+                .attach_printable(format!(
+                    "the deployment of `{deployment}` has no frame for `{wanted}`. It drew:\n    {}",
+                    names.join("\n    ")
+                ))
+                .attach(crate::Suggestion(
+                    "a dependency drawn INSIDE the root frame has no frame of its own; only a \
+                     branch cut out to its own frame does"
+                        .to_string(),
+                ))
+        })
+}
+
 fn list_frames(metadata: &EvmBatMetadata) -> Result<()> {
     if metadata.miro.auto.frames.is_empty() {
         return Err(Report::new(EvmMiroError)
@@ -245,21 +379,28 @@ fn list_frames(metadata: &EvmBatMetadata) -> Result<()> {
                 "deploy an entry point first: `bat-cli deploy --entry-point <name>`".to_string(),
             )));
     }
-    println!("{}", "deployed frames".bold());
-    let mut names: Vec<&str> = metadata
-        .miro
-        .auto
-        .frames
-        .iter()
-        .map(|frame| frame.entry_point.as_str())
-        .collect();
-    names.sort_unstable();
-    for name in names {
-        println!("  {name}");
+    // Grouped by deployment, because that is what a frame belongs to: one entry point
+    // deployed, every frame its cluster drew underneath it.
+    let mut by_deployment: std::collections::BTreeMap<&str, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for frame in &metadata.miro.auto.frames {
+        by_deployment
+            .entry(frame.cluster_root.as_str())
+            .or_default()
+            .push(frame.entry_point.as_str());
+    }
+    println!("{}", "deployed frames, by deployment".bold());
+    for (deployment, mut frames) in by_deployment {
+        frames.sort_unstable();
+        println!("\n  {}", deployment.bold());
+        for frame in frames {
+            println!("    {frame}");
+        }
     }
     println!(
-        "\n  bat-cli screenshot <symbol> --frame {}",
-        "<one of the above>".yellow()
+        "\n  bat-cli screenshot <symbol> --deployment {} [--dependency {}]",
+        "<deployment>".yellow(),
+        "<frame>".yellow()
     );
     Ok(())
 }

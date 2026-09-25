@@ -327,20 +327,26 @@ fn layout_tree(
         extent.insert(id, span.max(own));
     }
 
-    // Pre-order: hand each subtree its band, centre the parent inside it.
+    // Pre-order: hand each subtree its band, and put the parent at the TOP of it.
+    //
+    // Centring a parent in its band is the textbook tidy-tree, and it is wrong here: the
+    // entry point ends up floating halfway down the frame with empty space above it,
+    // while everything a reader does with a frame — starting at the function that was
+    // deployed, adding a declaration screenshot underneath — wants that function near the
+    // top-left corner and the free space below it. The layered path already top-aligns
+    // every layer; this makes the tree path agree.
     let top = config.padding_y + config.title_band;
     let mut placed: Vec<PlacedNode> = Vec::new();
     let mut bands = vec![(root_id, top)];
     while let Some((id, band_top)) = bands.pop() {
         let Some(node) = by_id.get(id) else { continue };
-        let band = extent.get(id).copied().unwrap_or(node.height);
         let level = depth[id];
 
         placed.push(PlacedNode {
             id: id.to_string(),
             layer: level,
             x: layer_x[level] + node.width / 2.0,
-            y: band_top + band / 2.0,
+            y: band_top + node.height / 2.0,
             width: node.width,
             height: node.height,
         });
@@ -1115,10 +1121,14 @@ mod tree_layout_test {
         }
     }
 
-    /// A parent sits opposite the middle of the band its children occupy, so the
-    /// arrows leave it fanning out rather than doubling back.
+    /// The entry point sits at the TOP of the band its children occupy, not its middle.
+    ///
+    /// Centring it is the textbook tidy-tree and it leaves empty space above the one box
+    /// a reader starts from, while everything done to a frame afterwards — reading it,
+    /// adding a declaration underneath — wants that box near the top-left and the room
+    /// below it. The layered path already top-aligns every layer.
     #[test]
-    fn test_parent_is_centred_on_its_children() {
+    fn test_root_sits_at_the_top_not_the_middle() {
         let nodes = vec![
             node("root", 1200.0, 300.0),
             node("a", 1000.0, 200.0),
@@ -1128,14 +1138,22 @@ mod tree_layout_test {
         let edges = vec![edge("root", "a"), edge("root", "b"), edge("root", "c")];
         let layout = layout_graph("root", &nodes, &edges, LayoutConfig::default());
 
+        // Compared by their TOP edges: boxes of different heights share a top, not a centre.
         let root = layout.node("root").unwrap();
         let first = layout.node("a").unwrap();
-        let last = layout.node("c").unwrap();
-        let middle = (first.y + last.y) / 2.0;
+        let top_of = |node: &PlacedNode| node.y - node.height / 2.0;
         assert!(
-            (root.y - middle).abs() < 1.0,
-            "root at {} but its children span a midpoint of {middle}",
-            root.y
+            (top_of(root) - top_of(first)).abs() < 1.0,
+            "root's top at {} but the first child's is at {}",
+            top_of(root),
+            top_of(first)
+        );
+        let last = layout.node("c").unwrap();
+        assert!(
+            root.y < last.y,
+            "root at {} should sit above the last child at {}",
+            root.y,
+            last.y
         );
     }
 

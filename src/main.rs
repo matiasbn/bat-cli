@@ -125,6 +125,10 @@ enum BatCommands {
         /// already know. Deploy it as its own entry point when you do need to read it.
         #[arg(long = "ignore-contract", value_name = "NAME_OR_PATH")]
         ignore_contract: Vec<String>,
+        /// Answer the "this entry point already has a deployment — deploy again?"
+        /// question with yes, so a re-deploy runs unattended (scripts, assistants).
+        #[arg(long)]
+        yes: bool,
         /// Draw the frame even if some interface calls in the tree are unresolved,
         /// instead of stopping to list them. Downstream nodes behind those calls are
         /// simply omitted.
@@ -145,9 +149,15 @@ enum BatCommands {
     Screenshot {
         /// Symbol to draw: `Name` or `Contract.Name`. Omit when giving --file/--lines.
         name: Option<String>,
-        /// Frame to draw into, named by its entry point. Omit to list the frames.
+        /// The deployment to draw into: the entry point it was deployed for
+        /// (`Contract.function`). Omit to list what is deployed.
         #[arg(long)]
-        frame: Option<String>,
+        deployment: Option<String>,
+        /// Which frame of that deployment, by the function it shows. A deployment draws
+        /// one frame per function, so the name is unique inside it. Omit for the
+        /// deployment's own root frame.
+        #[arg(long)]
+        dependency: Option<String>,
         /// Source file, when the symbol is not in the index. Needs --lines.
         #[arg(long)]
         file: Option<String>,
@@ -262,6 +272,7 @@ impl BatCommands {
                 preview,
                 stroke_width,
                 allow_unresolved,
+                yes,
                 ignore_contract,
                 inline_all,
             } => {
@@ -273,6 +284,7 @@ impl BatCommands {
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
                     allow_unresolved: *allow_unresolved,
+                    assume_yes: *yes,
                     ignore_contracts: ignore_contract.clone(),
                     inline_all: *inline_all,
                     },
@@ -282,7 +294,8 @@ impl BatCommands {
             }
             BatCommands::Screenshot {
                 name,
-                frame,
+                deployment,
+                dependency,
                 file,
                 lines,
                 with_documentation,
@@ -290,7 +303,8 @@ impl BatCommands {
             } => crate::batbelt::evm::miro::screenshot::run(
                 crate::batbelt::evm::miro::screenshot::ScreenshotOptions {
                     name: name.clone(),
-                    frame: frame.clone(),
+                    deployment: deployment.clone(),
+                    dependency: dependency.clone(),
                     file: file.clone(),
                     lines: lines.clone(),
                     with_documentation: *with_documentation,

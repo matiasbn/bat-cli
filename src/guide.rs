@@ -523,9 +523,43 @@ can delete them with one click each in Miro, where a frame takes its contents wi
 | `--with-documentation` | start each screenshot at the function's NatSpec, so the documented intent is on the diagram |
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
+| `--yes` | answer "this entry point already has a deployment — deploy again?" with yes (scripts, assistants) |
 | `--ignore-contract <name-or-path>` | never draw this contract's functions, for this run (repeatable; adds to the saved list — see below) |
 | `--inline-all` | draw the whole graph in ONE frame: no branch is cut out, every function is a screenshot |
 | `--allow-unresolved` | draw the partial graph instead of stopping to list unresolved interface calls |
+
+**A deployment is an entry point, and it owns every frame it drew.** `deploy --entry-point X`
+produces one deployment: the frame for `X` plus a frame for every branch cut out of it, all
+recorded together under `X`. Deploying `X` again REPLACES that deployment — it asks first, `--yes`
+answers it — and leaves the previous frames on the board for you to delete by hand; no other
+deployment is touched. Because every deploy is fresh, a helper reached by two entry points is drawn
+once per deployment, so several frames on the board carry the same title with different ids. That is
+by design, and it is why a frame is addressed as a name **inside a deployment**:
+
+```bash
+bat-cli screenshot                                            # lists frames, grouped by deployment
+bat-cli screenshot Book --deployment FLAMM.previewMint        # the deployment's own root frame
+bat-cli screenshot Book --deployment FLAMM.previewMint --dependency FLAMMFlowLib.requireFlat
+```
+
+A frame is addressed as **a deployment plus a name inside it**, never by title alone: a deployment
+draws one frame per function, so the name is unique there, while the same title exists in every
+other deployment that reached it. Without `--dependency` the target is the deployment's own frame.
+A dependency that was drawn INSIDE the root frame rather than cut out to its own has no frame to
+draw on, and the error lists what the deployment did draw. You never need a frame id.
+
+**A type whose fields are types gets its own frame.** `bat-cli screenshot FLAMMSwapLib.Plan
+--deployment <X> --dependency <F>` draws a single struct onto the frame, as before — but when that
+struct holds other structs (`Plan` holds a `SwapContext`, which holds a `PoolContext`), drawing them
+all inline would bury the function the frame is about. So the type becomes its own frame beside the
+asking one, laid out by the same rules as a call graph with an arrow from each field to the type it
+names, and the asking frame gets a **purple card** pointing at it — the same shape a branch cut out
+to its own frame leaves behind, in the colour that means "type" rather than "call". The new frame
+belongs to the same deployment, so `--dependency FLAMMSwapLib.Plan` reaches it afterwards.
+
+An overloaded function carries its parameter types, `MMRouterLib.read(uint256,address)`, because
+two frames of a deployment would otherwise share a name. The bare name still works when only one
+of them is there; when both are, it lists them and asks for the types.
 
 **"I already know that library" — `bat-cli ignore`.** A fixed-point math library called from
 thirty places is thirty boxes saying the same thing, and it crowds out the code the review is
@@ -802,6 +836,39 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.13
+- **A struct whose fields are structs is drawn as its own frame.** `screenshot <Struct>` used to
+  put one screenshot on the frame; a nested type needs the whole tree, and inline that buries the
+  function the frame is about. It now draws a frame beside the asking one — same layout rules as a
+  call graph, an arrow from each field to the type it names — and leaves a purple card on the asking
+  frame pointing at it. The frame belongs to the same deployment, so `--dependency <Struct>` reaches
+  it later. Miro refuses to create a frame overlapping another, so free space is found by testing
+  candidate rectangles against the frames the registry knows, spiralling out from the host.
+- **The entry point sits at the top-left of its frame.** The tree layout centred each parent on its
+  children, so on a tree-shaped graph the function you start reading from floated halfway down with
+  empty space above it. It is anchored at the top of its band now, which is what the layered path
+  always did, and leaves the free space below — where a declaration screenshot goes.
+- **A deployment owns its frames, so two deployments no longer fight over a name.** The registry
+  held one record per function name, board-wide — true while a callee already on the board was
+  linked rather than redrawn. Since every deploy became fresh, a shared helper is drawn once per
+  entry point, so the second deployment's record displaced the first's and those frames became
+  unreachable from the CLI although they were plainly on the board. Records are now keyed by
+  (deployment, frame), a deployment being the entry point its cluster was drawn for.
+- **`screenshot` addresses a frame as `--deployment <entry point> [--dependency <function>]`.**
+  `--frame` is gone: a title is not an address once the same helper is drawn in every deployment
+  that reaches it. Inside one deployment a name IS unique, so that is the address; omitting
+  `--dependency` means the deployment's own root frame. `bat-cli screenshot` with no arguments lists
+  frames grouped by deployment.
+- **Overloads carry their signature.** A frame for an overloaded function is named
+  `Contract.read(uint256,address)` — the discriminator used to be a line number, which said nothing
+  to a reader. The bare name still resolves when only one overload was drawn.
+- **A deploy no longer prints the previous cluster's frame URLs.** It cost one API call per frame to
+  check they were still there, and the frames are visible on the board anyway.
+- **Deploying an entry point that already has a deployment asks first**, since it replaces that
+  deployment and leaves the old frames on the board; `--yes` answers it for scripts and assistants.
+  (`--yes` existed as a flag before 0.26.11 but had no prompt left to answer; it does now.)
+  _Re-read: workflow.md._
 
 ## 0.26.12
 - **Fixes to what 0.26.11 SAID, not to what it did.** `ignore --help` opened with `resolve`'s
