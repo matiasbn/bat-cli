@@ -837,6 +837,16 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.15
+- **A type frame's arrows land on the field, inside the screenshot.** They stopped at the box's
+  border, because Miro clips a connector endpoint to the item it names. They now use the same two
+  invisible markers a call graph does — one just past the end of `SwapContext sctx;`, one on the
+  border level with it — so a straight stub crosses the border and the head sits on the field. The
+  head points LEFT, at the field, and the tail leaves the `struct SwapContext {` line: the arrow
+  reads from the answer back to the line that asks. A field line that runs the full width (one with
+  a comment) pushes the convergence past the border instead, so the head still has room.
+  _Re-read: workflow.md._
+
 ## 0.26.14
 - **A hiccup on the Miro API no longer deletes a deployment's records.** `item_exists` answered
   `false` for every failure — a rate limit, a 500, a dropped connection, an expired token — and the

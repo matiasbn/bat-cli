@@ -22,7 +22,10 @@ use error_stack::{Report, ResultExt};
 use std::collections::{HashMap, HashSet};
 
 use crate::batbelt::evm::metadata::bat_metadata::{AutoDeployedFrame, EvmBatMetadata};
-use crate::batbelt::evm::miro::auto_deploy::{save_frame_record, BOARD_UNITS_PER_PIXEL, PATH_HEADER_LINES};
+use crate::batbelt::evm::miro::auto_deploy::{
+    line_anchor, save_frame_record, ANCHOR_MARKER_SIZE, BOARD_UNITS_PER_PIXEL, PATH_HEADER_LINES,
+    SIGNATURE_LINE_INDEX,
+};
 use crate::batbelt::evm::miro::EvmMiroError;
 use crate::batbelt::evm::types::EvmFileItemKind;
 use crate::batbelt::miro::client::{ArrowEnd, ConnectorStyle, MiroClient, RelativeAnchor};
@@ -40,6 +43,11 @@ const CARD_HEIGHT: f64 = 240.0;
 /// One type in the tree: what it is called, where its source is, and its rendered image.
 pub struct TypeNode {
     pub label: String,
+    /// The lines the screenshot shows, path header included, so a marker can be put at
+    /// the end of a given line's text rather than at the image's border.
+    pub rendered_lines: Vec<String>,
+    /// The source line the image's numbering starts from.
+    pub line_offset: usize,
     pub file_path: String,
     pub start: usize,
     pub end: usize,
@@ -73,6 +81,8 @@ pub fn resolve_tree(
 ) -> Option<(Vec<TypeNode>, Vec<TypeEdge>)> {
     let mut nodes: Vec<TypeNode> = vec![TypeNode {
         label: label.to_string(),
+        rendered_lines: Vec::new(),
+        line_offset: 0,
         file_path: file_path.to_string(),
         start,
         end,
@@ -104,6 +114,8 @@ pub fn resolve_tree(
                 None => {
                     nodes.push(TypeNode {
                         label: child_label.clone(),
+                        rendered_lines: Vec::new(),
+                        line_offset: 0,
                         file_path: item.0.clone(),
                         start: item.1,
                         end: item.2,
@@ -250,25 +262,100 @@ pub async fn draw(
     }
 
     let mut connector_ids = Vec::new();
+    let mut marker_ids = Vec::new();
     for (edge, layout_edge) in edges.iter().zip(layout_edges.iter()) {
-        let (Some(from), Some(to)) = (
+        let (Some(_from), Some(to)) = (
             image_ids.get(&nodes[edge.from].label),
             image_ids.get(&nodes[edge.to].label),
         ) else {
             continue;
         };
+        let (Some(parent), Some(child)) = (
+            layout.node(&nodes[edge.from].label),
+            layout.node(&nodes[edge.to].label),
+        ) else {
+            continue;
+        };
+        // Both ends land ON a line, not on the middle of a box: it leaves the field that
+        // declares the type and arrives at the line that declares it. A reader following
+        // `SwapContext sctx;` should land on `struct SwapContext {`, and an arrow into the
+        // vertical centre of a tall box points at whatever field happens to be halfway
+        // down it.
+        let arrival = geometry.line_center_fraction(
+            SIGNATURE_LINE_INDEX,
+            nodes[edge.to].png_height,
+        );
+
+        // Miro clips a connector to the item's border, so an endpoint given as a fraction
+        // of an image stops AT the edge — next to the field rather than on it. The way a
+        // call graph lands on an exact line is an invisible marker at that point, and a
+        // type's field is the same problem: the marker goes just past the end of the
+        // field's text, inside the screenshot, and the arrow ends there.
+        let parent_node = &nodes[edge.from];
+        let anchor = line_anchor(
+            (parent.x, parent.y, parent.width, parent.height),
+            parent_node.png_width,
+            parent_node.png_height,
+            font_size,
+            &parent_node.rendered_lines,
+            parent_node.line_offset,
+            edge.line_in_slice.saturating_sub(1) + PATH_HEADER_LINES,
+            true,
+        );
+        let (token_x, token_y, edge_x) = (anchor.token_x, anchor.token_y, anchor.edge_x);
+
+        let token = client
+            .create_anchor_marker(&frame_id, token_x, token_y, ANCHOR_MARKER_SIZE)
+            .await
+            .change_context(EvmMiroError)?;
+        marker_ids.push(token.clone());
+        let _ = child;
+
+        // A second marker on the box's border, level with the line. Without it the arrow
+        // comes in wherever Miro decides — over the code, at the wrong angle — because the
+        // only straight path it can be given is between two points that share a y. So the
+        // leg that crosses the border is that horizontal stub, and everything outside is
+        // one elbow that never touches the screenshot.
+        let edge = client
+            .create_anchor_marker(&frame_id, edge_x, token_y, ANCHOR_MARKER_SIZE)
+            .await
+            .change_context(EvmMiroError)?;
+        marker_ids.push(edge.clone());
+        let mut stub = ConnectorStyle {
+            stroke_color: STRUCT_COLOR.to_string(),
+            stroke_width: "8".to_string(),
+            dashed: false,
+            caption: None,
+            arrow: ArrowEnd::End,
+        };
+        stub.arrow = ArrowEnd::End;
+        connector_ids.push(
+            client
+                .create_connector(
+                    &edge,
+                    RelativeAnchor::new(0.0, 0.5),
+                    &token,
+                    RelativeAnchor::new(1.0, 0.5),
+                    stub,
+                )
+                .await
+                .change_context(EvmMiroError)?,
+        );
+
         let id = client
             .create_connector(
-                from,
-                RelativeAnchor::new(1.0, layout_edge.from_line_fraction),
+                &edge,
+                RelativeAnchor::new(1.0, 0.5),
                 to,
-                RelativeAnchor::new(0.0, 0.5),
+                RelativeAnchor::new(0.0, arrival),
                 ConnectorStyle {
                     stroke_color: STRUCT_COLOR.to_string(),
                     stroke_width: "8".to_string(),
                     dashed: false,
                     caption: None,
-                    arrow: ArrowEnd::End,
+                    // The head is on the stub, at the field; this leg only carries the line
+                    // from the type back to the border.
+                    arrow: ArrowEnd::None,
                 },
             )
             .await
@@ -299,7 +386,7 @@ pub async fn draw(
         callee_connectors: Vec::new(),
         link_cards: Vec::new(),
         connector_ids,
-        marker_ids: Vec::new(),
+        marker_ids,
         border_ids: Vec::new(),
         screenshots: Vec::new(),
         // It belongs to the deployment that asked for it, so `--dependency` reaches it.
