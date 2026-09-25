@@ -194,6 +194,12 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
             node.png_path = path;
             node.png_width = width;
             node.png_height = height;
+            let pretty = crate::batbelt::path::prettify_source_code_path(&piece.file_path)
+                .unwrap_or_else(|_| piece.file_path.clone());
+            let mut shown = vec![format!("// {pretty}"), String::new()];
+            shown.extend(read_slice(&piece.file_path, begin, piece.end));
+            node.rendered_lines = shown;
+            node.line_offset = begin.saturating_sub(PATH_HEADER_LINES);
         }
         let nested = nodes.len() - 1;
         let url = crate::batbelt::evm::miro::struct_frame::draw(

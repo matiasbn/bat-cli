@@ -39,7 +39,7 @@ type Result<T> = error_stack::Result<T, EvmMiroError>;
 const ANCHOR_GAP_CHARS: f64 = 1.0;
 /// Vertical distance from the top of the callee where its signature sits: line
 /// index 2 of the image, because `include_path` prepends `// path` plus a blank.
-const SIGNATURE_LINE_INDEX: usize = 2;
+pub(crate) const SIGNATURE_LINE_INDEX: usize = 2;
 /// Number of lines `include_path` prepends to the rendered content.
 pub(crate) const PATH_HEADER_LINES: usize = 2;
 /// Vertical margin left between the existing board content and the region we
@@ -49,7 +49,7 @@ const REGION_MARGIN: f64 = 5_000.0;
 
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
-const ANCHOR_MARKER_SIZE: f64 = 24.0;
+pub(crate) const ANCHOR_MARKER_SIZE: f64 = 24.0;
 /// Horizontal distance between two arrows' vertical lanes in a gutter: five times the
 /// default 8dp stroke, so two arrows at full width still have four strokes of white
 /// between them. Narrowed automatically when a gutter cannot fit them all.
@@ -1637,71 +1637,25 @@ async fn deploy_one(
                 // The shared arrow anchor for this caller line + side: the arrow lands
                 // at the END of the line for a right entry, or its START for a left
                 // one, and enters by a straight horizontal stub from the edge.
-                let line_index = edge.line_in_slice.saturating_sub(1) + PATH_HEADER_LINES;
-                let line_text = caller
-                    .rendered_lines
-                    .get(line_index)
-                    .cloned()
-                    .unwrap_or_default();
-                let text_width = |text: &str| {
-                    silicon::line_end_x(
-                        Some(caller.font_size),
-                        true,
-                        caller.rendered_lines.len(),
-                        caller.line_offset,
-                        text,
-                    ) as f64
-                };
-                let y_fraction = silicon::line_geometry(Some(caller.font_size))
-                    .line_center_fraction(line_index, caller.png_height);
-                let token_frac = if caller.png_width > 0 {
-                    let width = caller.png_width as f64;
-                    if exit_right {
-                        let gap = (text_width("a") - text_width("")) * ANCHOR_GAP_CHARS;
-                        ((text_width(&line_text) + gap) / width).min(1.0)
-                    } else {
-                        (text_width("") / width).max(0.0)
-                    }
-                } else if exit_right {
-                    1.0
-                } else {
-                    0.0
-                };
-                let frame_edge = if exit_right {
-                    caller_placed.x + caller_placed.width / 2.0
-                } else {
-                    caller_placed.x - caller_placed.width / 2.0
-                };
-                let raw_token_x =
-                    caller_placed.x - caller_placed.width / 2.0 + caller_placed.width * token_frac;
-                // A minimum stub so the arrow head always renders (the widest line
-                // ends at the edge, which would make a zero-length stub otherwise).
-                let min_stub = 60.0_f64;
-                // The convergence point normally sits on the frame edge, giving a
-                // clear horizontal stub across most of a (shorter) line. But a
-                // FULL-WIDTH line — the signature line carrying modifiers, say —
-                // ends flush at the image boundary, so several dependencies fanning
-                // into it pile up right at the edge, indistinguishable. Detect that
-                // (the line reaches the exit edge) and, only then, push the
-                // convergence OUT into the gutter so the fan-out clears the
-                // screenshot and a single stub crosses in. Short lines and the
-                // whole left side are untouched.
-                let edge_gap = 200.0_f64;
-                let reaches_edge = exit_right && raw_token_x > frame_edge - min_stub * 2.0;
-                let edge_x = if reaches_edge {
-                    frame_edge + edge_gap
-                } else {
-                    frame_edge
-                };
-                let token_x = if exit_right {
-                    raw_token_x.min(edge_x - min_stub)
-                } else {
-                    raw_token_x.max(edge_x + min_stub)
-                };
+                let anchor = line_anchor(
+                    (
+                        caller_placed.x,
+                        caller_placed.y,
+                        caller_placed.width,
+                        caller_placed.height,
+                    ),
+                    caller.png_width,
+                    caller.png_height,
+                    caller.font_size,
+                    &caller.rendered_lines,
+                    caller.line_offset,
+                    edge.line_in_slice.saturating_sub(1) + PATH_HEADER_LINES,
+                    exit_right,
+                );
+                let (token_x, token_y, edge_x) = (anchor.token_x, anchor.token_y, anchor.edge_x);
                 PendingGroup {
                     token_x,
-                    token_y: caller_placed.y - caller_placed.height / 2.0
-                        + caller_placed.height * y_fraction,
+                    token_y,
                     edge_x,
                     exit_right,
                     style: ConnectorStyle {
@@ -2991,6 +2945,73 @@ fn find_function_at<'a>(
 /// its own node (otherwise both collapse and a wrapper→overload call looks like a
 /// self-call and is pruned). A single-definition function keeps the plain id, so
 /// non-overloaded graphs are byte-identical to before.
+/// Where an arrow meets a line of code: the point it lands ON, and the point outside the
+/// box it converges at.
+///
+/// Every arrow in every diagram enters a screenshot the same way, so the arithmetic lives
+/// here once: the head sits a couple of characters past the end of the line's text, the
+/// convergence sits on the box's border level with it, and a line that runs the full width
+/// pushes that convergence out past the border so the stub between them still has length
+/// (a zero-length stub draws no arrow head at all). `deploy` uses it for a call site and a
+/// type frame for the field that names a type — the second was a copy of this that had
+/// already drifted on the size of the gap.
+pub(crate) struct LineAnchor {
+    /// Where the head lands: past the end of the text, inside the box when it fits.
+    pub token_x: f64,
+    pub token_y: f64,
+    /// Where the arrows converge: on the border, or outside it for a full-width line.
+    pub edge_x: f64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn line_anchor(
+    // Box on the board: centre, width, height.
+    placed: (f64, f64, f64, f64),
+    png_width: u32,
+    png_height: u32,
+    font_size: usize,
+    rendered_lines: &[String],
+    line_offset: usize,
+    line_index: usize,
+    exit_right: bool,
+) -> LineAnchor {
+    let (x, y, width, height) = placed;
+    let line_text = rendered_lines.get(line_index).cloned().unwrap_or_default();
+    let text_width = |text: &str| {
+        silicon::line_end_x(Some(font_size), true, rendered_lines.len(), line_offset, text) as f64
+    };
+    let y_fraction = silicon::line_geometry(Some(font_size)).line_center_fraction(line_index, png_height);
+    let token_frac = if png_width > 0 {
+        let png = png_width as f64;
+        if exit_right {
+            let gap = (text_width("a") - text_width("")) * ANCHOR_GAP_CHARS;
+            ((text_width(&line_text) + gap) / png).min(1.0)
+        } else {
+            (text_width("") / png).max(0.0)
+        }
+    } else if exit_right {
+        1.0
+    } else {
+        0.0
+    };
+    let frame_edge = if exit_right { x + width / 2.0 } else { x - width / 2.0 };
+    let raw_token_x = x - width / 2.0 + width * token_frac;
+    let min_stub = 60.0_f64;
+    let edge_gap = 200.0_f64;
+    let reaches_edge = exit_right && raw_token_x > frame_edge - min_stub * 2.0;
+    let edge_x = if reaches_edge { frame_edge + edge_gap } else { frame_edge };
+    let token_x = if exit_right {
+        raw_token_x.min(edge_x - min_stub)
+    } else {
+        raw_token_x.max(edge_x + min_stub)
+    };
+    LineAnchor {
+        token_x,
+        token_y: y - height / 2.0 + height * y_fraction,
+        edge_x,
+    }
+}
+
 fn overload_node_key(contract: &ContractMetadata, function: &FunctionMetadata) -> String {
     match overload_signature(contract, function) {
         Some(signature) => format!("{}{signature}", node_key(&contract.name, &function.name)),
