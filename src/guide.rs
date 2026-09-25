@@ -537,14 +537,20 @@ once per deployment, so several frames on the board carry the same title with di
 by design, and it is why a frame is addressed as a name **inside a deployment**:
 
 ```bash
-bat-cli screenshot                                   # lists frames grouped by deployment
-bat-cli screenshot Book --frame FLAMMFlowLib.requireFlat            # when the name is unique
-bat-cli screenshot Book --frame 'FLAMM.previewMint/FLAMMFlowLib.requireFlat'   # when it is not
+bat-cli screenshot                                            # lists frames, grouped by deployment
+bat-cli screenshot Book --deployment FLAMM.previewMint        # the deployment's own root frame
+bat-cli screenshot Book --deployment FLAMM.previewMint --dependency FLAMMFlowLib.requireFlat
 ```
 
-A bare name that one deployment drew is used. A bare name two deployments drew stops and lists the
-candidates with their URLs, the same way an ambiguous `--entry-point` does; then you name the
-deployment too. You never need to know a frame id.
+A frame is addressed as **a deployment plus a name inside it**, never by title alone: a deployment
+draws one frame per function, so the name is unique there, while the same title exists in every
+other deployment that reached it. Without `--dependency` the target is the deployment's own frame.
+A dependency that was drawn INSIDE the root frame rather than cut out to its own has no frame to
+draw on, and the error lists what the deployment did draw. You never need a frame id.
+
+An overloaded function carries its parameter types, `MMRouterLib.read(uint256,address)`, because
+two frames of a deployment would otherwise share a name. The bare name still works when only one
+of them is there; when both are, it lists them and asks for the types.
 
 **"I already know that library" — `bat-cli ignore`.** A fixed-point math library called from
 thirty places is thirty boxes saying the same thing, and it crowds out the code the review is
@@ -829,9 +835,16 @@ so you re-open only the docs that actually changed — not everything.
   entry point, so the second deployment's record displaced the first's and those frames became
   unreachable from the CLI although they were plainly on the board. Records are now keyed by
   (deployment, frame), a deployment being the entry point its cluster was drawn for.
-- **`screenshot --frame` resolves the name itself.** Unique name → used. Drawn by several
-  deployments → it stops and lists them with their URLs, and `--frame '<entry point>/<frame>'`
-  picks one. `bat-cli screenshot` with no `--frame` now lists frames grouped by deployment.
+- **`screenshot` addresses a frame as `--deployment <entry point> [--dependency <function>]`.**
+  `--frame` is gone: a title is not an address once the same helper is drawn in every deployment
+  that reaches it. Inside one deployment a name IS unique, so that is the address; omitting
+  `--dependency` means the deployment's own root frame. `bat-cli screenshot` with no arguments lists
+  frames grouped by deployment.
+- **Overloads carry their signature.** A frame for an overloaded function is named
+  `Contract.read(uint256,address)` — the discriminator used to be a line number, which said nothing
+  to a reader. The bare name still resolves when only one overload was drawn.
+- **A deploy no longer prints the previous cluster's frame URLs.** It cost one API call per frame to
+  check they were still there, and the frames are visible on the board anyway.
 - **Deploying an entry point that already has a deployment asks first**, since it replaces that
   deployment and leaves the old frames on the board; `--yes` answers it for scripts and assistants.
   (`--yes` existed as a flag before 0.26.11 but had no prompt left to answer; it does now.)

@@ -52,8 +52,11 @@ pub struct ScreenshotOptions {
     pub file: Option<String>,
     /// `start-end`, 1-based and inclusive.
     pub lines: Option<String>,
-    /// Entry point naming the frame to draw into.
-    pub frame: Option<String>,
+    /// The deployment to draw into: the entry point it was deployed for.
+    pub deployment: Option<String>,
+    /// Which frame of that deployment: a dependency's name. Omitted means the
+    /// deployment's own root frame.
+    pub dependency: Option<String>,
     /// Include the declaration's NatSpec, as `deploy --with-documentation` does.
     pub with_documentation: bool,
     /// Grow the frame when the screenshot does not fit in it. Off by default: the frame's
@@ -76,11 +79,11 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
 
     // No frame named: say which ones exist rather than guessing. This is also how an
     // assistant discovers the frame names without being told them.
-    let Some(frame_name) = options.frame.clone() else {
+    let Some(deployment) = options.deployment.clone() else {
         return list_frames(&metadata);
     };
-
-    let record = resolve_frame(&metadata, &frame_name)?;
+    let record = resolve_frame(&metadata, &deployment, options.dependency.as_deref())?;
+    let frame_name = record.entry_point.clone();
 
     let located = locate(&metadata, &options)?;
 
@@ -223,65 +226,87 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
     Ok(())
 }
 
-/// Which frame `--frame` means.
+/// Which frame to draw into: a deployment, and a dependency inside it.
 ///
-/// Every deploy is fresh, so a helper cut to its own frame is drawn once per
-/// deployment: several frames on the board are titled `auto: FLAMMFlowLib.requireFlat`,
-/// one per entry point that reaches it. A name alone stopped being an address the day
-/// that became normal. Resolving it is bat-cli's job, not the caller's: a name that
-/// names one frame is used, `Deployment/Frame` picks one directly, and a name that
-/// several deployments drew stops with the candidates listed — the same shape
-/// `--entry-point` already has for a function defined in several contracts.
-fn resolve_frame(metadata: &EvmBatMetadata, wanted: &str) -> Result<AutoDeployedFrame> {
+/// A frame's title is not an address any more. Every deploy is fresh, so a helper two
+/// entry points reach is drawn once per deployment and several frames on the board
+/// share a title — by design. What IS unique is a name inside one deployment: a
+/// deployment draws one frame per function, so `--deployment FLAMM.previewMint
+/// --dependency FLAMMFlowLib.requireFlat` names exactly one frame, and no `--dependency`
+/// means the deployment's own root frame.
+fn resolve_frame(
+    metadata: &EvmBatMetadata,
+    deployment: &str,
+    dependency: Option<&str>,
+) -> Result<AutoDeployedFrame> {
     let frames = &metadata.miro.auto.frames;
-
-    // `Deployment/Frame` — an exact address.
-    if let Some((deployment, frame)) = wanted.split_once('/') {
-        return frames
-            .iter()
-            .find(|record| record.cluster_root == deployment && record.entry_point == frame)
-            .cloned()
-            .ok_or_else(|| {
-                Report::new(EvmMiroError)
-                    .attach_printable(format!(
-                        "no frame `{frame}` in the deployment of `{deployment}`"
-                    ))
-                    .attach(crate::Suggestion(
-                        "run `bat-cli screenshot` with no --frame to list what is deployed"
-                            .to_string(),
-                    ))
-            });
+    let in_deployment: Vec<&AutoDeployedFrame> = frames
+        .iter()
+        .filter(|record| record.cluster_root == deployment)
+        .collect();
+    if in_deployment.is_empty() {
+        let mut deployments: Vec<&str> = frames.iter().map(|r| r.cluster_root.as_str()).collect();
+        deployments.sort_unstable();
+        deployments.dedup();
+        return Err(Report::new(EvmMiroError)
+            .attach_printable(format!(
+                "nothing is deployed for `{deployment}`. Deployed: {}",
+                if deployments.is_empty() { "nothing yet".to_string() } else { deployments.join(", ") }
+            ))
+            .attach(crate::Suggestion(
+                "deploy it first: `bat-cli deploy --entry-point <name>`".to_string(),
+            )));
     }
 
-    let matches: Vec<&AutoDeployedFrame> = frames
+    // No dependency named: the deployment's own frame, the one it was deployed for.
+    let wanted = dependency.unwrap_or(deployment);
+    if let Some(exact) = in_deployment.iter().find(|record| record.entry_point == wanted) {
+        return Ok((*exact).clone());
+    }
+    // An overloaded function carries its signature — `MMRouterLib.read(uint256,address)` —
+    // so that two frames for one name can be told apart. Nobody should have to type that
+    // when there is only one: the bare name is matched against the part before the `(`,
+    // and only a name that really was drawn twice asks for the signature.
+    let by_name: Vec<&&AutoDeployedFrame> = in_deployment
         .iter()
-        .filter(|record| record.entry_point == wanted)
+        .filter(|record| record.entry_point.split('(').next() == Some(wanted))
         .collect();
-    match matches.len() {
-        0 => Err(Report::new(EvmMiroError)
-            .attach_printable(format!("no deployed frame named `{wanted}`"))
-            .attach(crate::Suggestion(
-                "run `bat-cli screenshot` with no --frame to list the deployed frames".to_string(),
-            ))),
-        1 => Ok(matches[0].clone()),
-        _ => {
-            let candidates = matches
+    match by_name.len() {
+        1 => return Ok((**by_name[0]).clone()),
+        n if n > 1 => {
+            let candidates = by_name
                 .iter()
-                .map(|record| {
-                    format!("    {}/{}\n      {}", record.cluster_root, wanted, record.frame_url)
-                })
+                .map(|record| format!("    {}", record.entry_point))
                 .collect::<Vec<_>>()
                 .join("\n");
-            Err(Report::new(EvmMiroError)
+            return Err(Report::new(EvmMiroError)
                 .attach_printable(format!(
-                    "`{wanted}` was drawn by {} deployments:\n{candidates}",
-                    matches.len()
+                    "`{wanted}` is overloaded in this deployment:\n{candidates}"
                 ))
                 .attach(crate::Suggestion(
-                    "name the deployment too, e.g. --frame '<entry point>/<frame>'".to_string(),
-                )))
+                    "name it with its parameter types, as printed above".to_string(),
+                )));
         }
+        _ => {}
     }
+    in_deployment
+        .iter()
+        .find(|record| record.entry_point == wanted)
+        .map(|record| (*record).clone())
+        .ok_or_else(|| {
+            let mut names: Vec<&str> = in_deployment.iter().map(|r| r.entry_point.as_str()).collect();
+            names.sort_unstable();
+            Report::new(EvmMiroError)
+                .attach_printable(format!(
+                    "the deployment of `{deployment}` has no frame for `{wanted}`. It drew:\n    {}",
+                    names.join("\n    ")
+                ))
+                .attach(crate::Suggestion(
+                    "a dependency drawn INSIDE the root frame has no frame of its own; only a \
+                     branch cut out to its own frame does"
+                        .to_string(),
+                ))
+        })
 }
 
 fn list_frames(metadata: &EvmBatMetadata) -> Result<()> {
@@ -311,8 +336,9 @@ fn list_frames(metadata: &EvmBatMetadata) -> Result<()> {
         }
     }
     println!(
-        "\n  bat-cli screenshot <symbol> --frame {}",
-        "<frame>   (or '<deployment>/<frame>' when a name was drawn twice)".yellow()
+        "\n  bat-cli screenshot <symbol> --deployment {} [--dependency {}]",
+        "<deployment>".yellow(),
+        "<frame>".yellow()
     );
     Ok(())
 }

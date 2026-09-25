@@ -149,9 +149,15 @@ enum BatCommands {
     Screenshot {
         /// Symbol to draw: `Name` or `Contract.Name`. Omit when giving --file/--lines.
         name: Option<String>,
-        /// Frame to draw into, named by its entry point. Omit to list the frames.
+        /// The deployment to draw into: the entry point it was deployed for
+        /// (`Contract.function`). Omit to list what is deployed.
         #[arg(long)]
-        frame: Option<String>,
+        deployment: Option<String>,
+        /// Which frame of that deployment, by the function it shows. A deployment draws
+        /// one frame per function, so the name is unique inside it. Omit for the
+        /// deployment's own root frame.
+        #[arg(long)]
+        dependency: Option<String>,
         /// Source file, when the symbol is not in the index. Needs --lines.
         #[arg(long)]
         file: Option<String>,
@@ -288,7 +294,8 @@ impl BatCommands {
             }
             BatCommands::Screenshot {
                 name,
-                frame,
+                deployment,
+                dependency,
                 file,
                 lines,
                 with_documentation,
@@ -296,7 +303,8 @@ impl BatCommands {
             } => crate::batbelt::evm::miro::screenshot::run(
                 crate::batbelt::evm::miro::screenshot::ScreenshotOptions {
                     name: name.clone(),
-                    frame: frame.clone(),
+                    deployment: deployment.clone(),
+                    dependency: dependency.clone(),
                     file: file.clone(),
                     lines: lines.clone(),
                     with_documentation: *with_documentation,

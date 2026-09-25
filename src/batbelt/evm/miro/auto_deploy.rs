@@ -340,22 +340,6 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     for (contract_name, function_name, root_file) in targets {
         let title = format!("{contract_name}.{function_name}");
 
-        // A fresh deploy finds the PREVIOUS cluster (this entry point's frame + every
-        // dependency frame its last deploy spawned), keeps only the ones still on the
-        // board, so we can (a) never reuse them and (b) hand you their URLs to delete.
-        let mut stale: Vec<(String, String)> = Vec::new(); // (entry_point, url)
-        if !options.dry_run {
-            if let Some(client) = client.as_ref() {
-                let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-                for f in &meta.miro.auto.frames {
-                    if f.cluster_root == title {
-                        if client.item_exists(&f.frame_id).await {
-                            stale.push((f.entry_point.clone(), f.frame_url.clone()));
-                        }
-                    }
-                }
-            }
-        }
         let stale_ids: HashSet<String> = {
             let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
             meta.miro
@@ -425,16 +409,6 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
                 m.miro.auto.frames.retain(|f| !old_ids.contains(&f.frame_id));
             })
             .change_context(EvmMiroError)?;
-            if !stale.is_empty() {
-                println!(
-                    "\n  {} {} old frame(s) from the previous deploy — delete them in Miro (one click each; the frame takes its contents with it):",
-                    "⚠".yellow(),
-                    stale.len()
-                );
-                for (ep, url) in &stale {
-                    println!("    {} {}", ep.dimmed(), url.blue());
-                }
-            }
         }
 
         // Persist the cursor after every entry point, not once at the end: a run
@@ -2435,7 +2409,7 @@ fn build_graph(
             }
             let mut child = make_node(
                 target_id.clone(),
-                format!("{}.{}", target_contract.name, target_function.name),
+                display_label(target_contract, &target_function),
                 target_contract,
                 &target_function,
                 current.depth + 1,
@@ -2501,7 +2475,7 @@ fn build_graph(
                 }
                 let mut child = make_node(
                     target_id.clone(),
-                    format!("{}.{}", base.name, constructor.name),
+                    display_label(base, &constructor),
                     base,
                     &constructor,
                     current.depth + 1,
@@ -2618,7 +2592,7 @@ fn build_graph(
             }
             let mut child = make_node(
                 target_id.clone(),
-                format!("{}.{}", tc.name, tf.name),
+                display_label(tc, &tf),
                 tc,
                 &tf,
                 current.depth + 1,
@@ -3018,11 +2992,38 @@ fn find_function_at<'a>(
 /// self-call and is pruned). A single-definition function keeps the plain id, so
 /// non-overloaded graphs are byte-identical to before.
 fn overload_node_key(contract: &ContractMetadata, function: &FunctionMetadata) -> String {
-    let overloaded = contract.functions.iter().filter(|f| f.name == function.name).count() > 1;
-    if overloaded {
-        format!("{}@{}", node_key(&contract.name, &function.name), function.line)
-    } else {
-        node_key(&contract.name, &function.name)
+    match overload_signature(contract, function) {
+        Some(signature) => format!("{}{signature}", node_key(&contract.name, &function.name)),
+        None => node_key(&contract.name, &function.name),
+    }
+}
+
+/// `(uint256,address)` when this contract declares the name more than once, else nothing.
+///
+/// Solidity requires overloads to differ in their parameter types, so the signature tells
+/// them apart — and unlike the line number that did this job before, it is the thing
+/// somebody reading the source would use to say WHICH `read` they mean. The node id and
+/// the label a frame is titled with then differ only by `::` versus `.`, which is what
+/// lets a pasted frame be re-paired by its title.
+fn overload_signature(contract: &ContractMetadata, function: &FunctionMetadata) -> Option<String> {
+    if contract.functions.iter().filter(|f| f.name == function.name).count() <= 1 {
+        return None;
+    }
+    let types = function
+        .params
+        .iter()
+        .map(|param| param.type_name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    Some(format!("({types})"))
+}
+
+/// What a frame is called: `Contract.function`, plus the signature when the name alone
+/// would not say which one.
+fn display_label(contract: &ContractMetadata, function: &FunctionMetadata) -> String {
+    match overload_signature(contract, function) {
+        Some(signature) => format!("{}.{}{signature}", contract.name, function.name),
+        None => format!("{}.{}", contract.name, function.name),
     }
 }
 
