@@ -5484,8 +5484,19 @@ pub(crate) async fn ensure_frame_record(
     let Some(record) = record else {
         return Ok(None);
     };
-    if client.item_exists(&record.frame_id).await {
-        return Ok(Some(record));
+    match client.item_status(&record.frame_id).await {
+        Some(true) => return Ok(Some(record)),
+        // The board could not be asked. Keeping the record is the only safe answer: it is
+        // the thing that knows where the frame is, and the frame is not what is in doubt.
+        None => {
+            println!(
+                "  {} could not check whether {}'s frame is still on the board; keeping the record",
+                "note:".yellow(),
+                title
+            );
+            return Ok(Some(record));
+        }
+        Some(false) => {}
     }
     if let Some(reanchored) = reanchor_frame(title, client).await? {
         return Ok(Some(reanchored));

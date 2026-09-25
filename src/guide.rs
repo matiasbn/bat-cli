@@ -837,6 +837,15 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.14
+- **A hiccup on the Miro API no longer deletes a deployment's records.** `item_exists` answered
+  `false` for every failure — a rate limit, a 500, a dropped connection, an expired token — and the
+  caller acts on that answer by FORGETTING the record ("the frame recorded for X is gone from the
+  board"). So one unlucky request silently dropped a deployment from the registry and left its
+  frames on the board with nothing able to address them. A 404 is an answer; everything else is the
+  absence of one, and the record is kept.
+  _Re-read: workflow.md._
+
 ## 0.26.13
 - **A struct whose fields are structs is drawn as its own frame.** `screenshot <Struct>` used to
   put one screenshot on the frame; a nested type needs the whole tree, and inline that buries the
