@@ -759,11 +759,37 @@ impl MiroClient {
         ))
     }
 
-    pub async fn item_exists(&self, item_id: &str) -> bool {
+    /// Is this item on the board? `None` when the board could not answer.
+    ///
+    /// The difference matters because a caller acts on the answer by FORGETTING the item:
+    /// a record whose frame is really gone is dropped. Collapsing every failure into
+    /// "gone" — which `is_ok()` did — meant one rate-limited or 500ing request silently
+    /// deleted a deployment's registry entry, and the frames it named became unreachable
+    /// although they were still sitting on the board. A 404 is an answer; everything else
+    /// is the absence of one.
+    pub async fn item_status(&self, item_id: &str) -> Option<bool> {
         let url = format!("{}/{}", self.endpoint("items"), item_id);
-        self.execute(LEVEL_1_CREDITS, "item_exists", move |http| http.get(&url))
+        match self
+            .execute(LEVEL_1_CREDITS, "item_exists", move |http| http.get(&url))
             .await
-            .is_ok()
+        {
+            Ok(_) => Some(true),
+            Err(report) => {
+                let said = format!("{report:?}");
+                if said.contains("HTTP 404") {
+                    Some(false)
+                } else {
+                    log::warn!("could not check whether {item_id} is on the board: {said}");
+                    None
+                }
+            }
+        }
+    }
+
+    /// Convenience for callers that only skip work when an item is missing and never
+    /// delete anything on the answer. Treats "could not tell" as still there.
+    pub async fn item_exists(&self, item_id: &str) -> bool {
+        self.item_status(item_id).await.unwrap_or(true)
     }
 
     /// Delete an item (frame, image, shape, card) by id. Best-effort: a 404 (already
