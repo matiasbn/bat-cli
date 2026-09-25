@@ -166,6 +166,68 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
         })
         .unwrap_or_else(|_| recorded_rects(&record));
 
+    // A type whose fields are themselves types is a tree, not a screenshot. Drawing it
+    // inline would bury the function the frame is about under a stack of declarations, so
+    // it becomes its own frame beside this one and leaves a card here pointing at it.
+    if let Some((mut nodes, edges)) = crate::batbelt::evm::miro::struct_frame::resolve_tree(
+        &metadata,
+        &located.label,
+        &located.file_path,
+        start,
+        located.end,
+    ) {
+        silicon::delete_png_file(png_path);
+        for node in nodes.iter_mut() {
+            let piece = Located {
+                label: node.label.clone(),
+                kind: "struct".to_string(),
+                file_path: node.file_path.clone(),
+                start: node.start,
+                end: node.end,
+            };
+            let begin = if options.with_documentation {
+                natspec_start(&piece.file_path, piece.start)
+            } else {
+                piece.start
+            };
+            let (path, width, height) = render(&piece, begin)?;
+            node.png_path = path;
+            node.png_width = width;
+            node.png_height = height;
+        }
+        let nested = nodes.len() - 1;
+        let url = crate::batbelt::evm::miro::struct_frame::draw(
+            &client,
+            &record,
+            nodes,
+            edges,
+            REFERENCE_FONT,
+        )
+        .await?;
+
+        let (card_width, card_height) = crate::batbelt::evm::miro::struct_frame::card_size();
+        let (card_x, card_y) =
+            free_spot(&occupied, record.width, record.height, card_width, card_height);
+        crate::batbelt::evm::miro::struct_frame::place_card(
+            &client,
+            &mut record,
+            &located.label,
+            &url,
+            card_x,
+            card_y,
+        )
+        .await?;
+        println!(
+            "  {} {} and the {} type(s) it holds",
+            "✓".green(),
+            located.label.bold(),
+            nested
+        );
+        crate::batbelt::evm::miro::struct_frame::announce(&located.label, &url);
+        println!("  card on {}", record.frame_url.blue());
+        return Ok(());
+    }
+
     let width = png_width as f64 * BOARD_UNITS_PER_PIXEL;
     let height = png_height as f64 * BOARD_UNITS_PER_PIXEL;
     let (x, y) = free_spot(&occupied, record.width, record.height, width, height);

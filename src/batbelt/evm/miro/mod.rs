@@ -8,6 +8,7 @@
 
 pub mod auto_deploy;
 pub mod screenshot;
+pub mod struct_frame;
 
 use std::{error::Error, fmt};
 

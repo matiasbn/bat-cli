@@ -548,6 +548,15 @@ other deployment that reached it. Without `--dependency` the target is the deplo
 A dependency that was drawn INSIDE the root frame rather than cut out to its own has no frame to
 draw on, and the error lists what the deployment did draw. You never need a frame id.
 
+**A type whose fields are types gets its own frame.** `bat-cli screenshot FLAMMSwapLib.Plan
+--deployment <X> --dependency <F>` draws a single struct onto the frame, as before — but when that
+struct holds other structs (`Plan` holds a `SwapContext`, which holds a `PoolContext`), drawing them
+all inline would bury the function the frame is about. So the type becomes its own frame beside the
+asking one, laid out by the same rules as a call graph with an arrow from each field to the type it
+names, and the asking frame gets a **purple card** pointing at it — the same shape a branch cut out
+to its own frame leaves behind, in the colour that means "type" rather than "call". The new frame
+belongs to the same deployment, so `--dependency FLAMMSwapLib.Plan` reaches it afterwards.
+
 An overloaded function carries its parameter types, `MMRouterLib.read(uint256,address)`, because
 two frames of a deployment would otherwise share a name. The bare name still works when only one
 of them is there; when both are, it lists them and asks for the types.
@@ -829,6 +838,17 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.26.13
+- **A struct whose fields are structs is drawn as its own frame.** `screenshot <Struct>` used to
+  put one screenshot on the frame; a nested type needs the whole tree, and inline that buries the
+  function the frame is about. It now draws a frame beside the asking one — same layout rules as a
+  call graph, an arrow from each field to the type it names — and leaves a purple card on the asking
+  frame pointing at it. The frame belongs to the same deployment, so `--dependency <Struct>` reaches
+  it later. Miro refuses to create a frame overlapping another, so free space is found by testing
+  candidate rectangles against the frames the registry knows, spiralling out from the host.
+- **The entry point sits at the top-left of its frame.** The tree layout centred each parent on its
+  children, so on a tree-shaped graph the function you start reading from floated halfway down with
+  empty space above it. It is anchored at the top of its band now, which is what the layered path
+  always did, and leaves the free space below — where a declaration screenshot goes.
 - **A deployment owns its frames, so two deployments no longer fight over a name.** The registry
   held one record per function name, board-wide — true while a callee already on the board was
   linked rather than redrawn. Since every deploy became fresh, a shared helper is drawn once per

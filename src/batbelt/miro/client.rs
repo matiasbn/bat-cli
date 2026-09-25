@@ -804,17 +804,52 @@ impl MiroClient {
         width: f64,
         height: f64,
     ) -> Result<String, MiroError> {
+        self.create_card(frame_id, title, "see dependencies →", target_url, x, y, width, height,
+                         "#fff9b1", "#f24726").await
+    }
+
+    /// The same card in the colours a struct gets: a type is not a call, and the two
+    /// should not read as the same thing on a board where colour already means something.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_struct_card(
+        &self,
+        frame_id: &str,
+        title: &str,
+        target_url: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        self.create_card(frame_id, title, "see its fields →", target_url, x, y, width, height,
+                         "#f0e6ff", "#a259ff").await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn create_card(
+        &self,
+        frame_id: &str,
+        title: &str,
+        action: &str,
+        target_url: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        fill: &str,
+        border: &str,
+    ) -> Result<String, MiroError> {
         let url = self.endpoint("shapes");
         let body = json!({
             "data": {
                 "content": format!(
-                    "<p><a href=\"{target_url}\">{title}</a></p><p>see dependencies →</p>"
+                    "<p><a href=\"{target_url}\">{title}</a></p><p>{action}</p>"
                 ),
                 "shape": "round_rectangle",
             },
             "style": {
-                "fillColor": "#fff9b1",
-                "borderColor": "#f24726",
+                "fillColor": fill,
+                "borderColor": border,
                 "borderWidth": "2",
                 "fontSize": "36",
                 "textAlign": "center",
