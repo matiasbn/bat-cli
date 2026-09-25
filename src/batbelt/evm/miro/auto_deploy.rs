@@ -108,6 +108,9 @@ pub struct AutoDeployOptions {
     /// Draw the partial graph even when interface calls in the tree are unresolved,
     /// instead of stopping to list them.
     pub allow_unresolved: bool,
+    /// Answer the "this entry point already has a deployment — deploy again?" question
+    /// with yes, so a re-deploy runs unattended.
+    pub assume_yes: bool,
     /// Contracts whose functions are never drawn: a name (`Math`) or any part of a
     /// path (`openzeppelin-contracts/contracts/utils/math`). The call is still shown
     /// in the caller's screenshot — it is the callee's box that is left out.
@@ -128,6 +131,7 @@ impl Default for AutoDeployOptions {
             preview: None,
             stroke_width: 8,
             allow_unresolved: false,
+            assume_yes: false,
             ignore_contracts: Vec::new(),
             inline_all: false,
         }
@@ -344,7 +348,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             if let Some(client) = client.as_ref() {
                 let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
                 for f in &meta.miro.auto.frames {
-                    if f.cluster_root == title || f.entry_point == title {
+                    if f.cluster_root == title {
                         if client.item_exists(&f.frame_id).await {
                             stale.push((f.entry_point.clone(), f.frame_url.clone()));
                         }
@@ -358,7 +362,9 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
                 .auto
                 .frames
                 .iter()
-                .filter(|f| f.cluster_root == title || f.entry_point == title)
+                // A deployment is its cluster, nothing else: a frame named after this
+                // function inside SOMEBODY ELSE's deployment belongs to them.
+                .filter(|f| f.cluster_root == title)
                 .map(|f| f.frame_id.clone())
                 .collect()
         };
@@ -366,6 +372,33 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             root: title.clone(),
             stale_ids,
         };
+
+        // Deploying an entry point that already has a deployment REPLACES it: the new
+        // cluster is drawn fresh and the old frames are left on the board for you to
+        // delete. That is a big enough thing to happen by surprise that it asks first.
+        let previous: Vec<String> = {
+            let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+            meta.miro
+                .auto
+                .frames
+                .iter()
+                .filter(|f| f.cluster_root == title)
+                .map(|f| f.entry_point.clone())
+                .collect()
+        };
+        if !previous.is_empty() && !options.dry_run && !options.assume_yes {
+            println!(
+                "  {} {} already has a deployment of {} frame(s). Deploying again draws a NEW\n  cluster and leaves the old frames on the board for you to delete.",
+                "note:".yellow(),
+                title.bold(),
+                previous.len()
+            );
+            if !BatDialoguer::select_yes_or_no("Deploy it again?".to_string())
+                .change_context(EvmMiroError)?
+            {
+                continue;
+            }
+        }
 
         let root_options = options.clone();
 
@@ -382,17 +415,14 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         )
         .await?;
 
-        // A fresh deploy drops the old cluster's now-orphaned records and prints their
-        // URLs for one-click manual deletion (a frame + its contents delete together
-        // in Miro's web UI; the API can't, and one-by-one deletion is slow).
+        // The new deployment REPLACES the previous deployment of this entry point: its
+        // records go, whole, identified by the frame ids they carried before this run
+        // started. The frames themselves stay on the board — the API deletes one item at
+        // a time and slowly — so their URLs are printed for one-click deletion by hand.
         if !options.dry_run {
-            let owner = title.clone();
             let old_ids: HashSet<String> = cluster.stale_ids.clone();
             EvmBatMetadata::update_metadata(move |m| {
-                m.miro.auto.frames.retain(|f| {
-                    !((f.cluster_root == owner || f.entry_point == owner)
-                        && old_ids.contains(&f.frame_id))
-                });
+                m.miro.auto.frames.retain(|f| !old_ids.contains(&f.frame_id));
             })
             .change_context(EvmMiroError)?;
             if !stale.is_empty() {
@@ -1899,14 +1929,25 @@ async fn deploy_one(
 
 /// Store what a deployment owns, replacing any earlier record for the same
 /// entry point.
+/// A record belongs to a DEPLOYMENT, and a deployment is an entry point.
+///
+/// The registry used to hold one record per function name, board-wide, which was true
+/// while a callee already on the board was linked rather than redrawn. Now that every
+/// deploy is fresh, a helper cut to its own frame is drawn once per deployment: the
+/// board carries several frames titled `auto: FLAMMFlowLib.requireFlat`, one per entry
+/// point that reaches it, with different ids and the same title. Keyed by name alone,
+/// the second deployment's record displaced the first's and the first's frames became
+/// unreachable from the CLI although they were right there on the board.
+///
+/// So the key is (deployment, frame), where the deployment is `cluster_root` — the
+/// entry point the whole cluster was drawn for — and the frame is the function it
+/// shows. Re-deploying an entry point replaces that deployment's records and no other.
 pub(crate) fn save_frame_record(record: &AutoDeployedFrame) -> Result<()> {
     let record = record.clone();
     EvmBatMetadata::update_metadata(move |metadata| {
-        metadata
-            .miro
-            .auto
-            .frames
-            .retain(|frame| frame.entry_point != record.entry_point);
+        metadata.miro.auto.frames.retain(|frame| {
+            frame.cluster_root != record.cluster_root || frame.entry_point != record.entry_point
+        });
         metadata.miro.auto.frames.push(record.clone());
     })
     .change_context(EvmMiroError)

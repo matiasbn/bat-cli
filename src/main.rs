@@ -125,6 +125,10 @@ enum BatCommands {
         /// already know. Deploy it as its own entry point when you do need to read it.
         #[arg(long = "ignore-contract", value_name = "NAME_OR_PATH")]
         ignore_contract: Vec<String>,
+        /// Answer the "this entry point already has a deployment — deploy again?"
+        /// question with yes, so a re-deploy runs unattended (scripts, assistants).
+        #[arg(long)]
+        yes: bool,
         /// Draw the frame even if some interface calls in the tree are unresolved,
         /// instead of stopping to list them. Downstream nodes behind those calls are
         /// simply omitted.
@@ -262,6 +266,7 @@ impl BatCommands {
                 preview,
                 stroke_width,
                 allow_unresolved,
+                yes,
                 ignore_contract,
                 inline_all,
             } => {
@@ -273,6 +278,7 @@ impl BatCommands {
                     preview: preview.clone(),
                     stroke_width: *stroke_width,
                     allow_unresolved: *allow_unresolved,
+                    assume_yes: *yes,
                     ignore_contracts: ignore_contract.clone(),
                     inline_all: *inline_all,
                     },

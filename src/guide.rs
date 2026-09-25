@@ -523,9 +523,28 @@ can delete them with one click each in Miro, where a frame takes its contents wi
 | `--with-documentation` | start each screenshot at the function's NatSpec, so the documented intent is on the diagram |
 | `--preview <path>` | compose the frame locally as a PNG |
 | `--stroke-width <1-24>` | connector thickness in dp (default 8) |
+| `--yes` | answer "this entry point already has a deployment — deploy again?" with yes (scripts, assistants) |
 | `--ignore-contract <name-or-path>` | never draw this contract's functions, for this run (repeatable; adds to the saved list — see below) |
 | `--inline-all` | draw the whole graph in ONE frame: no branch is cut out, every function is a screenshot |
 | `--allow-unresolved` | draw the partial graph instead of stopping to list unresolved interface calls |
+
+**A deployment is an entry point, and it owns every frame it drew.** `deploy --entry-point X`
+produces one deployment: the frame for `X` plus a frame for every branch cut out of it, all
+recorded together under `X`. Deploying `X` again REPLACES that deployment — it asks first, `--yes`
+answers it — and leaves the previous frames on the board for you to delete by hand; no other
+deployment is touched. Because every deploy is fresh, a helper reached by two entry points is drawn
+once per deployment, so several frames on the board carry the same title with different ids. That is
+by design, and it is why a frame is addressed as a name **inside a deployment**:
+
+```bash
+bat-cli screenshot                                   # lists frames grouped by deployment
+bat-cli screenshot Book --frame FLAMMFlowLib.requireFlat            # when the name is unique
+bat-cli screenshot Book --frame 'FLAMM.previewMint/FLAMMFlowLib.requireFlat'   # when it is not
+```
+
+A bare name that one deployment drew is used. A bare name two deployments drew stops and lists the
+candidates with their URLs, the same way an ambiguous `--entry-point` does; then you name the
+deployment too. You never need to know a frame id.
 
 **"I already know that library" — `bat-cli ignore`.** A fixed-point math library called from
 thirty places is thirty boxes saying the same thing, and it crowds out the code the review is
@@ -802,6 +821,21 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.13
+- **A deployment owns its frames, so two deployments no longer fight over a name.** The registry
+  held one record per function name, board-wide — true while a callee already on the board was
+  linked rather than redrawn. Since every deploy became fresh, a shared helper is drawn once per
+  entry point, so the second deployment's record displaced the first's and those frames became
+  unreachable from the CLI although they were plainly on the board. Records are now keyed by
+  (deployment, frame), a deployment being the entry point its cluster was drawn for.
+- **`screenshot --frame` resolves the name itself.** Unique name → used. Drawn by several
+  deployments → it stops and lists them with their URLs, and `--frame '<entry point>/<frame>'`
+  picks one. `bat-cli screenshot` with no `--frame` now lists frames grouped by deployment.
+- **Deploying an entry point that already has a deployment asks first**, since it replaces that
+  deployment and leaves the old frames on the board; `--yes` answers it for scripts and assistants.
+  (`--yes` existed as a flag before 0.26.11 but had no prompt left to answer; it does now.)
+  _Re-read: workflow.md._
 
 ## 0.26.12
 - **Fixes to what 0.26.11 SAID, not to what it did.** `ignore --help` opened with `resolve`'s

@@ -80,21 +80,7 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
         return list_frames(&metadata);
     };
 
-    let record = metadata
-        .miro
-        .auto
-        .frames
-        .iter()
-        .find(|frame| frame.entry_point == frame_name)
-        .cloned()
-        .ok_or_else(|| {
-            Report::new(EvmMiroError)
-                .attach_printable(format!("no deployed frame named `{frame_name}`"))
-                .attach(crate::Suggestion(
-                    "run `bat-cli screenshot` with no --frame to list the deployed frames"
-                        .to_string(),
-                ))
-        })?;
+    let record = resolve_frame(&metadata, &frame_name)?;
 
     let located = locate(&metadata, &options)?;
 
@@ -237,6 +223,67 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
     Ok(())
 }
 
+/// Which frame `--frame` means.
+///
+/// Every deploy is fresh, so a helper cut to its own frame is drawn once per
+/// deployment: several frames on the board are titled `auto: FLAMMFlowLib.requireFlat`,
+/// one per entry point that reaches it. A name alone stopped being an address the day
+/// that became normal. Resolving it is bat-cli's job, not the caller's: a name that
+/// names one frame is used, `Deployment/Frame` picks one directly, and a name that
+/// several deployments drew stops with the candidates listed — the same shape
+/// `--entry-point` already has for a function defined in several contracts.
+fn resolve_frame(metadata: &EvmBatMetadata, wanted: &str) -> Result<AutoDeployedFrame> {
+    let frames = &metadata.miro.auto.frames;
+
+    // `Deployment/Frame` — an exact address.
+    if let Some((deployment, frame)) = wanted.split_once('/') {
+        return frames
+            .iter()
+            .find(|record| record.cluster_root == deployment && record.entry_point == frame)
+            .cloned()
+            .ok_or_else(|| {
+                Report::new(EvmMiroError)
+                    .attach_printable(format!(
+                        "no frame `{frame}` in the deployment of `{deployment}`"
+                    ))
+                    .attach(crate::Suggestion(
+                        "run `bat-cli screenshot` with no --frame to list what is deployed"
+                            .to_string(),
+                    ))
+            });
+    }
+
+    let matches: Vec<&AutoDeployedFrame> = frames
+        .iter()
+        .filter(|record| record.entry_point == wanted)
+        .collect();
+    match matches.len() {
+        0 => Err(Report::new(EvmMiroError)
+            .attach_printable(format!("no deployed frame named `{wanted}`"))
+            .attach(crate::Suggestion(
+                "run `bat-cli screenshot` with no --frame to list the deployed frames".to_string(),
+            ))),
+        1 => Ok(matches[0].clone()),
+        _ => {
+            let candidates = matches
+                .iter()
+                .map(|record| {
+                    format!("    {}/{}\n      {}", record.cluster_root, wanted, record.frame_url)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(Report::new(EvmMiroError)
+                .attach_printable(format!(
+                    "`{wanted}` was drawn by {} deployments:\n{candidates}",
+                    matches.len()
+                ))
+                .attach(crate::Suggestion(
+                    "name the deployment too, e.g. --frame '<entry point>/<frame>'".to_string(),
+                )))
+        }
+    }
+}
+
 fn list_frames(metadata: &EvmBatMetadata) -> Result<()> {
     if metadata.miro.auto.frames.is_empty() {
         return Err(Report::new(EvmMiroError)
@@ -245,21 +292,27 @@ fn list_frames(metadata: &EvmBatMetadata) -> Result<()> {
                 "deploy an entry point first: `bat-cli deploy --entry-point <name>`".to_string(),
             )));
     }
-    println!("{}", "deployed frames".bold());
-    let mut names: Vec<&str> = metadata
-        .miro
-        .auto
-        .frames
-        .iter()
-        .map(|frame| frame.entry_point.as_str())
-        .collect();
-    names.sort_unstable();
-    for name in names {
-        println!("  {name}");
+    // Grouped by deployment, because that is what a frame belongs to: one entry point
+    // deployed, every frame its cluster drew underneath it.
+    let mut by_deployment: std::collections::BTreeMap<&str, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for frame in &metadata.miro.auto.frames {
+        by_deployment
+            .entry(frame.cluster_root.as_str())
+            .or_default()
+            .push(frame.entry_point.as_str());
+    }
+    println!("{}", "deployed frames, by deployment".bold());
+    for (deployment, mut frames) in by_deployment {
+        frames.sort_unstable();
+        println!("\n  {}", deployment.bold());
+        for frame in frames {
+            println!("    {frame}");
+        }
     }
     println!(
         "\n  bat-cli screenshot <symbol> --frame {}",
-        "<one of the above>".yellow()
+        "<frame>   (or '<deployment>/<frame>' when a name was drawn twice)".yellow()
     );
     Ok(())
 }
