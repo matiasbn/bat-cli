@@ -214,7 +214,7 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
         let (card_width, card_height) = crate::batbelt::evm::miro::struct_frame::card_size();
         let (card_x, card_y) =
             free_spot(&occupied, record.width, record.height, card_width, card_height);
-        crate::batbelt::evm::miro::struct_frame::place_card(
+        let card_id = crate::batbelt::evm::miro::struct_frame::place_card(
             &client,
             &mut record,
             &located.label,
@@ -223,6 +223,20 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
             card_y,
         )
         .await?;
+        // Recorded as an extra on the ASKING frame, the same as a flat declaration, so a
+        // redeploy puts it back: what the auditor asked for was "draw this type here", and
+        // whether it came out as one screenshot or a frame plus a card is our answer to
+        // that, not their request.
+        record.screenshots.push(ExtraScreenshot {
+            label: located.label.clone(),
+            item_id: card_id,
+            x: card_x,
+            y: card_y,
+            width: card_width,
+            height: card_height,
+            with_documentation: options.with_documentation,
+        });
+        save_frame_record(&record)?;
         println!(
             "  {} {} and the {} type(s) it holds",
             "✓".green(),
@@ -276,6 +290,7 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
         y,
         width,
         height,
+        with_documentation: options.with_documentation,
     });
     save_frame_record(&record)?;
 
@@ -902,6 +917,7 @@ mod screenshot_test {
     fn free_spot_lands_below_the_content_and_never_on_it() {
         let mut record = AutoDeployedFrame {
             entry_point: "C.f".to_string(),
+            type_frame: false,
             frame_id: String::new(),
             frame_url: String::new(),
             x: 0.0,
@@ -929,6 +945,7 @@ mod screenshot_test {
         record.screenshots.push(ExtraScreenshot {
             label: "a".to_string(),
             item_id: String::new(),
+            with_documentation: false,
             x,
             y,
             width: 800.0,

@@ -340,6 +340,25 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
     for (contract_name, function_name, root_file) in targets {
         let title = format!("{contract_name}.{function_name}");
 
+        // What the PREVIOUS deployment of this entry point was enriched with: every
+        // declaration and type drawn onto one of its frames with `bat-cli screenshot`.
+        // A deploy draws fresh frames, so those would be left behind on the old ones —
+        // and they are the auditor's own reading notes, asked for one at a time. They are
+        // put back at the end, on the frame of the same name in the new cluster.
+        let previous_extras: Vec<(String, String, bool)> = {
+            let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+            meta.miro
+                .auto
+                .frames
+                .iter()
+                .filter(|f| f.cluster_root == title && !f.type_frame)
+                .flat_map(|f| {
+                    f.screenshots.iter().map(|shot| {
+                        (f.entry_point.clone(), shot.label.clone(), shot.with_documentation)
+                    })
+                })
+                .collect()
+        };
         let stale_ids: HashSet<String> = {
             let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
             meta.miro
@@ -409,6 +428,42 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
                 m.miro.auto.frames.retain(|f| !old_ids.contains(&f.frame_id));
             })
             .change_context(EvmMiroError)?;
+        }
+
+        // Put the auditor's drawings back, now that the new cluster is recorded and the
+        // old one forgotten, so `--deployment/--dependency` resolves to the new frames. A
+        // symbol that no longer exists (the code moved on) is reported and skipped: this
+        // is a redraw of notes, not a reason to fail a deploy that already worked.
+        if !options.dry_run && !previous_extras.is_empty() {
+            println!(
+                "\n  {} putting back {} drawing(s) from the previous deployment",
+                "↻".yellow(),
+                previous_extras.len()
+            );
+            for (frame, symbol, with_documentation) in previous_extras {
+                let dependency = (frame != title).then(|| frame.clone());
+                let outcome = crate::batbelt::evm::miro::screenshot::run(
+                    crate::batbelt::evm::miro::screenshot::ScreenshotOptions {
+                        name: Some(symbol.clone()),
+                        deployment: Some(title.clone()),
+                        dependency,
+                        file: None,
+                        lines: None,
+                        with_documentation,
+                        grow: false,
+                    },
+                )
+                .await;
+                if let Err(report) = outcome {
+                    println!(
+                        "    {} {} on {}: {}",
+                        "skipped".yellow(),
+                        symbol,
+                        frame,
+                        report.current_context()
+                    );
+                }
+            }
         }
 
         // Persist the cursor after every entry point, not once at the end: a run
@@ -1041,6 +1096,7 @@ async fn deploy_one(
     let frame_url = client.frame_url(&frame_id);
     let mut record = AutoDeployedFrame {
         entry_point: title.clone(),
+        type_frame: false,
         frame_id: frame_id.clone(),
         frame_url: frame_url.clone(),
         x: frame_x,
@@ -5527,6 +5583,7 @@ async fn rebuild_record(
                     y: child.y,
                     width: child.width,
                     height: child.height,
+                    with_documentation: shot.with_documentation,
                 }
             })
         })

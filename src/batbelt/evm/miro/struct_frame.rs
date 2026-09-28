@@ -370,6 +370,7 @@ pub async fn draw(
 
     let record = AutoDeployedFrame {
         entry_point: root_label.clone(),
+        type_frame: true,
         frame_id: frame_id.clone(),
         frame_url: frame_url.clone(),
         x,
