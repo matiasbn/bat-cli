@@ -842,6 +842,25 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.19
+- **The 0.26.18 entry below was missing from this file.** The feature shipped; the changelog write
+  that should have announced it was lost, so a version that brought a capability looked empty. If
+  you read 0.26.18 here before now, read it again.
+
+## 0.26.18
+- **A redeploy puts your drawings back.** A deploy draws fresh frames, so every declaration and type
+  added with `bat-cli screenshot` used to stay behind on the frames of the previous deployment —
+  reading notes, asked for one at a time, silently lost. The deployment now remembers what was drawn
+  on each of its frames and whether it was asked for with `--with-documentation`, and replays them
+  onto the frame of the same name in the new cluster once the new records are saved. A type drawn as
+  its own frame is remembered on the frame that ASKED for it, so it comes back as a frame and a card.
+  A symbol the code no longer has is reported and skipped, not a reason to fail a deploy that worked.
+  **Two caveats worth knowing before you promise an auditor their notes survive:** drawings added by
+  a version older than 0.26.18 are not remembered (the record had nowhere to keep them), so the
+  first redeploy after upgrading still starts clean; and the replay runs the same `screenshot` work
+  again, so a heavily-annotated cluster takes longer to redeploy.
+  _Re-read: workflow.md._
+
 ## 0.26.17
 - **A link card points at the frame of ITS deployment.** The registry became keyed by
   (deployment, frame) in 0.26.13, but the lookups still asked by name alone — so a card in one
