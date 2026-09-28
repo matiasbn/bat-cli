@@ -837,6 +837,17 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.17
+- **A link card points at the frame of ITS deployment.** The registry became keyed by
+  (deployment, frame) in 0.26.13, but the lookups still asked by name alone — so a card in one
+  cluster could resolve to another deployment's copy of the same helper and send a reader out of
+  the diagram they were reading. Both reads in `ensure_target_frames` are scoped to the cluster now.
+- **A nested type written qualified is followed.** A field like `IFLAMM.VenueLeg[] venue;` was read
+  as the type `IFLAMM` — the interface it lives in, not the type — so it matched no struct and the
+  field was skipped in silence. The last segment is the type: `FLAMMFlowLib.Legs` draws its
+  `VenueLeg` now.
+  _Re-read: workflow.md._
+
 ## 0.26.16
 - **Two arrows a reader compares are never the same colour.** The rule was applied arrow by arrow
   and then the callee's colour was locked on first sight, so every LATER arrow to that function

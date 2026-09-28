@@ -5226,7 +5226,12 @@ async fn ensure_target_frames(
                 })
             });
             if created_here {
-                live_frame_url(&target, Some(client)).await?
+                // Scoped to THIS cluster: a lookup by name alone hands back whichever
+                // deployment's frame happens to be first, and the card then points a
+                // reader out of the diagram they are reading into somebody else's copy of
+                // the same function. The registry is keyed by (deployment, frame); the
+                // reads have to say the deployment too.
+                frame_url_in_cluster(&target, &cluster.root, client).await?
             } else {
                 None
             }
@@ -5263,7 +5268,7 @@ async fn ensure_target_frames(
             .auto
             .frames
             .iter()
-            .find(|frame| frame.entry_point == target)
+            .find(|frame| frame.entry_point == target && frame.cluster_root == cluster.root)
         {
             resolved.insert(target, created.frame_url.clone());
         }
@@ -5603,21 +5608,36 @@ pub(crate) async fn ensure_frame_record(
     Ok(None)
 }
 
-async fn live_frame_url(title: &str, client: Option<&MiroClient>) -> Result<Option<String>> {
-    let Some(client) = client else {
+/// The URL of `title`'s frame WITHIN one deployment, if it is still on the board.
+///
+/// The unscoped version of this is what made two link cards in one frame point at another
+/// deployment's copy of the same helper: every deploy is fresh, so several frames share a
+/// title by construction, and a find-by-name returns whichever was written first.
+async fn frame_url_in_cluster(
+    title: &str,
+    cluster_root: &str,
+    client: &MiroClient,
+) -> Result<Option<String>> {
+    let record = {
         let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        return Ok(metadata
+        metadata
             .miro
             .auto
             .frames
             .iter()
-            .find(|frame| frame.entry_point == title)
-            .map(|frame| frame.frame_url.clone()));
+            .find(|frame| frame.entry_point == title && frame.cluster_root == cluster_root)
+            .cloned()
     };
-    Ok(ensure_frame_record(title, client)
-        .await?
-        .map(|record| record.frame_url))
+    let Some(record) = record else {
+        return Ok(None);
+    };
+    match client.item_status(&record.frame_id).await {
+        // Gone from the board: this run will draw it again, so say nothing is there.
+        Some(false) => Ok(None),
+        _ => Ok(Some(record.frame_url)),
+    }
 }
+
 
 #[cfg(test)]
 mod color_test {
