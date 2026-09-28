@@ -548,6 +548,11 @@ other deployment that reached it. Without `--dependency` the target is the deplo
 A dependency that was drawn INSIDE the root frame rather than cut out to its own has no frame to
 draw on, and the error lists what the deployment did draw. You never need a frame id.
 
+**Deploying that entry point again keeps them.** A deploy draws fresh frames, so what you added with
+`screenshot` would be left behind on the old ones; the deployment remembers each drawing and puts it
+back on the frame of the same name in the new cluster, with the same `--with-documentation` it was
+asked for. A symbol the code no longer has is reported and skipped.
+
 **A type whose fields are types gets its own frame.** `bat-cli screenshot FLAMMSwapLib.Plan
 --deployment <X> --dependency <F>` draws a single struct onto the frame, as before — but when that
 struct holds other structs (`Plan` holds a `SwapContext`, which holds a `PoolContext`), drawing them

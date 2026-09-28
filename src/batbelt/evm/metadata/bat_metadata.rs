@@ -277,11 +277,20 @@ pub struct ExtraScreenshot {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    /// Whether it was asked for with its documentation, so a redeploy can put back what
+    /// was actually drawn rather than a plainer version of it.
+    #[serde(default)]
+    pub with_documentation: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoDeployedFrame {
     pub entry_point: String,
+    /// A frame drawn for a TYPE rather than a function: the tree of a struct whose fields
+    /// are structs. It is replayed after a redeploy from the card that asked for it, not
+    /// from the call graph, which never mentions it.
+    #[serde(default)]
+    pub type_frame: bool,
     pub frame_id: String,
     pub frame_url: String,
     pub x: f64,
