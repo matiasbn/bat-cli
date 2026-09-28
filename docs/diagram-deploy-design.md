@@ -490,3 +490,85 @@ anything is drawn, and the frames can be created and filled concurrently.
 Two things to get right when it is done: the rendered PNGs of the whole cluster now exist at once
 (cleanup must move to the end of the run), and the shared temp dir means a per-run subdirectory is
 needed anyway (§15).
+
+## 17. A deployment is the unit, not a frame title
+
+`deploy --entry-point X` produces ONE deployment: the frame for `X` plus a frame for every branch
+cut out of it. The registry used to hold **one record per function name, board-wide**, which was
+true while a callee already on the board was linked rather than redrawn (§15). Once every deploy
+became fresh, a helper two entry points reach is drawn once per deployment — several frames on the
+board carry the title `auto: FLAMMFlowLib.requireFlat`, different ids, by construction — and the
+name-keyed registry made the second deployment's record displace the first's. Four sequential
+deploys left three clusters drawn on the board and unreachable from the CLI.
+
+So the key is **(deployment, frame)**, the deployment being `cluster_root`, which the record already
+carried. Consequences, all deliberate:
+
+- Re-deploying an entry point replaces **that deployment's** records and nobody else's. It asks
+  first, because it also leaves the previous frames on the board; `--yes` answers it.
+- Old frames are not deleted and their URLs are no longer printed: the API deletes one item at a
+  time (§8), the frames are visible, and checking they were still there cost one call per frame.
+- **Addressing is a deployment plus a name inside it**, never a title: `--frame` became
+  `--deployment <entry point>` and `--dependency <function>`, with no `--dependency` meaning the
+  deployment's own frame. Inside one deployment a name is unique, which is what makes it an address.
+  A dependency drawn INSIDE the root frame has no frame of its own, and the error says so by listing
+  what the deployment did draw.
+- **Overloads carry their signature** — `MMRouterLib.read(uint256,address)` — since a name is not
+  enough even inside a deployment. The discriminator used to be `@<line>`, which is unique and tells
+  a reader nothing; a signature is what somebody reading the source would use. It also keeps the
+  node id and the frame title differing only by `::` versus `.`, which is what lets `relink`
+  re-pair a pasted frame by title.
+
+## 18. Types are drawn too, and they are trees
+
+A struct with no struct fields is one screenshot on the frame that needed it. A struct whose fields
+are structs is a different object: `FLAMMSwapLib.Plan` holds a `SwapContext`, which holds a
+`PoolContext`. Drawing only the outer one answers half the question; drawing all of them inline
+buries the function the frame is about. So it becomes its own frame, laid out by the same rules a
+call graph is, with an arrow from each field to the type it names, and the asking frame gets a
+**purple card** — the shape a branch cut out to its own frame already leaves behind, in a colour
+that says "type" rather than "call". The type frame joins the asking deployment, so `--dependency`
+reaches it afterwards (§17).
+
+- **Field types are read from the source**, because the scan does not record them: the first
+  identifier on the line, with `T[]` and `mapping(K => V)` unwrapped to what they hold, resolved
+  against the indexed structs and enums preferring one declared in the same file. Value types are
+  skipped by name, which also stops a contract called `Address` from being mistaken for one.
+- **Placement is beside the host frame, not at the allocator's cursor**, because the two are read
+  together. Candidate rectangles are tested against every frame in the registry, spiralling out from
+  the host. This is forced, not preferred: **Miro refuses to create a frame that overlaps another**
+  and answers `500 Internal error` — found the hard way, and worth remembering for anything else
+  that creates frames.
+- **The arrows use `line_anchor`, shared with `deploy`.** They are the same problem — a connector
+  endpoint is clipped to the item's border, so landing on a line needs an invisible marker at the
+  point plus one on the border level with it, and a full-width line pushes the convergence outside
+  or the stub has no length and no head is drawn. This was a second copy of that arithmetic for
+  about an hour, and it had already drifted (the gap after the text was one character here,
+  `ANCHOR_GAP_CHARS` there), which is why it is one function now.
+
+## 19. Two rules about the board that are not about layout
+
+**A frame says what it does, in its own fill.** Very pale red (`#fff0ef`) when something drawn in it
+writes storage or reaches a write, pale amber (`#fff7ec`) when something in it only calls out past
+the audited code, red winning when both — the precedence the per-node markings already have. The
+per-node border answers that question once you are inside a frame; from the distance where a cluster
+of thirty frames fits on screen, which is where the reader decides what to open, it is two pixels
+wide. It is the frame's own fill because Miro's REST API sets no border on a frame, and a rectangle
+at the frame's bounds would be one more item to create, record and clean up. The tints were chosen
+by eye on a board, from a row of candidates, at that zoom: Miro's own "light red" (`#ffc6c6`) is
+already too strong to read code through.
+
+**Forgetting a record needs a definite answer.** `item_exists` returned `is_ok()`, so a rate limit,
+a 500, a dropped connection or an expired token all came back as "not on the board" — and the caller
+acts on that by DELETING the registry entry, on the reasoning that a record outlives a frame deleted
+by hand. One unlucky request therefore dropped a whole deployment from the registry while its frames
+sat untouched on the board. `item_status` now answers `Some(true)`, `Some(false)` only on a 404, or
+`None` when the board could not be asked, and the record is kept in the last case. The general rule,
+worth applying to anything else that prunes: **an error is not evidence of absence.**
+
+**And one layout rule that came out of reading real frames:** the entry point sits at the TOP-LEFT
+of its frame. `layout_tree` centred each parent on its children — the textbook tidy tree — so on a
+tree-shaped graph the function you start from floated halfway down with empty space above it, while
+everything done to a frame afterwards (reading it, dropping a declaration screenshot underneath)
+wants that box near the corner and the room below. The layered path always top-aligned; the tree
+path now agrees.

@@ -837,6 +837,16 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.16
+- **Two arrows a reader compares are never the same colour.** The rule was applied arrow by arrow
+  and then the callee's colour was locked on first sight, so every LATER arrow to that function
+  inherited the colour without checking where it now ran — two crimson arrows ended up side by side
+  in one gutter, 15px apart, reading as one edge. Conflicts are collapsed onto the callees first
+  (two functions conflict when any of their arrows are compared anywhere) and the colouring is over
+  that, busiest function first. A frame with more mutually-compared functions than the palette has
+  colours now repeats one **dashed**, instead of repeating it invisibly.
+  _Re-read: workflow.md._
+
 ## 0.26.15
 - **A type frame's arrows land on the field, inside the screenshot.** They stopped at the box's
   border, because Miro clips a connector endpoint to the item it names. They now use the same two

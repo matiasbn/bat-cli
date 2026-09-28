@@ -1350,6 +1350,9 @@ async fn deploy_one(
         /// (`_usd(_token(x))`); they share one stub, but each branch keeps the colour
         /// of the function it reaches, so two callees never read as one.
         color: String,
+        /// Set when the palette ran out and this callee had to repeat a colour: the
+        /// repeat is drawn dashed so the two are still two arrows.
+        dashed: bool,
     }
     struct PendingGroup {
         token_x: f64,
@@ -1449,7 +1452,7 @@ async fn deploy_one(
     // none of its conflicting neighbours already has. Two arrows that reach the SAME
     // function are not in conflict — sharing their colour is what lets a reader
     // recognise a helper drawn in several places.
-    let edge_color: Vec<String> = {
+    let edge_color: (Vec<String>, HashSet<String>) = {
         let lane_index: HashMap<usize, (usize, f64)> = edges
             .iter()
             .enumerate()
@@ -1536,45 +1539,61 @@ async fn deploy_one(
                 }
             }
         }
-        let mut palette_of: HashMap<usize, Vec<usize>> = HashMap::new();
-        let mut colors: Vec<Option<usize>> = vec![None; edges.len()];
-        let mut by_callee: HashMap<&str, usize> = HashMap::new();
-        for index in order {
-            // The same callee keeps one colour wherever it is reached from.
-            if let Some(taken) = by_callee.get(edges[index].to.as_str()) {
-                colors[index] = Some(*taken);
-                continue;
+        // Colour the CALLEES, not the arrows one at a time.
+        //
+        // Every arrow to one function shares its colour, which is what lets a reader
+        // recognise a helper drawn in several places — but colouring arrow by arrow and
+        // then locking the callee's colour on first sight meant a later arrow to that
+        // callee inherited a colour WITHOUT checking where it now runs. Two crimson
+        // arrows ended up side by side in one gutter, 15px apart, indistinguishable. So
+        // the conflicts are collapsed onto the callees first: two functions conflict when
+        // ANY of their arrows are compared anywhere, and the colouring is over that.
+        let mut callee_conflicts: HashMap<&str, HashSet<&str>> = HashMap::new();
+        for (index, edge) in edges.iter().enumerate() {
+            let entry = callee_conflicts.entry(edge.to.as_str()).or_default();
+            for other in &conflicts[index] {
+                let rival = edges[*other].to.as_str();
+                if rival != edge.to.as_str() {
+                    entry.insert(rival);
+                }
             }
-            let used: HashSet<usize> = conflicts[index]
-                .iter()
-                .filter_map(|other| colors[*other])
-                .collect();
-            // Each gutter tries the palette in its own SHUFFLED order. The conflict
-            // rule alone always reached for colour 0 first, so every column opened on
-            // the same hue and a frame read as one repeated pattern — correct, and
-            // monotonous. The shuffle is drawn per run rather than derived from the
-            // graph: a deploy draws a fresh cluster anyway, so there is nothing to keep
-            // stable between runs, and a diagram that looks different each time is the
-            // point of asking for it.
-            let gutter = lane_index.get(&index).map(|(layer, _)| *layer).unwrap_or(usize::MAX);
-            let palette = palette_of.entry(gutter).or_insert_with(|| {
-                let mut order: Vec<usize> = (0..DEPTH_COLORS.len()).collect();
-                order.shuffle(&mut rand::thread_rng());
-                order
-            });
-            let choice = palette
-                .iter()
-                .copied()
-                .find(|color| !used.contains(color))
-                .unwrap_or(index % DEPTH_COLORS.len());
-            colors[index] = Some(choice);
-            by_callee.insert(edges[index].to.as_str(), choice);
         }
-        colors
-            .into_iter()
-            .map(|color| DEPTH_COLORS[color.unwrap_or(0)].to_string())
-            .collect()
+        let first_gutter: HashMap<&str, usize> = {
+            let mut first: HashMap<&str, usize> = HashMap::new();
+            for index in &order {
+                if let Some((gutter, _)) = lane_index.get(index) {
+                    first.entry(edges[*index].to.as_str()).or_insert(*gutter);
+                }
+            }
+            first
+        };
+        let mut palette_of: HashMap<usize, Vec<usize>> = HashMap::new();
+        let (by_callee, dashed) = color_callees(&callee_conflicts, |callee| {
+            // Each gutter tries the palette in its own SHUFFLED order. The conflict rule
+            // alone always reached for colour 0 first, so every column opened on the same
+            // hue and a frame read as one repeated pattern — correct, and monotonous. The
+            // shuffle is drawn per run: a deploy draws a fresh cluster anyway, so there is
+            // nothing to keep stable between runs.
+            let gutter = first_gutter.get(callee).copied().unwrap_or(usize::MAX);
+            palette_of
+                .entry(gutter)
+                .or_insert_with(|| {
+                    let mut order: Vec<usize> = (0..DEPTH_COLORS.len()).collect();
+                    order.shuffle(&mut rand::thread_rng());
+                    order
+                })
+                .clone()
+        });
+        let dashed_callees: HashSet<String> = dashed.iter().map(|id| id.to_string()).collect();
+        let colors: Vec<String> = edges
+            .iter()
+            .map(|edge| {
+                DEPTH_COLORS[by_callee.get(edge.to.as_str()).copied().unwrap_or(0)].to_string()
+            })
+            .collect();
+        (colors, dashed_callees)
     };
+    let (edge_color, dashed_callees) = edge_color;
     let callee_color: HashMap<String, String> = edges
         .iter()
         .enumerate()
@@ -1628,6 +1647,7 @@ async fn deploy_one(
                 .get(&edge.to)
                 .cloned()
                 .unwrap_or_else(|| DEPTH_COLORS[0].to_string()),
+            dashed: dashed_callees.contains(&edge.to),
         };
 
         let dashed = back_edges.contains(&(edge.from.clone(), edge.to.clone()));
@@ -1725,6 +1745,7 @@ async fn deploy_one(
                 let mut route_style = group.style.clone();
                 route_style.arrow = ArrowEnd::None;
                 route_style.stroke_color = link.color.clone();
+                route_style.dashed = route_style.dashed || link.dashed;
                 // Without a lane (a cycle, drawn dashed, or a gutter too narrow to
                 // hold one) fall back to the single Miro-routed connector.
                 if !group.exit_right || !link.lane_x.is_finite() {
@@ -3010,6 +3031,48 @@ pub(crate) fn line_anchor(
         token_y: y - height / 2.0 + height * y_fraction,
         edge_x,
     }
+}
+
+/// Give every callee a colour no callee it is compared with already has.
+///
+/// Greedy colouring, busiest node first: a function whose arrows are compared with many
+/// others needs a free colour more than one compared with two, and greedy is only as good
+/// as the order it walks in. `palette_for` hands back the order to try colours in, which
+/// is how each gutter gets its own shuffle.
+///
+/// When a callee has no free colour left — more mutually-compared functions in one frame
+/// than the palette holds — it repeats one and is returned in the second set, for the
+/// caller to draw dashed. A repeated colour that is also a repeated line style would be
+/// two arrows a reader cannot tell apart, which is the one thing colour is for.
+fn color_callees<'a>(
+    conflicts: &HashMap<&'a str, HashSet<&'a str>>,
+    mut palette_for: impl FnMut(&'a str) -> Vec<usize>,
+) -> (HashMap<&'a str, usize>, HashSet<&'a str>) {
+    let mut callees: Vec<&'a str> = conflicts.keys().copied().collect();
+    callees.sort_by(|a, b| {
+        let degree = |id: &&str| conflicts.get(*id).map(|set| set.len()).unwrap_or(0);
+        degree(b).cmp(&degree(a)).then(a.cmp(b))
+    });
+
+    let mut chosen: HashMap<&'a str, usize> = HashMap::new();
+    let mut dashed: HashSet<&'a str> = HashSet::new();
+    for callee in callees {
+        let used: HashSet<usize> = conflicts
+            .get(callee)
+            .map(|rivals| rivals.iter().filter_map(|rival| chosen.get(rival).copied()).collect())
+            .unwrap_or_default();
+        let palette = palette_for(callee);
+        match palette.iter().copied().find(|color| !used.contains(color)) {
+            Some(free) => {
+                chosen.insert(callee, free);
+            }
+            None => {
+                chosen.insert(callee, palette.first().copied().unwrap_or(0));
+                dashed.insert(callee);
+            }
+        }
+    }
+    (chosen, dashed)
 }
 
 fn overload_node_key(contract: &ContractMetadata, function: &FunctionMetadata) -> String {
@@ -5554,6 +5617,70 @@ async fn live_frame_url(title: &str, client: Option<&MiroClient>) -> Result<Opti
     Ok(ensure_frame_record(title, client)
         .await?
         .map(|record| record.frame_url))
+}
+
+#[cfg(test)]
+mod color_test {
+    use super::*;
+
+    fn conflicts<'a>(pairs: &[(&'a str, &'a str)]) -> HashMap<&'a str, HashSet<&'a str>> {
+        let mut map: HashMap<&str, HashSet<&str>> = HashMap::new();
+        for (a, b) in pairs {
+            map.entry(a).or_default().insert(b);
+            map.entry(b).or_default().insert(a);
+        }
+        map
+    }
+
+    /// The invariant the whole thing exists for: two arrows a reader compares are never
+    /// the same colour.
+    #[test]
+    fn conflicting_callees_never_share_a_colour() {
+        let graph = conflicts(&[("a", "b"), ("b", "c"), ("c", "a"), ("c", "d")]);
+        let (chosen, dashed) = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
+        assert!(dashed.is_empty(), "four callees fit in a palette of {}", DEPTH_COLORS.len());
+        for (callee, rivals) in &graph {
+            for rival in rivals {
+                assert_ne!(
+                    chosen[callee], chosen[rival],
+                    "{callee} and {rival} are compared and share a colour"
+                );
+            }
+        }
+    }
+
+    /// A callee reached from several places keeps ONE colour — that is what makes a
+    /// helper recognisable across a frame — so the rule is about conflicts, not arrows.
+    #[test]
+    fn a_callee_has_exactly_one_colour() {
+        let graph = conflicts(&[("helper", "a"), ("helper", "b")]);
+        let (chosen, _) = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
+        assert!(chosen.contains_key("helper"));
+        assert_eq!(chosen.len(), 3);
+    }
+
+    /// More mutually-compared functions than colours: someone repeats, and the repeat is
+    /// dashed rather than silently indistinguishable.
+    #[test]
+    fn a_palette_that_runs_out_dashes_the_repeat() {
+        let names: Vec<String> = (0..DEPTH_COLORS.len() + 2).map(|i| format!("f{i}")).collect();
+        let mut pairs: Vec<(&str, &str)> = Vec::new();
+        for i in 0..names.len() {
+            for j in (i + 1)..names.len() {
+                pairs.push((names[i].as_str(), names[j].as_str()));
+            }
+        }
+        let graph = conflicts(&pairs);
+        let (chosen, dashed) = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
+        assert_eq!(chosen.len(), DEPTH_COLORS.len() + 2);
+        assert_eq!(
+            dashed.len(),
+            2,
+            "a clique of {} in a palette of {} repeats exactly twice",
+            names.len(),
+            DEPTH_COLORS.len()
+        );
+    }
 }
 
 #[cfg(test)]
