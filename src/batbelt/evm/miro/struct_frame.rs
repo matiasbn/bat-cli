@@ -155,10 +155,15 @@ fn field_type(line: &str) -> Option<String> {
         Some((_, value)) => value.trim_start(),
         None => code,
     };
-    let first: String = code
+    // A type can be written qualified — `IFLAMM.VenueLeg[] venue;` — and the name that
+    // matters is the LAST segment: the qualifier is the interface or library it is
+    // declared in, and looking that up finds an interface, not a struct, so the field was
+    // silently skipped and its type never drawn.
+    let path: String = code
         .chars()
-        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
         .collect();
+    let first = path.rsplit('.').next().unwrap_or_default().to_string();
     if first.is_empty() {
         return None;
     }
@@ -464,4 +469,28 @@ fn free_rect(host: &AutoDeployedFrame, width: f64, height: f64) -> Result<(f64, 
 pub fn announce(label: &str, url: &str) {
     println!("  {} {} drawn as its own frame", "✓".green(), label.bold());
     println!("  {}", url.blue());
+}
+
+#[cfg(test)]
+mod field_type_test {
+    use super::field_type;
+
+    #[test]
+    fn reads_the_type_a_field_declares() {
+        assert_eq!(field_type("    SwapContext sctx;").as_deref(), Some("SwapContext"));
+        // Qualified: the last segment is the type, the first is where it lives.
+        assert_eq!(field_type("    IFLAMM.VenueLeg[] venue;").as_deref(), Some("VenueLeg"));
+        // A mapping holds its value type.
+        assert_eq!(
+            field_type("    mapping(address => Position) positions;").as_deref(),
+            Some("Position")
+        );
+        // Value types are not trees, and nor are the braces around them.
+        assert_eq!(field_type("    uint256[] liquid;"), None);
+        assert_eq!(field_type("    uint256 physical;"), None);
+        assert_eq!(field_type("    address loanAsset;"), None);
+        assert_eq!(field_type("struct Legs {"), None);
+        assert_eq!(field_type("}"), None);
+        assert_eq!(field_type("    // a comment"), None);
+    }
 }
