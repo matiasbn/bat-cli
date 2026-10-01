@@ -432,6 +432,7 @@ title it carries. You only step in when the answer is not obvious:
 ```bash
 bat-cli relink --check                       # what the registry still matches, and what moved
 bat-cli relink <entry point>                 # re-anchor by title
+bat-cli relink <entry point> --deployment <entry point>   # when several deployments drew it
 bat-cli relink <entry point> --frame-url <url>   # when several frames share the title
 ```
 
@@ -841,6 +842,21 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.20
+- **A frame is as tall as what is in it.** A graph with no shared nodes took a tidy-tree layout that
+  gave each subtree its own vertical band, so a light sibling drawn after a heavy one started below
+  everything the heavy one reached — on one entry point, two getters sat 5,500px down with their
+  column empty above them, and the frame reserved 11950x7692 where its tallest column needed
+  11950x4883. That shortcut is gone: layers pack every column from the top, and all the recent work
+  (call order, one lane per arrow, the honest crossing count) lives there. It became the common case
+  because localization and carding remove exactly the shared nodes that made a graph "not a tree".
+- **`screenshot --deployment` is obeyed all the way.** It picked the right record and then asked for
+  the frame again by function name alone, taking the first in the file — an order every save
+  changes, by removing a record and pushing it back at the end. So the same command run twice drew
+  on two different frames. `relink` had the same key and is now `relink <entry point> --deployment
+  <entry point>`; without it, a name several deployments drew stops and lists them.
+  _Re-read: workflow.md._
 
 ## 0.26.19
 - **The 0.26.18 entry below was missing from this file.** The feature shipped; the changelog write

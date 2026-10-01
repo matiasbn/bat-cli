@@ -180,6 +180,10 @@ enum BatCommands {
     Relink {
         /// Entry point naming the frame. Omit it (or pass --check) to review the registry.
         entry_point: Option<String>,
+        /// Which deployment's copy of that function, when more than one drew it
+        /// (`Contract.function`, the entry point its cluster was deployed for).
+        #[arg(long)]
+        deployment: Option<String>,
         /// The frame's Miro link, when several frames share the title.
         #[arg(long = "frame-url", value_name = "URL")]
         frame_url: Option<String>,
@@ -315,10 +319,12 @@ impl BatCommands {
             .change_context(CommandError),
             BatCommands::Relink {
                 entry_point,
+                deployment,
                 frame_url,
                 check,
             } => crate::batbelt::evm::miro::auto_deploy::run_relink(
                 entry_point.clone(),
+                deployment.clone(),
                 frame_url.clone(),
                 *check,
             )
