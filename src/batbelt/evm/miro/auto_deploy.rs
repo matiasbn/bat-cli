@@ -2104,11 +2104,38 @@ fn caller_anchor(node: &GraphNode, edge: &GraphEdge, alone_on_line: bool) -> Rel
 /// screenshots, so nothing about the audited code is hidden. Deploy it as an entry
 /// point of its own on the day the question is actually about it.
 fn ignored_contract(options: &AutoDeployOptions, contract: &ContractMetadata) -> bool {
-    options.ignore_contracts.iter().any(|pattern| {
-        let pattern = pattern.trim();
-        !pattern.is_empty()
-            && (contract.name == pattern || contract.file_path.contains(pattern))
-    })
+    options
+        .ignore_contracts
+        .iter()
+        .any(|pattern| matches_ignore(pattern, &contract.name, &contract.file_path))
+}
+
+/// Does this ignore pattern mean this contract?
+///
+/// A name matches exactly, and a path matches whole SEGMENTS. The substring match this
+/// replaces was a trap: `ignore Math` also hid `CollRebalancerMath`, because its path is
+/// `.../lev/CollRebalancerMath.sol` and that contains "Math". A call to it then vanished
+/// from a diagram completely — no box, no card, no marking — and the deploy's only word on
+/// the subject was "not drawing: Math". Whatever an auditor means by naming a library they
+/// have read, they do not mean every contract whose file name happens to end in it.
+fn matches_ignore(pattern: &str, name: &str, file_path: &str) -> bool {
+    let pattern = pattern.trim().trim_matches('/');
+    if pattern.is_empty() {
+        return false;
+    }
+    if name == pattern {
+        return true;
+    }
+    // A path pattern is one or more whole segments: `utils/math` matches
+    // `lib/oz/contracts/utils/math/Math.sol`, and `Math` matches a directory or file
+    // called exactly that, never a longer name containing it.
+    let wanted: Vec<&str> = pattern.split('/').filter(|part| !part.is_empty()).collect();
+    let segments: Vec<&str> = file_path
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .map(|part| part.strip_suffix(".sol").unwrap_or(part))
+        .collect();
+    !wanted.is_empty() && segments.windows(wanted.len()).any(|window| window == wanted)
 }
 
 fn build_graph(
@@ -2176,6 +2203,10 @@ fn build_graph(
         std::collections::BTreeMap::new();
     let mut unresolved: Vec<crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall> =
         Vec::new();
+    // Calls dropped because their contract is on the ignore list. Leaving a call out is a
+    // reasonable thing to ask for and an unreasonable thing to do in silence: the diagram
+    // cannot show what is not there, so the run says it.
+    let mut skipped_by_ignore: HashMap<String, usize> = HashMap::new();
     // One node per function: a second call to the same function points at the
     // node that already exists.
     let mut drawn: HashMap<String, String> = HashMap::new();
@@ -2417,6 +2448,7 @@ fn build_graph(
                 continue;
             };
             if ignored_contract(options, target_contract) {
+                *skipped_by_ignore.entry(target_contract.name.clone()).or_insert(0) += 1;
                 continue;
             }
             let target_id = overload_node_key(target_contract, &target_function);
@@ -2733,6 +2765,19 @@ fn build_graph(
         );
     }
 
+    if !skipped_by_ignore.is_empty() {
+        let mut listed: Vec<(String, usize)> = skipped_by_ignore.into_iter().collect();
+        listed.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        println!(
+            "  {} left out {}",
+            "note:".yellow(),
+            listed
+                .iter()
+                .map(|(name, count)| format!("{name} ({count} call site(s))"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
     Ok((nodes, edges, unresolved))
 }
 
@@ -5748,6 +5793,35 @@ async fn frame_url_in_cluster(
     }
 }
 
+
+#[cfg(test)]
+mod ignore_test {
+    use super::matches_ignore;
+
+    #[test]
+    fn a_name_matches_exactly_and_a_path_by_whole_segments() {
+        // What the auditor meant.
+        assert!(matches_ignore("Math", "Math", "./lib/oz/contracts/utils/math/Math.sol"));
+        assert!(matches_ignore(
+            "openzeppelin-contracts/contracts/utils",
+            "Math",
+            "./lib/openzeppelin-contracts/contracts/utils/math/Math.sol"
+        ));
+        assert!(matches_ignore("utils/math", "Math", "./lib/oz/contracts/utils/math/Math.sol"));
+
+        // What it must NOT take with it: a contract whose name merely ends in the pattern,
+        // which is how `ignore Math` silently removed CollRebalancerMath from a diagram.
+        assert!(!matches_ignore(
+            "Math",
+            "CollRebalancerMath",
+            "./src/hooks/everlong/lev/CollRebalancerMath.sol"
+        ));
+        assert!(!matches_ignore("Curve", "AlmCurve", "./src/hooks/everlong/AlmCurve.sol"));
+        // Nor a directory that merely starts with it.
+        assert!(!matches_ignore("math", "X", "./src/mathlib/X.sol"));
+        assert!(!matches_ignore("", "X", "./src/X.sol"));
+    }
+}
 
 #[cfg(test)]
 mod color_test {
