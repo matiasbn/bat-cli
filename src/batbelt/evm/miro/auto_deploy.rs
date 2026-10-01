@@ -5347,6 +5347,7 @@ async fn ensure_target_frames(
 /// fix the record and lose the arrangement, which is the wrong trade.
 pub async fn run_relink(
     entry_point: Option<String>,
+    deployment: Option<String>,
     frame_url: Option<String>,
     check: bool,
 ) -> Result<()> {
@@ -5401,14 +5402,36 @@ pub async fn run_relink(
     }
 
     let entry_point = entry_point.expect("checked above");
-    let Some(record) = metadata
+    // Which deployment's copy. A function reached by three entry points has three records
+    // under this name, and relinking "the one called X" used to take whichever came first
+    // — which is how two records ended up pointing at one frame, leaving the pair
+    // indistinguishable even by id.
+    let candidates: Vec<&AutoDeployedFrame> = metadata
         .miro
         .auto
         .frames
         .iter()
-        .find(|frame| frame.entry_point == entry_point)
-        .cloned()
-    else {
+        .filter(|frame| {
+            frame.entry_point == entry_point
+                && deployment.as_ref().is_none_or(|root| &frame.cluster_root == root)
+        })
+        .collect();
+    if deployment.is_none() && candidates.len() > 1 {
+        let listed = candidates
+            .iter()
+            .map(|frame| format!("    {} ({})", frame.cluster_root, frame.frame_url))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(Report::new(EvmMiroError)
+            .attach_printable(format!(
+                "`{entry_point}` was drawn by {} deployments:\n{listed}",
+                candidates.len()
+            ))
+            .attach(crate::Suggestion(
+                "say which one, with --deployment <entry point>".to_string(),
+            )));
+    }
+    let Some(record) = candidates.first().map(|frame| (*frame).clone()) else {
         return Err(Report::new(EvmMiroError)
             .attach_printable(format!("no frame recorded for `{entry_point}`"))
             .attach(crate::Suggestion(
@@ -5444,7 +5467,7 @@ pub async fn run_relink(
         return Ok(());
     }
 
-    match reanchor_frame(&entry_point, &client).await? {
+    match reanchor_frame(&entry_point, deployment.as_deref(), &client).await? {
         Some(record) => {
             println!(
                 "{} {} → {}",
@@ -5490,6 +5513,7 @@ fn label_for_node(node_id: &str) -> Option<String> {
 /// than the ids it once wrote down.
 async fn reanchor_frame(
     title: &str,
+    cluster_root: Option<&str>,
     client: &MiroClient,
 ) -> Result<Option<AutoDeployedFrame>> {
     let record = {
@@ -5499,7 +5523,10 @@ async fn reanchor_frame(
             .auto
             .frames
             .iter()
-            .find(|frame| frame.entry_point == title)
+            .find(|frame| {
+                frame.entry_point == title
+                    && cluster_root.is_none_or(|root| frame.cluster_root == root)
+            })
             .cloned()
     };
     let Some(record) = record else {
@@ -5615,17 +5642,43 @@ async fn rebuild_record(
 /// frame really is gone (in which case the record is forgotten, as before).
 pub(crate) async fn ensure_frame_record(
     title: &str,
+    // Which deployment's copy of `title`. A function reached by three entry points has
+    // three frames with this name, and a lookup without this answered with whichever
+    // record came first in the file — an order every save changes, by removing a record
+    // and pushing it back at the end. So the same command run twice drew on two different
+    // frames. `None` is for the callers that genuinely mean "the only one", and still
+    // stops when the name turns out to be ambiguous.
+    cluster_root: Option<&str>,
     client: &MiroClient,
 ) -> Result<Option<AutoDeployedFrame>> {
     let record = {
         let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        metadata
+        let matching: Vec<&AutoDeployedFrame> = metadata
             .miro
             .auto
             .frames
             .iter()
-            .find(|frame| frame.entry_point == title)
-            .cloned()
+            .filter(|frame| {
+                frame.entry_point == title
+                    && cluster_root.is_none_or(|root| frame.cluster_root == root)
+            })
+            .collect();
+        if cluster_root.is_none() && matching.len() > 1 {
+            let candidates = matching
+                .iter()
+                .map(|frame| format!("    {} ({})", frame.cluster_root, frame.frame_url))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(Report::new(EvmMiroError)
+                .attach_printable(format!(
+                    "`{title}` was drawn by {} deployments:\n{candidates}",
+                    matching.len()
+                ))
+                .attach(crate::Suggestion(
+                    "say which one, with --deployment <entry point>".to_string(),
+                )));
+        }
+        matching.first().map(|frame| (*frame).clone())
     };
     let Some(record) = record else {
         return Ok(None);
@@ -5644,7 +5697,7 @@ pub(crate) async fn ensure_frame_record(
         }
         Some(false) => {}
     }
-    if let Some(reanchored) = reanchor_frame(title, client).await? {
+    if let Some(reanchored) = reanchor_frame(title, cluster_root, client).await? {
         return Ok(Some(reanchored));
     }
 
@@ -5654,12 +5707,12 @@ pub(crate) async fn ensure_frame_record(
         title
     );
     let owner = title.to_string();
+    let deployment = cluster_root.map(|root| root.to_string());
     EvmBatMetadata::update_metadata(move |metadata| {
-        metadata
-            .miro
-            .auto
-            .frames
-            .retain(|frame| frame.entry_point != owner);
+        metadata.miro.auto.frames.retain(|frame| {
+            frame.entry_point != owner
+                || deployment.as_ref().is_some_and(|root| &frame.cluster_root != root)
+        });
     })
     .change_context(EvmMiroError)?;
     Ok(None)

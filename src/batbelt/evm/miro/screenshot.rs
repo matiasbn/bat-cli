@@ -118,8 +118,11 @@ pub async fn run(options: ScreenshotOptions) -> Result<()> {
         .change_context(EvmMiroError)?;
     // A frame that was cut and pasted has a new id; the record is re-anchored to the copy
     // on the board rather than failing (see `ensure_frame_record`).
+    // Scoped to the deployment `--deployment` named: `resolve_frame` already chose the
+    // right record, and asking again by name alone threw that choice away.
     let record = crate::batbelt::evm::miro::auto_deploy::ensure_frame_record(
         &record.entry_point,
+        Some(record.cluster_root.as_str()),
         &client,
     )
     .await

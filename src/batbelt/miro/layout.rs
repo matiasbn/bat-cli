@@ -116,13 +116,26 @@ pub fn layout_graph(
     edges: &[LayoutEdge],
     config: LayoutConfig,
 ) -> GraphLayout {
-    // A tree gets the tree algorithm: children in a contiguous band, parent
-    // centred on them. That is what makes a diagram with no crossing edges,
-    // which layering plus barycentre ordering only approximates.
-    if is_tree(nodes, edges) {
-        return layout_tree(root_id, nodes, edges, config);
-    }
-
+    // There used to be a shortcut here: a graph with no shared nodes went to a tidy-tree
+    // layout, on the grounds that giving each subtree its own band draws a tree with no
+    // crossings at all. It cost more than it bought, and the bill grew.
+    //
+    // A band is the whole subtree's height, so a light sibling placed after a heavy one
+    // starts BELOW everything the heavy one reaches — on one real entry point, two
+    // getters sat at y≈6,900 with their column empty from 1,300 down, and the frame
+    // reserved 7,692px where its tallest column needed 4,883. The frame's height is the
+    // SUM of the root's children's bands, not the tallest column, so the emptiness is
+    // structural rather than a packing accident.
+    //
+    // It also became the common case rather than the exception: localization copies a
+    // shared helper per caller and a crossing callee too big to copy is replaced by a
+    // card, so the multi-parent nodes that made a graph "not a tree" are exactly what the
+    // framing work removes. Diagrams that used to be laid out by layers started falling
+    // into the tree path and growing a dead band.
+    //
+    // So: one layout for everything. Layers pack each column from the top, and every
+    // recent improvement — call order, one lane per arrow, the honest crossing count —
+    // lives there.
     let (forward_edges, back_edges) = split_back_edges(root_id, nodes, edges);
     let layers = assign_layers(root_id, nodes, &forward_edges);
 
@@ -232,146 +245,6 @@ pub fn layout_graph(
         nodes: placed,
         routes,
         back_edges,
-        bbox_width,
-        bbox_height,
-        frame_width: bbox_width + 2.0 * config.padding_x,
-        frame_height: bbox_height + 2.0 * config.padding_y + config.title_band,
-    }
-}
-
-/// True when every node has at most one parent and there are no cycles.
-fn is_tree(nodes: &[LayoutNode], edges: &[LayoutEdge]) -> bool {
-    let mut parents: HashMap<&str, usize> = HashMap::new();
-    for edge in edges {
-        *parents.entry(edge.to.as_str()).or_insert(0) += 1;
-    }
-    parents.values().all(|count| *count <= 1) && edges.len() + 1 <= nodes.len().max(1)
-}
-
-/// Reingold–Tilford style: x from the depth, y from the subtree's own extent.
-///
-/// Every subtree owns a contiguous vertical band, so no two edges can cross and
-/// an arrow never has to travel across a layer it does not belong to.
-fn layout_tree(
-    root_id: &str,
-    nodes: &[LayoutNode],
-    edges: &[LayoutEdge],
-    config: LayoutConfig,
-) -> GraphLayout {
-    let by_id: HashMap<&str, &LayoutNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-
-    // Siblings follow the order of the calls that produce them, so a callee
-    // invoked near the top of its caller is drawn above one invoked lower down
-    // and the arrows leave in the order the code reads.
-    let mut ordered: HashMap<&str, Vec<(f64, &str)>> = HashMap::new();
-    for edge in edges {
-        ordered
-            .entry(edge.from.as_str())
-            .or_default()
-            .push((edge.from_line_fraction, edge.to.as_str()));
-    }
-    let children: HashMap<&str, Vec<&str>> = ordered
-        .into_iter()
-        .map(|(parent, mut kids)| {
-            kids.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-            (parent, kids.into_iter().map(|(_, id)| id).collect())
-        })
-        .collect();
-
-    // Depth of every node, and the widest node per depth, so layers line up.
-    let mut depth: HashMap<&str, usize> = HashMap::new();
-    let mut order: Vec<&str> = Vec::new();
-    let mut stack = vec![(root_id, 0usize)];
-    while let Some((id, level)) = stack.pop() {
-        if depth.contains_key(id) {
-            continue;
-        }
-        depth.insert(id, level);
-        order.push(id);
-        for child in children.get(id).cloned().unwrap_or_default().iter().rev() {
-            stack.push((child, level + 1));
-        }
-    }
-    // Nodes unreachable from the root still need a place.
-    for node in nodes {
-        if !depth.contains_key(node.id.as_str()) {
-            depth.insert(node.id.as_str(), 0);
-            order.push(node.id.as_str());
-        }
-    }
-
-    let layer_count = depth.values().copied().max().unwrap_or(0) + 1;
-    let mut layer_width = vec![0.0_f64; layer_count];
-    for node in nodes {
-        let level = depth[node.id.as_str()];
-        layer_width[level] = layer_width[level].max(node.width);
-    }
-    let mut layer_x = vec![0.0_f64; layer_count];
-    let mut cursor = config.padding_x;
-    for (level, width) in layer_width.iter().enumerate() {
-        layer_x[level] = cursor;
-        cursor += width + config.gutter_x;
-    }
-
-    // Post-order: a leaf takes its own height, a parent spans its children.
-    let mut extent: HashMap<&str, f64> = HashMap::new();
-    for id in order.iter().rev() {
-        let own = by_id.get(id).map(|n| n.height).unwrap_or(0.0);
-        let kids = children.get(id).cloned().unwrap_or_default();
-        if kids.is_empty() {
-            extent.insert(id, own);
-            continue;
-        }
-        let span: f64 = kids.iter().map(|kid| extent.get(kid).copied().unwrap_or(0.0)).sum::<f64>()
-            + config.gutter_y * (kids.len().saturating_sub(1)) as f64;
-        extent.insert(id, span.max(own));
-    }
-
-    // Pre-order: hand each subtree its band, and put the parent at the TOP of it.
-    //
-    // Centring a parent in its band is the textbook tidy-tree, and it is wrong here: the
-    // entry point ends up floating halfway down the frame with empty space above it,
-    // while everything a reader does with a frame — starting at the function that was
-    // deployed, adding a declaration screenshot underneath — wants that function near the
-    // top-left corner and the free space below it. The layered path already top-aligns
-    // every layer; this makes the tree path agree.
-    let top = config.padding_y + config.title_band;
-    let mut placed: Vec<PlacedNode> = Vec::new();
-    let mut bands = vec![(root_id, top)];
-    while let Some((id, band_top)) = bands.pop() {
-        let Some(node) = by_id.get(id) else { continue };
-        let level = depth[id];
-
-        placed.push(PlacedNode {
-            id: id.to_string(),
-            layer: level,
-            x: layer_x[level] + node.width / 2.0,
-            y: band_top + node.height / 2.0,
-            width: node.width,
-            height: node.height,
-        });
-
-        let kids = children.get(id).cloned().unwrap_or_default();
-        let mut child_top = band_top;
-        let mut queued = Vec::new();
-        for kid in kids {
-            queued.push((kid, child_top));
-            child_top += extent.get(kid).copied().unwrap_or(0.0) + config.gutter_y;
-        }
-        for entry in queued.into_iter().rev() {
-            bands.push(entry);
-        }
-    }
-
-    let bbox_width = layer_width.iter().sum::<f64>()
-        + config.gutter_x * (layer_count.saturating_sub(1)) as f64;
-    let bbox_height = extent.get(root_id).copied().unwrap_or(0.0);
-
-    GraphLayout {
-        nodes: placed,
-        // A tree has no edge that skips a layer, so nothing needs bending.
-        routes: vec![Vec::new(); edges.len()],
-        back_edges: Vec::new(),
         bbox_width,
         bbox_height,
         frame_width: bbox_width + 2.0 * config.padding_x,
@@ -1052,7 +925,7 @@ mod layout_test {
 }
 
 #[cfg(test)]
-mod tree_layout_test {
+mod tree_shaped_graph_test {
     use super::*;
 
     fn node(id: &str, width: f64, height: f64) -> LayoutNode {
@@ -1154,6 +1027,45 @@ mod tree_layout_test {
             "root at {} should sit above the last child at {}",
             root.y,
             last.y
+        );
+    }
+
+    /// A light sibling is NOT pushed below a heavy sibling's whole subtree.
+    ///
+    /// The tidy-tree layout gave each subtree a band of its own height, so a getter drawn
+    /// after a deep branch started below everything that branch reached: on a real frame,
+    /// two of them sat 5,500px down with their column empty above them, and the frame
+    /// reserved the SUM of the bands instead of its tallest column. Columns pack from the
+    /// top, so the frame is as tall as what is in it.
+    #[test]
+    fn a_light_sibling_is_not_pushed_below_a_heavy_one() {
+        let mut nodes = vec![
+            node("root", 1000.0, 300.0),
+            node("heavy", 1000.0, 300.0),
+            node("light", 1000.0, 300.0),
+        ];
+        let mut edges = vec![edge("root", "heavy"), edge("root", "light")];
+        // A deep chain under `heavy`, which is what used to reserve the band.
+        for depth in 0..8 {
+            let id = format!("deep{depth}");
+            nodes.push(node(&id, 1000.0, 600.0));
+            let parent = if depth == 0 { "heavy".to_string() } else { format!("deep{}", depth - 1) };
+            edges.push(edge(&parent, &id));
+        }
+        let layout = layout_graph("root", &nodes, &edges, LayoutConfig::default());
+
+        let heavy = layout.node("heavy").unwrap();
+        let light = layout.node("light").unwrap();
+        let gap = (light.y - light.height / 2.0) - (heavy.y + heavy.height / 2.0);
+        assert!(
+            gap < LayoutConfig::default().gutter_y + 1.0,
+            "light sits {gap} below heavy; they share a column and should be one gutter apart"
+        );
+        // And the frame is as tall as its tallest column, not the sum of the subtrees.
+        assert!(
+            layout.frame_height < 3_000.0,
+            "frame is {} tall for a column holding 600px of boxes",
+            layout.frame_height
         );
     }
 
