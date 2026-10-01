@@ -588,6 +588,11 @@ callee's box that is left out. Deploy it as an entry point of its own on the day
 about it. Good candidates are utility maths, logging and string helpers under `lib/`. Bad ones are
 anything that writes storage or moves value: that is the code the diagram exists for.
 
+A name matches a contract **exactly**, and a path matches **whole segments** — `utils/math` matches
+`lib/oz/contracts/utils/math/Math.sol`, and `Math` matches a contract or a file called exactly that,
+never `CollRebalancerMath`. Each deploy prints what the list left out, per contract and with the
+number of call sites, because a call that is not drawn is otherwise invisible.
+
 **Cross-contract resolution loop.** `deploy` follows the tree into other contracts, but a call on
 an interface-typed receiver (`$.borrowerOps.adjustPosition`) has a runtime-bound target it can't
 pin. So it STOPS and lists them (each with `[InterfaceType]` and in-scope candidates) rather than
@@ -842,6 +847,18 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.21
+- **`ignore` matches a name exactly and a path by whole segments.** It matched a path as a bare
+  substring, so `bat-cli ignore Math` also hid `CollRebalancerMath` — its file is
+  `.../lev/CollRebalancerMath.sol`, which contains "Math" — and a call to it disappeared from a
+  diagram with no box, no card and no marking. On one entry point this put 28 screenshots back.
+  `utils/math` still matches that directory; `Math` now matches a contract called `Math`, or a
+  directory or file called exactly that.
+- **A deploy says what the ignore list left out**, per contract and with the number of call sites.
+  Leaving a call out is a reasonable thing to ask for and an unreasonable thing to do in silence:
+  the diagram cannot show what is not there.
+  _Re-read: workflow.md._
 
 ## 0.26.20
 - **A frame is as tall as what is in it.** A graph with no shared nodes took a tidy-tree layout that
