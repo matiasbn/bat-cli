@@ -992,6 +992,25 @@ async fn deploy_one(
         }
         let before = screenshot_count(&nodes);
         duplicate_crossing_shared(&mut nodes, &mut edges, &root_id);
+        // And again for whatever still crosses. Copying is what makes a later victim look
+        // bigger: every copy takes a helper out of the shared set, so the private closure
+        // of the callees still waiting GROWS as the pass runs — one real callee went from
+        // 3 to 6 while others were copied, crossed the "small enough to copy" line before
+        // its turn came, and kept its arrow flying over a column because the pass that
+        // would have carded it had already finished. The two bands meet at FRAME_MIN, so
+        // the cut has to be offered the second half of that walk too.
+        let late_cuts = if options.inline_all {
+            0
+        } else {
+            cut_crossing_shared(&mut nodes, &mut edges, &root_id)
+        };
+        if late_cuts > 0 {
+            println!(
+                "  {} {} more call(s) flying over a column replaced by a card",
+                "↳".blue(),
+                late_cuts
+            );
+        }
         if screenshot_count(&nodes) > before {
             println!(
                 "  {} localized {} crossing helper copy(ies)",
@@ -4436,6 +4455,11 @@ fn duplicate_crossing_shared(
     const MAX_COPIES: usize = 4096;
     let budget = nodes.len() * 4;
     let mut added = 0usize;
+    // Callees already found to have nothing to copy for. Reaching one used to END the
+    // whole pass, so the crossing arrows of every candidate ranked after it survived: one
+    // frame kept a connector flying over a column after eight copies had been made. A
+    // victim that cannot be helped is a reason to look at the next one, not to stop.
+    let mut exhausted: HashSet<String> = HashSet::new();
 
     loop {
         if added >= budget {
@@ -4489,8 +4513,15 @@ fn duplicate_crossing_shared(
         // like sqrt/mul512), then bigger ones; ties broken by the farthest-back
         // caller. Copying the floor first dissolves the mesh from the bottom, which
         // is what a top-down pass could never reach before the budget ran out.
+        if !shared.iter().any(|v| v.contains("_strictAnchor")) {
+            eprintln!("DBG _strictAnchor no está en shared; callers={:?}",
+                callers.iter().find(|(k, _)| k.contains("_strictAnchor")).map(|(_, c)| c.len()));
+        }
         let mut best: Option<(usize, usize, String)> = None; // (closure_len, -worst, id)
         for v in &shared {
+            if exhausted.contains(v) {
+                continue;
+            }
             let worst = callers
                 .get(v)
                 .map(|cs| cs.iter().map(|c| skip(v, c)).max().unwrap_or(0))
@@ -4499,6 +4530,9 @@ fn duplicate_crossing_shared(
                 continue;
             }
             let clen = private_closure(v, &out, &shared).len();
+            if v.contains("_strictAnchor") {
+                eprintln!("DBG {v}: worst={worst} clen={clen} callers={:?}", callers.get(v).map(|c| c.len()));
+            }
             if clen > MAX_CLOSURE {
                 continue;
             }
@@ -4542,7 +4576,8 @@ fn duplicate_crossing_shared(
             .cloned()
             .collect();
         if distant.is_empty() {
-            break;
+            exhausted.insert(victim.clone());
+            continue;
         }
 
         let templates: HashMap<String, GraphNode> = nodes
