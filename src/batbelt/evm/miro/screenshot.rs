@@ -825,6 +825,7 @@ mod screenshot_test {
         metadata.contracts = contracts
             .into_iter()
             .map(|(name, vars)| crate::batbelt::evm::metadata::bat_metadata::ContractMetadata {
+                using_libraries: Vec::new(),
                 metadata_id: String::new(),
                 name: name.to_string(),
                 file_path: "./src/A.sol".to_string(),

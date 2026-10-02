@@ -214,6 +214,12 @@ struct GraphNode {
     /// at draw time because framing can turn a screenshot into a link card after the graph
     /// is built.
     write_call_lines: Vec<(usize, String, String)>,
+    /// Call sites whose callee REACHES a boundary — a low-level call or a method on a
+    /// contract with no source here — without writing storage this scan can see. Same
+    /// shape, and the same rule, as `write_call_lines`: the deepest frame that draws the
+    /// boundary owns the mark, and a frame that stops short of it carries the mark on the
+    /// call instead. Without it a token transfer four hops down was marked nowhere at all.
+    external_call_sites: Vec<(usize, String, String)>,
     /// Display scale for this placement. Every function is rendered ONCE at the
     /// reference font (`REFERENCE_FONT`, the depth-0 size); a deeper node shows the
     /// same image shrunk by this factor (< 1), so the source is rendered once and
@@ -1038,6 +1044,25 @@ async fn deploy_one(
             .collect();
         layout = layout_graph(&root_id, &ln, &le, LayoutConfig::default());
     }
+    // The amber lines a node shows: the boundaries in its own body, plus the calls that
+    // reach one the frame does not draw.
+    let drawn_for_amber = drawn_screen_ids(&nodes);
+    let amber_lines: HashMap<String, Vec<usize>> = nodes
+        .iter()
+        .map(|node| {
+            let mut lines = node.external_call_lines.clone();
+            lines.extend(surviving_external_calls(node, &drawn_for_amber).map(|(line, _, _)| *line));
+            lines.sort_unstable();
+            lines.dedup();
+            (node.id.clone(), lines)
+        })
+        .collect();
+    for node in nodes.iter_mut() {
+        if let Some(lines) = amber_lines.get(&node.id) {
+            node.external_call_lines = lines.clone();
+        }
+    }
+
     let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
@@ -2212,6 +2237,7 @@ fn build_graph(
         }
     }
     let mut write_memo: HashMap<String, bool> = HashMap::new();
+    let mut external_memo: HashMap<String, bool> = HashMap::new();
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
@@ -2302,6 +2328,7 @@ fn build_graph(
         // Lines in THIS function whose call reaches a storage write, collected while the
         // calls are resolved and written back onto the node once the loop is done.
         let mut caller_write_calls: Vec<(usize, String, String)> = Vec::new();
+        let mut caller_external_calls: Vec<(usize, String, String)> = Vec::new();
         // Lines whose call leaves the drawn graph towards `lib/` code that can mutate.
         let mut lib_boundary_lines: Vec<usize> = Vec::new();
 
@@ -2381,6 +2408,33 @@ fn build_graph(
                     .map(|(c, f)| overload_node_key(c, &f))
                     .unwrap_or_default();
                     caller_write_calls.push((
+                        function.line + call.line - 1,
+                        call.symbol.clone(),
+                        callee_id,
+                    ));
+                } else if leads_to_external(
+                    metadata,
+                    reached_contract,
+                    &reached_function,
+                    &write_options,
+                    &write_definer_map,
+                    &mut external_memo,
+                    &mut HashSet::new(),
+                ) {
+                    // Reaches a boundary but writes no storage this scan can see: amber,
+                    // on the same terms as red — the frame that draws the boundary owns
+                    // the mark, so this one is kept only if the callee is not drawn here.
+                    let callee_id = resolve_call(
+                        metadata,
+                        contract,
+                        &call.name,
+                        arity,
+                        options,
+                        &definer_map,
+                    )
+                    .map(|(c, f)| overload_node_key(c, &f))
+                    .unwrap_or_default();
+                    caller_external_calls.push((
                         function.line + call.line - 1,
                         call.symbol.clone(),
                         callee_id,
@@ -2723,7 +2777,23 @@ fn build_graph(
             if read_only {
                 continue;
             }
-            if let Some(pos) = slice.iter().position(|l| line_has_call(l, &uec.method)) {
+            // The line the call is ON, which is not simply the first line mentioning the
+            // method: a function whose own name matches its callee's — `borrow` calling
+            // `MORPHO.borrow` — matched its own signature and got the band on its header.
+            // Prefer a line carrying the receiver as well, and never accept the
+            // declaration line itself.
+            let on_receiver = slice.iter().position(|l| {
+                line_has_call(l, &uec.method)
+                    && !uec.receiver.is_empty()
+                    && l.contains(uec.receiver.as_str())
+            });
+            let elsewhere = slice
+                .iter()
+                .enumerate()
+                .skip(1)
+                .find(|(_, l)| line_has_call(l, &uec.method))
+                .map(|(index, _)| index);
+            if let Some(pos) = on_receiver.or(elsewhere) {
                 // The scan finds implementers by inheritance only, so a contract that
                 // matches the interface without declaring `is <interface>` leaves the call
                 // listed here even though the call-site pass above drew its arrow into
@@ -2744,6 +2814,13 @@ fn build_graph(
             caller_write_calls.dedup();
             if let Some(node) = nodes.iter_mut().find(|n| n.id == current.node_id) {
                 node.write_call_lines = caller_write_calls;
+            }
+        }
+        if !caller_external_calls.is_empty() {
+            caller_external_calls.sort_unstable();
+            caller_external_calls.dedup();
+            if let Some(node) = nodes.iter_mut().find(|n| n.id == current.node_id) {
+                node.external_call_sites = caller_external_calls;
             }
         }
 
@@ -2892,6 +2969,7 @@ fn make_node(
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
     }
 }
 
@@ -2932,7 +3010,10 @@ fn line_has_call(line: &str, method: &str) -> bool {
         while cursor < bytes.len() && (bytes[cursor] == b' ' || bytes[cursor] == b'\t') {
             cursor += 1;
         }
-        let is_call = cursor < bytes.len() && bytes[cursor] == b'(';
+        // `(` for an ordinary call, `{` for one carrying a value or gas block —
+        // `target.call{value: v}(data)` is the low-level call that moves ether, and
+        // missing it meant the band never landed on the line that moves it.
+        let is_call = cursor < bytes.len() && (bytes[cursor] == b'(' || bytes[cursor] == b'{');
         if before_ok && after_ident_ok && is_call {
             return true;
         }
@@ -2979,6 +3060,7 @@ fn make_modifier_node(
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
     }
 }
 
@@ -3312,6 +3394,18 @@ fn surviving_write_calls<'a>(
         .filter(move |(_, _, callee)| !drawn.contains(callee))
 }
 
+/// The same rule for the amber marks: a call reaching a boundary keeps its band only when
+/// the callee is not drawn here, so the frame nearest the boundary is the one that shows it.
+fn surviving_external_calls<'a>(
+    node: &'a GraphNode,
+    drawn_screens: &HashSet<&str>,
+) -> impl Iterator<Item = &'a (usize, String, String)> {
+    let drawn: HashSet<String> = drawn_screens.iter().map(|id| id.to_string()).collect();
+    node.external_call_sites
+        .iter()
+        .filter(move |(_, _, callee)| !drawn.contains(callee))
+}
+
 /// Node ids drawn as source on this frame, which is what decides who owns a mark.
 fn drawn_screen_ids(nodes: &[GraphNode]) -> HashSet<&str> {
     nodes
@@ -3337,6 +3431,101 @@ fn drawn_screen_ids(nodes: &[GraphNode]) -> HashSet<&str> {
 /// `function_dependencies.callees` holds the same call strings `resolve_call` consumes
 /// (`_increaseDebt`, `debtToken.mint`, `PropMath._computeNominalCR`), so resolution here
 /// is exactly the resolution used to draw the graph.
+/// Does this function reach a boundary the diagram cannot follow past?
+///
+/// The amber counterpart of `leads_to_write`, and it exists for the same reason: the frame
+/// that draws the boundary should carry the mark, but a frame that stops short of it has
+/// to say so on the call, or a chain that moves value ends in silence. `SafeERC20.
+/// safeTransferFrom` is four hops from the `call` that actually moves the tokens.
+fn leads_to_external(
+    metadata: &EvmBatMetadata,
+    contract: &ContractMetadata,
+    function: &FunctionMetadata,
+    options: &AutoDeployOptions,
+    definer_map: &HashMap<String, Vec<String>>,
+    memo: &mut HashMap<String, bool>,
+    stack: &mut HashSet<String>,
+) -> bool {
+    if !function.unknown_external_calls.is_empty() {
+        return true;
+    }
+    let id = function.metadata_id.clone();
+    if let Some(&cached) = memo.get(&id) {
+        return cached;
+    }
+    if !stack.insert(id.clone()) {
+        return false;
+    }
+    let callees = metadata
+        .function_dependencies
+        .iter()
+        .find(|dependency| dependency.function_metadata_id == id)
+        .map(|dependency| dependency.callees.clone())
+        .unwrap_or_default();
+    let mut reaches = false;
+    for callee in callees {
+        // Resolve as the drawing does; and when that cannot decide — a bare name from a
+        // `using X for Y` call, whose arity at the call site is one short of the library
+        // function's — fall back to every contract that defines the name. This walk only
+        // decides whether to MARK a line, so a wider net costs a mark, not a wrong box.
+        let method = callee.split('.').next_back().unwrap_or(&callee);
+        let mut reached: Vec<(&ContractMetadata, FunctionMetadata)> =
+            match resolve_call(metadata, contract, &callee, None, options, definer_map) {
+                // EVERY overload, not just the one an unknown arity picks first. An
+                // overload commonly delegates to its longer sibling — `functionCall(a, b)`
+                // calls `functionCall(a, b, msg)` — and by name those are the same callee,
+                // so following only the first walked straight back into itself, hit the
+                // cycle guard, and reported that a chain ending in a token transfer
+                // reached nothing at all.
+                Some((found_contract, _)) => found_contract
+                    .functions
+                    .iter()
+                    .filter(|f| f.name == method)
+                    .map(|f| (found_contract, f.clone()))
+                    .collect(),
+                None => definer_map
+                    .get(callee.split('.').next_back().unwrap_or(&callee))
+                    .map(|definers| {
+                        definers
+                            .iter()
+                            .filter_map(|name| {
+                                let target =
+                                    metadata.contract_in_scope(name, &contract.file_path)?;
+                                find_function(
+                                    metadata,
+                                    &target.name,
+                                    &target.file_path,
+                                    callee.split('.').next_back().unwrap_or(&callee),
+                                    None,
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            };
+        for (next_contract, next_function) in reached.drain(..) {
+            if leads_to_external(
+                metadata,
+                next_contract,
+                &next_function,
+                options,
+                definer_map,
+                memo,
+                stack,
+            ) {
+                reaches = true;
+                break;
+            }
+        }
+        if reaches {
+            break;
+        }
+    }
+    stack.remove(&id);
+    memo.insert(id, reaches);
+    reaches
+}
+
 fn leads_to_write(
     metadata: &EvmBatMetadata,
     contract: &ContractMetadata,
@@ -3514,6 +3703,27 @@ fn resolve_call<'a>(
         {
             if let Some(resolved) = destub(metadata, found, options) {
                 return Some(resolved);
+            }
+        }
+    }
+
+    // Libraries bound with `using X for Y;`. A bare method this contract and its bases do
+    // not define may still be one of theirs — that is what the directive says, and it is
+    // the only thing in the source that says it. The receiver becomes the library
+    // function's FIRST parameter, so `address(token).functionCall(data, msg)` reads as two
+    // arguments at the call site and three in `Address.functionCall`: the arity has to be
+    // shifted, or every one of these resolves to nothing.
+    for library in &caller_contract.using_libraries {
+        let Some(contract) = metadata.contract_in_scope(library, &caller_contract.file_path) else {
+            continue;
+        };
+        for arity in [arg_count.map(|count| count + 1), arg_count, None] {
+            if let Some(found) =
+                find_function(metadata, &contract.name, &contract.file_path, method, arity)
+            {
+                if let Some(resolved) = destub(metadata, found, options) {
+                    return Some(resolved);
+                }
             }
         }
     }
@@ -4733,6 +4943,7 @@ mod split_shared_leaves_test {
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
         }
     }
 
@@ -4898,6 +5109,7 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
     });
     edges[index].to = card_id;
     prune_unreachable(nodes, edges);
@@ -4945,6 +5157,7 @@ fn cut_node(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, target_id: &
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
         });
         edges[idx].to = card_id;
     }
@@ -5165,6 +5378,7 @@ mod cut_test {
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
         }
     }
 
