@@ -239,3 +239,64 @@ pub fn extract_source_by_lines(source: &str, start_line: usize, end_line: usize)
     let end = end_line.min(lines.len());
     lines[start..end].join("\n")
 }
+
+#[cfg(test)]
+mod using_directive_test {
+    use super::parse_sol_file;
+
+    /// `using X for Y;` is what makes a bare method a call into a library, and without it
+    /// `address(token).functionCall(data)` named no contract anywhere in the source — so a
+    /// chain that moves tokens could not be followed past it.
+    #[test]
+    fn a_using_directive_is_recorded_on_the_contract() {
+        let dir = std::env::temp_dir().join(format!("bat-cli-using-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Lib.sol");
+        std::fs::write(
+            &path,
+            r#"// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+library Address {
+    function functionCall(address target, bytes memory data) internal returns (bytes memory) {
+        return functionCall(target, data, "failed");
+    }
+    function functionCall(address target, bytes memory data, string memory err)
+        internal
+        returns (bytes memory)
+    {
+        (bool ok, bytes memory out) = target.call(data);
+        require(ok, err);
+        return out;
+    }
+}
+
+contract Store {
+    using Address for address;
+
+    function pull(address token, bytes memory data) internal {
+        address(token).functionCall(data, "SafeERC20: low-level call failed");
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let parsed = parse_sol_file(path.to_str().unwrap()).unwrap();
+        let store = parsed
+            .contracts
+            .iter()
+            .find(|c| c.name == "Store")
+            .expect("Store parsed");
+        assert_eq!(store.using_libraries, vec!["Address".to_string()]);
+        // And the library has none of its own, so the field is not simply filled in.
+        let library = parsed
+            .contracts
+            .iter()
+            .find(|c| c.name == "Address")
+            .expect("Address parsed");
+        assert!(library.using_libraries.is_empty());
+
+        std::fs::remove_file(&path).ok();
+    }
+}

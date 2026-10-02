@@ -2777,23 +2777,7 @@ fn build_graph(
             if read_only {
                 continue;
             }
-            // The line the call is ON, which is not simply the first line mentioning the
-            // method: a function whose own name matches its callee's — `borrow` calling
-            // `MORPHO.borrow` — matched its own signature and got the band on its header.
-            // Prefer a line carrying the receiver as well, and never accept the
-            // declaration line itself.
-            let on_receiver = slice.iter().position(|l| {
-                line_has_call(l, &uec.method)
-                    && !uec.receiver.is_empty()
-                    && l.contains(uec.receiver.as_str())
-            });
-            let elsewhere = slice
-                .iter()
-                .enumerate()
-                .skip(1)
-                .find(|(_, l)| line_has_call(l, &uec.method))
-                .map(|(index, _)| index);
-            if let Some(pos) = on_receiver.or(elsewhere) {
+            if let Some(pos) = boundary_line_index(&slice, &uec.receiver, &uec.method) {
                 // The scan finds implementers by inheritance only, so a contract that
                 // matches the interface without declaring `is <interface>` leaves the call
                 // listed here even though the call-site pass above drew its arrow into
@@ -2998,6 +2982,28 @@ fn line_has_token(line: &str, token: &str) -> bool {
 /// Like [`line_has_token`] but the identifier must be a CALL — followed (after
 /// optional spaces) by `(`. So `mint` matches `collVault.mint(…)` on line 362 but
 /// not the `mintedAlmShares` declaration on line 351.
+/// Which line of a function's source carries the call to `method` on `receiver`.
+///
+/// Not simply the first line mentioning the method: a function whose own name matches its
+/// callee's — `borrow` calling `MORPHO.borrow` — matched its own signature, and the band
+/// landed on the header instead of on the call. So: prefer a line that also carries the
+/// receiver, and never accept the declaration line itself.
+fn boundary_line_index(slice: &[String], receiver: &str, method: &str) -> Option<usize> {
+    slice
+        .iter()
+        .position(|line| {
+            line_has_call(line, method) && !receiver.is_empty() && line.contains(receiver)
+        })
+        .or_else(|| {
+            slice
+                .iter()
+                .enumerate()
+                .skip(1)
+                .find(|(_, line)| line_has_call(line, method))
+                .map(|(index, _)| index)
+        })
+}
+
 fn line_has_call(line: &str, method: &str) -> bool {
     let bytes = line.as_bytes();
     let mut from = 0;
@@ -6133,6 +6139,194 @@ mod color_test {
             names.len(),
             DEPTH_COLORS.len()
         );
+    }
+}
+
+#[cfg(test)]
+mod marking_test {
+    use super::*;
+    use crate::batbelt::evm::metadata::bat_metadata::ExternalUnknownCall;
+    use crate::batbelt::evm::types::{EvmContractType, EvmMutability, EvmParam, EvmVisibility};
+
+    fn function(name: &str, params: usize, external: &[(&str, &str)]) -> FunctionMetadata {
+        FunctionMetadata {
+            metadata_id: format!("f_{name}_{params}"),
+            name: name.to_string(),
+            contract_name: String::new(),
+            visibility: EvmVisibility::Internal,
+            mutability: EvmMutability::NonPayable,
+            modifiers: Vec::new(),
+            params: (0..params)
+                .map(|i| EvmParam {
+                    name: format!("p{i}"),
+                    type_name: "uint256".to_string(),
+                    storage_location: None,
+                })
+                .collect(),
+            returns: Vec::new(),
+            line: 1,
+            end_line: 2,
+            is_constructor: false,
+            is_stub: false,
+            storage_writes: Vec::new(),
+            storage_write_sites: Vec::new(),
+            unresolved_calls: Vec::new(),
+            unknown_external_calls: external
+                .iter()
+                .map(|(receiver, method)| ExternalUnknownCall {
+                    receiver: receiver.to_string(),
+                    method: method.to_string(),
+                    inferred_type: String::new(),
+                })
+                .collect(),
+            resolved_calls: Vec::new(),
+        }
+    }
+
+    fn contract(name: &str, using: &[&str], functions: Vec<FunctionMetadata>) -> ContractMetadata {
+        ContractMetadata {
+            metadata_id: name.to_string(),
+            name: name.to_string(),
+            using_libraries: using.iter().map(|u| u.to_string()).collect(),
+            file_path: format!("./src/{name}.sol"),
+            contract_type: EvmContractType::Contract,
+            base_contracts: Vec::new(),
+            functions,
+            state_variables: Vec::new(),
+            events: Vec::new(),
+            modifiers: Vec::new(),
+            line: 1,
+            external: false,
+        }
+    }
+
+    /// `using Address for address;` binds a bare method to a library — and the receiver
+    /// becomes that library function's FIRST parameter, so the call site shows one
+    /// argument fewer than the function declares.
+    #[test]
+    fn a_using_library_resolves_with_the_receiver_as_first_parameter() {
+        let library = contract("Address", &[], vec![function("functionCall", 3, &[])]);
+        let caller = contract("Store", &["Address"], vec![function("pull", 1, &[])]);
+        let metadata = EvmBatMetadata {
+            contracts: vec![library, caller.clone()],
+            ..Default::default()
+        };
+        let definers: HashMap<String, Vec<String>> =
+            HashMap::from([("functionCall".to_string(), vec!["Address".to_string()])]);
+
+        // Two arguments at the call site, three in the declaration.
+        let resolved = resolve_call(
+            &metadata,
+            &caller,
+            "functionCall",
+            Some(2),
+            &AutoDeployOptions::default(),
+            &definers,
+        );
+        assert!(resolved.is_some(), "the using directive should bind the call");
+        assert_eq!(resolved.unwrap().0.name, "Address");
+    }
+
+    /// An overload delegating to its longer sibling is the same callee BY NAME, so
+    /// following only the first went back into itself and reported that a chain reached
+    /// nothing. The boundary lives in the three-parameter one.
+    #[test]
+    fn every_overload_is_walked_when_looking_for_a_boundary() {
+        let library = contract(
+            "Address",
+            &[],
+            vec![
+                function("functionCall", 2, &[]),
+                function("functionCall", 3, &[("assembly", "call")]),
+            ],
+        );
+        let caller = contract("Store", &["Address"], vec![function("pull", 1, &[])]);
+        let metadata = EvmBatMetadata {
+            contracts: vec![library.clone(), caller.clone()],
+            function_dependencies: vec![crate::batbelt::evm::metadata::bat_metadata::FunctionDependency {
+                function_metadata_id: "f_pull_1".to_string(),
+                callees: vec!["functionCall".to_string()],
+            }],
+            ..Default::default()
+        };
+        let definers: HashMap<String, Vec<String>> =
+            HashMap::from([("functionCall".to_string(), vec!["Address".to_string()])]);
+
+        let reaches = leads_to_external(
+            &metadata,
+            &caller,
+            &caller.functions[0],
+            &AutoDeployOptions::default(),
+            &definers,
+            &mut HashMap::new(),
+            &mut HashSet::new(),
+        );
+        assert!(reaches, "the boundary is in the overload the first one delegates to");
+    }
+
+    /// The frame nearest the boundary owns the mark: a call whose callee is drawn here
+    /// keeps the frame clean, and one whose callee is absent carries it.
+    #[test]
+    fn a_marked_call_survives_only_when_its_callee_is_not_drawn() {
+        let mut node = GraphNode {
+            id: "C::f".to_string(),
+            label: "C.f".to_string(),
+            kind: NodeKind::Screenshot,
+            file_path: String::new(),
+            start_line: 1,
+            end_line: 2,
+            depth: 0,
+            font_size: 32,
+            scale: 1.0,
+            png_path: String::new(),
+            png_width: 0,
+            png_height: 0,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+            writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
+            leads_to_write: false,
+            write_call_lines: Vec::new(),
+            external_call_sites: vec![
+                (10, "drawn".to_string(), "C::drawn".to_string()),
+                (20, "absent".to_string(), "C::absent".to_string()),
+            ],
+        };
+        let drawn: HashSet<&str> = HashSet::from(["C::drawn"]);
+        let kept: Vec<usize> = surviving_external_calls(&node, &drawn)
+            .map(|(line, _, _)| *line)
+            .collect();
+        assert_eq!(kept, vec![20]);
+
+        node.external_call_sites.clear();
+        assert_eq!(surviving_external_calls(&node, &drawn).count(), 0);
+    }
+
+    /// The band goes on the call, not on a signature that happens to share its name.
+    #[test]
+    fn the_band_skips_a_signature_that_shares_the_callees_name() {
+        let slice: Vec<String> = vec![
+            "    function borrow(bytes32 id, uint256 assets, address to) external onlyRouter {"
+                .to_string(),
+            "        if (to != POOL) revert BadReceiver();".to_string(),
+            "        (uint256 borrowed,) = MORPHO.borrow(m, assets, 0, address(this), to);"
+                .to_string(),
+            "    }".to_string(),
+        ];
+        assert_eq!(boundary_line_index(&slice, "MORPHO", "borrow"), Some(2));
+        // With no receiver to go on, the declaration line is still never the answer.
+        assert_eq!(boundary_line_index(&slice, "", "borrow"), Some(2));
+        assert_eq!(boundary_line_index(&slice, "MORPHO", "nothingHere"), None);
+    }
+
+    /// A call carrying a value block is still a call — `target.call{value: v}(data)` is
+    /// the one that moves ether, and missing it put the band nowhere.
+    #[test]
+    fn a_call_with_a_value_block_is_found_on_its_line() {
+        assert!(line_has_call("(bool ok, ) = target.call{value: v}(data);", "call"));
+        assert!(line_has_call("let s := call(gas(), token, 0, 0, 0, 0, 0)", "call"));
+        assert!(!line_has_call("_callOptionalReturn(token, data);", "call"));
     }
 }
 
