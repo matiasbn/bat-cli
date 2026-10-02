@@ -848,6 +848,17 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.22
+- **Nothing is left flying over a column.** Localization copies a crossing callee next to its far
+  caller, smallest first — and every copy takes a helper out of the shared set, so the private
+  closure of the callees still waiting GROWS as the pass runs. One went from 3 to 6 while others
+  were copied, crossed the "small enough to copy" line before its turn, and kept its arrow flying
+  over a column because the pass that would have carded it had already finished. The cut is now
+  offered the second half of that walk too: after the copies, anything still crossing and too big to
+  copy gets a card beside the caller, and the run says how many. On the frame that showed it, 1 of
+  45 connectors flying over a column became 0.
+  _Re-read: workflow.md._
+
 ## 0.26.21
 - **`ignore` matches a name exactly and a path by whole segments.** It matched a path as a bare
   substring, so `bat-cli ignore Math` also hid `CollRebalancerMath` — its file is
