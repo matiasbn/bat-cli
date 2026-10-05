@@ -92,10 +92,10 @@ fn phase_bar(label: &str, total: usize) -> ProgressBar {
     bar
 }
 
-/// Connector colors, cycled per depth so sibling levels stay distinguishable.
-const DEPTH_COLORS: &[&str] = &[
-    "#2d9bf0", "#f24726", "#8fd14f", "#fac710", "#a259ff", "#12cdd4", "#ff8c00", "#e6007a",
-];
+/// The colours arrows are drawn in — one per callee, so two arrows a reader compares never
+/// share a hue (`color_callees`). It is bat-cli's one palette, shared with the names traced
+/// inside a screenshot, so a colour means the same kind of thing everywhere on the board.
+const DEPTH_COLORS: &[&str] = crate::batbelt::silicon::BAT_PALETTE;
 
 #[derive(Debug, Clone)]
 pub struct AutoDeployOptions {
@@ -1252,6 +1252,82 @@ fn plan_one(
 /// about 5.7 minutes on this cluster whatever this number is, so there was room to raise
 /// it. Going past the client's 24 permits cannot help.
 const CONCURRENT_FRAMES: usize = 16;
+
+/// The parameters a function declares, in order, taken from its own signature.
+///
+/// They are what a reader most needs to follow through a body and what an editor gives for
+/// free on a click; on a PNG there is no click, so each one is drawn in its own colour
+/// (`silicon::TRACE_COLORS`) and the signature doubles as the legend. Read from the slice
+/// rather than from the AST because the slice is what gets rendered — a screenshot that
+/// starts mid-function, or carries its NatSpec, still colours exactly what it shows.
+///
+/// `lines` is the rendered slice, header included. The result is capped at the palette:
+/// past six colours a reader stops being able to tell them apart, so the rest stay plain.
+fn signature_parameters(lines: &[String]) -> Vec<String> {
+    let joined = lines.join("\n");
+    let Some(open) = joined.find("function ").and_then(|at| joined[at..].find('(').map(|p| at + p))
+    else {
+        return Vec::new();
+    };
+    let mut depth = 0usize;
+    let mut close = None;
+    for (index, character) in joined[open..].char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(open + index);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(close) = close else {
+        return Vec::new();
+    };
+
+    let mut names = Vec::new();
+    let mut depth = 0usize;
+    let mut current = String::new();
+    for character in joined[open + 1..close].chars() {
+        match character {
+            '(' | '[' => {
+                depth += 1;
+                current.push(character);
+            }
+            ')' | ']' => {
+                depth = depth.saturating_sub(1);
+                current.push(character);
+            }
+            ',' if depth == 0 => {
+                names.extend(parameter_name(&current));
+                current.clear();
+            }
+            _ => current.push(character),
+        }
+    }
+    names.extend(parameter_name(&current));
+    names.truncate(crate::batbelt::silicon::TRACE_COLORS.len());
+    names
+}
+
+/// The declared name in one parameter — the LAST word of `FLAMMStore.S storage $` or of
+/// `uint256 amountIn`. A parameter with no name at all (legal in Solidity, and common in
+/// an override that ignores one) contributes nothing to follow.
+fn parameter_name(declaration: &str) -> Option<String> {
+    let word = declaration.split_whitespace().last()?;
+    let word = word.trim_matches(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'));
+    let is_type = |w: &str| {
+        matches!(w, "memory" | "calldata" | "storage" | "payable" | "indexed")
+            || w.starts_with("uint")
+            || w.starts_with("int")
+            || matches!(w, "address" | "bool" | "bytes" | "string")
+            || w.contains('.')
+    };
+    (!word.is_empty() && !is_type(word)).then(|| word.to_string())
+}
 
 /// The name a screenshot is rendered under before it is moved into place.
 ///
@@ -4396,13 +4472,14 @@ fn render_and_measure(
             // finished file or no file.
             if !std::path::Path::new(&png_path).exists() {
                 let partial = partial_render_name(&file_name, std::process::id());
-                silicon::create_figure(
+                silicon::create_figure_tracing(
                     &lines.join("\n"),
                     &destination,
                     &partial,
                     line_offset,
                     Some(REFERENCE_FONT),
                     true,
+                    &signature_parameters(&lines),
                 );
                 let partial_path = format!("{destination}/{partial}.png");
                 std::fs::rename(&partial_path, &png_path)
@@ -6548,6 +6625,56 @@ mod reading_order_test {
         let nodes = vec![screenshot("R"), card("orphan", "Orphan")];
         let order = card_reading_order(&nodes, &[], "R");
         assert_eq!(order.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), vec!["Orphan"]);
+    }
+}
+
+#[cfg(test)]
+mod signature_test {
+    use super::*;
+
+    fn lines(text: &str) -> Vec<String> {
+        text.lines().map(|l| l.to_string()).collect()
+    }
+
+    #[test]
+    fn parameters_come_out_in_order_with_their_names_only() {
+        let slice = lines(
+            "// src/core/flamm/FLAMMLoanSwapLib.sol\n\n    function _plan(FLAMMStore.S storage $, address hook, address assetIn,\n        uint256 amountIn, uint256 supply)\n        private\n        view\n        returns (Plan memory p)\n    {",
+        );
+        assert_eq!(
+            signature_parameters(&slice),
+            vec!["$", "hook", "assetIn", "amountIn", "supply"]
+        );
+    }
+
+    #[test]
+    fn a_nested_type_does_not_end_the_parameter_list() {
+        let slice = lines("    function f(mapping(uint256 => uint256) storage book, uint256[] memory legs) internal {");
+        assert_eq!(signature_parameters(&slice), vec!["book", "legs"]);
+    }
+
+    #[test]
+    fn an_unnamed_parameter_contributes_nothing_to_follow() {
+        let slice = lines("    function f(address, uint256 amount) external {");
+        assert_eq!(signature_parameters(&slice), vec!["amount"]);
+    }
+
+    #[test]
+    fn a_slice_with_no_signature_traces_nothing() {
+        assert!(signature_parameters(&lines("        p.feeWad = f.feeWad;")).is_empty());
+    }
+
+    /// Past the palette a reader cannot tell the colours apart, so the rest stay plain —
+    /// the same rule the connectors use when they run out of hues.
+    #[test]
+    fn the_list_is_capped_at_the_palette() {
+        let slice = lines(
+            "    function f(uint a, uint b, uint c, uint d, uint e, uint g, uint h, uint i) internal {",
+        );
+        assert_eq!(
+            signature_parameters(&slice).len(),
+            crate::batbelt::silicon::TRACE_COLORS.len()
+        );
     }
 }
 

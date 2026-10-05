@@ -123,6 +123,104 @@ pub fn line_geometry(font_size: Option<usize>) -> LineGeometry {
     }
 }
 
+/// bat-cli's palette for everything drawn ON the board: the arrows between screenshots,
+/// the cards, the tints. Its job is to separate shapes from each other against white.
+pub const BAT_PALETTE: &[&str] = &[
+    "#2d9bf0", "#f24726", "#8fd14f", "#fac710", "#a259ff", "#12cdd4", "#ff8c00", "#e6007a",
+];
+
+/// Colours for tracing a name INSIDE a screenshot. A reader cannot click an identifier on
+/// a PNG the way they can in an editor, so each traced name is painted in its own colour
+/// wherever it appears and the signature becomes the legend: read `address assetIn` in
+/// salmon, then sweep the body for salmon.
+///
+/// Deliberately NOT `BAT_PALETTE`, and the difference is not cosmetic: the two palettes
+/// answer different questions. On the board a colour has to separate one arrow from the
+/// next against white. Inside a screenshot it has to stand out from a syntax theme that
+/// already uses green for calls, orange for types and yellow for fields — `BAT_PALETTE`
+/// was tried there and three of its eight colours were lost in the highlighting.
+///
+/// These are Dracula's own BRIGHT variants: built for `#282a36`, and a register the theme
+/// itself never uses, so a traced name reads as "follow me" rather than as one more
+/// syntactic category.
+pub const TRACE_COLORS: &[&str] = &[
+    "#ff6e6e", "#69ff94", "#d6acff", "#ffffa5", "#a4ffff", "#ff92df",
+];
+
+/// Repaint every whole-word occurrence of `traced[i]` in `TRACE_COLORS[i]`, splitting the
+/// highlighter's spans where it has to. Everything else keeps the colour the theme gave
+/// it — the aim is to add a way to follow one name, not to restyle the code.
+fn trace_names<'a>(
+    highlight: &mut Vec<Vec<(syntect::highlighting::Style, &'a str)>>,
+    traced: &[String],
+) {
+    if traced.is_empty() {
+        return;
+    }
+    let colors: Vec<syntect::highlighting::Color> = traced
+        .iter()
+        .enumerate()
+        .map(|(i, _)| parse_hex(TRACE_COLORS[i % TRACE_COLORS.len()]))
+        .collect();
+
+    for line in highlight.iter_mut() {
+        let mut rebuilt: Vec<(syntect::highlighting::Style, &'a str)> = Vec::new();
+        for (style, text) in line.iter() {
+            let mut cursor = 0usize;
+            while cursor < text.len() {
+                // The earliest match among the traced names, so two names sharing a prefix
+                // cannot shadow each other by the order they were given.
+                let next = traced
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, name)| find_word(&text[cursor..], name).map(|at| (at, i, name.len())))
+                    .min_by_key(|(at, i, _)| (*at, *i));
+                match next {
+                    Some((at, index, len)) => {
+                        if at > 0 {
+                            rebuilt.push((*style, &text[cursor..cursor + at]));
+                        }
+                        let mut traced_style = *style;
+                        traced_style.foreground = colors[index];
+                        rebuilt.push((traced_style, &text[cursor + at..cursor + at + len]));
+                        cursor += at + len;
+                    }
+                    None => {
+                        rebuilt.push((*style, &text[cursor..]));
+                        break;
+                    }
+                }
+            }
+        }
+        *line = rebuilt;
+    }
+}
+
+/// `name` as a WHOLE word: `p` must not match the `p` inside `supply`, and `from` must not
+/// match `p.from`'s field when the traced name is the variable `from` — a word boundary is
+/// anything that cannot be part of a Solidity identifier.
+fn find_word(haystack: &str, name: &str) -> Option<usize> {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut from = 0usize;
+    while let Some(at) = haystack[from..].find(name) {
+        let at = from + at;
+        let before_ok = at == 0 || !haystack[..at].chars().next_back().is_some_and(is_ident);
+        let after = at + name.len();
+        let after_ok = after >= haystack.len() || !haystack[after..].chars().next().is_some_and(is_ident);
+        if before_ok && after_ok {
+            return Some(at);
+        }
+        from = at + name.len().max(1);
+    }
+    None
+}
+
+fn parse_hex(hex: &str) -> syntect::highlighting::Color {
+    let value = hex.trim_start_matches('#');
+    let byte = |i: usize| u8::from_str_radix(&value[i..i + 2], 16).unwrap_or(0xff);
+    syntect::highlighting::Color { r: byte(0), g: byte(2), b: byte(4), a: 0xff }
+}
+
 pub fn create_figure(
     content: &str,
     dest_folder_path: &str,
@@ -130,6 +228,20 @@ pub fn create_figure(
     offset: usize,
     font_size: Option<usize>,
     show_line_number: bool,
+) -> String {
+    create_figure_tracing(content, dest_folder_path, file_name, offset, font_size, show_line_number, &[])
+}
+
+/// `create_figure`, plus the names to trace through the code in their own colours.
+#[allow(clippy::too_many_arguments)]
+pub fn create_figure_tracing(
+    content: &str,
+    dest_folder_path: &str,
+    file_name: &str,
+    offset: usize,
+    font_size: Option<usize>,
+    show_line_number: bool,
+    traced: &[String],
 ) -> String {
     let dest_png_path = format!("{dest_folder_path}/{file_name}.png");
 
@@ -154,9 +266,11 @@ pub fn create_figure(
             .expect("Syntax not found in syntect"),
     };
     let mut highlighter = HighlightLines::new(syntax, theme);
-    let highlight: Vec<Vec<(syntect::highlighting::Style, &str)>> = LinesWithEndings::from(content)
-        .map(|line| highlighter.highlight_line(line, &ps).unwrap())
-        .collect();
+    let mut highlight: Vec<Vec<(syntect::highlighting::Style, &str)>> =
+        LinesWithEndings::from(content)
+            .map(|line| highlighter.highlight_line(line, &ps).unwrap())
+            .collect();
+    trace_names(&mut highlight, traced);
 
     // Configure background + padding (no shadow).
     let shadow = ShadowAdder::default()
@@ -315,5 +429,62 @@ mod line_geometry_test {
         }
 
         std::fs::remove_file(&path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod trace_test {
+    use super::*;
+
+    #[test]
+    fn a_traced_name_matches_whole_words_only() {
+        // `p` must not light up the `p` inside `supply`, and `from` must not light up
+        // `p.from`'s field — a screenshot full of false positives is worse than none.
+        assert_eq!(find_word("uint256 supply", "p"), None);
+        assert_eq!(find_word("p.from = x", "p"), Some(0));
+        assert_eq!(find_word("$.loans[p.from]", "$"), Some(0));
+        assert_eq!(find_word("cin.token", "token"), Some(4));
+        assert_eq!(find_word("maxSwapNotional", "Swap"), None);
+    }
+
+    #[test]
+    fn tracing_splits_a_span_and_repaints_only_the_name() {
+        let plain = syntect::highlighting::Style {
+            foreground: syntect::highlighting::Color::WHITE,
+            background: syntect::highlighting::Color::BLACK,
+            font_style: syntect::highlighting::FontStyle::empty(),
+        };
+        let mut highlight = vec![vec![(plain, "p.to = f(amountIn, supply);")]];
+        trace_names(&mut highlight, &["amountIn".to_string(), "supply".to_string()]);
+
+        let line = &highlight[0];
+        let text: String = line.iter().map(|(_, t)| *t).collect();
+        assert_eq!(text, "p.to = f(amountIn, supply);", "no character may be lost");
+
+        let painted: Vec<&str> = line
+            .iter()
+            .filter(|(style, _)| style.foreground != plain.foreground)
+            .map(|(_, t)| *t)
+            .collect();
+        assert_eq!(painted, vec!["amountIn", "supply"]);
+        assert_eq!(line[0].1, "p.to = f(");
+    }
+
+    #[test]
+    fn each_traced_name_gets_its_own_colour() {
+        let plain = syntect::highlighting::Style {
+            foreground: syntect::highlighting::Color::WHITE,
+            background: syntect::highlighting::Color::BLACK,
+            font_style: syntect::highlighting::FontStyle::empty(),
+        };
+        let mut highlight = vec![vec![(plain, "a + b")]];
+        trace_names(&mut highlight, &["a".to_string(), "b".to_string()]);
+        let colors: Vec<_> = highlight[0]
+            .iter()
+            .filter(|(s, _)| s.foreground != plain.foreground)
+            .map(|(s, _)| s.foreground)
+            .collect();
+        assert_eq!(colors.len(), 2);
+        assert_ne!(colors[0], colors[1]);
     }
 }

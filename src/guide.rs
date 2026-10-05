@@ -396,6 +396,12 @@ what tells you so.
 
 ## Reading state changes on the diagram
 
+**Each parameter has its own colour inside a screenshot.** A function's parameters are
+drawn in distinct colours wherever they appear in its body, so a name can be followed
+through the code the way a click follows it in an editor. The signature is the legend.
+These colours are for reading INSIDE a screenshot and are not the ones the arrows use —
+same name, same colour, within one screenshot only.
+
 **One red mark is one state change.** A red band marks either the assignment itself, or — when
 the write happens past the edge of this frame — the call that reaches it. A red border means the
 function contains at least one such mark. Counting the red marks on a frame counts the distinct
@@ -865,6 +871,15 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.26
+- **A screenshot lets you follow a parameter through the code.** On a PNG there is no
+  clicking an identifier to see where it is used, so each of a function's parameters is now
+  drawn in its own colour everywhere it appears, and the signature is the legend: read
+  `address assetIn` in lilac, then sweep the body for lilac. Capped at six parameters —
+  past that a reader cannot tell the colours apart, so the rest stay as they were, the same
+  rule the arrows use when they run out of hues.
+  _Re-read: workflow.md._
 
 ## 0.26.25
 - **Screenshots are the colour they have always been again.** 0.26.24 wrote each render to a
