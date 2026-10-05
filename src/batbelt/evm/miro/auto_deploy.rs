@@ -887,9 +887,12 @@ async fn deploy_one(
     cluster: &ClusterCtx,
     // The frame whose card sent us here, so the new frame can carry the way back.
     origin: Option<&FrameOrigin>,
-    // How deep this frame sits in the cluster: the root is 0, what its cards lead to is
-    // 1, and so on. It is the frame's indent on the board — see `place_in_outline`.
-    depth: usize,
+    // How deep this frame sits in the CLUSTER: the root is 0, what its cards lead to is
+    // 1, and so on. It is the frame's indent on the board — see `place_in_outline`. Named
+    // `cluster_depth`, not `depth`, because this function already has a `graph_depth`
+    // (how many levels of calls the frame draws inside itself) and shadowing the two cost
+    // a whole deployment.
+    cluster_depth: usize,
 ) -> Result<()> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
@@ -981,12 +984,13 @@ async fn deploy_one(
             function_name
         )));
     }
-    let depth = nodes.iter().map(|node| node.depth).max().unwrap_or(0);
+    // How many levels of calls this frame draws INSIDE itself — not `cluster_depth`.
+    let graph_depth = nodes.iter().map(|node| node.depth).max().unwrap_or(0);
     println!(
         "  {} screenshots, {} connectors, {} levels deep",
         nodes.len().to_string().green(),
         edges.len().to_string().green(),
-        (depth + 1).to_string().green()
+        (graph_depth + 1).to_string().green()
     );
 
     let reuse: HashMap<String, (String, u32, u32)> = HashMap::new();
@@ -1200,7 +1204,7 @@ async fn deploy_one(
     let (frame_x, frame_y) = allocator.place_in_outline(
         layout.frame_width,
         layout.frame_height,
-        depth,
+        cluster_depth,
         !card_order.is_empty(),
     );
 
@@ -1275,7 +1279,7 @@ async fn deploy_one(
             title: title.clone(),
             url: client.frame_url(&frame_id),
         }),
-        depth + 1,
+        cluster_depth + 1,
     )
     .await?;
 
@@ -5800,7 +5804,7 @@ async fn ensure_target_frames(
     // back to it.
     origin: Option<FrameOrigin>,
     // The depth the frames built here sit at: one level under the frame holding the cards.
-    depth: usize,
+    cluster_depth: usize,
 ) -> Result<HashMap<String, String>> {
     if wanted.is_empty() {
         return Ok(HashMap::new());
@@ -5861,7 +5865,7 @@ async fn ensure_target_frames(
             false,
             cluster,
             origin.as_ref(),
-            depth,
+            cluster_depth,
         ))
         .await?;
 
