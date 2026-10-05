@@ -962,6 +962,71 @@ mod layout_test {
         }
     }
 
+    /// A cluster placed in the order it is deployed — root, then its cards depth-first —
+    /// must read as an outline: each frame indented by its depth, each one below the
+    /// frame that leads to it, and nothing overlapping.
+    #[test]
+    fn test_outline_indents_by_depth_and_never_overlaps() {
+        // (depth, has_children), exactly the order `deploy_one` recurses in:
+        // root → a (→ a1, a2) → b (leaf) → c (leaf).
+        let plan = [
+            (0, true),
+            (1, true),
+            (2, false),
+            (2, false),
+            (1, false),
+            (1, false),
+        ];
+        let mut allocator = ShelfAllocator::new(0.0, 0.0);
+        let mut rects = Vec::new();
+        for (i, (depth, has_children)) in plan.iter().enumerate() {
+            let width = 6_000.0 + (i % 3) as f64 * 1_000.0;
+            let height = 3_000.0;
+            let (x, y) = allocator.place_in_outline(width, height, *depth, *has_children);
+            rects.push((*depth, x, y, width, height));
+        }
+
+        for (i, a) in rects.iter().enumerate() {
+            for b in rects.iter().skip(i + 1) {
+                let overlap_x = (a.1 - b.1).abs() < (a.3 + b.3) / 2.0;
+                let overlap_y = (a.2 - b.2).abs() < (a.4 + b.4) / 2.0;
+                assert!(!(overlap_x && overlap_y), "frame {i} overlaps a later one");
+            }
+        }
+
+        // The indent IS the depth: a row STARTS at depth * indent, and a frame sharing
+        // that row sits further right still.
+        for (i, (depth, x, y, width, _height)) in rects.iter().enumerate() {
+            let left = x - width / 2.0;
+            let indent = *depth as f64 * allocator.indent;
+            let opens_row = !rects[..i].iter().any(|other| other.2 == *y);
+            if opens_row {
+                assert_eq!(left, indent, "row opened by frame {i} is not at its indent");
+            } else {
+                assert!(left > indent, "frame {i} is left of its indent");
+            }
+        }
+
+        // Reading order is top to bottom: nothing is placed above a frame that came
+        // before it, and a frame with a subtree gets its own band.
+        for pair in rects.windows(2) {
+            let (_, _, prev_y, _, prev_height) = pair[0];
+            let (_, _, y, _, _) = pair[1];
+            assert!(y >= prev_y, "a later frame was placed above an earlier one");
+            let shares_row = y < prev_y + prev_height;
+            assert!(
+                !shares_row || pair[0].0 == pair[1].0,
+                "frames at different depths shared a row"
+            );
+        }
+
+        // `a1` and `a2` are leaf siblings, so they DO share their row — that is what
+        // keeps "one parent, several small helpers" from becoming a column of air.
+        assert_eq!(rects[2].2, rects[3].2);
+        // `a` has children, so `b` could not join its row.
+        assert!(rects[4].2 > rects[1].2);
+    }
+
     #[test]
     fn test_shelf_allocator_state_round_trips() {
         let mut allocator = ShelfAllocator::new(0.0, 0.0);

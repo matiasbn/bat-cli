@@ -428,6 +428,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             true,
             &cluster,
             None,
+            0,
         )
         .await?;
 
@@ -886,6 +887,9 @@ async fn deploy_one(
     cluster: &ClusterCtx,
     // The frame whose card sent us here, so the new frame can carry the way back.
     origin: Option<&FrameOrigin>,
+    // How deep this frame sits in the cluster: the root is 0, what its cards lead to is
+    // 1, and so on. It is the frame's indent on the board — see `place_in_outline`.
+    depth: usize,
 ) -> Result<()> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
@@ -1181,12 +1185,24 @@ async fn deploy_one(
 
     let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
+    // The cards this frame will hand out, in the order a reader meets them. Computed
+    // HERE, before the frame takes its slot, because whether this frame has a subtree
+    // underneath decides whether it can share its row — and the slot is taken first.
+    let card_order = card_reading_order(&nodes, &edges, &root_id);
+
     // Reserve the slot in both modes, so a dry run shows the real sequence of
     // board positions instead of repeating the first one.
     // Every frame is brand new, so it always takes a slot from the allocator — which
     // is what puts a cluster's frames next to each other instead of wherever an
-    // earlier deploy happened to leave them.
-    let (frame_x, frame_y) = allocator.place(layout.frame_width, layout.frame_height);
+    // earlier deploy happened to leave them. The depth is the indent: the cluster is
+    // deployed in reading order, so laying it out as an outline makes scrolling down
+    // the board the same thing as reading the cluster.
+    let (frame_x, frame_y) = allocator.place_in_outline(
+        layout.frame_width,
+        layout.frame_height,
+        depth,
+        !card_order.is_empty(),
+    );
 
     if let Some(preview_path) = &options.preview {
         let path = preview_path.clone();
@@ -1250,7 +1266,7 @@ async fn deploy_one(
     // deployed is reused rather than drawn again. That is what keeps the fan-in
     // answerable — one frame with several references, not a copy per caller.
     let target_frames = ensure_target_frames(
-        card_reading_order(&nodes, &edges, &root_id),
+        card_order,
         options,
         client,
         allocator,
@@ -1259,6 +1275,7 @@ async fn deploy_one(
             title: title.clone(),
             url: client.frame_url(&frame_id),
         }),
+        depth + 1,
     )
     .await?;
 
@@ -5782,6 +5799,8 @@ async fn ensure_target_frames(
     // The frame these cards live on: every frame deployed for one of them carries a card
     // back to it.
     origin: Option<FrameOrigin>,
+    // The depth the frames built here sit at: one level under the frame holding the cards.
+    depth: usize,
 ) -> Result<HashMap<String, String>> {
     if wanted.is_empty() {
         return Ok(HashMap::new());
@@ -5842,6 +5861,7 @@ async fn ensure_target_frames(
             false,
             cluster,
             origin.as_ref(),
+            depth,
         ))
         .await?;
 

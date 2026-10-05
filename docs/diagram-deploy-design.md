@@ -572,3 +572,43 @@ tree-shaped graph the function you start from floated halfway down with empty sp
 everything done to a frame afterwards (reading it, dropping a declaration screenshot underneath)
 wants that box near the corner and the room below. The layered path always top-aligned; the tree
 path now agrees.
+
+## 20. The cluster is an outline, not a shelf
+
+Frames used to be shelf-packed: `ShelfAllocator::place` took the next slot on the current row and
+wrapped at 60k, in whatever order the recursion happened to draw them. For one frame that is fine.
+For a thirty-frame cluster it is a wall — the auditor opens a card, lands somewhere, and has no way
+to tell what sent them there or what comes next except by reading titles.
+
+Two things fixed it, and they only work together:
+
+- **Deployment order is deterministic.** `card_reading_order` walks the graph depth-first from the
+  root, taking each node's calls sorted by `(line_in_slice, column)` — source order, which is the
+  order the auditor reads the function in. A card is listed the first time it is met; a screenshot
+  is descended into. Unreachable cards are appended at the end rather than dropped.
+- **Placement follows that order down the board.** `place_in_outline(w, h, depth, has_children)`
+  starts a row at `depth * indent` (2 000 px) and fills it left to right. A frame whose cards lead
+  somewhere closes its row, because its subtree is placed underneath and a neighbour on the same row
+  would read as part of it. Leaf siblings share a row, which is what keeps "one function, six small
+  helpers" from becoming a column of air.
+
+The invariant that makes it navigable: **a frame's parent is the nearest frame above it with a
+smaller indent.** Nothing is stored to make that true — it falls out of placing frames in the order
+they are deployed, which is why the two halves are one change. Rows stay exclusive horizontal
+bands, so frames still cannot overlap by construction (§19: Miro refuses overlapping frames with a
+500).
+
+`depth` is threaded as a parameter: `deploy_one(..., depth)` with 0 at the root, and
+`ensure_target_frames(..., depth + 1)` for everything its cards lead to. `has_children` is
+`!card_order.is_empty()`, which is why the card order is computed BEFORE the frame takes its slot
+rather than where it is used. A frame whose cards all resolve to frames already drawn in this run
+still closes its row — it reserves a band for a subtree it does not get. That costs vertical space,
+never correctness, and knowing better requires the planning phase of §16.
+
+**This is also what makes §16 worth doing.** The outline puts the reading order into the
+coordinates instead of into the order of arrival, so once the cluster is planned before it is
+drawn, frames can be created concurrently without losing it. Today they cannot: order is carried by
+`for (target, _) in wanted { deploy_one(...).await }`, and parallelising that loop would need a
+mutex on the allocator cursor, a lock on the read-modify-write of `BatMetadata.json`, an in-flight
+map so two branches do not draw the same helper twice, and the per-run temp subdirectory §15
+already wants.
