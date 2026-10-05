@@ -28,7 +28,9 @@ use crate::batbelt::evm::miro::auto_deploy::{
 };
 use crate::batbelt::evm::miro::EvmMiroError;
 use crate::batbelt::evm::types::EvmFileItemKind;
-use crate::batbelt::miro::client::{ArrowEnd, ConnectorStyle, MiroClient, RelativeAnchor};
+use crate::batbelt::miro::client::{
+    ArrowEnd, ConnectorStroke, ConnectorStyle, MiroClient, RelativeAnchor,
+};
 use crate::batbelt::miro::layout::{layout_graph, LayoutConfig, LayoutEdge, LayoutNode};
 use crate::batbelt::silicon;
 
@@ -329,7 +331,7 @@ pub async fn draw(
         let mut stub = ConnectorStyle {
             stroke_color: STRUCT_COLOR.to_string(),
             stroke_width: "8".to_string(),
-            dashed: false,
+            stroke: ConnectorStroke::Solid,
             caption: None,
             arrow: ArrowEnd::End,
         };
@@ -356,7 +358,7 @@ pub async fn draw(
                 ConnectorStyle {
                     stroke_color: STRUCT_COLOR.to_string(),
                     stroke_width: "8".to_string(),
-                    dashed: false,
+                    stroke: ConnectorStroke::Solid,
                     caption: None,
                     // The head is on the stub, at the field; this leg only carries the line
                     // from the type back to the border.

@@ -123,12 +123,49 @@ impl RelativeAnchor {
     }
 }
 
+/// How a connector's line is drawn. Three values, and each means a different thing on the
+/// board, so they are never interchangeable:
+///
+/// - `Solid` is an ordinary call.
+/// - `Dashed` is a cycle — an edge back to something already on the path.
+/// - `Dotted` is a colour being reused: when a gutter holds more arrows than the palette
+///   has hues, the repeats are dotted so two neighbours are still two arrows. It exists
+///   because the overflow used to be dashed AND the same colour, which made two of them
+///   indistinguishable from each other and from a cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ConnectorStroke {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+}
+
+impl ConnectorStroke {
+    fn as_miro(self) -> &'static str {
+        match self {
+            Self::Solid => "normal",
+            Self::Dashed => "dashed",
+            Self::Dotted => "dotted",
+        }
+    }
+
+    /// The stroke to use when two reasons for one apply at once. A cycle outranks a
+    /// repeated colour: "this goes backwards" is the more important thing to see.
+    pub fn strongest(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Dashed, _) | (_, Self::Dashed) => Self::Dashed,
+            (Self::Dotted, _) | (_, Self::Dotted) => Self::Dotted,
+            _ => Self::Solid,
+        }
+    }
+}
+
 /// Style of one connector.
 #[derive(Debug, Clone)]
 pub struct ConnectorStyle {
     pub stroke_color: String,
     pub stroke_width: String,
-    pub dashed: bool,
+    pub stroke: ConnectorStroke,
     pub caption: Option<String>,
     /// Which end of the connector carries the arrow head, if any.
     pub arrow: ArrowEnd,
@@ -158,7 +195,7 @@ impl Default for ConnectorStyle {
         Self {
             stroke_color: "#2d9bf0".to_string(),
             stroke_width: "3".to_string(),
-            dashed: false,
+            stroke: ConnectorStroke::Solid,
             caption: None,
             arrow: ArrowEnd::Start,
         }
@@ -957,7 +994,7 @@ impl MiroClient {
             "style": {
                 "strokeColor": style.stroke_color,
                 "strokeWidth": style.stroke_width,
-                "strokeStyle": if style.dashed { "dashed" } else { "normal" },
+                "strokeStyle": style.stroke.as_miro(),
                 "startStrokeCap": if style.arrow == ArrowEnd::Start { "stealth" } else { "none" },
                 "endStrokeCap": if style.arrow == ArrowEnd::End { "stealth" } else { "none" },
             },

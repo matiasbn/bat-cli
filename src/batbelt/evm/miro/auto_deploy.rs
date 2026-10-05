@@ -23,7 +23,9 @@ use crate::batbelt::evm::metadata::bat_metadata::{
 use crate::batbelt::evm::miro::EvmMiroError;
 use crate::batbelt::evm::parser::call_resolver::{body_only, extract_call_sites_from_source};
 use crate::batbelt::evm::types::EvmContractType;
-use crate::batbelt::miro::client::{ArrowEnd, ConnectorStyle, MiroClient, RelativeAnchor};
+use crate::batbelt::miro::client::{
+    ArrowEnd, ConnectorStroke, ConnectorStyle, MiroClient, RelativeAnchor,
+};
 use crate::batbelt::miro::layout::{
     layout_graph, GraphLayout, LayoutConfig, LayoutEdge, LayoutNode, ShelfAllocator,
 };
@@ -2004,9 +2006,9 @@ async fn draw_one(
         /// (`_usd(_token(x))`); they share one stub, but each branch keeps the colour
         /// of the function it reaches, so two callees never read as one.
         color: String,
-        /// Set when the palette ran out and this callee had to repeat a colour: the
-        /// repeat is drawn dashed so the two are still two arrows.
-        dashed: bool,
+        /// How this callee's line is drawn. Dotted when the gutter ran out of hues and
+        /// the colour had to repeat, so the two are still two arrows.
+        stroke: ConnectorStroke,
     }
     struct PendingGroup {
         token_x: f64,
@@ -2106,7 +2108,7 @@ async fn draw_one(
     // none of its conflicting neighbours already has. Two arrows that reach the SAME
     // function are not in conflict — sharing their colour is what lets a reader
     // recognise a helper drawn in several places.
-    let edge_color: (Vec<String>, HashSet<String>) = {
+    let edge_color: (Vec<String>, HashMap<String, ConnectorStroke>) = {
         let lane_index: HashMap<usize, (usize, f64)> = edges
             .iter()
             .enumerate()
@@ -2222,7 +2224,7 @@ async fn draw_one(
             first
         };
         let mut palette_of: HashMap<usize, Vec<usize>> = HashMap::new();
-        let (by_callee, dashed) = color_callees(&callee_conflicts, |callee| {
+        let by_callee = color_callees(&callee_conflicts, |callee| {
             // Each gutter tries the palette in its own SHUFFLED order. The conflict rule
             // alone always reached for colour 0 first, so every column opened on the same
             // hue and a frame read as one repeated pattern — correct, and monotonous. The
@@ -2238,16 +2240,20 @@ async fn draw_one(
                 })
                 .clone()
         });
-        let dashed_callees: HashSet<String> = dashed.iter().map(|id| id.to_string()).collect();
+        let strokes: HashMap<String, ConnectorStroke> = by_callee
+            .iter()
+            .map(|(callee, (_, stroke))| (callee.to_string(), *stroke))
+            .collect();
         let colors: Vec<String> = edges
             .iter()
             .map(|edge| {
-                DEPTH_COLORS[by_callee.get(edge.to.as_str()).copied().unwrap_or(0)].to_string()
+                let (color, _) = by_callee.get(edge.to.as_str()).copied().unwrap_or_default();
+                DEPTH_COLORS[color].to_string()
             })
             .collect();
-        (colors, dashed_callees)
+        (colors, strokes)
     };
-    let (edge_color, dashed_callees) = edge_color;
+    let (edge_color, callee_stroke) = edge_color;
     let callee_color: HashMap<String, String> = edges
         .iter()
         .enumerate()
@@ -2301,10 +2307,14 @@ async fn draw_one(
                 .get(&edge.to)
                 .cloned()
                 .unwrap_or_else(|| DEPTH_COLORS[0].to_string()),
-            dashed: dashed_callees.contains(&edge.to),
+            stroke: callee_stroke.get(&edge.to).copied().unwrap_or_default(),
         };
 
-        let dashed = back_edges.contains(&(edge.from.clone(), edge.to.clone()));
+        let stroke = if back_edges.contains(&(edge.from.clone(), edge.to.clone())) {
+            ConnectorStroke::Dashed
+        } else {
+            ConnectorStroke::Solid
+        };
         let group = groups
             .entry((edge.from.clone(), edge.line_in_slice, exit_right))
             .or_insert_with(|| {
@@ -2338,14 +2348,14 @@ async fn draw_one(
                             .cloned()
                             .unwrap_or_else(|| DEPTH_COLORS[0].to_string()),
                         stroke_width: options.stroke_width.to_string(),
-                        dashed: false,
+                        stroke: ConnectorStroke::Solid,
                         caption: None,
                         arrow: ArrowEnd::Start,
                     },
                     callees: Vec::new(),
                 }
             });
-        group.style.dashed = group.style.dashed || dashed;
+        group.style.stroke = group.style.stroke.strongest(stroke);
         group.callees.push(link);
     }
 
@@ -2399,7 +2409,7 @@ async fn draw_one(
                 let mut route_style = group.style.clone();
                 route_style.arrow = ArrowEnd::None;
                 route_style.stroke_color = link.color.clone();
-                route_style.dashed = route_style.dashed || link.dashed;
+                route_style.stroke = route_style.stroke.strongest(link.stroke);
                 // Without a lane (a cycle, drawn dashed, or a gutter too narrow to
                 // hold one) fall back to the single Miro-routed connector.
                 if !group.exit_right || !link.lane_x.is_finite() {
@@ -3809,32 +3819,36 @@ pub(crate) fn line_anchor(
 fn color_callees<'a>(
     conflicts: &HashMap<&'a str, HashSet<&'a str>>,
     mut palette_for: impl FnMut(&'a str) -> Vec<usize>,
-) -> (HashMap<&'a str, usize>, HashSet<&'a str>) {
+) -> HashMap<&'a str, (usize, ConnectorStroke)> {
     let mut callees: Vec<&'a str> = conflicts.keys().copied().collect();
     callees.sort_by(|a, b| {
         let degree = |id: &&str| conflicts.get(*id).map(|set| set.len()).unwrap_or(0);
         degree(b).cmp(&degree(a)).then(a.cmp(b))
     });
 
-    let mut chosen: HashMap<&'a str, usize> = HashMap::new();
-    let mut dashed: HashSet<&'a str> = HashSet::new();
+    let mut chosen: HashMap<&'a str, (usize, ConnectorStroke)> = HashMap::new();
     for callee in callees {
-        let used: HashSet<usize> = conflicts
+        let used: HashSet<(usize, ConnectorStroke)> = conflicts
             .get(callee)
             .map(|rivals| rivals.iter().filter_map(|rival| chosen.get(rival).copied()).collect())
             .unwrap_or_default();
         let palette = palette_for(callee);
-        match palette.iter().copied().find(|color| !used.contains(color)) {
-            Some(free) => {
-                chosen.insert(callee, free);
-            }
-            None => {
-                chosen.insert(callee, palette.first().copied().unwrap_or(0));
-                dashed.insert(callee);
-            }
-        }
+        // What a reader has to tell apart is the PAIR: a hue and a line. Running out of
+        // hues used to hand every remaining callee the same colour and the same dashes, so
+        // two arrows side by side became one — which is what `cross` and `deployPool` showed
+        // in the same column. Dotted is the second register, and dashed stays reserved for
+        // a cycle.
+        let combinations = [ConnectorStroke::Solid, ConnectorStroke::Dotted]
+            .into_iter()
+            .flat_map(|stroke| palette.iter().copied().map(move |color| (color, stroke)));
+        let free = combinations.clone().find(|pair| !used.contains(pair));
+        chosen.insert(
+            callee,
+            free.or_else(|| combinations.into_iter().next())
+                .unwrap_or((0, ConnectorStroke::Solid)),
+        );
     }
-    (chosen, dashed)
+    chosen
 }
 
 fn overload_node_key(contract: &ContractMetadata, function: &FunctionMetadata) -> String {
@@ -6618,8 +6632,12 @@ mod color_test {
     #[test]
     fn conflicting_callees_never_share_a_colour() {
         let graph = conflicts(&[("a", "b"), ("b", "c"), ("c", "a"), ("c", "d")]);
-        let (chosen, dashed) = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
-        assert!(dashed.is_empty(), "four callees fit in a palette of {}", DEPTH_COLORS.len());
+        let chosen = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
+        assert!(
+            chosen.values().all(|(_, stroke)| *stroke == ConnectorStroke::Solid),
+            "four callees fit in a palette of {}",
+            DEPTH_COLORS.len()
+        );
         for (callee, rivals) in &graph {
             for rival in rivals {
                 assert_ne!(
@@ -6635,15 +6653,16 @@ mod color_test {
     #[test]
     fn a_callee_has_exactly_one_colour() {
         let graph = conflicts(&[("helper", "a"), ("helper", "b")]);
-        let (chosen, _) = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
+        let chosen = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
         assert!(chosen.contains_key("helper"));
         assert_eq!(chosen.len(), 3);
     }
 
-    /// More mutually-compared functions than colours: someone repeats, and the repeat is
-    /// dashed rather than silently indistinguishable.
+    /// More mutually-compared functions than colours: the repeats take the second stroke,
+    /// so the PAIR is still unique. They used to share one colour AND one stroke, which is
+    /// how `cross` and `deployPool` ended up with identical arrows in the same column.
     #[test]
-    fn a_palette_that_runs_out_dashes_the_repeat() {
+    fn a_palette_that_runs_out_keeps_every_pair_distinct() {
         let names: Vec<String> = (0..DEPTH_COLORS.len() + 2).map(|i| format!("f{i}")).collect();
         let mut pairs: Vec<(&str, &str)> = Vec::new();
         for i in 0..names.len() {
@@ -6652,15 +6671,33 @@ mod color_test {
             }
         }
         let graph = conflicts(&pairs);
-        let (chosen, dashed) = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
+        let chosen = color_callees(&graph, |_| (0..DEPTH_COLORS.len()).collect());
         assert_eq!(chosen.len(), DEPTH_COLORS.len() + 2);
+
+        let marks: HashSet<(usize, ConnectorStroke)> = chosen.values().copied().collect();
+        assert_eq!(marks.len(), chosen.len(), "two callees share a colour AND a stroke");
         assert_eq!(
-            dashed.len(),
+            chosen.values().filter(|(_, s)| *s == ConnectorStroke::Dotted).count(),
             2,
-            "a clique of {} in a palette of {} repeats exactly twice",
+            "a clique of {} in a palette of {} spills exactly twice",
             names.len(),
             DEPTH_COLORS.len()
         );
+    }
+
+    /// Dashed means "this edge goes backwards". The overflow must not borrow it, or a
+    /// repeated colour reads as a cycle.
+    #[test]
+    fn the_overflow_never_uses_the_cycle_stroke() {
+        let names: Vec<String> = (0..DEPTH_COLORS.len() + 1).map(|i| format!("f{i}")).collect();
+        let mut pairs: Vec<(&str, &str)> = Vec::new();
+        for i in 0..names.len() {
+            for j in (i + 1)..names.len() {
+                pairs.push((names[i].as_str(), names[j].as_str()));
+            }
+        }
+        let chosen = color_callees(&conflicts(&pairs), |_| (0..DEPTH_COLORS.len()).collect());
+        assert!(chosen.values().all(|(_, s)| *s != ConnectorStroke::Dashed));
     }
 }
 
