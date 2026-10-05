@@ -396,6 +396,12 @@ what tells you so.
 
 ## Reading state changes on the diagram
 
+**Each variable is marked in its own colour inside a screenshot**, so a name can be
+followed through the code the way a click follows it in an editor. A parameter sits on a
+block of colour, a local variable carries a rule under it, and the named return carries
+both. The signature is the legend. These colours are for reading INSIDE a screenshot and
+are not the ones the arrows use — same name, same mark, within one screenshot only.
+
 **One red mark is one state change.** A red band marks either the assignment itself, or — when
 the write happens past the edge of this frame — the call that reaches it. A red border means the
 function contains at least one such mark. Counting the red marks on a frame counts the distinct
@@ -865,6 +871,23 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.26
+- **A screenshot lets you follow a variable through the code.** On a PNG there is no
+  clicking an identifier to see where it is used, so the names a function works with are
+  now marked, each in its own colour, everywhere they appear — without touching the syntax
+  colouring. Three kinds, told apart by HOW they are marked rather than by hue: a
+  **parameter** (what the caller chose) sits on a block of colour, a **local variable**
+  carries a rule under it, and the **named return** (`returns (Plan memory p)`) carries
+  both, because it is the answer the whole screenshot is building. Since the decoration
+  says which kind it is, the same colour can serve one of each.
+
+  The names come from the AST, so a tuple declaration and a `for` initialiser count while a
+  struct field that merely looks like one does not, and a name inside a comment is left
+  alone. Locals are ranked by how often they are really used. Capped at the palette: past
+  that a reader cannot tell the colours apart, so the rest stay unmarked — the rule the
+  arrows already use when they run out of hues.
+  _Re-read: workflow.md._
 
 ## 0.26.25
 - **Screenshots are the colour they have always been again.** 0.26.24 wrote each render to a

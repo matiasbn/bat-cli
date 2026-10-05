@@ -963,6 +963,19 @@ fn collect_local_types_from_stmt(
                 ));
             }
         }
+        // A tuple declaration — `(uint256 p0, uint48 ts) = FLAMMStore.price($)` — declares
+        // just as much as a single one, and a slot may be skipped (`(, uint256 d) = …`).
+        ast::StmtKind::DeclMulti(vars, _) => {
+            for slot in vars.iter() {
+                let Some(var) = slot.as_ref().unspan() else { continue };
+                if let Some(name) = var.name {
+                    out.push((
+                        name.as_str().to_string(),
+                        crate::batbelt::evm::parser::evm_file_parser::type_to_string(sess, &var.ty),
+                    ));
+                }
+            }
+        }
         ast::StmtKind::Block(b) | ast::StmtKind::UncheckedBlock(b) => {
             for s in b.stmts.iter() {
                 collect_local_types_from_stmt(sess, &s.kind, out);
