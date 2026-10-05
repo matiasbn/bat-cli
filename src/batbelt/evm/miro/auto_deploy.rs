@@ -29,7 +29,7 @@ use crate::batbelt::miro::layout::{
 };
 use crate::batbelt::bat_dialoguer::BatDialoguer;
 use crate::batbelt::path::BatFolder;
-use crate::batbelt::silicon;
+use crate::batbelt::silicon::{self, TracedName};
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
 
@@ -1265,35 +1265,71 @@ const CONCURRENT_FRAMES: usize = 16;
 /// Locals come from the AST (`extract_local_types`), not from a pattern over the text. A
 /// tuple declaration, a `for` initialiser and a field access that merely looks like one are
 /// exactly the cases a pattern gets wrong, and a wrong mark is worse than no mark.
-fn traced_names(lines: &[String]) -> (Vec<String>, usize) {
-    let limit = crate::batbelt::silicon::TRACE_COLORS.len();
-    let mut names = signature_parameters(lines);
-    if names.len() >= limit {
-        names.truncate(limit);
-        let parameters = names.len();
-        return (names, parameters);
-    }
-    let parameters = names.len();
+fn traced_names(lines: &[String]) -> Vec<TracedName> {
+    use crate::batbelt::silicon::{TraceKind, TRACE_COLORS};
+    let limit = TRACE_COLORS.len();
+
+    let mut parameters = signature_parameters(lines);
+    parameters.truncate(limit);
 
     let body = lines.join("\n");
+    let mut carried: Vec<String> = named_returns(lines)
+        .into_iter()
+        .filter(|name| !parameters.contains(name))
+        .collect();
+
     let mut locals: Vec<String> =
         crate::batbelt::evm::parser::call_resolver::extract_local_types(&body)
             .into_iter()
             .map(|(name, _)| name)
-            .filter(|name| name != "$" && !names.contains(name))
+            .filter(|name| name != "$" && !parameters.contains(name) && !carried.contains(name))
             .collect();
     locals.sort();
     locals.dedup();
 
     let uses = |name: &str| crate::batbelt::silicon::count_word(&body, name);
     locals.sort_by(|a, b| uses(b).cmp(&uses(a)).then(a.cmp(b)));
-    for local in locals {
-        if names.len() == limit {
-            break;
-        }
-        names.push(local);
-    }
-    (names, parameters)
+
+    // The named return shares the underlined sequence with the locals rather than starting
+    // its own: it IS a local by nature, and sharing the counter is what stops it taking a
+    // colour one of them already has.
+    let returns = carried.len();
+    carried.extend(locals);
+    carried.truncate(crate::batbelt::silicon::UNDERLINED_TRACE_COLORS.len());
+
+    // Parameters draw from their own palette, because their background keeps them apart
+    // whatever hue they get.
+    let mut traced: Vec<TracedName> = parameters
+        .into_iter()
+        .enumerate()
+        .map(|(color, name)| TracedName { name, kind: TraceKind::Parameter, color })
+        .collect();
+    traced.extend(carried.into_iter().enumerate().map(|(color, name)| TracedName {
+        name,
+        kind: if color < returns { TraceKind::NamedReturn } else { TraceKind::Local },
+        color,
+    }));
+    traced
+}
+
+/// The names a function's `returns (…)` clause declares, when it names them.
+///
+/// `returns (Plan memory p)` makes `p` the value the whole function is building, and in a
+/// body like `_plan`'s it is on nearly every line — exactly the thread a reader loses. It
+/// is marked like a local, because that is what it is, but never in a colour a local
+/// already took.
+fn named_returns(lines: &[String]) -> Vec<String> {
+    let joined = lines.join("\n");
+    let Some(at) = joined.find("returns") else {
+        return Vec::new();
+    };
+    let Some(open) = joined[at..].find('(').map(|p| at + p) else {
+        return Vec::new();
+    };
+    let Some(close) = matching_paren(&joined, open) else {
+        return Vec::new();
+    };
+    split_parameters(&joined[open + 1..close])
 }
 
 /// The parameters a function declares, in order, taken from its own signature.
@@ -1312,29 +1348,39 @@ fn signature_parameters(lines: &[String]) -> Vec<String> {
     else {
         return Vec::new();
     };
+    let Some(close) = matching_paren(&joined, open) else {
+        return Vec::new();
+    };
+    let mut names = split_parameters(&joined[open + 1..close]);
+    names.truncate(crate::batbelt::silicon::TRACE_COLORS.len());
+    names
+}
+
+/// The index of the `)` that closes the `(` at `open`, counting nesting.
+fn matching_paren(text: &str, open: usize) -> Option<usize> {
     let mut depth = 0usize;
-    let mut close = None;
-    for (index, character) in joined[open..].char_indices() {
+    for (index, character) in text[open..].char_indices() {
         match character {
             '(' => depth += 1,
             ')' => {
                 depth -= 1;
                 if depth == 0 {
-                    close = Some(open + index);
-                    break;
+                    return Some(open + index);
                 }
             }
             _ => {}
         }
     }
-    let Some(close) = close else {
-        return Vec::new();
-    };
+    None
+}
 
+/// The declared names in a comma-separated parameter list, ignoring commas nested inside a
+/// type (`mapping(uint => uint)`, `uint256[2]`).
+fn split_parameters(list: &str) -> Vec<String> {
     let mut names = Vec::new();
     let mut depth = 0usize;
     let mut current = String::new();
-    for character in joined[open + 1..close].chars() {
+    for character in list.chars() {
         match character {
             '(' | '[' => {
                 depth += 1;
@@ -1352,7 +1398,6 @@ fn signature_parameters(lines: &[String]) -> Vec<String> {
         }
     }
     names.extend(parameter_name(&current));
-    names.truncate(crate::batbelt::silicon::TRACE_COLORS.len());
     names
 }
 
@@ -4526,8 +4571,7 @@ fn render_and_measure(
                     line_offset,
                     Some(REFERENCE_FONT),
                     true,
-                    &traced.0,
-                    traced.1,
+                    &traced,
                 );
                 let partial_path = format!("{destination}/{partial}.png");
                 std::fs::rename(&partial_path, &png_path)
@@ -6692,11 +6736,11 @@ mod signature_test {
         let slice = lines(
             "    function f(uint256 amount) internal {\n        uint256 rare = 1;\n        uint256 often = 2;\n        often = often + often + rare;\n    }",
         );
-        let (traced, parameters) = traced_names(&slice);
-        assert_eq!(parameters, 1);
-        assert_eq!(traced[0], "amount", "a parameter comes before any local");
-        assert_eq!(traced[1], "often", "used four times");
-        assert_eq!(traced[2], "rare", "used twice");
+        let traced = traced_names(&slice);
+        let names: Vec<&str> = traced.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["amount", "often", "rare"]);
+        assert_eq!(traced[0].kind, crate::batbelt::silicon::TraceKind::Parameter);
+        assert_eq!(traced[1].kind, crate::batbelt::silicon::TraceKind::Local);
     }
 
     /// A tuple declaration declares just as much as a single one; it used to be invisible.
@@ -6705,20 +6749,41 @@ mod signature_test {
         let slice = lines(
             "    function f() internal {\n        (uint256 p0, uint48 ts) = Store.price();\n        use(p0, ts, p0);\n    }",
         );
-        let (traced, _) = traced_names(&slice);
-        assert!(traced.contains(&"p0".to_string()), "{traced:?}");
-        assert!(traced.contains(&"ts".to_string()), "{traced:?}");
+        let names: Vec<String> = traced_names(&slice).into_iter().map(|t| t.name).collect();
+        assert!(names.contains(&"p0".to_string()), "{names:?}");
+        assert!(names.contains(&"ts".to_string()), "{names:?}");
     }
 
+    /// The value the function is building is the hardest thread to hold, and it never
+    /// takes a colour one of the locals already has.
     #[test]
-    fn nothing_is_traced_past_the_palette() {
+    fn a_named_return_is_traced_apart_from_the_locals() {
+        use crate::batbelt::silicon::TraceKind;
+        let slice = lines(
+            "    function f(uint256 a) internal returns (Plan memory p) {\n        uint256 x = a;\n        p.one = x;\n        p.two = x;\n    }",
+        );
+        let traced = traced_names(&slice);
+        let carried = traced
+            .iter()
+            .find(|t| t.kind == TraceKind::NamedReturn)
+            .expect("the named return is traced");
+        assert_eq!(carried.name, "p");
+        for local in traced.iter().filter(|t| t.kind == TraceKind::Local) {
+            assert_ne!(local.color, carried.color, "{} reuses the return's colour", local.name);
+        }
+    }
+
+    /// The palette bounds each KIND separately: the decoration tells a parameter from a
+    /// local, so the same colour serves one of each.
+    #[test]
+    fn each_kind_is_capped_at_the_palette_on_its_own() {
+        use crate::batbelt::silicon::{TraceKind, TRACE_COLORS};
         let slice = lines(
             "    function f(uint a, uint b, uint c, uint d, uint e, uint g, uint h, uint i, uint j, uint k) internal {}",
         );
-        assert_eq!(
-            traced_names(&slice).0.len(),
-            crate::batbelt::silicon::TRACE_COLORS.len()
-        );
+        let traced = traced_names(&slice);
+        let parameters = traced.iter().filter(|t| t.kind == TraceKind::Parameter).count();
+        assert_eq!(parameters, TRACE_COLORS.len());
     }
 
     #[test]
