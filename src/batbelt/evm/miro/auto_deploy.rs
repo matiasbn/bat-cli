@@ -471,9 +471,48 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             frame_ids.push(frame_id);
         }
 
-        // PASS 2: fill them, in plan order.
-        for (plan, frame_id) in plans.iter().zip(frame_ids.iter()) {
-            draw_one(plan, frame_id, &title, &urls, &root_options, client).await?;
+        // PASS 2: fill them. Every frame's contents are independent of every other's —
+        // the plan fixed the geometry and pass 1 fixed the destinations — so they go up
+        // several at a time. The ceiling that matters is the client's own semaphore and
+        // Miro's credit budget, not this number: a single frame uploads in short bursts
+        // (a dozen to forty calls) and leaves the connection idle while the next one's
+        // records are written, which is exactly the gap this fills.
+        let urls = std::sync::Arc::new(urls);
+        let plans: Vec<std::sync::Arc<FramePlan>> =
+            plans.into_iter().map(std::sync::Arc::new).collect();
+        let mut pending = plans.iter().cloned().zip(frame_ids.into_iter());
+        let mut drawing = tokio::task::JoinSet::new();
+        let mut failure: Option<Report<EvmMiroError>> = None;
+        loop {
+            while drawing.len() < CONCURRENT_FRAMES {
+                let Some((plan, frame_id)) = pending.next() else {
+                    break;
+                };
+                let urls = urls.clone();
+                let options = root_options.clone();
+                let client = client.clone();
+                let cluster_root = title.clone();
+                drawing.spawn(async move {
+                    draw_one(&plan, &frame_id, &cluster_root, &urls, &options, &client).await
+                });
+            }
+            let Some(joined) = drawing.join_next().await else {
+                break;
+            };
+            // One frame failing must not cost the thirty that worked: the rest finish and
+            // the failure is reported once, at the end.
+            match joined {
+                Ok(Ok(())) => {}
+                Ok(Err(report)) => failure = failure.or(Some(report)),
+                Err(join_error) => {
+                    failure = failure.or_else(|| {
+                        Some(Report::new(EvmMiroError).attach_printable(join_error.to_string()))
+                    })
+                }
+            }
+        }
+        if let Some(report) = failure {
+            return Err(report);
         }
 
         // The new deployment REPLACES the previous deployment of this entry point: its
@@ -1180,6 +1219,12 @@ fn plan_one(
 
     Ok(Some(plan))
 }
+
+/// How many frames are filled at once. Each one's uploads are already concurrent inside
+/// the client (`MAX_CONCURRENT_REQUESTS`), so this exists only to keep that pipe full
+/// while a frame is between bursts — past a handful it buys nothing, because the credit
+/// budget becomes the limit.
+const CONCURRENT_FRAMES: usize = 4;
 
 /// The frame's own background says what it holds: red when something drawn here changes
 /// state, amber when something here probably does, red winning when both are true — a
