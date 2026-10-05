@@ -679,3 +679,63 @@ retries, at 24 permits).
 
 That settles which half to optimise: nothing local moves the needle, and the only change that does
 is drawing frames concurrently — which needs the positions decided up front, which is the split.
+
+## 22. The split, done (2026-10-05)
+
+§21 was the recipe; this is what landed and what it measured.
+
+**One walk decides everything.** `plan_cluster` recurses over the deployment with `plan_one` —
+local, synchronous, no client — and returns `Vec<FramePlan>` in reading order, each with its graph,
+anchors, layout, measured size and board slot. The drawing half decides nothing: pass 1 creates
+every frame empty, pass 2 fills them. `deploy_one` and `ensure_target_frames` are gone, and with
+them `add_back_card`, `frame_url_in_cluster`, `FrameOrigin` and `ClusterCtx` — all machinery that
+existed only to discover mid-deploy what the plan now knows up front.
+
+**Two passes, because of the link cards.** A frame's card needs its target's URL, and the URL
+exists the moment the empty frame does — not when its contents do. Creating all 30 frames first
+(30 calls, seconds) is what removes the dependency that made the whole thing sequential.
+
+**The divergence of §21 is closed.** The planner keeps its own `framed` set and hands it to
+`best_cut`, instead of the deploy re-reading `deployed_titles` from the registry mid-run.
+`FLAMM.swap` planned 34 frames and drew 30; it now plans 30 and draws 30.
+
+**A frame's ways back come from the plan.** `FramePlan::origins` records every frame that cards
+this one, so a helper three branches reach gets three back-cards, stacked, instead of one.
+
+### Measured on `FLAMM.swap` (30 frames, ~5 700 board items)
+
+- 865.8 s — before any of this, sequential, including the restore phase
+- 776.4 s — split, still one frame at a time, including the restore phase
+- 352.8 s — 4 frames at a time, stopped on entering the restore phase (so: drawing complete)
+- 372.0 s — 16 frames at a time, complete, no restore, warm render cache
+
+So **the concurrency is worth about 2×, and 4 → 16 bought nothing**: the two land in the same six
+minutes. Zero `429`s, zero retries and zero credit-budget waits throughout, at any setting.
+
+### Where the remaining time is, and the knobs in order
+
+1. **The client's in-flight permits.** The budget allows ~16.7 writes/s and the bucket never had
+   to wait at 24 permits, so Miro was not what held the line — we were. `MAX_CONCURRENT_REQUESTS`
+   is now 48, which cannot overrun the board (the bucket enforces the rate locally, so a higher
+   number only reaches it sooner and waits there) but whose GAIN is not yet measured: the run that
+   would have shown it was stopped before it filled a frame. The `credit budget exhausted` warning
+   is the signal that the ceiling has finally been reached.
+2. **The restore phase** (`putting back N drawing(s)`) runs one `screenshot::run` at a time. It
+   cannot simply be parallelised: each one reads the frame's record, picks a free spot from the
+   rectangles already there, uploads and writes the record back, so two drawings on the SAME frame
+   would choose the same spot. Group them by frame, run the groups concurrently and keep each group
+   serial — about an hour's work, deliberately not done yet.
+3. **Pass 1 is sequential** — 30 frame creations. Seconds against minutes; not worth touching until
+   the two above are.
+
+`CONCURRENT_FRAMES` (16) is therefore not load-bearing: 4 measured the same. It exists to keep the
+permits busy while a frame is in a phase that serialises, which the connectors are — a connector
+group is a chain (marker → connector → lane).
+
+### And a trap the concurrency exposed
+
+The render cache is keyed by `(file, lines)` and was checked with `exists()`, so a run killed
+mid-render left a **truncated PNG** that every later run treated as a hit and then died measuring
+("unexpected end of file"). Renders now go to a private name and are moved into place in one step.
+Same class of bug as §15's shared temp directory, and the reason a per-run subdirectory is still
+wanted.

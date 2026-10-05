@@ -36,7 +36,14 @@ const CREDITS_PER_MINUTE: u32 = 100_000;
 /// enforced locally by the token bucket below, so a higher number cannot overrun it: it
 /// just reaches the bucket sooner and waits there. 429s and 5xx retry with backoff, so if
 /// the board pushes back the cost is visible in the retry warnings rather than in failures.
-const MAX_CONCURRENT_REQUESTS: usize = 24;
+///
+/// Raised to 48 once frames began filling 16 at a time. At 24 a 30-frame cluster showed
+/// **zero** `credit budget exhausted` waits and zero retries — the bucket was never
+/// reached, so the permits were what held the line, not Miro. Raising this cannot overrun
+/// the board either way: the bucket below enforces the real rate locally, so a higher
+/// number only arrives there sooner and waits. That warning is the signal to watch — once
+/// it appears, Miro's 1 000 writes a minute is the ceiling and raising this buys nothing.
+const MAX_CONCURRENT_REQUESTS: usize = 48;
 const MAX_ATTEMPTS: u32 = 5;
 
 /// Token bucket over Miro's credit budget.
