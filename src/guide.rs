@@ -524,13 +524,6 @@ Two things follow: `--dry-run` shows exactly what a real deploy will draw (same 
 same order, same positions), and the time is spent on the board rather than waiting for one
 frame to finish before the next can start.
 
-**The whole cluster is planned before anything is drawn.** A deploy first walks the
-deployment locally — no API calls — and decides every frame it will draw, its size and its
-place on the board. It then creates all of them empty and fills them several at a time. Two
-things follow: `--dry-run` shows exactly what a real deploy will draw (same frames, same
-order, same positions), and the time goes on the board instead of on waiting for one frame
-to finish before the next can start.
-
 **The cluster is laid out as an outline, in reading order.** Frames are deployed depth-first,
 following each function's calls in source order, and placed down the board in that same order,
 **indented one step per level**: the entry point is top-left, what its cards lead to is below it
@@ -873,26 +866,14 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
-## 0.26.24
-- **A deploy plans the whole cluster before it draws any of it, and draws several frames at
-  once.** It used to discover the cluster as it went — a link card only got its destination once
-  that frame's entire subtree had been deployed — so frames went up strictly one at a time. Now one
-  local walk returns every frame in reading order with its size and board slot decided, then all
-  the frames are created empty (so every card's destination exists before anything is filled) and
-  filled concurrently. On `FLAMM.swap` — 30 frames, ~5 700 items — that is **776 s → 353 s**, with
-  no 429s, no retries and no waiting on Miro's credit budget.
-- **The deploy no longer plans one cluster and draws another.** Whether a branch is drawn inline or
-  carded depends on what the deployment has already framed, and the planner now tracks that itself
-  instead of re-reading the registry mid-run. `--dry-run` therefore reports exactly what a deploy
-  will draw: it used to plan 34 frames for `FLAMM.swap` where the deploy drew 30.
-- **`--dry-run` walks the whole cluster.** It expanded the entry point's frame and returned, so the
-  one thing it could not show was the shape of the deployment. It now prints every frame, indented
-  by its level, with its size and position — all local, no API calls, 52 s for `FLAMM.swap`.
-- **A frame reached from several callers gets a way back to each of them**, not just to the first.
-- **A screenshot only counts as cached when it is whole.** A run interrupted mid-render left a
-  truncated PNG that every later run reused and then died on ("unexpected end of file"); the render
-  is now moved into place in one step.
-  _Re-read: workflow.md._
+## 0.26.25
+- **Screenshots are the colour they have always been again.** 0.26.24 wrote each render to a
+  temporary name before moving it into place, and that name ended in `.part<pid>` instead of `.js`
+  — which is what picks the syntax, Solidity being drawn deliberately with the JavaScript one for
+  the Dracula palette. So every screenshot of that one version came out highlighted as Rust, and a
+  board collecting frames from several deploys ended up carrying two palettes. Redeploy anything
+  drawn with 0.26.24 to put it back.
+  _Re-read: nothing; this restores 0.26.23's output._
 
 ## 0.26.24
 - **A deploy plans the whole cluster before it draws any of it, and draws several frames at
