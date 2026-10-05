@@ -4729,10 +4729,6 @@ fn duplicate_crossing_shared(
         // like sqrt/mul512), then bigger ones; ties broken by the farthest-back
         // caller. Copying the floor first dissolves the mesh from the bottom, which
         // is what a top-down pass could never reach before the budget ran out.
-        if !shared.iter().any(|v| v.contains("_strictAnchor")) {
-            eprintln!("DBG _strictAnchor no está en shared; callers={:?}",
-                callers.iter().find(|(k, _)| k.contains("_strictAnchor")).map(|(_, c)| c.len()));
-        }
         let mut best: Option<(usize, usize, String)> = None; // (closure_len, -worst, id)
         for v in &shared {
             if exhausted.contains(v) {
@@ -4746,9 +4742,6 @@ fn duplicate_crossing_shared(
                 continue;
             }
             let clen = private_closure(v, &out, &shared).len();
-            if v.contains("_strictAnchor") {
-                eprintln!("DBG {v}: worst={worst} clen={clen} callers={:?}", callers.get(v).map(|c| c.len()));
-            }
             if clen > MAX_CLOSURE {
                 continue;
             }
