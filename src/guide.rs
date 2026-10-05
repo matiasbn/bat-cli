@@ -872,6 +872,10 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.29
+- Nothing new: 0.26.28 was tagged with its changelog entries under the wrong version
+  numbers and never published, so this is the same code with the history straightened out.
+
 ## 0.26.28
 - **Only code is marked.** A traced name was also marked where it is merely mentioned: in a
   comment, in a revert message, and — worst — in a struct field that shares a parameter's
