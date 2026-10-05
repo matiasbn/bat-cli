@@ -1405,13 +1405,20 @@ fn split_parameters(list: &str) -> Vec<String> {
 /// `uint256 amountIn`. A parameter with no name at all (legal in Solidity, and common in
 /// an override that ignores one) contributes nothing to follow.
 fn parameter_name(declaration: &str) -> Option<String> {
-    let word = declaration.split_whitespace().last()?;
+    let words: Vec<&str> = declaration.split_whitespace().collect();
+    // A declaration of ONE word is a type with no name: `bytes32`, `address`, and equally
+    // `Plan` — a name can only follow a type, so there is nothing to follow here. Reading
+    // the last word alone made `returns (bytes32)` look like a variable called `bytes32`,
+    // and would have done the same to any user-defined type.
+    if words.len() < 2 {
+        return None;
+    }
+    let word = words.last()?;
     let word = word.trim_matches(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'));
+    // What is left after the length rule: a data location or modifier standing where a
+    // name would be, as in `address payable` or `uint256[] calldata`.
     let is_type = |w: &str| {
         matches!(w, "memory" | "calldata" | "storage" | "payable" | "indexed")
-            || w.starts_with("uint")
-            || w.starts_with("int")
-            || matches!(w, "address" | "bool" | "bytes" | "string")
             || w.contains('.')
     };
     // `$` is the storage pointer by convention and is threaded through nearly every line,
@@ -6809,6 +6816,37 @@ mod signature_test {
     fn an_unnamed_parameter_contributes_nothing_to_follow() {
         let slice = lines("    function f(address, uint256 amount) external {");
         assert_eq!(signature_parameters(&slice), vec!["amount"]);
+    }
+
+    /// A declaration of one word is a TYPE, never a name — `returns (bytes32)` was being
+    /// read as a variable called `bytes32`, and a user-defined type would have fared the
+    /// same.
+    #[test]
+    fn a_bare_type_is_not_a_name() {
+        let slice = lines(
+            "    function initcodeHash(address a) internal pure returns (bytes32) {\n        return keccak256(x);\n    }",
+        );
+        assert_eq!(signature_parameters(&slice), vec!["a"]);
+        assert!(named_returns(&slice).is_empty(), "bytes32 is the type, not a name");
+    }
+
+    #[test]
+    fn a_user_defined_type_without_a_name_is_not_a_name_either() {
+        let slice = lines("    function f() internal returns (Plan) {");
+        assert!(named_returns(&slice).is_empty());
+    }
+
+    #[test]
+    fn a_named_return_of_a_user_type_still_counts() {
+        let slice = lines("    function f() internal returns (Plan memory p) {");
+        assert_eq!(named_returns(&slice), vec!["p"]);
+    }
+
+    /// `address payable` is two words and neither is a name.
+    #[test]
+    fn a_data_location_standing_last_is_not_a_name() {
+        let slice = lines("    function f(address payable, bytes32 salt) external {");
+        assert_eq!(signature_parameters(&slice), vec!["salt"]);
     }
 
     #[test]
