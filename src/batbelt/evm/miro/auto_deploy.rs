@@ -1221,10 +1221,17 @@ fn plan_one(
 }
 
 /// How many frames are filled at once. Each one's uploads are already concurrent inside
-/// the client (`MAX_CONCURRENT_REQUESTS`), so this exists only to keep that pipe full
-/// while a frame is between bursts — past a handful it buys nothing, because the credit
-/// budget becomes the limit.
-const CONCURRENT_FRAMES: usize = 4;
+/// the client (`MAX_CONCURRENT_REQUESTS` = 24), so this does not raise the ceiling — it
+/// keeps that pipe full while a frame is in a phase that serialises, which the connectors
+/// are: a connector group is a chain (marker → connector → lane) and one frame drawing
+/// them leaves the connection half idle.
+///
+/// Measured on `FLAMM.swap` (30 frames, ~5 700 writes): one at a time took 776 s to draw;
+/// four took 353 s with zero retries and zero waits on the credit budget. The budget is
+/// 100 000 credits/minute at 100 per write — 1 000 writes/minute — which puts a floor of
+/// about 5.7 minutes on this cluster whatever this number is, so there was room to raise
+/// it. Going past the client's 24 permits cannot help.
+const CONCURRENT_FRAMES: usize = 16;
 
 /// The frame's own background says what it holds: red when something drawn here changes
 /// state, amber when something here probably does, red winning when both are true — a
