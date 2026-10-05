@@ -42,9 +42,28 @@ pub fn parse_contract_definition(
     // rather than at file level, and until now they were parsed for type inference and
     // then thrown away — so nothing could say where `FeedType` is declared.
     let mut inner_items: Vec<EvmFileItem> = Vec::new();
+    // `using Address for address;` — the directive that turns a bare method on a value
+    // into a call into a library. Without it, `address(token).functionCall(data)` names
+    // no contract anywhere in the source, so the call could not be followed and a chain
+    // that moves tokens ended in silence.
+    let mut using_libraries: Vec<String> = Vec::new();
 
     for item in contract.body.iter() {
         match &item.kind {
+            ast::ItemKind::Using(directive) => match &directive.list {
+                ast::UsingList::Single(path) => {
+                    if let Some(last) = path.segments().last() {
+                        using_libraries.push(last.as_str().to_string());
+                    }
+                }
+                ast::UsingList::Multiple(paths) => {
+                    for (path, _) in paths.iter() {
+                        if let Some(last) = path.segments().last() {
+                            using_libraries.push(last.as_str().to_string());
+                        }
+                    }
+                }
+            },
             ast::ItemKind::Function(func) => {
                 if func.kind == ast::FunctionKind::Modifier {
                     modifiers.push(parse_modifier_definition(sess, func, &name, source));
@@ -106,7 +125,10 @@ pub fn parse_contract_definition(
 
     let external = file_path.contains("/lib/");
 
+    using_libraries.sort();
+    using_libraries.dedup();
     EvmContract {
+        using_libraries,
         name,
         contract_type,
         base_contracts,

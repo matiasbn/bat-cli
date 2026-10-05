@@ -622,6 +622,15 @@ pub struct ShelfAllocator {
     pub row_max_width: f64,
     /// Gap left between frames, horizontally and between rows.
     pub gutter: f64,
+    /// Horizontal step per level of the cluster, so a frame's depth is visible from the
+    /// board: a child starts further right than its parent, like an outline.
+    pub indent: f64,
+    /// The depth the open row belongs to, and whether it is closed to further frames.
+    pub row_depth: usize,
+    pub row_closed: bool,
+    /// Whether anything has been placed on the open row, which `cursor_x` can no longer
+    /// say on its own now that a row starts at an indent.
+    pub row_used: bool,
 }
 
 impl ShelfAllocator {
@@ -630,6 +639,10 @@ impl ShelfAllocator {
     /// any size are handled without wasting space.
     pub const DEFAULT_ROW_MAX_WIDTH: f64 = 60_000.0;
     pub const DEFAULT_GUTTER: f64 = 1_000.0;
+    /// Enough to read as a step at the zoom where a whole cluster fits on screen, against
+    /// frames 7k–20k wide, and small enough that five levels add ~10k of width.
+    pub const DEFAULT_INDENT: f64 = 2_000.0;
+
 
     pub fn new(origin_x: f64, origin_y: f64) -> Self {
         Self {
@@ -640,21 +653,60 @@ impl ShelfAllocator {
             row_height: 0.0,
             row_max_width: Self::DEFAULT_ROW_MAX_WIDTH,
             gutter: Self::DEFAULT_GUTTER,
+            indent: Self::DEFAULT_INDENT,
+            row_depth: 0,
+            row_closed: false,
+            row_used: false,
         }
     }
 
     /// Reserve room for a frame and return its **center** in board coordinates,
     /// which is what the Miro API expects.
     pub fn place(&mut self, width: f64, height: f64) -> (f64, f64) {
-        if self.cursor_x > 0.0 && self.cursor_x + width > self.row_max_width {
-            self.cursor_x = 0.0;
-            self.cursor_y += self.row_height + self.gutter;
-            self.row_height = 0.0;
+        self.place_in_outline(width, height, 0, false)
+    }
+
+    /// Place a frame as a line of an outline: indented by its depth in the cluster, under
+    /// the frame that leads to it.
+    ///
+    /// A cluster is deployed in reading order (depth-first, calls in source order), so
+    /// laying it out in that same order down the board makes the two agree: the parent is
+    /// the nearest frame above with a smaller indent, the next sibling is below at the
+    /// same indent, and what a frame leads to is below it and further right. Reading the
+    /// cluster becomes scrolling down instead of hunting across a wall of shelves.
+    ///
+    /// A frame WITH children takes a row to itself, because its subtree follows underneath
+    /// and a neighbour on the same row would be read as part of it. Leaf siblings share a
+    /// row left to right, which is what keeps "one parent, six small helpers" compact.
+    ///
+    /// Rows remain exclusive horizontal bands, so frames still cannot overlap by
+    /// construction — the one thing Miro refuses outright.
+    pub fn place_in_outline(
+        &mut self,
+        width: f64,
+        height: f64,
+        depth: usize,
+        has_children: bool,
+    ) -> (f64, f64) {
+        let left = depth as f64 * self.indent;
+        let wraps = self.row_used && self.cursor_x + width > self.row_max_width;
+        if self.row_closed || depth != self.row_depth || wraps {
+            if self.row_used {
+                self.cursor_y += self.row_height + self.gutter;
+                self.row_height = 0.0;
+            }
+            self.cursor_x = left;
+            self.row_depth = depth;
+            self.row_closed = false;
+            self.row_used = false;
         }
         let x = self.origin_x + self.cursor_x + width / 2.0;
         let y = self.origin_y + self.cursor_y + height / 2.0;
         self.cursor_x += width + self.gutter;
         self.row_height = self.row_height.max(height);
+        self.row_used = true;
+        // Its subtree goes underneath, so nothing else joins this row.
+        self.row_closed = has_children;
         (x, y)
     }
 }
@@ -908,6 +960,71 @@ mod layout_test {
         for (x, _y, width, _height) in &rects {
             assert!(x - width / 2.0 >= 0.0);
         }
+    }
+
+    /// A cluster placed in the order it is deployed — root, then its cards depth-first —
+    /// must read as an outline: each frame indented by its depth, each one below the
+    /// frame that leads to it, and nothing overlapping.
+    #[test]
+    fn test_outline_indents_by_depth_and_never_overlaps() {
+        // (depth, has_children), exactly the order `deploy_one` recurses in:
+        // root → a (→ a1, a2) → b (leaf) → c (leaf).
+        let plan = [
+            (0, true),
+            (1, true),
+            (2, false),
+            (2, false),
+            (1, false),
+            (1, false),
+        ];
+        let mut allocator = ShelfAllocator::new(0.0, 0.0);
+        let mut rects = Vec::new();
+        for (i, (depth, has_children)) in plan.iter().enumerate() {
+            let width = 6_000.0 + (i % 3) as f64 * 1_000.0;
+            let height = 3_000.0;
+            let (x, y) = allocator.place_in_outline(width, height, *depth, *has_children);
+            rects.push((*depth, x, y, width, height));
+        }
+
+        for (i, a) in rects.iter().enumerate() {
+            for b in rects.iter().skip(i + 1) {
+                let overlap_x = (a.1 - b.1).abs() < (a.3 + b.3) / 2.0;
+                let overlap_y = (a.2 - b.2).abs() < (a.4 + b.4) / 2.0;
+                assert!(!(overlap_x && overlap_y), "frame {i} overlaps a later one");
+            }
+        }
+
+        // The indent IS the depth: a row STARTS at depth * indent, and a frame sharing
+        // that row sits further right still.
+        for (i, (depth, x, y, width, _height)) in rects.iter().enumerate() {
+            let left = x - width / 2.0;
+            let indent = *depth as f64 * allocator.indent;
+            let opens_row = !rects[..i].iter().any(|other| other.2 == *y);
+            if opens_row {
+                assert_eq!(left, indent, "row opened by frame {i} is not at its indent");
+            } else {
+                assert!(left > indent, "frame {i} is left of its indent");
+            }
+        }
+
+        // Reading order is top to bottom: nothing is placed above a frame that came
+        // before it, and a frame with a subtree gets its own band.
+        for pair in rects.windows(2) {
+            let (_, _, prev_y, _, prev_height) = pair[0];
+            let (_, _, y, _, _) = pair[1];
+            assert!(y >= prev_y, "a later frame was placed above an earlier one");
+            let shares_row = y < prev_y + prev_height;
+            assert!(
+                !shares_row || pair[0].0 == pair[1].0,
+                "frames at different depths shared a row"
+            );
+        }
+
+        // `a1` and `a2` are leaf siblings, so they DO share their row — that is what
+        // keeps "one parent, several small helpers" from becoming a column of air.
+        assert_eq!(rects[2].2, rects[3].2);
+        // `a` has children, so `b` could not join its row.
+        assert!(rects[4].2 > rects[1].2);
     }
 
     #[test]

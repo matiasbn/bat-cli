@@ -49,7 +49,13 @@ const REGION_MARGIN: f64 = 5_000.0;
 
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
-pub(crate) const ANCHOR_MARKER_SIZE: f64 = 24.0;
+/// The invisible shape a connector endpoint anchors to, at Miro's smallest allowed size.
+///
+/// Miro clips a connector to the item's border, so the marker is a HOLE in the line: at 24
+/// units the two halves visibly failed to meet, which read as two lines passing by rather
+/// than one arrow arriving. 8 is the floor — 4 and below are refused with a 400 — and it
+/// is no wider than the 8dp stroke, so the gap disappears under the line itself.
+pub(crate) const ANCHOR_MARKER_SIZE: f64 = 8.0;
 /// Horizontal distance between two arrows' vertical lanes in a gutter: five times the
 /// default 8dp stroke, so two arrows at full width still have four strokes of white
 /// between them. Narrowed automatically when a gutter cannot fit them all.
@@ -146,6 +152,10 @@ impl Default for AutoDeployOptions {
 struct ClusterCtx {
     root: String,
     stale_ids: HashSet<String>,
+    /// Dry run only: the frames this walk has already expanded. A real deploy asks the
+    /// registry whether a target is drawn, which a dry run never writes to, so the walk
+    /// carries its own memory — and it is what stops a cycle from recursing forever.
+    dry_seen: std::sync::Arc<std::sync::Mutex<HashSet<String>>>,
 }
 
 /// What a node stands for.
@@ -214,6 +224,12 @@ struct GraphNode {
     /// at draw time because framing can turn a screenshot into a link card after the graph
     /// is built.
     write_call_lines: Vec<(usize, String, String)>,
+    /// Call sites whose callee REACHES a boundary — a low-level call or a method on a
+    /// contract with no source here — without writing storage this scan can see. Same
+    /// shape, and the same rule, as `write_call_lines`: the deepest frame that draws the
+    /// boundary owns the mark, and a frame that stops short of it carries the mark on the
+    /// call instead. Without it a token transfer four hops down was marked nowhere at all.
+    external_call_sites: Vec<(usize, String, String)>,
     /// Display scale for this placement. Every function is rendered ONCE at the
     /// reference font (`REFERENCE_FONT`, the depth-0 size); a deeper node shows the
     /// same image shrunk by this factor (< 1), so the source is rendered once and
@@ -374,6 +390,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         let cluster = ClusterCtx {
             root: title.clone(),
             stale_ids,
+            dry_seen: std::sync::Arc::new(std::sync::Mutex::new(HashSet::new())),
         };
 
         // Deploying an entry point that already has a deployment REPLACES it: the new
@@ -415,6 +432,8 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
             &mut allocator,
             true,
             &cluster,
+            None,
+            0,
         )
         .await?;
 
@@ -751,6 +770,113 @@ async fn resolve_allocator(
     Ok(ShelfAllocator::new(origin_x, origin_y))
 }
 
+/// Where the k-th way-back card goes: the bottom-right corner of the frame, stacking
+/// upward, or `None` when the content reaches down there.
+///
+/// Bottom-right because that is where a frame has room — the entry point sits top-left and
+/// the graph fans down and to the right, so the corner under the last column is usually
+/// empty. Inside the frame, not beside it, so dragging the frame takes the way back along.
+fn back_card_slot(
+    frame_width: f64,
+    frame_height: f64,
+    occupied: &[(f64, f64, f64, f64)],
+    index: usize,
+) -> Option<(f64, f64)> {
+    const MARGIN: f64 = 200.0;
+    let x = frame_width - MARGIN - LINK_CARD_WIDTH / 2.0;
+    let y = frame_height
+        - MARGIN
+        - LINK_CARD_HEIGHT / 2.0
+        - index as f64 * (LINK_CARD_HEIGHT + MARGIN / 2.0);
+    if y - LINK_CARD_HEIGHT / 2.0 < MARGIN {
+        return None; // stacked past the top of the frame
+    }
+    let clear = occupied.iter().all(|(ox, oy, ow, oh)| {
+        (x - ox).abs() * 2.0 >= LINK_CARD_WIDTH + ow
+            || (y - oy).abs() * 2.0 >= LINK_CARD_HEIGHT + oh
+    });
+    clear.then_some((x, y))
+}
+
+/// Give an already-drawn frame one more way back, for an origin that cards it later.
+async fn add_back_card(
+    target: &str,
+    cluster: &ClusterCtx,
+    origin: &FrameOrigin,
+    client: &MiroClient,
+) -> Result<()> {
+    let record = {
+        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+        metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .find(|frame| frame.entry_point == target && frame.cluster_root == cluster.root)
+            .cloned()
+    };
+    let Some(mut record) = record else {
+        return Ok(());
+    };
+    if record.back_cards.iter().any(|(name, _)| name == &origin.title) {
+        return Ok(()); // the same frame cards it twice; one way back is enough
+    }
+    let occupied: Vec<(f64, f64, f64, f64)> = record
+        .node_positions
+        .iter()
+        .filter_map(|(id, x, y)| {
+            record
+                .image_dims
+                .iter()
+                .find(|(dim_id, _, _)| dim_id == id)
+                .map(|(_, w, h)| {
+                    (
+                        *x,
+                        *y,
+                        *w as f64 * BOARD_UNITS_PER_PIXEL,
+                        *h as f64 * BOARD_UNITS_PER_PIXEL,
+                    )
+                })
+        })
+        .collect();
+    let Some((x, y)) = back_card_slot(
+        record.width,
+        record.height,
+        &occupied,
+        record.back_cards.len(),
+    ) else {
+        println!(
+            "  {} no room on {} for the way back to {}",
+            "note:".yellow(),
+            target,
+            origin.title
+        );
+        return Ok(());
+    };
+    let id = client
+        .create_back_card(
+            &record.frame_id,
+            &format!("↑ {}", origin.title),
+            &origin.url,
+            x,
+            y,
+            LINK_CARD_WIDTH,
+            LINK_CARD_HEIGHT,
+        )
+        .await
+        .change_context(EvmMiroError)?;
+    record.back_cards.push((origin.title.clone(), id));
+    save_frame_record(&record)?;
+    Ok(())
+}
+
+/// A frame that links TO another one: its name, and the URL that jumps to it.
+#[derive(Debug, Clone)]
+pub(crate) struct FrameOrigin {
+    pub title: String,
+    pub url: String,
+}
+
 async fn deploy_one(
     metadata: &EvmBatMetadata,
     contract_name: &str,
@@ -764,6 +890,14 @@ async fn deploy_one(
     // because a card needs somewhere to point.
     is_primary: bool,
     cluster: &ClusterCtx,
+    // The frame whose card sent us here, so the new frame can carry the way back.
+    origin: Option<&FrameOrigin>,
+    // How deep this frame sits in the CLUSTER: the root is 0, what its cards lead to is
+    // 1, and so on. It is the frame's indent on the board — see `place_in_outline`. Named
+    // `cluster_depth`, not `depth`, because this function already has a `graph_depth`
+    // (how many levels of calls the frame draws inside itself) and shadowing the two cost
+    // a whole deployment.
+    cluster_depth: usize,
 ) -> Result<()> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
@@ -855,12 +989,13 @@ async fn deploy_one(
             function_name
         )));
     }
-    let depth = nodes.iter().map(|node| node.depth).max().unwrap_or(0);
+    // How many levels of calls this frame draws INSIDE itself — not `cluster_depth`.
+    let graph_depth = nodes.iter().map(|node| node.depth).max().unwrap_or(0);
     println!(
         "  {} screenshots, {} connectors, {} levels deep",
         nodes.len().to_string().green(),
         edges.len().to_string().green(),
-        (depth + 1).to_string().green()
+        (graph_depth + 1).to_string().green()
     );
 
     let reuse: HashMap<String, (String, u32, u32)> = HashMap::new();
@@ -1038,14 +1173,45 @@ async fn deploy_one(
             .collect();
         layout = layout_graph(&root_id, &ln, &le, LayoutConfig::default());
     }
+    // The amber lines a node shows: the boundaries in its own body, plus the calls that
+    // reach one the frame does not draw.
+    let drawn_for_amber = drawn_screen_ids(&nodes);
+    let amber_lines: HashMap<String, Vec<usize>> = nodes
+        .iter()
+        .map(|node| {
+            let mut lines = node.external_call_lines.clone();
+            lines.extend(surviving_external_calls(node, &drawn_for_amber).map(|(line, _, _)| *line));
+            lines.sort_unstable();
+            lines.dedup();
+            (node.id.clone(), lines)
+        })
+        .collect();
+    for node in nodes.iter_mut() {
+        if let Some(lines) = amber_lines.get(&node.id) {
+            node.external_call_lines = lines.clone();
+        }
+    }
+
     let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+
+    // The cards this frame will hand out, in the order a reader meets them. Computed
+    // HERE, before the frame takes its slot, because whether this frame has a subtree
+    // underneath decides whether it can share its row — and the slot is taken first.
+    let card_order = card_reading_order(&nodes, &edges, &root_id);
 
     // Reserve the slot in both modes, so a dry run shows the real sequence of
     // board positions instead of repeating the first one.
     // Every frame is brand new, so it always takes a slot from the allocator — which
     // is what puts a cluster's frames next to each other instead of wherever an
-    // earlier deploy happened to leave them.
-    let (frame_x, frame_y) = allocator.place(layout.frame_width, layout.frame_height);
+    // earlier deploy happened to leave them. The depth is the indent: the cluster is
+    // deployed in reading order, so laying it out as an outline makes scrolling down
+    // the board the same thing as reading the cluster.
+    let (frame_x, frame_y) = allocator.place_in_outline(
+        layout.frame_width,
+        layout.frame_height,
+        cluster_depth,
+        !card_order.is_empty(),
+    );
 
     if let Some(preview_path) = &options.preview {
         let path = preview_path.clone();
@@ -1061,6 +1227,36 @@ async fn deploy_one(
     if options.dry_run {
         print_dry_run(&nodes, &edges, &anchors, &layout, (frame_x, frame_y));
         cleanup(&nodes);
+        // Walk the whole cluster, not just this frame. There is nothing to upload, so the
+        // recursion is pure local work — and it is the only way to see the outline (every
+        // frame's indent and board position) before drawing it. A real deploy discovers
+        // the same tree inside `ensure_target_frames`, which needs a client.
+        for (target, target_file) in card_order {
+            {
+                let mut seen = cluster.dry_seen.lock().unwrap();
+                if !seen.insert(target.clone()) {
+                    continue;
+                }
+            }
+            let Some((contract, function)) = target.split_once('.') else {
+                continue;
+            };
+            let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+            Box::pin(deploy_one(
+                &metadata,
+                contract,
+                function,
+                &target_file,
+                options,
+                None,
+                allocator,
+                false,
+                cluster,
+                None,
+                cluster_depth + 1,
+            ))
+            .await?;
+        }
         return Ok(());
     }
 
@@ -1108,13 +1304,61 @@ async fn deploy_one(
     // cards for the same helper resolve to the same frame, and a helper already
     // deployed is reused rather than drawn again. That is what keeps the fan-in
     // answerable — one frame with several references, not a copy per caller.
-    let target_frames = ensure_target_frames(&nodes, options, client, allocator, cluster).await?;
+    let target_frames = ensure_target_frames(
+        card_order,
+        options,
+        client,
+        allocator,
+        cluster,
+        Some(FrameOrigin {
+            title: title.clone(),
+            url: client.frame_url(&frame_id),
+        }),
+        cluster_depth + 1,
+    )
+    .await?;
+
+    let mut back_cards: Vec<(String, String)> = Vec::new();
+    // The way back. A frame reached from a card carries one card per origin: the frame
+    // that sent the reader here, and any other frame of this deployment that cards it
+    // later (`add_back_card`). Drawn after the layout is known, in the corner the content
+    // does not reach, and skipped rather than drawn over code when it does.
+    if let Some(origin) = origin {
+        let occupied: Vec<(f64, f64, f64, f64)> = layout
+            .nodes
+            .iter()
+            .map(|placed| (placed.x, placed.y, placed.width, placed.height))
+            .collect();
+        match back_card_slot(layout.frame_width, layout.frame_height, &occupied, 0) {
+            Some((x, y)) => {
+                let id = client
+                    .create_back_card(
+                        &frame_id,
+                        &format!("↑ {}", origin.title),
+                        &origin.url,
+                        x,
+                        y,
+                        LINK_CARD_WIDTH,
+                        LINK_CARD_HEIGHT,
+                    )
+                    .await
+                    .change_context(EvmMiroError)?;
+                back_cards.push((origin.title.clone(), id));
+            }
+            None => println!(
+                "  {} no room for the way back to {}; it is in the registry",
+                "note:".yellow(),
+                origin.title
+            ),
+        }
+    }
 
     // Record the frame before filling it, so a run that dies partway through
     // still leaves something that names what is on the board.
     let frame_url = client.frame_url(&frame_id);
     let mut record = AutoDeployedFrame {
         entry_point: title.clone(),
+        back_cards,
         type_frame: false,
         frame_id: frame_id.clone(),
         frame_url: frame_url.clone(),
@@ -2212,6 +2456,7 @@ fn build_graph(
         }
     }
     let mut write_memo: HashMap<String, bool> = HashMap::new();
+    let mut external_memo: HashMap<String, bool> = HashMap::new();
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
@@ -2302,6 +2547,7 @@ fn build_graph(
         // Lines in THIS function whose call reaches a storage write, collected while the
         // calls are resolved and written back onto the node once the loop is done.
         let mut caller_write_calls: Vec<(usize, String, String)> = Vec::new();
+        let mut caller_external_calls: Vec<(usize, String, String)> = Vec::new();
         // Lines whose call leaves the drawn graph towards `lib/` code that can mutate.
         let mut lib_boundary_lines: Vec<usize> = Vec::new();
 
@@ -2381,6 +2627,33 @@ fn build_graph(
                     .map(|(c, f)| overload_node_key(c, &f))
                     .unwrap_or_default();
                     caller_write_calls.push((
+                        function.line + call.line - 1,
+                        call.symbol.clone(),
+                        callee_id,
+                    ));
+                } else if leads_to_external(
+                    metadata,
+                    reached_contract,
+                    &reached_function,
+                    &write_options,
+                    &write_definer_map,
+                    &mut external_memo,
+                    &mut HashSet::new(),
+                ) {
+                    // Reaches a boundary but writes no storage this scan can see: amber,
+                    // on the same terms as red — the frame that draws the boundary owns
+                    // the mark, so this one is kept only if the callee is not drawn here.
+                    let callee_id = resolve_call(
+                        metadata,
+                        contract,
+                        &call.name,
+                        arity,
+                        options,
+                        &definer_map,
+                    )
+                    .map(|(c, f)| overload_node_key(c, &f))
+                    .unwrap_or_default();
+                    caller_external_calls.push((
                         function.line + call.line - 1,
                         call.symbol.clone(),
                         callee_id,
@@ -2723,7 +2996,7 @@ fn build_graph(
             if read_only {
                 continue;
             }
-            if let Some(pos) = slice.iter().position(|l| line_has_call(l, &uec.method)) {
+            if let Some(pos) = boundary_line_index(&slice, &uec.receiver, &uec.method) {
                 // The scan finds implementers by inheritance only, so a contract that
                 // matches the interface without declaring `is <interface>` leaves the call
                 // listed here even though the call-site pass above drew its arrow into
@@ -2744,6 +3017,13 @@ fn build_graph(
             caller_write_calls.dedup();
             if let Some(node) = nodes.iter_mut().find(|n| n.id == current.node_id) {
                 node.write_call_lines = caller_write_calls;
+            }
+        }
+        if !caller_external_calls.is_empty() {
+            caller_external_calls.sort_unstable();
+            caller_external_calls.dedup();
+            if let Some(node) = nodes.iter_mut().find(|n| n.id == current.node_id) {
+                node.external_call_sites = caller_external_calls;
             }
         }
 
@@ -2892,6 +3172,7 @@ fn make_node(
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
     }
 }
 
@@ -2920,6 +3201,28 @@ fn line_has_token(line: &str, token: &str) -> bool {
 /// Like [`line_has_token`] but the identifier must be a CALL — followed (after
 /// optional spaces) by `(`. So `mint` matches `collVault.mint(…)` on line 362 but
 /// not the `mintedAlmShares` declaration on line 351.
+/// Which line of a function's source carries the call to `method` on `receiver`.
+///
+/// Not simply the first line mentioning the method: a function whose own name matches its
+/// callee's — `borrow` calling `MORPHO.borrow` — matched its own signature, and the band
+/// landed on the header instead of on the call. So: prefer a line that also carries the
+/// receiver, and never accept the declaration line itself.
+fn boundary_line_index(slice: &[String], receiver: &str, method: &str) -> Option<usize> {
+    slice
+        .iter()
+        .position(|line| {
+            line_has_call(line, method) && !receiver.is_empty() && line.contains(receiver)
+        })
+        .or_else(|| {
+            slice
+                .iter()
+                .enumerate()
+                .skip(1)
+                .find(|(_, line)| line_has_call(line, method))
+                .map(|(index, _)| index)
+        })
+}
+
 fn line_has_call(line: &str, method: &str) -> bool {
     let bytes = line.as_bytes();
     let mut from = 0;
@@ -2932,7 +3235,10 @@ fn line_has_call(line: &str, method: &str) -> bool {
         while cursor < bytes.len() && (bytes[cursor] == b' ' || bytes[cursor] == b'\t') {
             cursor += 1;
         }
-        let is_call = cursor < bytes.len() && bytes[cursor] == b'(';
+        // `(` for an ordinary call, `{` for one carrying a value or gas block —
+        // `target.call{value: v}(data)` is the low-level call that moves ether, and
+        // missing it meant the band never landed on the line that moves it.
+        let is_call = cursor < bytes.len() && (bytes[cursor] == b'(' || bytes[cursor] == b'{');
         if before_ok && after_ident_ok && is_call {
             return true;
         }
@@ -2979,6 +3285,7 @@ fn make_modifier_node(
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
     }
 }
 
@@ -3312,6 +3619,18 @@ fn surviving_write_calls<'a>(
         .filter(move |(_, _, callee)| !drawn.contains(callee))
 }
 
+/// The same rule for the amber marks: a call reaching a boundary keeps its band only when
+/// the callee is not drawn here, so the frame nearest the boundary is the one that shows it.
+fn surviving_external_calls<'a>(
+    node: &'a GraphNode,
+    drawn_screens: &HashSet<&str>,
+) -> impl Iterator<Item = &'a (usize, String, String)> {
+    let drawn: HashSet<String> = drawn_screens.iter().map(|id| id.to_string()).collect();
+    node.external_call_sites
+        .iter()
+        .filter(move |(_, _, callee)| !drawn.contains(callee))
+}
+
 /// Node ids drawn as source on this frame, which is what decides who owns a mark.
 fn drawn_screen_ids(nodes: &[GraphNode]) -> HashSet<&str> {
     nodes
@@ -3337,6 +3656,101 @@ fn drawn_screen_ids(nodes: &[GraphNode]) -> HashSet<&str> {
 /// `function_dependencies.callees` holds the same call strings `resolve_call` consumes
 /// (`_increaseDebt`, `debtToken.mint`, `PropMath._computeNominalCR`), so resolution here
 /// is exactly the resolution used to draw the graph.
+/// Does this function reach a boundary the diagram cannot follow past?
+///
+/// The amber counterpart of `leads_to_write`, and it exists for the same reason: the frame
+/// that draws the boundary should carry the mark, but a frame that stops short of it has
+/// to say so on the call, or a chain that moves value ends in silence. `SafeERC20.
+/// safeTransferFrom` is four hops from the `call` that actually moves the tokens.
+fn leads_to_external(
+    metadata: &EvmBatMetadata,
+    contract: &ContractMetadata,
+    function: &FunctionMetadata,
+    options: &AutoDeployOptions,
+    definer_map: &HashMap<String, Vec<String>>,
+    memo: &mut HashMap<String, bool>,
+    stack: &mut HashSet<String>,
+) -> bool {
+    if !function.unknown_external_calls.is_empty() {
+        return true;
+    }
+    let id = function.metadata_id.clone();
+    if let Some(&cached) = memo.get(&id) {
+        return cached;
+    }
+    if !stack.insert(id.clone()) {
+        return false;
+    }
+    let callees = metadata
+        .function_dependencies
+        .iter()
+        .find(|dependency| dependency.function_metadata_id == id)
+        .map(|dependency| dependency.callees.clone())
+        .unwrap_or_default();
+    let mut reaches = false;
+    for callee in callees {
+        // Resolve as the drawing does; and when that cannot decide — a bare name from a
+        // `using X for Y` call, whose arity at the call site is one short of the library
+        // function's — fall back to every contract that defines the name. This walk only
+        // decides whether to MARK a line, so a wider net costs a mark, not a wrong box.
+        let method = callee.split('.').next_back().unwrap_or(&callee);
+        let mut reached: Vec<(&ContractMetadata, FunctionMetadata)> =
+            match resolve_call(metadata, contract, &callee, None, options, definer_map) {
+                // EVERY overload, not just the one an unknown arity picks first. An
+                // overload commonly delegates to its longer sibling — `functionCall(a, b)`
+                // calls `functionCall(a, b, msg)` — and by name those are the same callee,
+                // so following only the first walked straight back into itself, hit the
+                // cycle guard, and reported that a chain ending in a token transfer
+                // reached nothing at all.
+                Some((found_contract, _)) => found_contract
+                    .functions
+                    .iter()
+                    .filter(|f| f.name == method)
+                    .map(|f| (found_contract, f.clone()))
+                    .collect(),
+                None => definer_map
+                    .get(callee.split('.').next_back().unwrap_or(&callee))
+                    .map(|definers| {
+                        definers
+                            .iter()
+                            .filter_map(|name| {
+                                let target =
+                                    metadata.contract_in_scope(name, &contract.file_path)?;
+                                find_function(
+                                    metadata,
+                                    &target.name,
+                                    &target.file_path,
+                                    callee.split('.').next_back().unwrap_or(&callee),
+                                    None,
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            };
+        for (next_contract, next_function) in reached.drain(..) {
+            if leads_to_external(
+                metadata,
+                next_contract,
+                &next_function,
+                options,
+                definer_map,
+                memo,
+                stack,
+            ) {
+                reaches = true;
+                break;
+            }
+        }
+        if reaches {
+            break;
+        }
+    }
+    stack.remove(&id);
+    memo.insert(id, reaches);
+    reaches
+}
+
 fn leads_to_write(
     metadata: &EvmBatMetadata,
     contract: &ContractMetadata,
@@ -3514,6 +3928,27 @@ fn resolve_call<'a>(
         {
             if let Some(resolved) = destub(metadata, found, options) {
                 return Some(resolved);
+            }
+        }
+    }
+
+    // Libraries bound with `using X for Y;`. A bare method this contract and its bases do
+    // not define may still be one of theirs — that is what the directive says, and it is
+    // the only thing in the source that says it. The receiver becomes the library
+    // function's FIRST parameter, so `address(token).functionCall(data, msg)` reads as two
+    // arguments at the call site and three in `Address.functionCall`: the arity has to be
+    // shifted, or every one of these resolves to nothing.
+    for library in &caller_contract.using_libraries {
+        let Some(contract) = metadata.contract_in_scope(library, &caller_contract.file_path) else {
+            continue;
+        };
+        for arity in [arg_count.map(|count| count + 1), arg_count, None] {
+            if let Some(found) =
+                find_function(metadata, &contract.name, &contract.file_path, method, arity)
+            {
+                if let Some(resolved) = destub(metadata, found, options) {
+                    return Some(resolved);
+                }
             }
         }
     }
@@ -4513,10 +4948,6 @@ fn duplicate_crossing_shared(
         // like sqrt/mul512), then bigger ones; ties broken by the farthest-back
         // caller. Copying the floor first dissolves the mesh from the bottom, which
         // is what a top-down pass could never reach before the budget ran out.
-        if !shared.iter().any(|v| v.contains("_strictAnchor")) {
-            eprintln!("DBG _strictAnchor no está en shared; callers={:?}",
-                callers.iter().find(|(k, _)| k.contains("_strictAnchor")).map(|(_, c)| c.len()));
-        }
         let mut best: Option<(usize, usize, String)> = None; // (closure_len, -worst, id)
         for v in &shared {
             if exhausted.contains(v) {
@@ -4530,9 +4961,6 @@ fn duplicate_crossing_shared(
                 continue;
             }
             let clen = private_closure(v, &out, &shared).len();
-            if v.contains("_strictAnchor") {
-                eprintln!("DBG {v}: worst={worst} clen={clen} callers={:?}", callers.get(v).map(|c| c.len()));
-            }
             if clen > MAX_CLOSURE {
                 continue;
             }
@@ -4733,6 +5161,7 @@ mod split_shared_leaves_test {
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
         }
     }
 
@@ -4898,6 +5327,7 @@ fn cut_edge(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, index: usize
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
     });
     edges[index].to = card_id;
     prune_unreachable(nodes, edges);
@@ -4945,6 +5375,7 @@ fn cut_node(nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, target_id: &
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
         });
         edges[idx].to = card_id;
     }
@@ -5165,6 +5596,7 @@ mod cut_test {
         external_call_lines: Vec::new(),
         leads_to_write: false,
         write_call_lines: Vec::new(),
+        external_call_sites: Vec::new(),
         }
     }
 
@@ -5324,24 +5756,91 @@ mod cut_test {
 /// first, so the card has somewhere to go. Distinct cards for the same function
 /// collapse to one lookup, which is what makes several diagrams share a helper's
 /// frame instead of each building its own.
-async fn ensure_target_frames(
+/// The cards of a frame, in the order a reader meets them.
+///
+/// Depth-first from the root, each node's calls taken in source order, following a drawn
+/// callee as soon as the line that calls it is read — which is how the source is read and
+/// how the frame is laid out (callees in call order, top-aligned). The deploy follows this
+/// list, so a branch is finished before the next one starts and the frames appear in the
+/// order the reader will walk them.
+///
+/// It replaced the order the cards happened to sit in `nodes`, which is the order
+/// `best_cut` scored them: deterministic, and unrelated to anything a reader does.
+fn card_reading_order(
     nodes: &[GraphNode],
+    edges: &[GraphEdge],
+    root_id: &str,
+) -> Vec<(String, String)> {
+    let mut out_edges: HashMap<&str, Vec<&GraphEdge>> = HashMap::new();
+    for edge in edges {
+        out_edges.entry(edge.from.as_str()).or_default().push(edge);
+    }
+    for calls in out_edges.values_mut() {
+        calls.sort_by_key(|edge| (edge.line_in_slice, edge.column));
+    }
+    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+
+    let mut ordered: Vec<(String, String)> = Vec::new();
+    let mut listed: HashSet<String> = HashSet::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    // Recursive rather than a stack: a card is listed the moment it is met, while a drawn
+    // callee is descended into, and a stack can only do one of those in order — reversing
+    // it to fix the descent puts the cards back to front.
+    fn walk(
+        id: &str,
+        out_edges: &HashMap<&str, Vec<&GraphEdge>>,
+        by_id: &HashMap<&str, &GraphNode>,
+        visited: &mut HashSet<String>,
+        listed: &mut HashSet<String>,
+        ordered: &mut Vec<(String, String)>,
+    ) {
+        if !visited.insert(id.to_string()) {
+            return;
+        }
+        let Some(calls) = out_edges.get(id) else {
+            return;
+        };
+        for edge in calls {
+            match by_id.get(edge.to.as_str()).map(|node| &node.kind) {
+                Some(NodeKind::Link { target, file }) => {
+                    if listed.insert(target.clone()) {
+                        ordered.push((target.clone(), file.clone()));
+                    }
+                }
+                Some(NodeKind::Screenshot) => {
+                    walk(&edge.to, out_edges, by_id, visited, listed, ordered)
+                }
+                None => {}
+            }
+        }
+    }
+    walk(root_id, &out_edges, &by_id, &mut visited, &mut listed, &mut ordered);
+
+    // A card the walk could not reach cannot exist (`prune_unreachable` runs after every
+    // cut), but losing one would silently drop a frame, so they are appended rather than
+    // trusted away.
+    for node in nodes {
+        if let NodeKind::Link { target, file } = &node.kind {
+            if listed.insert(target.clone()) {
+                ordered.push((target.clone(), file.clone()));
+            }
+        }
+    }
+    ordered
+}
+
+async fn ensure_target_frames(
+    wanted: Vec<(String, String)>,
     options: &AutoDeployOptions,
     client: &MiroClient,
     allocator: &mut ShelfAllocator,
     cluster: &ClusterCtx,
+    // The frame these cards live on: every frame deployed for one of them carries a card
+    // back to it.
+    origin: Option<FrameOrigin>,
+    // The depth the frames built here sit at: one level under the frame holding the cards.
+    cluster_depth: usize,
 ) -> Result<HashMap<String, String>> {
-    let wanted: Vec<(String, String)> = {
-        let mut seen = HashSet::new();
-        nodes
-            .iter()
-            .filter_map(|node| match &node.kind {
-                NodeKind::Link { target, file } => Some((target.clone(), file.clone())),
-                NodeKind::Screenshot => None,
-            })
-            .filter(|(target, _)| seen.insert(target.clone()))
-            .collect()
-    };
     if wanted.is_empty() {
         return Ok(HashMap::new());
     }
@@ -5374,6 +5873,11 @@ async fn ensure_target_frames(
         };
         if let Some(url) = reusable {
             println!("  {} reuses its frame", target.blue());
+            // A second frame of this deployment cards one already drawn, so that frame
+            // gains another way back: `FLAMMGateLib.priced` is reached from three.
+            if let Some(origin) = origin.as_ref() {
+                add_back_card(&target, cluster, origin, client).await?;
+            }
             resolved.insert(target, url);
             continue;
         }
@@ -5395,6 +5899,8 @@ async fn ensure_target_frames(
             allocator,
             false,
             cluster,
+            origin.as_ref(),
+            cluster_depth,
         ))
         .await?;
 
@@ -5919,6 +6425,341 @@ mod color_test {
             names.len(),
             DEPTH_COLORS.len()
         );
+    }
+}
+
+#[cfg(test)]
+mod reading_order_test {
+    use super::*;
+
+    fn screenshot(id: &str) -> GraphNode {
+        GraphNode {
+            id: id.to_string(),
+            label: id.replace("::", "."),
+            kind: NodeKind::Screenshot,
+            file_path: String::new(),
+            start_line: 1,
+            end_line: 2,
+            depth: 0,
+            font_size: 32,
+            scale: 1.0,
+            png_path: String::new(),
+            png_width: 0,
+            png_height: 0,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+            writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
+            leads_to_write: false,
+            write_call_lines: Vec::new(),
+            external_call_sites: Vec::new(),
+        }
+    }
+
+    fn card(id: &str, target: &str) -> GraphNode {
+        let mut node = screenshot(id);
+        node.kind = NodeKind::Link {
+            target: target.to_string(),
+            file: format!("./src/{target}.sol"),
+        };
+        node
+    }
+
+    fn edge(from: &str, to: &str, line: usize) -> GraphEdge {
+        GraphEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            line_in_slice: line,
+            column: 0,
+            symbol: to.to_string(),
+        }
+    }
+
+    /// The reader goes down the root, and follows a callee AS the line that calls it is
+    /// read: a card of a callee called early comes before a card the root calls later.
+    #[test]
+    fn cards_come_in_the_order_a_reader_meets_them() {
+        let nodes = vec![
+            screenshot("R"),
+            screenshot("A"),
+            card("c_late", "Late"),
+            card("c_deep", "Deep"),
+        ];
+        let edges = vec![
+            edge("R", "A", 10),
+            edge("R", "c_late", 20),
+            edge("A", "c_deep", 5),
+        ];
+        let order = card_reading_order(&nodes, &edges, "R");
+        assert_eq!(
+            order.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(),
+            vec!["Deep", "Late"],
+            "the card inside the first callee is met before the root's later call"
+        );
+    }
+
+    /// Calls on one node are read top to bottom, whatever order the edges were built in.
+    #[test]
+    fn calls_are_read_top_to_bottom() {
+        let nodes = vec![screenshot("R"), card("c1", "Third"), card("c2", "First"), card("c3", "Second")];
+        let edges = vec![edge("R", "c1", 30), edge("R", "c2", 10), edge("R", "c3", 20)];
+        let order = card_reading_order(&nodes, &edges, "R");
+        assert_eq!(
+            order.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(),
+            vec!["First", "Second", "Third"]
+        );
+    }
+
+    /// One frame per target, however many cards point at it, and a cycle terminates.
+    #[test]
+    fn a_target_is_listed_once_and_a_cycle_ends() {
+        let nodes = vec![
+            screenshot("R"),
+            screenshot("A"),
+            card("c1", "Shared"),
+            card("c2", "Shared"),
+        ];
+        let edges = vec![
+            edge("R", "A", 10),
+            edge("A", "R", 1), // the cycle
+            edge("R", "c1", 20),
+            edge("A", "c2", 5),
+        ];
+        let order = card_reading_order(&nodes, &edges, "R");
+        assert_eq!(order.len(), 1, "one frame for one target: {order:?}");
+        assert_eq!(order[0].0, "Shared");
+    }
+
+    /// A card nothing reaches is still deployed: losing it would silently drop a frame.
+    #[test]
+    fn an_unreachable_card_is_not_dropped() {
+        let nodes = vec![screenshot("R"), card("orphan", "Orphan")];
+        let order = card_reading_order(&nodes, &[], "R");
+        assert_eq!(order.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), vec!["Orphan"]);
+    }
+}
+
+#[cfg(test)]
+mod back_card_test {
+    use super::*;
+
+    /// The corner the content does not reach: bottom-right, stacking upward.
+    #[test]
+    fn the_way_back_goes_in_the_free_corner() {
+        let (w, h) = (10_000.0, 4_000.0);
+        let content = [(2_000.0, 1_000.0, 3_000.0, 1_500.0)];
+        let first = back_card_slot(w, h, &content, 0).expect("the corner is free");
+        assert!(first.0 > w / 2.0 && first.1 > h / 2.0, "bottom-right: {first:?}");
+
+        // A second origin stacks above the first, not on top of it.
+        let second = back_card_slot(w, h, &content, 1).expect("room for two");
+        assert!((first.0 - second.0).abs() < 1.0, "same column");
+        assert!(second.1 < first.1 - LINK_CARD_HEIGHT, "clear of the first: {second:?}");
+    }
+
+    /// Code in that corner wins: a way back is worth less than the source under it.
+    #[test]
+    fn content_in_the_corner_refuses_the_card() {
+        let (w, h) = (3_000.0, 2_000.0);
+        let occupying = [(w - 400.0, h - 300.0, 1_200.0, 800.0)];
+        assert!(back_card_slot(w, h, &occupying, 0).is_none());
+    }
+
+    /// Stacking cannot climb out of the frame.
+    #[test]
+    fn stacking_stops_at_the_top() {
+        let (w, h) = (3_000.0, 1_200.0);
+        assert!(back_card_slot(w, h, &[], 0).is_some());
+        assert!(back_card_slot(w, h, &[], 9).is_none());
+    }
+}
+
+#[cfg(test)]
+mod marking_test {
+    use super::*;
+    use crate::batbelt::evm::metadata::bat_metadata::ExternalUnknownCall;
+    use crate::batbelt::evm::types::{EvmContractType, EvmMutability, EvmParam, EvmVisibility};
+
+    fn function(name: &str, params: usize, external: &[(&str, &str)]) -> FunctionMetadata {
+        FunctionMetadata {
+            metadata_id: format!("f_{name}_{params}"),
+            name: name.to_string(),
+            contract_name: String::new(),
+            visibility: EvmVisibility::Internal,
+            mutability: EvmMutability::NonPayable,
+            modifiers: Vec::new(),
+            params: (0..params)
+                .map(|i| EvmParam {
+                    name: format!("p{i}"),
+                    type_name: "uint256".to_string(),
+                    storage_location: None,
+                })
+                .collect(),
+            returns: Vec::new(),
+            line: 1,
+            end_line: 2,
+            is_constructor: false,
+            is_stub: false,
+            storage_writes: Vec::new(),
+            storage_write_sites: Vec::new(),
+            unresolved_calls: Vec::new(),
+            unknown_external_calls: external
+                .iter()
+                .map(|(receiver, method)| ExternalUnknownCall {
+                    receiver: receiver.to_string(),
+                    method: method.to_string(),
+                    inferred_type: String::new(),
+                })
+                .collect(),
+            resolved_calls: Vec::new(),
+        }
+    }
+
+    fn contract(name: &str, using: &[&str], functions: Vec<FunctionMetadata>) -> ContractMetadata {
+        ContractMetadata {
+            metadata_id: name.to_string(),
+            name: name.to_string(),
+            using_libraries: using.iter().map(|u| u.to_string()).collect(),
+            file_path: format!("./src/{name}.sol"),
+            contract_type: EvmContractType::Contract,
+            base_contracts: Vec::new(),
+            functions,
+            state_variables: Vec::new(),
+            events: Vec::new(),
+            modifiers: Vec::new(),
+            line: 1,
+            external: false,
+        }
+    }
+
+    /// `using Address for address;` binds a bare method to a library — and the receiver
+    /// becomes that library function's FIRST parameter, so the call site shows one
+    /// argument fewer than the function declares.
+    #[test]
+    fn a_using_library_resolves_with_the_receiver_as_first_parameter() {
+        let library = contract("Address", &[], vec![function("functionCall", 3, &[])]);
+        let caller = contract("Store", &["Address"], vec![function("pull", 1, &[])]);
+        let metadata = EvmBatMetadata {
+            contracts: vec![library, caller.clone()],
+            ..Default::default()
+        };
+        let definers: HashMap<String, Vec<String>> =
+            HashMap::from([("functionCall".to_string(), vec!["Address".to_string()])]);
+
+        // Two arguments at the call site, three in the declaration.
+        let resolved = resolve_call(
+            &metadata,
+            &caller,
+            "functionCall",
+            Some(2),
+            &AutoDeployOptions::default(),
+            &definers,
+        );
+        assert!(resolved.is_some(), "the using directive should bind the call");
+        assert_eq!(resolved.unwrap().0.name, "Address");
+    }
+
+    /// An overload delegating to its longer sibling is the same callee BY NAME, so
+    /// following only the first went back into itself and reported that a chain reached
+    /// nothing. The boundary lives in the three-parameter one.
+    #[test]
+    fn every_overload_is_walked_when_looking_for_a_boundary() {
+        let library = contract(
+            "Address",
+            &[],
+            vec![
+                function("functionCall", 2, &[]),
+                function("functionCall", 3, &[("assembly", "call")]),
+            ],
+        );
+        let caller = contract("Store", &["Address"], vec![function("pull", 1, &[])]);
+        let metadata = EvmBatMetadata {
+            contracts: vec![library.clone(), caller.clone()],
+            function_dependencies: vec![crate::batbelt::evm::metadata::bat_metadata::FunctionDependency {
+                function_metadata_id: "f_pull_1".to_string(),
+                callees: vec!["functionCall".to_string()],
+            }],
+            ..Default::default()
+        };
+        let definers: HashMap<String, Vec<String>> =
+            HashMap::from([("functionCall".to_string(), vec!["Address".to_string()])]);
+
+        let reaches = leads_to_external(
+            &metadata,
+            &caller,
+            &caller.functions[0],
+            &AutoDeployOptions::default(),
+            &definers,
+            &mut HashMap::new(),
+            &mut HashSet::new(),
+        );
+        assert!(reaches, "the boundary is in the overload the first one delegates to");
+    }
+
+    /// The frame nearest the boundary owns the mark: a call whose callee is drawn here
+    /// keeps the frame clean, and one whose callee is absent carries it.
+    #[test]
+    fn a_marked_call_survives_only_when_its_callee_is_not_drawn() {
+        let mut node = GraphNode {
+            id: "C::f".to_string(),
+            label: "C.f".to_string(),
+            kind: NodeKind::Screenshot,
+            file_path: String::new(),
+            start_line: 1,
+            end_line: 2,
+            depth: 0,
+            font_size: 32,
+            scale: 1.0,
+            png_path: String::new(),
+            png_width: 0,
+            png_height: 0,
+            rendered_lines: Vec::new(),
+            line_offset: 0,
+            writes_storage: false,
+            write_lines: Vec::new(),
+            external_call_lines: Vec::new(),
+            leads_to_write: false,
+            write_call_lines: Vec::new(),
+            external_call_sites: vec![
+                (10, "drawn".to_string(), "C::drawn".to_string()),
+                (20, "absent".to_string(), "C::absent".to_string()),
+            ],
+        };
+        let drawn: HashSet<&str> = HashSet::from(["C::drawn"]);
+        let kept: Vec<usize> = surviving_external_calls(&node, &drawn)
+            .map(|(line, _, _)| *line)
+            .collect();
+        assert_eq!(kept, vec![20]);
+
+        node.external_call_sites.clear();
+        assert_eq!(surviving_external_calls(&node, &drawn).count(), 0);
+    }
+
+    /// The band goes on the call, not on a signature that happens to share its name.
+    #[test]
+    fn the_band_skips_a_signature_that_shares_the_callees_name() {
+        let slice: Vec<String> = vec![
+            "    function borrow(bytes32 id, uint256 assets, address to) external onlyRouter {"
+                .to_string(),
+            "        if (to != POOL) revert BadReceiver();".to_string(),
+            "        (uint256 borrowed,) = MORPHO.borrow(m, assets, 0, address(this), to);"
+                .to_string(),
+            "    }".to_string(),
+        ];
+        assert_eq!(boundary_line_index(&slice, "MORPHO", "borrow"), Some(2));
+        // With no receiver to go on, the declaration line is still never the answer.
+        assert_eq!(boundary_line_index(&slice, "", "borrow"), Some(2));
+        assert_eq!(boundary_line_index(&slice, "MORPHO", "nothingHere"), None);
+    }
+
+    /// A call carrying a value block is still a call — `target.call{value: v}(data)` is
+    /// the one that moves ether, and missing it put the band nowhere.
+    #[test]
+    fn a_call_with_a_value_block_is_found_on_its_line() {
+        assert!(line_has_call("(bool ok, ) = target.call{value: v}(data);", "call"));
+        assert!(line_has_call("let s := call(gas(), token, 0, 0, 0, 0, 0)", "call"));
+        assert!(!line_has_call("_callOptionalReturn(token, data);", "call"));
     }
 }
 

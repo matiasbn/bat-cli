@@ -1,6 +1,6 @@
 [package]
 name = "bat-cli"
-version = "0.26.22"
+version = "0.26.23"
 edition = "2021"
 description = "Blockchain Auditor Toolkit (BAT)"
 license = "MIT"
@@ -50,11 +50,13 @@ syntect = { version = "5.1", default-features = false, features = ["parsing", "d
 tabled = "0.10.0"
 solar-parse = "0.1"
 
+# Cargo's own defaults, deliberately: no link-time optimisation and as many codegen units
+# as the machine can compile in parallel. This profile only ever builds a local binary that
+# spends its life waiting on HTTP, so optimising it buys nothing anyone can feel and cost a
+# slow compile on every edit — 46s clean, against 24s now. Release keeps lto and one unit.
 [profile.dev]
 overflow-checks = true
-lto = true
 opt-level = 0
-codegen-units = 1
 incremental = true
 debug = true
 

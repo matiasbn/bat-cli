@@ -113,6 +113,11 @@ pub struct EvmFunction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvmContract {
     pub name: String,
+    /// Libraries bound with `using X for Y;`. A call written as a bare method on a value
+    /// of that type — `address(token).functionCall(data)` — is a call INTO that library,
+    /// and without the directive there is nothing in the source that says so.
+    #[serde(default)]
+    pub using_libraries: Vec<String>,
     pub contract_type: EvmContractType,
     pub base_contracts: Vec<String>,
     pub functions: Vec<EvmFunction>,

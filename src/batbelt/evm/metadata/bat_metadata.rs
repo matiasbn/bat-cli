@@ -54,6 +54,10 @@ pub struct EvmBatMetadata {
 pub struct ContractMetadata {
     pub metadata_id: String,
     pub name: String,
+    /// Libraries bound to a type in this contract with `using X for Y;`, which is what
+    /// makes `address(token).functionCall(...)` a call into `Address`.
+    #[serde(default)]
+    pub using_libraries: Vec<String>,
     pub file_path: String,
     pub contract_type: EvmContractType,
     pub base_contracts: Vec<String>,
@@ -235,6 +239,21 @@ pub struct ShelfState {
     pub row_height: f64,
     pub row_max_width: f64,
     pub gutter: f64,
+    /// Outline placement: the step per cluster level and the open row's state. Defaulted,
+    /// so a `BatMetadata.json` written before outline placement still loads — and the
+    /// region is reset at the start of every run anyway.
+    #[serde(default = "default_indent")]
+    pub indent: f64,
+    #[serde(default)]
+    pub row_depth: usize,
+    #[serde(default)]
+    pub row_closed: bool,
+    #[serde(default)]
+    pub row_used: bool,
+}
+
+fn default_indent() -> f64 {
+    crate::batbelt::miro::layout::ShelfAllocator::DEFAULT_INDENT
 }
 
 impl ShelfState {
@@ -247,6 +266,10 @@ impl ShelfState {
             row_height: self.row_height,
             row_max_width: self.row_max_width,
             gutter: self.gutter,
+            indent: self.indent,
+            row_depth: self.row_depth,
+            row_closed: self.row_closed,
+            row_used: self.row_used,
         }
     }
 }
@@ -261,6 +284,10 @@ impl From<&crate::batbelt::miro::layout::ShelfAllocator> for ShelfState {
             row_height: allocator.row_height,
             row_max_width: allocator.row_max_width,
             gutter: allocator.gutter,
+            indent: allocator.indent,
+            row_depth: allocator.row_depth,
+            row_closed: allocator.row_closed,
+            row_used: allocator.row_used,
         }
     }
 }
@@ -286,6 +313,12 @@ pub struct ExtraScreenshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoDeployedFrame {
     pub entry_point: String,
+    /// The frames this one is reached from, as (origin entry point, the card's item id).
+    /// A frame can be carded by several frames of one deployment, and each gets its own
+    /// way back; the ids are kept so a relink can forget them, the names so the registry
+    /// can answer "who reaches this" without walking every record's link cards.
+    #[serde(default)]
+    pub back_cards: Vec<(String, String)>,
     /// A frame drawn for a TYPE rather than a function: the tree of a struct whose fields
     /// are structs. It is replayed after a redeploy from the card that asked for it, not
     /// from the call graph, which never mentions it.
@@ -745,7 +778,7 @@ impl EvmBatMetadata {
                 for (n, t) in &analysis.local_types {
                     local_var_types.insert(n.clone(), t.clone());
                 }
-                let (unresolved_calls, unknown_external_calls, resolved_calls) = compute_unresolved_calls(
+                let (unresolved_calls, mut unknown_external_calls, resolved_calls) = compute_unresolved_calls(
                     &analysis.call_targets,
                     &local_var_types,
                     &visible_structs,
@@ -756,6 +789,20 @@ impl EvmBatMetadata {
                     &impl_map,
                     &method_map,
                 );
+                // A transfer written in assembly is still a transfer. `SafeERC20` ends in
+                // `call(gas(), token, ...)` inside an `assembly` block, and the parser sees
+                // no call there at all — so a chain that moves tokens reached the end of
+                // the graph marked as nothing: every hop had source, so it was never an
+                // unfollowable boundary either, and the one place the state actually
+                // changes is a contract whose code is not in this repo. The opcode is that
+                // boundary, so it is recorded as one.
+                for opcode in assembly_state_calls(&f.body_source) {
+                    unknown_external_calls.push(ExternalUnknownCall {
+                        receiver: "assembly".to_string(),
+                        method: opcode,
+                        inferred_type: String::new(),
+                    });
+                }
                 all_deps.push(FunctionDependency {
                     function_metadata_id: func_id.clone(),
                     callees: analysis.call_names,
@@ -805,6 +852,7 @@ impl EvmBatMetadata {
                 .collect();
 
             let contract_metadata = ContractMetadata {
+                using_libraries: contract.using_libraries.clone(),
                 metadata_id: contract_id,
                 name: contract.name.clone(),
                 file_path: contract.file_path.clone(),
@@ -1082,6 +1130,79 @@ pub fn prune_unresolved_noise(metadata: &mut EvmBatMetadata) {
 /// is emitted when it is NOT already resolved to a single concrete contract via the
 /// receiver's declared type; each carries best-effort candidates.
 #[allow(clippy::too_many_arguments)]
+/// Low-level calls that can change state, in source order, in either spelling.
+///
+/// `staticcall` is left out on purpose: the EVM refuses to let it write, so it is the
+/// assembly spelling of a `view` call and marking it would be noise. `call`, `callcode`
+/// and `delegatecall` can all end in an SSTORE somewhere this repo cannot see.
+///
+/// Scanning text rather than a Yul AST is deliberate: it is bounded to the inside of an
+/// assembly block, where these three words are opcodes and nothing else, so it cannot
+/// mistake a Solidity identifier for one.
+fn assembly_state_calls(body: &str) -> Vec<String> {
+    const OPCODES: [&str; 3] = ["delegatecall", "callcode", "call"];
+    let mut found = Vec::new();
+    let mut depth = 0usize; // brace depth inside the current assembly block
+    let mut in_assembly = false;
+    for line in body.lines() {
+        let code = line.split("//").next().unwrap_or(line);
+        // The Solidity spelling: `target.call{value: v}(data)`, which is how the OZ v4
+        // copies of `SafeERC20` end up moving tokens. The receiver is an `address`, so the
+        // ordinary call analysis drops it — nothing to resolve — and the chain went quiet
+        // exactly where value leaves the audited code.
+        for opcode in ["delegatecall", "call"] {
+            let dotted = format!(".{opcode}");
+            if let Some(at) = code.find(&dotted) {
+                let after = code[at + dotted.len()..].trim_start();
+                if (after.starts_with('(') || after.starts_with('{'))
+                    && !found.iter().any(|seen| seen == opcode)
+                {
+                    found.push(opcode.to_string());
+                }
+            }
+        }
+        if !in_assembly {
+            if code.contains("assembly") {
+                in_assembly = true;
+                depth = 0;
+            } else {
+                continue;
+            }
+        }
+        for opcode in OPCODES {
+            if calls_opcode(code, opcode) && !found.iter().any(|seen| seen == opcode) {
+                found.push(opcode.to_string());
+            }
+        }
+        depth += code.matches('{').count();
+        depth = depth.saturating_sub(code.matches('}').count());
+        if depth == 0 && code.contains('}') {
+            in_assembly = false;
+        }
+    }
+    found
+}
+
+/// `name` used as a call on this line: preceded by no identifier character and followed
+/// by `(`, so `call(` counts and `_callOptionalReturn(` or `staticcall(` do not.
+fn calls_opcode(line: &str, name: &str) -> bool {
+    let bytes = line.as_bytes();
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut from = 0;
+    while let Some(rel) = line[from..].find(name) {
+        let start = from + rel;
+        let end = start + name.len();
+        let before_ok = start == 0 || !ident(bytes[start - 1]);
+        let after = bytes[end..].iter().position(|b| *b != b' ' && *b != b'\t');
+        let is_call = after.is_some_and(|skip| bytes[end + skip] == b'(');
+        if before_ok && is_call {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
 fn compute_unresolved_calls(
     targets: &[(String, String)],
     var_types: &std::collections::HashMap<String, String>,
@@ -1297,4 +1418,61 @@ fn detect_access_control(modifiers: &[String]) -> Vec<AccessControlType> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod assembly_calls_test {
+    use super::assembly_state_calls;
+
+    #[test]
+    fn finds_the_opcodes_that_can_change_state_and_only_inside_assembly() {
+        // What SafeERC20 actually does, and the reason a token transfer was invisible.
+        let safe_erc20 = r#"
+            uint256 returnSize;
+            assembly ("memory-safe") {
+                let success := call(gas(), token, 0, add(data, 0x20), mload(data), 0, 0x20)
+                if iszero(success) { revert(0, 0) }
+            }
+            if (returnSize == 0) { revert SafeERC20FailedOperation(address(token)); }
+        "#;
+        assert_eq!(assembly_state_calls(safe_erc20), vec!["call".to_string()]);
+
+        // A read cannot write: staticcall is the assembly spelling of a view call.
+        let only_reads = r#"
+            assembly {
+                let ok := staticcall(gas(), target, 0, 0, 0, 0)
+            }
+        "#;
+        assert!(assembly_state_calls(only_reads).is_empty());
+
+        // An ordinary internal call is not a boundary, and an identifier that merely
+        // contains the word is not the opcode.
+        let ordinary = r#"
+            _callOptionalReturn(token, data);
+            uint256 x = recall(data);
+        "#;
+        assert!(assembly_state_calls(ordinary).is_empty());
+
+        // The Solidity spelling, with and without a value block.
+        let solidity_low_level = r#"
+            (bool ok, bytes memory out) = target.call{value: value}(data);
+        "#;
+        assert_eq!(assembly_state_calls(solidity_low_level), vec!["call".to_string()]);
+        let plain = r#"
+            (bool ok, ) = payable(to).call("");
+        "#;
+        assert_eq!(assembly_state_calls(plain), vec!["call".to_string()]);
+        // `abi.encodeCall` is not a call, and the case differs anyway.
+        let encode = r#"
+            _callOptionalReturn(token, abi.encodeCall(token.transferFrom, (a, b, c)));
+        "#;
+        assert!(assembly_state_calls(encode).is_empty());
+
+        let delegate = r#"
+            assembly {
+                let r := delegatecall(gas(), impl, 0, calldatasize(), 0, 0)
+            }
+        "#;
+        assert_eq!(assembly_state_calls(delegate), vec!["delegatecall".to_string()]);
+    }
 }

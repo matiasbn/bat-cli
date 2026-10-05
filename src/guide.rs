@@ -517,6 +517,17 @@ so a helper called from two branches is drawn once. The previous cluster is not 
 deletes one item at a time, and slowly): its still-live frame URLs are printed at the end so you
 can delete them with one click each in Miro, where a frame takes its contents with it.
 
+**The cluster is laid out as an outline, in reading order.** Frames are deployed depth-first,
+following each function's calls in source order, and placed down the board in that same order,
+**indented one step per level**: the entry point is top-left, what its cards lead to is below it
+and further right, and the next sibling is below at the same indent. So the frame that sent you
+somewhere is the nearest frame ABOVE with a smaller indent, and reading a cluster is scrolling
+down rather than hunting across the board. A frame whose cards lead somewhere takes a band to
+itself (its subtree goes underneath); leaf frames share a band left to right, which keeps "one
+function, six small helpers" compact. Every frame reached from a card also carries a blue
+**"↑ back to"** card in its bottom-right corner, one per origin — a frame reached from three
+callers has three of them.
+
 | flag | |
 |---|---|
 | `--entry-point <name>` | `Contract.function` or bare `function`; omit to pick from a list |
@@ -847,6 +858,25 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.23
+- **A cluster is laid out as an outline, in reading order.** Frames used to be shelf-packed in
+  whatever order they happened to be drawn, so finding the frame a card pointed at — or getting
+  back from it — meant hunting across a wall of frames. The cluster is now deployed depth-first
+  with each function's calls in source order, and placed down the board in that order, indented
+  one step (2 000 px) per level: the parent is the nearest frame above with a smaller indent, the
+  next sibling is below at the same indent. A frame with a subtree takes its own band; leaf
+  siblings share one.
+- **Every frame reached from a card says how to get back.** It carries a blue **"↑ back to"** card
+  in its bottom-right corner naming the frame that sent you there, with a link. A frame reached
+  from three callers carries three of them, stacked — fan-in is answerable from the frame itself
+  instead of from the registry.
+- **A function that moves tokens is marked amber.** Four separate gaps hid it: a `using`-for call
+  (`amount.transfer(...)`) resolved to nothing, a cast receiver (`IERC20(token).transfer`) lost its
+  method name, only the first overload of a callee name was walked, and the band landed on the
+  signature line instead of the line that moves the value. A transfer reached three levels down
+  now marks its caller.
+  _Re-read: workflow.md._
 
 ## 0.26.22
 - **Nothing is left flying over a column.** Localization copies a crossing callee next to its far

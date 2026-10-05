@@ -825,6 +825,7 @@ mod screenshot_test {
         metadata.contracts = contracts
             .into_iter()
             .map(|(name, vars)| crate::batbelt::evm::metadata::bat_metadata::ContractMetadata {
+                using_libraries: Vec::new(),
                 metadata_id: String::new(),
                 name: name.to_string(),
                 file_path: "./src/A.sol".to_string(),
@@ -920,6 +921,7 @@ mod screenshot_test {
     fn free_spot_lands_below_the_content_and_never_on_it() {
         let mut record = AutoDeployedFrame {
             entry_point: "C.f".to_string(),
+            back_cards: Vec::new(),
             type_frame: false,
             frame_id: String::new(),
             frame_url: String::new(),

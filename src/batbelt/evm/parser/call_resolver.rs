@@ -309,6 +309,15 @@ fn extract_calls_from_expr(kind: &ast::ExprKind<'_>, calls: &mut Vec<String>) {
                             if let ast::ExprKind::Ident(id) = &inner_callee.kind {
                                 calls.push(format!("{}().{}", id.as_str(), method_name));
                             } else {
+                                // A cast to a BUILT-IN type is not an `Ident`, so the
+                                // receiver carries no name to qualify with — and dropping
+                                // the whole call with it made a `using X for Y` helper
+                                // invisible: `address(token).functionCall(data, …)`, which
+                                // is how OpenZeppelin v4's SafeERC20 moves tokens, left no
+                                // callee at all and the transfer was marked nowhere. The
+                                // method alone is enough for the resolver, which looks a
+                                // bare name up in the contracts that define it.
+                                calls.push(method_name.clone());
                                 extract_calls_from_expr(&inner_callee.kind, calls);
                             }
                             for arg in inner_args.exprs() {
@@ -672,7 +681,20 @@ fn collect_call_sites_from_expr(expr: &ast::Expr<'_>, out: &mut Vec<RawCallSite>
                             match &inner_callee.kind {
                                 ast::ExprKind::Ident(id) => Some(format!("{}()", id.as_str())),
                                 _ => {
+                                    // A cast to a BUILT-IN type is not an `Ident`, so there
+                                    // is no receiver to qualify with — and dropping the
+                                    // call with it lost every `using X for Y` helper called
+                                    // on one. `address(token).functionCall(data, …)` is how
+                                    // OpenZeppelin v4 moves tokens, and it was not even a
+                                    // call site. The bare method is enough: the resolver
+                                    // looks it up in the libraries the contract binds.
                                     collect_call_sites_from_expr(inner_callee, out);
+                                    out.push((
+                                        method_name.clone(),
+                                        method_name.clone(),
+                                        method_ident.span,
+                                        arg_count,
+                                    ));
                                     None
                                 }
                             }
@@ -1659,5 +1681,33 @@ mod contract_creation_test {
         let names: Vec<&str> = sites.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"Pool.constructor"), "{names:?}");
         assert!(!names.iter().any(|n| n.contains("bytes")), "{names:?}");
+    }
+}
+
+#[cfg(test)]
+mod using_for_call_test {
+    use super::analyze_body;
+
+    #[test]
+    fn a_library_call_on_an_address_is_a_callee() {
+        // Verbatim from OpenZeppelin v4's SafeERC20, which is where a token transfer
+        // disappeared from a diagram: the call goes through `using Address for address`.
+        let body = r#"function _callOptionalReturn(IERC20 token, bytes memory data) private {
+        // We need to perform a low level call here, to bypass Solidity's return data size checking mechanism, since
+        // we're implementing it ourselves. We use {Address-functionCall} to perform this call, which verifies that
+        // the target address contains contract code and also asserts for success in the low-level call.
+
+        bytes memory returndata = address(token).functionCall(data, "SafeERC20: low-level call failed");
+        if (returndata.length > 0) {
+            // Return data is optional
+            require(abi.decode(returndata, (bool)), "SafeERC20: ERC20 operation did not succeed");
+        }
+    }"#;
+        let analysis = analyze_body(body, &[], &[]);
+        assert!(
+            analysis.call_names.iter().any(|name| name.contains("functionCall")),
+            "no callee recorded; got {:?}",
+            analysis.call_names
+        );
     }
 }
