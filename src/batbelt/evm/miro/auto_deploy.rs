@@ -1265,13 +1265,15 @@ const CONCURRENT_FRAMES: usize = 16;
 /// Locals come from the AST (`extract_local_types`), not from a pattern over the text. A
 /// tuple declaration, a `for` initialiser and a field access that merely looks like one are
 /// exactly the cases a pattern gets wrong, and a wrong mark is worse than no mark.
-fn traced_names(lines: &[String]) -> Vec<String> {
+fn traced_names(lines: &[String]) -> (Vec<String>, usize) {
     let limit = crate::batbelt::silicon::TRACE_COLORS.len();
     let mut names = signature_parameters(lines);
     if names.len() >= limit {
         names.truncate(limit);
-        return names;
+        let parameters = names.len();
+        return (names, parameters);
     }
+    let parameters = names.len();
 
     let body = lines.join("\n");
     let mut locals: Vec<String> =
@@ -1291,7 +1293,7 @@ fn traced_names(lines: &[String]) -> Vec<String> {
         }
         names.push(local);
     }
-    names
+    (names, parameters)
 }
 
 /// The parameters a function declares, in order, taken from its own signature.
@@ -4515,6 +4517,7 @@ fn render_and_measure(
             // private name and is moved into place in one step: a reader either sees the
             // finished file or no file.
             if !std::path::Path::new(&png_path).exists() {
+                let traced = traced_names(&lines);
                 let partial = partial_render_name(&file_name, std::process::id());
                 silicon::create_figure_tracing(
                     &lines.join("\n"),
@@ -4523,7 +4526,8 @@ fn render_and_measure(
                     line_offset,
                     Some(REFERENCE_FONT),
                     true,
-                    &traced_names(&lines),
+                    &traced.0,
+                    traced.1,
                 );
                 let partial_path = format!("{destination}/{partial}.png");
                 std::fs::rename(&partial_path, &png_path)
@@ -6688,7 +6692,8 @@ mod signature_test {
         let slice = lines(
             "    function f(uint256 amount) internal {\n        uint256 rare = 1;\n        uint256 often = 2;\n        often = often + often + rare;\n    }",
         );
-        let traced = traced_names(&slice);
+        let (traced, parameters) = traced_names(&slice);
+        assert_eq!(parameters, 1);
         assert_eq!(traced[0], "amount", "a parameter comes before any local");
         assert_eq!(traced[1], "often", "used four times");
         assert_eq!(traced[2], "rare", "used twice");
@@ -6700,7 +6705,7 @@ mod signature_test {
         let slice = lines(
             "    function f() internal {\n        (uint256 p0, uint48 ts) = Store.price();\n        use(p0, ts, p0);\n    }",
         );
-        let traced = traced_names(&slice);
+        let (traced, _) = traced_names(&slice);
         assert!(traced.contains(&"p0".to_string()), "{traced:?}");
         assert!(traced.contains(&"ts".to_string()), "{traced:?}");
     }
@@ -6711,7 +6716,7 @@ mod signature_test {
             "    function f(uint a, uint b, uint c, uint d, uint e, uint g, uint h, uint i, uint j, uint k) internal {}",
         );
         assert_eq!(
-            traced_names(&slice).len(),
+            traced_names(&slice).0.len(),
             crate::batbelt::silicon::TRACE_COLORS.len()
         );
     }

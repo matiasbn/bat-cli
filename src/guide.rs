@@ -398,7 +398,7 @@ what tells you so.
 
 **Each variable is marked in its own colour inside a screenshot.** A function's
 parameters, and then its most-used local variables, carry a coloured mark behind them
-wherever they appear in its body, so a name can be followed through the code the way a
+wherever they appear in its body — parameters underlined, locals not — so a name can be followed through the code the way a
 click follows it in an editor. The signature is the legend. These colours are for reading INSIDE a screenshot and are not the ones the
 arrows use — same name, same mark, within one screenshot only.
 
@@ -877,7 +877,9 @@ so you re-open only the docs that actually changed — not everything.
   clicking an identifier to see where it is used, so each of a function's parameters is now
   marked with its own colour everywhere it appears — behind the text, like a marker pen, so
   the syntax colouring is untouched. The signature is the legend: find `address assetIn` on
-  the lilac mark, then sweep the body for lilac. **Local variables are marked too**, taken
+  the lilac mark, then sweep the body for lilac. A **parameter** also carries a rule under
+  it, so the names the caller chose are told apart at a glance from what the function made
+  of them. **Local variables are marked too**, taken
   from the AST (so a tuple declaration or a `for` initialiser counts, and a field that
   merely looks like one does not), filling whatever slots the parameters leave, most-used
   first. Capped at the palette; past that a reader cannot tell the colours apart, so the

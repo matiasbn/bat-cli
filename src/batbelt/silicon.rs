@@ -198,7 +198,7 @@ fn traced_rects(
     font_size: Option<usize>,
     show_line_number: bool,
     line_offset: usize,
-) -> Vec<(u32, u32, u32, u32, usize)> {
+) -> Vec<TracedRect> {
     if traced.is_empty() {
         return Vec::new();
     }
@@ -225,16 +225,43 @@ fn traced_rects(
             let mut from = 0usize;
             while let Some(at) = find_word(&expanded[from..], name) {
                 let at = from + at;
+                from = at + name.len();
+                if is_field_key(&expanded, at, name.len()) {
+                    continue;
+                }
                 let x = PAD + left_pad + font.get_text_len(&expanded[..at]);
                 let width = font.get_text_len(&expanded[at..at + name.len()]);
                 // `first_line_y` already carries the ShadowAdder's padding.
                 let y = geometry.first_line_y + row as u32 * geometry.line_height;
-                rects.push((x, y, width, geometry.line_height, index));
-                from = at + name.len();
+                rects.push(TracedRect { x, y, width, height: geometry.line_height, index });
             }
         }
     }
     rects
+}
+
+/// One mark: where it goes, and which traced name it belongs to.
+struct TracedRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    index: usize,
+}
+
+/// Whether this occurrence is a struct literal's FIELD NAME rather than a use of the
+/// variable — `amountIn: amountIn` names the field on the left and passes the variable on
+/// the right, and marking both says the value flows into itself.
+///
+/// A field key is the first thing on its line and is followed by a colon. A ternary's
+/// colon also follows a value, which is why the rule is anchored at the start of the line:
+/// `a ? b : c` never has `b` there.
+fn is_field_key(line: &str, at: usize, len: usize) -> bool {
+    let starts_the_line = line[..at].trim().is_empty();
+    let followed_by_colon = line[at + len..]
+        .trim_start()
+        .starts_with(|c: char| c == ':');
+    starts_the_line && followed_by_colon
 }
 
 /// Paint each traced occurrence's own colour BEHIND it, like a marker pen.
@@ -247,26 +274,31 @@ fn traced_rects(
 /// Drawn OVER the finished image at low alpha rather than under the text, because silicon
 /// composes the text itself and ignores a span's background (`formatter.rs`, which reads
 /// only `style.foreground`).
-fn paint_traces(
-    image: &mut image::DynamicImage,
-    rects: &[(u32, u32, u32, u32, usize)],
-) {
+fn paint_traces(image: &mut image::DynamicImage, rects: &[TracedRect], underlined: usize) {
     use image::GenericImageView;
     const ALPHA: f32 = 0.30;
-    let buffer = image.to_rgba8();
+    /// Thickness of a parameter's underline, in pixels.
+    const RULE: u32 = 3;
+    let mut buffer = image.to_rgba8();
     let (width, height) = image.dimensions();
-    let mut buffer = buffer;
-    for (x, y, w, h, index) in rects {
-        let tint = parse_hex(TRACE_COLORS[index % TRACE_COLORS.len()]);
-        for py in *y..(*y + *h).min(height) {
-            for px in *x..(*x + *w).min(width) {
+    for rect in rects {
+        let tint = parse_hex(TRACE_COLORS[rect.index % TRACE_COLORS.len()]);
+        let blend = |under: u8, over: u8, alpha: f32| {
+            (under as f32 * (1.0 - alpha) + over as f32 * alpha).round() as u8
+        };
+        for py in rect.y..(rect.y + rect.height).min(height) {
+            // A PARAMETER also gets a solid rule under it. The two kinds of name answer
+            // different questions — a parameter is what the caller chose, a local is what
+            // this function made of it — and telling them apart at a glance is the whole
+            // reason to mark them. Locals carry the tint alone.
+            let on_rule =
+                rect.index < underlined && py + RULE >= rect.y + rect.height;
+            let alpha = if on_rule { 1.0 } else { ALPHA };
+            for px in rect.x..(rect.x + rect.width).min(width) {
                 let pixel = buffer.get_pixel_mut(px, py);
-                let blend = |under: u8, over: u8| {
-                    (under as f32 * (1.0 - ALPHA) + over as f32 * ALPHA).round() as u8
-                };
-                pixel[0] = blend(pixel[0], tint.r);
-                pixel[1] = blend(pixel[1], tint.g);
-                pixel[2] = blend(pixel[2], tint.b);
+                pixel[0] = blend(pixel[0], tint.r, alpha);
+                pixel[1] = blend(pixel[1], tint.g, alpha);
+                pixel[2] = blend(pixel[2], tint.b, alpha);
             }
         }
     }
@@ -287,10 +319,19 @@ pub fn create_figure(
     font_size: Option<usize>,
     show_line_number: bool,
 ) -> String {
-    create_figure_tracing(content, dest_folder_path, file_name, offset, font_size, show_line_number, &[])
+    create_figure_tracing(
+        content,
+        dest_folder_path,
+        file_name,
+        offset,
+        font_size,
+        show_line_number,
+        &[],
+        0,
+    )
 }
 
-/// `create_figure`, plus the names to trace through the code in their own colours.
+/// `create_figure`, plus the names to mark through the code, each in its own colour.
 #[allow(clippy::too_many_arguments)]
 pub fn create_figure_tracing(
     content: &str,
@@ -300,6 +341,9 @@ pub fn create_figure_tracing(
     font_size: Option<usize>,
     show_line_number: bool,
     traced: &[String],
+    // How many of `traced` are the function's PARAMETERS. They come first in the list and
+    // are the ones that also get a rule under them.
+    parameters: usize,
 ) -> String {
     let dest_png_path = format!("{dest_folder_path}/{file_name}.png");
 
@@ -356,6 +400,7 @@ pub fn create_figure_tracing(
     paint_traces(
         &mut image,
         &traced_rects(content, traced, font_size, show_line_number, offset),
+        parameters,
     );
 
     image
@@ -507,11 +552,28 @@ mod trace_test {
         assert_eq!(rects.len(), 3, "one on line 3, two on line 4");
 
         let geometry = line_geometry(Some(20));
-        assert_eq!(rects[0].1, geometry.first_line_y + 2 * geometry.line_height);
-        assert!(rects[0].2 > 0 && rects[0].3 == geometry.line_height);
+        assert_eq!(rects[0].y, geometry.first_line_y + 2 * geometry.line_height);
+        assert!(rects[0].width > 0 && rects[0].height == geometry.line_height);
         // The second occurrence on a line sits to the right of the first.
-        assert!(rects[2].0 > rects[1].0);
-        assert_eq!(rects[1].1, rects[2].1, "same line, same row");
+        assert!(rects[2].x > rects[1].x);
+        assert_eq!(rects[1].y, rects[2].y, "same line, same row");
+    }
+
+    /// A struct literal's field name is not a use of the variable: `amountIn: amountIn`
+    /// names the field on the left and passes the value on the right.
+    #[test]
+    fn a_struct_field_key_is_not_marked() {
+        let content = "// path.sol\n\n    amountIn: amountIn,";
+        let rects = traced_rects(content, &["amountIn".to_string()], Some(20), true, 0);
+        assert_eq!(rects.len(), 1, "only the value on the right is a use");
+    }
+
+    /// A ternary's colon follows a value mid-line, which must stay marked.
+    #[test]
+    fn a_ternary_is_not_mistaken_for_a_field_key() {
+        let content = "// path.sol\n\n    uint a = x > y ? amountIn : other;";
+        let rects = traced_rects(content, &["amountIn".to_string()], Some(20), true, 0);
+        assert_eq!(rects.len(), 1);
     }
 
     #[test]
@@ -532,5 +594,6 @@ mod trace_test {
 
 
 }
+
 
 
