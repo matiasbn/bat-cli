@@ -1260,6 +1260,79 @@ async fn deploy_one(
         return Ok(());
     }
 
+    let plan = FramePlan {
+        title,
+        contract_name: contract_name.to_string(),
+        function_name: function_name.to_string(),
+        root_file: root_file.to_string(),
+        cluster_depth,
+        root_id,
+        nodes,
+        edges,
+        anchors,
+        layout,
+        frame_x,
+        frame_y,
+        card_order,
+    };
+
+    draw_one(&plan, options, client, allocator, cluster, origin).await
+}
+
+/// Everything the LOCAL half of a deploy computes for one frame: the graph, its layout,
+/// its measured size and the slot it takes on the board. Nothing in here needs the
+/// network, and the drawing half only reads it — which is what makes it a plan. See §21
+/// of docs/diagram-deploy-design.md.
+struct FramePlan {
+    title: String,
+    contract_name: String,
+    function_name: String,
+    root_file: String,
+    cluster_depth: usize,
+    root_id: String,
+    nodes: Vec<GraphNode>,
+    edges: Vec<GraphEdge>,
+    anchors: Vec<RelativeAnchor>,
+    layout: GraphLayout,
+    frame_x: f64,
+    frame_y: f64,
+    /// The frames this one cards, in the order a reader meets them.
+    card_order: Vec<(String, String)>,
+}
+
+
+/// The BOARD half: everything from here on talks to Miro. It reads the plan and
+/// changes nothing in it.
+async fn draw_one(
+    plan: &FramePlan,
+    options: &AutoDeployOptions,
+    client: Option<&MiroClient>,
+    allocator: &mut ShelfAllocator,
+    cluster: &ClusterCtx,
+    origin: Option<&FrameOrigin>,
+) -> Result<()> {
+    let FramePlan {
+        title,
+        contract_name,
+        function_name,
+        root_file,
+        cluster_depth,
+        root_id,
+        nodes,
+        edges,
+        anchors,
+        layout,
+        frame_x,
+        frame_y,
+        card_order,
+    } = plan;
+    let (frame_x, frame_y) = (*frame_x, *frame_y);
+    let cluster_depth = *cluster_depth;
+    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    // Every deploy is fresh, so nothing is ever reused from the board: this stays empty.
+    // It is the hook `--refresh-links` used to come in through, kept so the upload path
+    // below reads the same as it did.
+    let reuse: HashMap<String, (String, u32, u32)> = HashMap::new();
     let client = client.expect("client is present when not in dry-run mode");
     // The frame carries the same answer its nodes do, in its own background: red when
     // something drawn here changes state, amber when something here probably does, and
@@ -1305,7 +1378,7 @@ async fn deploy_one(
     // deployed is reused rather than drawn again. That is what keeps the fan-in
     // answerable — one frame with several references, not a copy per caller.
     let target_frames = ensure_target_frames(
-        card_order,
+        card_order.clone(),
         options,
         client,
         allocator,
