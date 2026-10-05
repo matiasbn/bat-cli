@@ -1253,6 +1253,47 @@ fn plan_one(
 /// it. Going past the client's 24 permits cannot help.
 const CONCURRENT_FRAMES: usize = 16;
 
+/// The names worth following through a screenshot: the function's parameters first, then
+/// its local variables, and only as many as the palette can tell apart.
+///
+/// Parameters come first because they are what differs between call sites — the reason to
+/// read this function rather than another. Locals fill the remaining slots by how often
+/// they are used, busiest first, which is the same rule `color_callees` applies to arrows:
+/// spend the palette where a reader is most likely to lose the thread, and leave the rest
+/// unmarked rather than reuse a colour.
+///
+/// Locals come from the AST (`extract_local_types`), not from a pattern over the text. A
+/// tuple declaration, a `for` initialiser and a field access that merely looks like one are
+/// exactly the cases a pattern gets wrong, and a wrong mark is worse than no mark.
+fn traced_names(lines: &[String]) -> Vec<String> {
+    let limit = crate::batbelt::silicon::TRACE_COLORS.len();
+    let mut names = signature_parameters(lines);
+    if names.len() >= limit {
+        names.truncate(limit);
+        return names;
+    }
+
+    let body = lines.join("\n");
+    let mut locals: Vec<String> =
+        crate::batbelt::evm::parser::call_resolver::extract_local_types(&body)
+            .into_iter()
+            .map(|(name, _)| name)
+            .filter(|name| name != "$" && !names.contains(name))
+            .collect();
+    locals.sort();
+    locals.dedup();
+
+    let uses = |name: &str| crate::batbelt::silicon::count_word(&body, name);
+    locals.sort_by(|a, b| uses(b).cmp(&uses(a)).then(a.cmp(b)));
+    for local in locals {
+        if names.len() == limit {
+            break;
+        }
+        names.push(local);
+    }
+    names
+}
+
 /// The parameters a function declares, in order, taken from its own signature.
 ///
 /// They are what a reader most needs to follow through a body and what an editor gives for
@@ -4482,7 +4523,7 @@ fn render_and_measure(
                     line_offset,
                     Some(REFERENCE_FONT),
                     true,
-                    &signature_parameters(&lines),
+                    &traced_names(&lines),
                 );
                 let partial_path = format!("{destination}/{partial}.png");
                 std::fs::rename(&partial_path, &png_path)
@@ -6637,6 +6678,42 @@ mod signature_test {
 
     fn lines(text: &str) -> Vec<String> {
         text.lines().map(|l| l.to_string()).collect()
+    }
+
+    /// Parameters first, then the locals that are used most — and the ranking counts WHOLE
+    /// words, or a one-letter name wins every function by appearing inside `if` and
+    /// `feeWad`.
+    #[test]
+    fn locals_fill_the_slots_the_parameters_leave_busiest_first() {
+        let slice = lines(
+            "    function f(uint256 amount) internal {\n        uint256 rare = 1;\n        uint256 often = 2;\n        often = often + often + rare;\n    }",
+        );
+        let traced = traced_names(&slice);
+        assert_eq!(traced[0], "amount", "a parameter comes before any local");
+        assert_eq!(traced[1], "often", "used four times");
+        assert_eq!(traced[2], "rare", "used twice");
+    }
+
+    /// A tuple declaration declares just as much as a single one; it used to be invisible.
+    #[test]
+    fn a_tuple_declaration_is_traced_too() {
+        let slice = lines(
+            "    function f() internal {\n        (uint256 p0, uint48 ts) = Store.price();\n        use(p0, ts, p0);\n    }",
+        );
+        let traced = traced_names(&slice);
+        assert!(traced.contains(&"p0".to_string()), "{traced:?}");
+        assert!(traced.contains(&"ts".to_string()), "{traced:?}");
+    }
+
+    #[test]
+    fn nothing_is_traced_past_the_palette() {
+        let slice = lines(
+            "    function f(uint a, uint b, uint c, uint d, uint e, uint g, uint h, uint i, uint j, uint k) internal {}",
+        );
+        assert_eq!(
+            traced_names(&slice).len(),
+            crate::batbelt::silicon::TRACE_COLORS.len()
+        );
     }
 
     #[test]

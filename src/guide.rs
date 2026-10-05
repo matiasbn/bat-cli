@@ -396,10 +396,10 @@ what tells you so.
 
 ## Reading state changes on the diagram
 
-**Each parameter is marked in its own colour inside a screenshot.** A function's
-parameters carry a coloured mark behind them wherever they appear in its body, so a name
-can be followed through the code the way a click follows it in an editor. The signature
-is the legend. These colours are for reading INSIDE a screenshot and are not the ones the
+**Each variable is marked in its own colour inside a screenshot.** A function's
+parameters, and then its most-used local variables, carry a coloured mark behind them
+wherever they appear in its body, so a name can be followed through the code the way a
+click follows it in an editor. The signature is the legend. These colours are for reading INSIDE a screenshot and are not the ones the
 arrows use — same name, same mark, within one screenshot only.
 
 **One red mark is one state change.** A red band marks either the assignment itself, or — when
@@ -873,13 +873,15 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.26.26
-- **A screenshot lets you follow a parameter through the code.** On a PNG there is no
+- **A screenshot lets you follow a variable through the code.** On a PNG there is no
   clicking an identifier to see where it is used, so each of a function's parameters is now
   marked with its own colour everywhere it appears — behind the text, like a marker pen, so
   the syntax colouring is untouched. The signature is the legend: find `address assetIn` on
-  the lilac mark, then sweep the body for lilac. Capped at the palette; past that a reader
-  cannot tell the colours apart, so the rest stay unmarked — the rule the arrows already use
-  when they run out of hues.
+  the lilac mark, then sweep the body for lilac. **Local variables are marked too**, taken
+  from the AST (so a tuple declaration or a `for` initialiser counts, and a field that
+  merely looks like one does not), filling whatever slots the parameters leave, most-used
+  first. Capped at the palette; past that a reader cannot tell the colours apart, so the
+  rest stay unmarked — the rule the arrows already use when they run out of hues.
   _Re-read: workflow.md._
 
 ## 0.26.25

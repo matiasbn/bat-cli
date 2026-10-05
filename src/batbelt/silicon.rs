@@ -140,15 +140,30 @@ pub const BAT_PALETTE: &[&str] = &[
 /// already uses green for calls, orange for types and yellow for fields — `BAT_PALETTE`
 /// was tried there and three of its eight colours were lost in the highlighting.
 ///
-/// These are Dracula's own BRIGHT variants: built for `#282a36`, and a lighter register
-/// than the theme's own, so a traced name reads as "follow me" rather than as one more
-/// syntactic category.
+/// These are Dracula's own BRIGHT variants: built for `#282a36`, and distinct from each
+/// other at the low alpha a mark is drawn with.
 ///
-/// No bright GREEN here, though Dracula has one. Green is what the theme gives function
-/// names, and a Solidity body is mostly calls — a traced name in green would be hunted
-/// among thirty others. The same objection holds in smaller degree for the rest, which is
-/// why the list is short: these are the tones that survive the competition.
-pub const TRACE_COLORS: &[&str] = &["#ff6e6e", "#d6acff", "#ffffa5", "#a4ffff", "#ff92df"];
+/// Green is in the list, which it could not be while the TEXT was being recoloured — green
+/// is what the theme gives function names, and a Solidity body is mostly calls. Marking the
+/// background instead of the glyphs took that constraint away, and the extra slots are what
+/// let local variables be followed at all: a function with five parameters would otherwise
+/// spend the whole palette before reaching them.
+pub const TRACE_COLORS: &[&str] = &[
+    "#ff6e6e", "#69ff94", "#d6acff", "#ffffa5", "#a4ffff", "#ff92df", "#ffb86c", "#8be9fd",
+];
+
+/// How many times `name` appears in `text` as a WHOLE word. Ranking by `str::matches`
+/// instead counts `f` inside `if` and `feeWad`, which put one-letter names at the top of
+/// every function.
+pub fn count_word(text: &str, name: &str) -> usize {
+    let mut count = 0;
+    let mut from = 0usize;
+    while let Some(at) = find_word(&text[from..], name) {
+        count += 1;
+        from += at + name.len();
+    }
+    count
+}
 
 /// `name` as a WHOLE word: `p` must not match the `p` inside `supply`, and `from` must not
 /// match `p.from`'s field when the traced name is the variable `from` — a word boundary is
@@ -517,4 +532,5 @@ mod trace_test {
 
 
 }
+
 
