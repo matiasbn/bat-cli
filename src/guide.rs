@@ -396,11 +396,11 @@ what tells you so.
 
 ## Reading state changes on the diagram
 
-**Each variable is marked in its own colour inside a screenshot.** A function's
-parameters, and then its most-used local variables, carry a coloured mark behind them
-wherever they appear in its body — parameters underlined, locals not — so a name can be followed through the code the way a
-click follows it in an editor. The signature is the legend. These colours are for reading INSIDE a screenshot and are not the ones the
-arrows use — same name, same mark, within one screenshot only.
+**Each variable is marked in its own colour inside a screenshot**, so a name can be
+followed through the code the way a click follows it in an editor. A parameter sits on a
+block of colour, a local variable carries a rule under it, and the named return carries
+both. The signature is the legend. These colours are for reading INSIDE a screenshot and
+are not the ones the arrows use — same name, same mark, within one screenshot only.
 
 **One red mark is one state change.** A red band marks either the assignment itself, or — when
 the write happens past the edge of this frame — the call that reaches it. A red border means the
@@ -874,16 +874,19 @@ so you re-open only the docs that actually changed — not everything.
 
 ## 0.26.26
 - **A screenshot lets you follow a variable through the code.** On a PNG there is no
-  clicking an identifier to see where it is used, so each of a function's parameters is now
-  marked with its own colour everywhere it appears — behind the text, like a marker pen, so
-  the syntax colouring is untouched. The signature is the legend: find `address assetIn` on
-  the lilac mark, then sweep the body for lilac. A **parameter** also carries a rule under
-  it, so the names the caller chose are told apart at a glance from what the function made
-  of them. **Local variables are marked too**, taken
-  from the AST (so a tuple declaration or a `for` initialiser counts, and a field that
-  merely looks like one does not), filling whatever slots the parameters leave, most-used
-  first. Capped at the palette; past that a reader cannot tell the colours apart, so the
-  rest stay unmarked — the rule the arrows already use when they run out of hues.
+  clicking an identifier to see where it is used, so the names a function works with are
+  now marked, each in its own colour, everywhere they appear — without touching the syntax
+  colouring. Three kinds, told apart by HOW they are marked rather than by hue: a
+  **parameter** (what the caller chose) sits on a block of colour, a **local variable**
+  carries a rule under it, and the **named return** (`returns (Plan memory p)`) carries
+  both, because it is the answer the whole screenshot is building. Since the decoration
+  says which kind it is, the same colour can serve one of each.
+
+  The names come from the AST, so a tuple declaration and a `for` initialiser count while a
+  struct field that merely looks like one does not, and a name inside a comment is left
+  alone. Locals are ranked by how often they are really used. Capped at the palette: past
+  that a reader cannot tell the colours apart, so the rest stay unmarked — the rule the
+  arrows already use when they run out of hues.
   _Re-read: workflow.md._
 
 ## 0.26.25
