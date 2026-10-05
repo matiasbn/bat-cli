@@ -1282,6 +1282,7 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
         crate::batbelt::evm::parser::call_resolver::extract_local_types(&body)
             .into_iter()
             .map(|(name, _)| name)
+            .chain(yul_locals(&body))
             .filter(|name| name != "$" && !parameters.contains(name) && !carried.contains(name))
             .collect();
     locals.sort();
@@ -1299,17 +1300,56 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
 
     // Parameters draw from their own palette, because their background keeps them apart
     // whatever hue they get.
+    let parameter_count = parameters.len();
     let mut traced: Vec<TracedName> = parameters
         .into_iter()
         .enumerate()
         .map(|(color, name)| TracedName { name, kind: TraceKind::Parameter, color })
         .collect();
-    traced.extend(carried.into_iter().enumerate().map(|(color, name)| TracedName {
+    // The underlined sequence starts PAST the parameters instead of at zero. Both kinds
+    // would otherwise open on the same hue, and `lnWad(int256 x) returns (int256 r)` put a
+    // salmon `x` and a salmon `r` on every line — on names one character wide the rule
+    // underneath is too small to separate them.
+    let underlined = crate::batbelt::silicon::UNDERLINED_TRACE_COLORS.len();
+    traced.extend(carried.into_iter().enumerate().map(|(index, name)| TracedName {
         name,
-        kind: if color < returns { TraceKind::NamedReturn } else { TraceKind::Local },
-        color,
+        kind: if index < returns { TraceKind::NamedReturn } else { TraceKind::Local },
+        color: (parameter_count + index) % underlined,
     }));
     traced
+}
+
+/// The variables an inline assembly block declares: `let p := sub(…)`, and the several at
+/// once of `let a, b := f()`.
+///
+/// Yul is not Solidity, so it is not in the statement tree `extract_local_types` walks —
+/// in `FixedPointMathLib.lnWad` the two busiest names in the function, `p` and `q`, are
+/// declared there and were the only ones left unmarked.
+fn yul_locals(body: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in body.lines() {
+        let line = line.split("//").next().unwrap_or(line);
+        let Some(at) = line.find("let ") else { continue };
+        let before_ok = line[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '$'));
+        if !before_ok {
+            continue;
+        }
+        let rest = &line[at + 4..];
+        let declared = rest.split(":=").next().unwrap_or(rest);
+        for part in declared.split(',') {
+            let name = part.trim();
+            if !name.is_empty()
+                && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+                && !name.chars().next().is_some_and(|c| c.is_ascii_digit())
+            {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
 }
 
 /// The names a function's `returns (…)` clause declares, when it names them.
@@ -4774,7 +4814,16 @@ fn draw_disc(canvas: &mut image::RgbaImage, center: (i64, i64), radius: i64, col
     }
 }
 
+/// Set this and a run leaves its rendered screenshots in the figures directory instead of
+/// wiping them. A dry run otherwise draws every screenshot of a cluster and deletes them a
+/// second later, which makes the one thing it is best placed to show — what the code will
+/// actually LOOK like — impossible to inspect.
+const KEEP_FIGURES_ENV: &str = "BAT_CLI_KEEP_FIGURES";
+
 fn cleanup(nodes: &[GraphNode]) {
+    if std::env::var_os(KEEP_FIGURES_ENV).is_some() {
+        return;
+    }
     for node in nodes {
         if !node.png_path.is_empty() {
             let _ = std::fs::remove_file(&node.png_path);
@@ -6759,6 +6808,42 @@ mod signature_test {
         let names: Vec<String> = traced_names(&slice).into_iter().map(|t| t.name).collect();
         assert!(names.contains(&"p0".to_string()), "{names:?}");
         assert!(names.contains(&"ts".to_string()), "{names:?}");
+    }
+
+    /// Yul declares with `let`, and it is not in the Solidity statement tree: in
+    /// `FixedPointMathLib.lnWad` the two busiest names in the function are declared there.
+    #[test]
+    fn a_yul_declaration_is_traced() {
+        let slice = lines(
+            "    function f(int256 x) internal pure returns (int256 r) {\n        assembly {\n            let p := sub(x, 1)\n            p := mul(p, p)\n            r := p\n        }\n    }",
+        );
+        let names: Vec<String> = traced_names(&slice).into_iter().map(|t| t.name).collect();
+        assert!(names.contains(&"p".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn several_names_declared_at_once_in_yul_are_all_traced() {
+        let slice = lines(
+            "    function f() internal {\n        assembly {\n            let a, b := g()\n            use(a, b)\n        }\n    }",
+        );
+        let names: Vec<String> = traced_names(&slice).into_iter().map(|t| t.name).collect();
+        assert!(names.contains(&"a".to_string()) && names.contains(&"b".to_string()), "{names:?}");
+    }
+
+    /// Both kinds opening on the same hue put a salmon `x` and a salmon `r` on every line
+    /// of `lnWad`, where the rule under a one-character name is too small to separate them.
+    #[test]
+    fn the_underlined_sequence_starts_past_the_parameters() {
+        let slice = lines(
+            "    function f(int256 x) internal pure returns (int256 r) {\n        r = x;\n    }",
+        );
+        let traced = traced_names(&slice);
+        let parameter = traced.iter().find(|t| t.name == "x").expect("x is traced");
+        let carried = traced.iter().find(|t| t.name == "r").expect("r is traced");
+        assert_ne!(
+            crate::batbelt::silicon::palette(parameter.kind)[parameter.color],
+            crate::batbelt::silicon::palette(carried.kind)[carried.color],
+        );
     }
 
     /// The value the function is building is the hardest thread to hold, and it never
