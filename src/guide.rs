@@ -445,6 +445,11 @@ bat-cli relink <entry point> --frame-url <url>   # when several frames share the
 Never deploy again to fix this. A deploy does write a correct record, but it draws a NEW cluster
 somewhere else — the arrangement the auditor built is the thing being protected.
 
+**A dotted arrow is a repeated colour, a dashed one is a cycle.** A gutter with more
+callees than the palette has colours reuses a hue and draws it dotted, so two arrows a
+reader compares are always a different pair of colour and line. A dashed arrow means the
+edge goes backwards — to something already on the path.
+
 Link cards, connector markers and borders carry no title, so they cannot be recognised on a
 pasted copy; their ids are dropped from the record. Nothing on the board is stranded by that: the
 frame and its items are still there, and deleting the frame in Miro takes its contents with it.
@@ -871,6 +876,16 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.30
+- **Two arrows in the same gutter are never drawn the same way again.** When a gutter held
+  more callees than the palette has colours, every one past the eighth got the SAME colour
+  and the same dashes — so `cross` and `deployPool`, side by side in one column, arrived
+  with identical arrows, twice in a row, in different colours each time. What a reader has
+  to tell apart is the pair of hue and line, so the overflow now takes a **dotted** line and
+  the colour starts over: eight colours become sixteen distinguishable arrows. Dashed still
+  means one thing only — an edge that goes backwards.
+  _Re-read: workflow.md._
 
 ## 0.26.29
 - Nothing new: 0.26.28 was tagged with its changelog entries under the wrong version
