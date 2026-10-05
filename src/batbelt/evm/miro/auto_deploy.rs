@@ -1253,6 +1253,16 @@ fn plan_one(
 /// it. Going past the client's 24 permits cannot help.
 const CONCURRENT_FRAMES: usize = 16;
 
+/// The name a screenshot is rendered under before it is moved into place.
+///
+/// The suffix goes BEFORE the extension on purpose: `silicon` picks the syntax from the
+/// LAST one (`silicon.rs:143`, where Solidity is deliberately highlighted as JavaScript
+/// for the Dracula palette), so `fn_x.js.part123` is highlighted as Rust instead and every
+/// screenshot in the run comes out a different colour. That shipped in 0.26.24.
+fn partial_render_name(file_name: &str, pid: u32) -> String {
+    format!("{}.part{pid}.js", file_name.trim_end_matches(".js"))
+}
+
 /// The frame's own background says what it holds: red when something drawn here changes
 /// state, amber when something here probably does, red winning when both are true — a
 /// frame that changes state IS one, whatever else it also might do. A cluster is thirty
@@ -4385,7 +4395,7 @@ fn render_and_measure(
             // private name and is moved into place in one step: a reader either sees the
             // finished file or no file.
             if !std::path::Path::new(&png_path).exists() {
-                let partial = format!("{file_name}.part{}", std::process::id());
+                let partial = partial_render_name(&file_name, std::process::id());
                 silicon::create_figure(
                     &lines.join("\n"),
                     &destination,
@@ -6538,6 +6548,28 @@ mod reading_order_test {
         let nodes = vec![screenshot("R"), card("orphan", "Orphan")];
         let order = card_reading_order(&nodes, &[], "R");
         assert_eq!(order.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), vec!["Orphan"]);
+    }
+}
+
+#[cfg(test)]
+mod render_name_test {
+    use super::*;
+
+    /// The rendered file's LAST extension is what picks the syntax, so the temporary name
+    /// a screenshot is written under has to keep `.js` at the end — otherwise Solidity is
+    /// highlighted as Rust and every screenshot in the run changes colour.
+    #[test]
+    fn partial_render_name_keeps_the_extension_last() {
+        let name = partial_render_name("fn__src_core_flamm_FLAMMGateLib_sol_222_245.js", 4242);
+        assert!(name.ends_with(".js"), "{name} would be highlighted as Rust");
+        assert!(name.contains("part4242"), "{name} is not unique to this process");
+        assert_ne!(name, "fn__src_core_flamm_FLAMMGateLib_sol_222_245.js");
+    }
+
+    /// A name that somehow arrives without the extension still gets one.
+    #[test]
+    fn partial_render_name_adds_the_extension_when_missing() {
+        assert!(partial_render_name("fn_whatever", 7).ends_with(".js"));
     }
 }
 
