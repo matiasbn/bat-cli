@@ -449,27 +449,47 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
 
         let client = client.as_ref().expect("client is present when not in dry-run mode");
 
-        // PASS 1: create every frame, empty. 30 calls and a couple of seconds, and after
-        // it every card in the deployment knows its destination — which is what lets a
-        // frame be filled without waiting for the frames it points at.
-        let mut frame_ids: Vec<String> = Vec::with_capacity(plans.len());
-        let mut urls: HashMap<String, String> = HashMap::new();
-        for plan in &plans {
+        // PASS 1: create every frame, empty. After it every card in the deployment knows
+        // its destination — which is what lets a frame be filled without waiting for the
+        // frames it points at. The plan already fixed where each one goes, so these are
+        // independent of each other and go up together; the ids are put back in plan
+        // order afterwards, because pass 2 reads them by position.
+        let bar = phase_bar("creating frames", plans.len());
+        let mut creating = tokio::task::JoinSet::new();
+        for (index, plan) in plans.iter().enumerate() {
+            let client = client.clone();
+            let title = format!("auto: {}", plan.title);
             let fill = frame_fill_for(&plan.nodes);
-            let frame_id = client
-                .create_frame(
-                    &format!("auto: {}", plan.title),
-                    plan.frame_x,
-                    plan.frame_y,
-                    plan.layout.frame_width,
-                    plan.layout.frame_height,
-                    fill,
-                )
-                .await
-                .change_context(EvmMiroError)?;
-            urls.insert(plan.title.clone(), client.frame_url(&frame_id));
-            frame_ids.push(frame_id);
+            let (x, y) = (plan.frame_x, plan.frame_y);
+            let (width, height) = (plan.layout.frame_width, plan.layout.frame_height);
+            let bar = bar.clone();
+            creating.spawn(async move {
+                let frame_id = client
+                    .create_frame(&title, x, y, width, height, fill)
+                    .await
+                    .map_err(|report| report.change_context(EvmMiroError))?;
+                bar.inc(1);
+                Ok::<(usize, String), Report<EvmMiroError>>((index, frame_id))
+            });
         }
+        let mut created: Vec<Option<String>> = vec![None; plans.len()];
+        while let Some(joined) = creating.join_next().await {
+            let (index, frame_id) = joined
+                .map_err(|e| Report::new(EvmMiroError).attach_printable(e.to_string()))??;
+            created[index] = Some(frame_id);
+        }
+        bar.finish_and_clear();
+        // Every slot is filled or the loop above returned the error, so a gap here would
+        // be a bug in this function rather than something the board did.
+        let frame_ids: Vec<String> = created
+            .into_iter()
+            .map(|id| id.expect("every planned frame was created or the run failed"))
+            .collect();
+        let urls: HashMap<String, String> = plans
+            .iter()
+            .zip(frame_ids.iter())
+            .map(|(plan, frame_id)| (plan.title.clone(), client.frame_url(frame_id)))
+            .collect();
 
         // PASS 2: fill them. Every frame's contents are independent of every other's —
         // the plan fixed the geometry and pass 1 fixed the destinations — so they go up
@@ -1232,6 +1252,16 @@ fn plan_one(
 /// about 5.7 minutes on this cluster whatever this number is, so there was room to raise
 /// it. Going past the client's 24 permits cannot help.
 const CONCURRENT_FRAMES: usize = 16;
+
+/// The name a screenshot is rendered under before it is moved into place.
+///
+/// The suffix goes BEFORE the extension on purpose: `silicon` picks the syntax from the
+/// LAST one (`silicon.rs:143`, where Solidity is deliberately highlighted as JavaScript
+/// for the Dracula palette), so `fn_x.js.part123` is highlighted as Rust instead and every
+/// screenshot in the run comes out a different colour. That shipped in 0.26.24.
+fn partial_render_name(file_name: &str, pid: u32) -> String {
+    format!("{}.part{pid}.js", file_name.trim_end_matches(".js"))
+}
 
 /// The frame's own background says what it holds: red when something drawn here changes
 /// state, amber when something here probably does, red winning when both are true — a
@@ -4365,7 +4395,7 @@ fn render_and_measure(
             // private name and is moved into place in one step: a reader either sees the
             // finished file or no file.
             if !std::path::Path::new(&png_path).exists() {
-                let partial = format!("{file_name}.part{}", std::process::id());
+                let partial = partial_render_name(&file_name, std::process::id());
                 silicon::create_figure(
                     &lines.join("\n"),
                     &destination,
@@ -6518,6 +6548,28 @@ mod reading_order_test {
         let nodes = vec![screenshot("R"), card("orphan", "Orphan")];
         let order = card_reading_order(&nodes, &[], "R");
         assert_eq!(order.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), vec!["Orphan"]);
+    }
+}
+
+#[cfg(test)]
+mod render_name_test {
+    use super::*;
+
+    /// The rendered file's LAST extension is what picks the syntax, so the temporary name
+    /// a screenshot is written under has to keep `.js` at the end — otherwise Solidity is
+    /// highlighted as Rust and every screenshot in the run changes colour.
+    #[test]
+    fn partial_render_name_keeps_the_extension_last() {
+        let name = partial_render_name("fn__src_core_flamm_FLAMMGateLib_sol_222_245.js", 4242);
+        assert!(name.ends_with(".js"), "{name} would be highlighted as Rust");
+        assert!(name.contains("part4242"), "{name} is not unique to this process");
+        assert_ne!(name, "fn__src_core_flamm_FLAMMGateLib_sol_222_245.js");
+    }
+
+    /// A name that somehow arrives without the extension still gets one.
+    #[test]
+    fn partial_render_name_adds_the_extension_when_missing() {
+        assert!(partial_render_name("fn_whatever", 7).ends_with(".js"));
     }
 }
 
