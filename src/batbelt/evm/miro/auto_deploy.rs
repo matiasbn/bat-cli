@@ -148,15 +148,7 @@ impl Default for AutoDeployOptions {
 /// the ids of the PREVIOUS cluster's frames, so a still-live old frame is never
 /// reused (every deploy is fresh) and can be reported for manual deletion
 /// afterwards. Threaded through the recursive deploy.
-#[derive(Clone)]
-struct ClusterCtx {
-    root: String,
-    stale_ids: HashSet<String>,
-    /// Dry run only: the frames this walk has already expanded. A real deploy asks the
-    /// registry whether a target is drawn, which a dry run never writes to, so the walk
-    /// carries its own memory — and it is what stops a cycle from recursing forever.
-    dry_seen: std::sync::Arc<std::sync::Mutex<HashSet<String>>>,
-}
+
 
 /// What a node stands for.
 #[derive(Debug, Clone, PartialEq)]
@@ -387,12 +379,6 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
                 .map(|f| f.frame_id.clone())
                 .collect()
         };
-        let cluster = ClusterCtx {
-            root: title.clone(),
-            stale_ids,
-            dry_seen: std::sync::Arc::new(std::sync::Mutex::new(HashSet::new())),
-        };
-
         // Deploying an entry point that already has a deployment REPLACES it: the new
         // cluster is drawn fresh and the old frames are left on the board for you to
         // delete. That is a big enough thing to happen by surprise that it asks first.
@@ -422,27 +408,80 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
 
         let root_options = options.clone();
 
-        deploy_one(
+        // PLAN the whole deployment first: every frame, in reading order, with its size
+        // and its slot already decided and nothing on the board touched. One walk decides
+        // everything; the drawing below decides nothing (§21).
+        let plans = plan_cluster(
             &metadata,
             &contract_name,
             &function_name,
             &root_file,
             &root_options,
-            client.as_ref(),
             &mut allocator,
-            true,
-            &cluster,
-            None,
-            0,
-        )
-        .await?;
+        )?;
+        println!(
+            "\n{} {} frame(s) planned",
+            "▦".blue(),
+            plans.len().to_string().green()
+        );
+
+        if options.dry_run {
+            for plan in &plans {
+                println!(
+                    "\n{} {}{}",
+                    "▸".blue(),
+                    "  ".repeat(plan.cluster_depth),
+                    plan.title.bold()
+                );
+                print_dry_run(
+                    &plan.nodes,
+                    &plan.edges,
+                    &plan.anchors,
+                    &plan.layout,
+                    (plan.frame_x, plan.frame_y),
+                );
+            }
+            for plan in &plans {
+                cleanup(&plan.nodes);
+            }
+            continue;
+        }
+
+        let client = client.as_ref().expect("client is present when not in dry-run mode");
+
+        // PASS 1: create every frame, empty. 30 calls and a couple of seconds, and after
+        // it every card in the deployment knows its destination — which is what lets a
+        // frame be filled without waiting for the frames it points at.
+        let mut frame_ids: Vec<String> = Vec::with_capacity(plans.len());
+        let mut urls: HashMap<String, String> = HashMap::new();
+        for plan in &plans {
+            let fill = frame_fill_for(&plan.nodes);
+            let frame_id = client
+                .create_frame(
+                    &format!("auto: {}", plan.title),
+                    plan.frame_x,
+                    plan.frame_y,
+                    plan.layout.frame_width,
+                    plan.layout.frame_height,
+                    fill,
+                )
+                .await
+                .change_context(EvmMiroError)?;
+            urls.insert(plan.title.clone(), client.frame_url(&frame_id));
+            frame_ids.push(frame_id);
+        }
+
+        // PASS 2: fill them, in plan order.
+        for (plan, frame_id) in plans.iter().zip(frame_ids.iter()) {
+            draw_one(plan, frame_id, &title, &urls, &root_options, client).await?;
+        }
 
         // The new deployment REPLACES the previous deployment of this entry point: its
         // records go, whole, identified by the frame ids they carried before this run
         // started. The frames themselves stay on the board — the API deletes one item at
         // a time and slowly — so their URLs are printed for one-click deletion by hand.
         if !options.dry_run {
-            let old_ids: HashSet<String> = cluster.stale_ids.clone();
+            let old_ids: HashSet<String> = stale_ids.clone();
             EvmBatMetadata::update_metadata(move |m| {
                 m.miro.auto.frames.retain(|f| !old_ids.contains(&f.frame_id));
             })
@@ -798,107 +837,30 @@ fn back_card_slot(
     clear.then_some((x, y))
 }
 
-/// Give an already-drawn frame one more way back, for an origin that cards it later.
-async fn add_back_card(
-    target: &str,
-    cluster: &ClusterCtx,
-    origin: &FrameOrigin,
-    client: &MiroClient,
-) -> Result<()> {
-    let record = {
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == target && frame.cluster_root == cluster.root)
-            .cloned()
-    };
-    let Some(mut record) = record else {
-        return Ok(());
-    };
-    if record.back_cards.iter().any(|(name, _)| name == &origin.title) {
-        return Ok(()); // the same frame cards it twice; one way back is enough
-    }
-    let occupied: Vec<(f64, f64, f64, f64)> = record
-        .node_positions
-        .iter()
-        .filter_map(|(id, x, y)| {
-            record
-                .image_dims
-                .iter()
-                .find(|(dim_id, _, _)| dim_id == id)
-                .map(|(_, w, h)| {
-                    (
-                        *x,
-                        *y,
-                        *w as f64 * BOARD_UNITS_PER_PIXEL,
-                        *h as f64 * BOARD_UNITS_PER_PIXEL,
-                    )
-                })
-        })
-        .collect();
-    let Some((x, y)) = back_card_slot(
-        record.width,
-        record.height,
-        &occupied,
-        record.back_cards.len(),
-    ) else {
-        println!(
-            "  {} no room on {} for the way back to {}",
-            "note:".yellow(),
-            target,
-            origin.title
-        );
-        return Ok(());
-    };
-    let id = client
-        .create_back_card(
-            &record.frame_id,
-            &format!("↑ {}", origin.title),
-            &origin.url,
-            x,
-            y,
-            LINK_CARD_WIDTH,
-            LINK_CARD_HEIGHT,
-        )
-        .await
-        .change_context(EvmMiroError)?;
-    record.back_cards.push((origin.title.clone(), id));
-    save_frame_record(&record)?;
-    Ok(())
-}
 
-/// A frame that links TO another one: its name, and the URL that jumps to it.
-#[derive(Debug, Clone)]
-pub(crate) struct FrameOrigin {
-    pub title: String,
-    pub url: String,
-}
-
-async fn deploy_one(
+/// Plan ONE frame: everything local. No client, no await, nothing on the board — it
+/// builds the graph, frames it, lays it out, renders its screenshots and takes its slot.
+/// `plan_cluster` is what walks a whole deployment with it.
+fn plan_one(
     metadata: &EvmBatMetadata,
     contract_name: &str,
     function_name: &str,
     // The file of the selected contract, which is what tells same-named copies apart.
     root_file: &str,
     options: &AutoDeployOptions,
-    client: Option<&MiroClient>,
     allocator: &mut ShelfAllocator,
-    // True when the user named this function, false when it is being built only
-    // because a card needs somewhere to point.
-    is_primary: bool,
-    cluster: &ClusterCtx,
-    // The frame whose card sent us here, so the new frame can carry the way back.
-    origin: Option<&FrameOrigin>,
     // How deep this frame sits in the CLUSTER: the root is 0, what its cards lead to is
     // 1, and so on. It is the frame's indent on the board — see `place_in_outline`. Named
     // `cluster_depth`, not `depth`, because this function already has a `graph_depth`
     // (how many levels of calls the frame draws inside itself) and shadowing the two cost
     // a whole deployment.
     cluster_depth: usize,
-) -> Result<()> {
+    // The functions this deployment has ALREADY given a frame to. Cutting to one of them
+    // costs no new frame, so `best_cut` may target it at any size. It used to be read back
+    // from the registry mid-deploy; the planner knows it directly, and a single source for
+    // it is what keeps the plan and the board from disagreeing (§21).
+    framed: &HashSet<String>,
+) -> Result<Option<FramePlan>> {
     let title = format!("{contract_name}.{function_name}");
     println!("\n{} {}", "▸".blue(), title.bold());
     // When several contracts share this name, say which copy was picked. The choice is made
@@ -917,7 +879,7 @@ async fn deploy_one(
         build_graph(metadata, contract_name, function_name, root_file, options)?;
     if nodes.is_empty() {
         println!("  no function metadata found, skipping");
-        return Ok(());
+        return Ok(None);
     }
 
     // Every deploy is fresh, so nothing another deploy left on the board is linked —
@@ -927,25 +889,6 @@ async fn deploy_one(
     // drawn twice: the second branch cards it. Cutting to one of these is free — the
     // frame exists — so `best_cut` may target it at any size, which is what you want
     // for a big callee that keeps coming back.
-    let deployed_titles: HashSet<String> = if cluster.root.is_empty() {
-        HashSet::new()
-    } else {
-        let meta = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        let in_graph: HashSet<&str> = nodes.iter().map(|node| node.label.as_str()).collect();
-        meta.miro
-            .auto
-            .frames
-            .iter()
-            .filter(|frame| {
-                frame.cluster_root == cluster.root
-                    && !cluster.stale_ids.contains(&frame.frame_id)
-                    && frame.entry_point != title
-                    && in_graph.contains(frame.entry_point.as_str())
-            })
-            .map(|frame| frame.entry_point.clone())
-            .collect()
-    };
-
     // Cross-contract calls this tree reaches through an interface, whose concrete
     // target static analysis cannot pin. By default STOP so the AI (or auditor) can
     // resolve them and the downstream storage writers can be drawn; `--allow-unresolved`
@@ -1032,7 +975,7 @@ async fn deploy_one(
     // replaces was the last reference to a branch.
     // Functions with a frame already on the board: cutting to one is free (no new
     // frame is created), so `best_cut` may target them at any size.
-    let framed: HashSet<&str> = deployed_titles.iter().map(|s| s.as_str()).collect();
+    let framed: HashSet<&str> = framed.iter().map(|s| s.as_str()).collect();
     // Aim each piece AT a readable size: the budget starts at the target, raised only
     // when the graph is so big that even `MAX_CUTS_PER_FRAME` target-sized cuts wouldn't
     // fit it — then the pieces are bigger and split again by their own deploy.
@@ -1192,8 +1135,6 @@ async fn deploy_one(
         }
     }
 
-    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-
     // The cards this frame will hand out, in the order a reader meets them. Computed
     // HERE, before the frame takes its slot, because whether this frame has a subtree
     // underneath decides whether it can share its row — and the slot is taken first.
@@ -1221,52 +1162,12 @@ async fn deploy_one(
         // touches the board. (The delete+recreate of a redeploy is slow, so this is
         // the fast way to iterate on the diagram.) Stop here, like a dry run.
         cleanup(&nodes);
-        return Ok(());
-    }
-
-    if options.dry_run {
-        print_dry_run(&nodes, &edges, &anchors, &layout, (frame_x, frame_y));
-        cleanup(&nodes);
-        // Walk the whole cluster, not just this frame. There is nothing to upload, so the
-        // recursion is pure local work — and it is the only way to see the outline (every
-        // frame's indent and board position) before drawing it. A real deploy discovers
-        // the same tree inside `ensure_target_frames`, which needs a client.
-        for (target, target_file) in card_order {
-            {
-                let mut seen = cluster.dry_seen.lock().unwrap();
-                if !seen.insert(target.clone()) {
-                    continue;
-                }
-            }
-            let Some((contract, function)) = target.split_once('.') else {
-                continue;
-            };
-            let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-            Box::pin(deploy_one(
-                &metadata,
-                contract,
-                function,
-                &target_file,
-                options,
-                None,
-                allocator,
-                false,
-                cluster,
-                None,
-                cluster_depth + 1,
-            ))
-            .await?;
-        }
-        return Ok(());
+        return Ok(None);
     }
 
     let plan = FramePlan {
         title,
-        contract_name: contract_name.to_string(),
-        function_name: function_name.to_string(),
-        root_file: root_file.to_string(),
         cluster_depth,
-        root_id,
         nodes,
         edges,
         anchors,
@@ -1274,9 +1175,122 @@ async fn deploy_one(
         frame_x,
         frame_y,
         card_order,
+        origins: Vec::new(),
     };
 
-    draw_one(&plan, options, client, allocator, cluster, origin).await
+    Ok(Some(plan))
+}
+
+/// The frame's own background says what it holds: red when something drawn here changes
+/// state, amber when something here probably does, red winning when both are true — a
+/// frame that changes state IS one, whatever else it also might do. A cluster is thirty
+/// frames and "where does state change" is asked from a distance where a node's own
+/// border is two pixels wide.
+fn frame_fill_for(nodes: &[GraphNode]) -> Option<&'static str> {
+    if nodes.iter().any(|n| n.writes_storage || !n.write_call_lines.is_empty()) {
+        Some(FRAME_FILL_WRITES)
+    } else if nodes.iter().any(|n| !n.external_call_lines.is_empty()) {
+        Some(FRAME_FILL_MAY_WRITE)
+    } else {
+        None
+    }
+}
+
+/// Plan a WHOLE deployment: every frame it will draw, in reading order, each with its
+/// geometry already decided and nothing touched on the board. This is the single walk
+/// of §21 — the drawing half decides nothing, it consumes this.
+fn plan_cluster(
+    metadata: &EvmBatMetadata,
+    contract_name: &str,
+    function_name: &str,
+    root_file: &str,
+    options: &AutoDeployOptions,
+    allocator: &mut ShelfAllocator,
+) -> Result<Vec<FramePlan>> {
+    let mut plans: Vec<FramePlan> = Vec::new();
+    let mut framed: HashSet<String> = HashSet::new();
+    plan_subtree(
+        metadata,
+        contract_name,
+        function_name,
+        root_file,
+        options,
+        allocator,
+        0,
+        &mut framed,
+        &mut plans,
+        None,
+    )?;
+    Ok(plans)
+}
+
+/// One step of that walk: plan this frame, then everything it cards, depth-first and in
+/// call order. A function already planned is NOT planned again — it only gains another
+/// way back — which is what makes a helper two branches reach one frame with two
+/// references instead of two copies.
+#[allow(clippy::too_many_arguments)]
+fn plan_subtree(
+    metadata: &EvmBatMetadata,
+    contract_name: &str,
+    function_name: &str,
+    root_file: &str,
+    options: &AutoDeployOptions,
+    allocator: &mut ShelfAllocator,
+    cluster_depth: usize,
+    framed: &mut HashSet<String>,
+    plans: &mut Vec<FramePlan>,
+    origin: Option<&str>,
+) -> Result<()> {
+    let title = format!("{contract_name}.{function_name}");
+    if let Some(existing) = plans.iter_mut().find(|plan| plan.title == title) {
+        if let Some(origin) = origin {
+            existing.origins.push(origin.to_string());
+        }
+        println!("  {} is already in the plan", title.blue());
+        return Ok(());
+    }
+
+    let Some(plan) = plan_one(
+        metadata,
+        contract_name,
+        function_name,
+        root_file,
+        options,
+        allocator,
+        cluster_depth,
+        framed,
+    )?
+    else {
+        return Ok(());
+    };
+    // Before its children are planned, so a child that calls back into it cards it
+    // rather than drawing a second copy.
+    framed.insert(title.clone());
+    let cards = plan.card_order.clone();
+    let index = plans.len();
+    plans.push(plan);
+    if let Some(origin) = origin {
+        plans[index].origins.push(origin.to_string());
+    }
+
+    for (target, target_file) in cards {
+        let Some((contract, function)) = target.split_once('.') else {
+            continue;
+        };
+        plan_subtree(
+            metadata,
+            contract,
+            function,
+            &target_file,
+            options,
+            allocator,
+            cluster_depth + 1,
+            framed,
+            plans,
+            Some(&title),
+        )?;
+    }
+    Ok(())
 }
 
 /// Everything the LOCAL half of a deploy computes for one frame: the graph, its layout,
@@ -1285,11 +1299,8 @@ async fn deploy_one(
 /// of docs/diagram-deploy-design.md.
 struct FramePlan {
     title: String,
-    contract_name: String,
-    function_name: String,
-    root_file: String,
+    /// Its level in the cluster, which is its indent on the board.
     cluster_depth: usize,
-    root_id: String,
     nodes: Vec<GraphNode>,
     edges: Vec<GraphEdge>,
     anchors: Vec<RelativeAnchor>,
@@ -1298,6 +1309,9 @@ struct FramePlan {
     frame_y: f64,
     /// The frames this one cards, in the order a reader meets them.
     card_order: Vec<(String, String)>,
+    /// Every frame of this deployment that cards this one. A frame reached from three
+    /// callers carries three ways back, so this is a list, not an option.
+    origins: Vec<String>,
 }
 
 
@@ -1305,110 +1319,62 @@ struct FramePlan {
 /// changes nothing in it.
 async fn draw_one(
     plan: &FramePlan,
+    // The frame created for this plan, already on the board and empty.
+    frame_id: &str,
+    // The entry point this deployment belongs to, which every frame of it records.
+    cluster_root: &str,
+    // Every frame of this deployment, by title. A card's destination is looked up here,
+    // so no frame ever waits for another to be drawn before it can point at it.
+    urls: &HashMap<String, String>,
     options: &AutoDeployOptions,
-    client: Option<&MiroClient>,
-    allocator: &mut ShelfAllocator,
-    cluster: &ClusterCtx,
-    origin: Option<&FrameOrigin>,
+    client: &MiroClient,
 ) -> Result<()> {
     let FramePlan {
         title,
-        contract_name,
-        function_name,
-        root_file,
-        cluster_depth,
-        root_id,
+        cluster_depth: _,
         nodes,
         edges,
         anchors,
         layout,
         frame_x,
         frame_y,
-        card_order,
+        card_order: _,
+        origins,
     } = plan;
     let (frame_x, frame_y) = (*frame_x, *frame_y);
-    let cluster_depth = *cluster_depth;
     let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     // Every deploy is fresh, so nothing is ever reused from the board: this stays empty.
     // It is the hook `--refresh-links` used to come in through, kept so the upload path
     // below reads the same as it did.
     let reuse: HashMap<String, (String, u32, u32)> = HashMap::new();
-    let client = client.expect("client is present when not in dry-run mode");
-    // The frame carries the same answer its nodes do, in its own background: red when
-    // something drawn here changes state, amber when something here probably does, and
-    // red wins when both are true — a frame that changes state IS one, whatever else it
-    // also might do. That is the same precedence a node has, where the amber border is
-    // only drawn on a node the red one skipped.
-    //
-    // A cluster is thirty frames on a board and "where does state change" is asked from
-    // that distance, where a node's own border is two pixels. It is the frame's own
-    // fill, not a shape laid over it: nothing extra to create, register or clean up.
-    let frame_fill = if nodes
-        .iter()
-        .any(|n| n.writes_storage || !n.write_call_lines.is_empty())
-    {
-        Some(FRAME_FILL_WRITES)
-    } else if nodes.iter().any(|n| !n.external_call_lines.is_empty()) {
-        Some(FRAME_FILL_MAY_WRITE)
-    } else {
-        None
-    };
-    let frame_id = client
-        .create_frame(
-            &format!("auto: {title}"),
-            frame_x,
-            frame_y,
-            layout.frame_width,
-            layout.frame_height,
-            frame_fill,
-        )
-        .await
-        .change_context(EvmMiroError)?;
-    println!(
-        "  frame {} ({}x{}) at ({}, {})",
-        frame_id.green(),
-        layout.frame_width.round(),
-        layout.frame_height.round(),
-        frame_x.round(),
-        frame_y.round()
-    );
+    let frame_id = frame_id.to_string();
+    println!("\n{} {}", "▸".blue(), title.bold());
 
-    // Every card needs somewhere to go. One frame per function, board-wide: two
-    // cards for the same helper resolve to the same frame, and a helper already
-    // deployed is reused rather than drawn again. That is what keeps the fan-in
-    // answerable — one frame with several references, not a copy per caller.
-    let target_frames = ensure_target_frames(
-        card_order.clone(),
-        options,
-        client,
-        allocator,
-        cluster,
-        Some(FrameOrigin {
-            title: title.clone(),
-            url: client.frame_url(&frame_id),
-        }),
-        cluster_depth + 1,
-    )
-    .await?;
+    // Every card already knows where it goes: the whole deployment's frames exist before
+    // any of them is filled, so a destination is a lookup, never a wait.
+    let target_frames = urls;
 
     let mut back_cards: Vec<(String, String)> = Vec::new();
-    // The way back. A frame reached from a card carries one card per origin: the frame
-    // that sent the reader here, and any other frame of this deployment that cards it
-    // later (`add_back_card`). Drawn after the layout is known, in the corner the content
-    // does not reach, and skipped rather than drawn over code when it does.
-    if let Some(origin) = origin {
-        let occupied: Vec<(f64, f64, f64, f64)> = layout
-            .nodes
-            .iter()
-            .map(|placed| (placed.x, placed.y, placed.width, placed.height))
-            .collect();
-        match back_card_slot(layout.frame_width, layout.frame_height, &occupied, 0) {
+    // The way back. A frame reached from a card carries one card per origin — the plan
+    // recorded every frame of this deployment that cards it, so a helper three branches
+    // reach gets three. Drawn in the corner the content does not reach, and skipped
+    // rather than drawn over code when it does.
+    let occupied: Vec<(f64, f64, f64, f64)> = layout
+        .nodes
+        .iter()
+        .map(|placed| (placed.x, placed.y, placed.width, placed.height))
+        .collect();
+    for (index, origin_title) in origins.iter().enumerate() {
+        let Some(origin_url) = urls.get(origin_title) else {
+            continue;
+        };
+        match back_card_slot(layout.frame_width, layout.frame_height, &occupied, index) {
             Some((x, y)) => {
                 let id = client
                     .create_back_card(
                         &frame_id,
-                        &format!("↑ {}", origin.title),
-                        &origin.url,
+                        &format!("↑ {origin_title}"),
+                        origin_url,
                         x,
                         y,
                         LINK_CARD_WIDTH,
@@ -1416,12 +1382,12 @@ async fn draw_one(
                     )
                     .await
                     .change_context(EvmMiroError)?;
-                back_cards.push((origin.title.clone(), id));
+                back_cards.push((origin_title.clone(), id));
             }
             None => println!(
                 "  {} no room for the way back to {}; it is in the registry",
                 "note:".yellow(),
-                origin.title
+                origin_title
             ),
         }
     }
@@ -1453,7 +1419,7 @@ async fn draw_one(
         screenshots: Vec::new(),
         // Every frame belongs to the named entry point's cluster, so the next deploy
         // of that entry point can find and report the whole previous cluster.
-        cluster_root: if cluster.root.is_empty() { title.clone() } else { cluster.root.clone() },
+        cluster_root: cluster_root.to_string(),
     };
     save_frame_record(&record)?;
 
@@ -5902,94 +5868,6 @@ fn card_reading_order(
     ordered
 }
 
-async fn ensure_target_frames(
-    wanted: Vec<(String, String)>,
-    options: &AutoDeployOptions,
-    client: &MiroClient,
-    allocator: &mut ShelfAllocator,
-    cluster: &ClusterCtx,
-    // The frame these cards live on: every frame deployed for one of them carries a card
-    // back to it.
-    origin: Option<FrameOrigin>,
-    // The depth the frames built here sit at: one level under the frame holding the cards.
-    cluster_depth: usize,
-) -> Result<HashMap<String, String>> {
-    if wanted.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let mut resolved = HashMap::new();
-    for (target, target_file) in wanted {
-        // Reuse ONLY a frame created earlier in THIS run for THIS cluster
-        // (cluster_root == root AND a fresh, non-stale id). Anything else — the old
-        // cluster, or a frame from another entry point's deploy — is drawn fresh, so
-        // the cluster is fully self-contained in its clean zone and a helper shared
-        // inside it is still drawn once.
-        let reusable = {
-            let created_here = EvmBatMetadata::read_metadata().ok().is_some_and(|m| {
-                m.miro.auto.frames.iter().any(|f| {
-                    f.entry_point == target
-                        && f.cluster_root == cluster.root
-                        && !cluster.stale_ids.contains(&f.frame_id)
-                })
-            });
-            if created_here {
-                // Scoped to THIS cluster: a lookup by name alone hands back whichever
-                // deployment's frame happens to be first, and the card then points a
-                // reader out of the diagram they are reading into somebody else's copy of
-                // the same function. The registry is keyed by (deployment, frame); the
-                // reads have to say the deployment too.
-                frame_url_in_cluster(&target, &cluster.root, client).await?
-            } else {
-                None
-            }
-        };
-        if let Some(url) = reusable {
-            println!("  {} reuses its frame", target.blue());
-            // A second frame of this deployment cards one already drawn, so that frame
-            // gains another way back: `FLAMMGateLib.priced` is reached from three.
-            if let Some(origin) = origin.as_ref() {
-                add_back_card(&target, cluster, origin, client).await?;
-            }
-            resolved.insert(target, url);
-            continue;
-        }
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-
-        let Some((contract, function)) = target.split_once('.') else {
-            continue;
-        };
-        println!("  {} needs a frame of its own, deploying it first", target.blue());
-        // Boxed because this is the recursive step: the frame being built for a
-        // helper can itself need cards, and those need frames.
-        Box::pin(deploy_one(
-            &metadata,
-            contract,
-            function,
-            &target_file,
-            options,
-            Some(client),
-            allocator,
-            false,
-            cluster,
-            origin.as_ref(),
-            cluster_depth,
-        ))
-        .await?;
-
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        if let Some(created) = metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == target && frame.cluster_root == cluster.root)
-        {
-            resolved.insert(target, created.frame_url.clone());
-        }
-    }
-    Ok(resolved)
-}
 
 /// The frame URL for a function, if it is registered **and** still on the board.
 ///
@@ -6376,37 +6254,6 @@ pub(crate) async fn ensure_frame_record(
     .change_context(EvmMiroError)?;
     Ok(None)
 }
-
-/// The URL of `title`'s frame WITHIN one deployment, if it is still on the board.
-///
-/// The unscoped version of this is what made two link cards in one frame point at another
-/// deployment's copy of the same helper: every deploy is fresh, so several frames share a
-/// title by construction, and a find-by-name returns whichever was written first.
-async fn frame_url_in_cluster(
-    title: &str,
-    cluster_root: &str,
-    client: &MiroClient,
-) -> Result<Option<String>> {
-    let record = {
-        let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
-        metadata
-            .miro
-            .auto
-            .frames
-            .iter()
-            .find(|frame| frame.entry_point == title && frame.cluster_root == cluster_root)
-            .cloned()
-    };
-    let Some(record) = record else {
-        return Ok(None);
-    };
-    match client.item_status(&record.frame_id).await {
-        // Gone from the board: this run will draw it again, so say nothing is there.
-        Some(false) => Ok(None),
-        _ => Ok(Some(record.frame_url)),
-    }
-}
-
 
 #[cfg(test)]
 mod ignore_test {
