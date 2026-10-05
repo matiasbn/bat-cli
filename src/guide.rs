@@ -872,6 +872,16 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.27
+- **A type is no longer marked as if it were a variable.** `returns (bytes32)` was read as a
+  variable named `bytes32`, and the same would have happened to any user-defined type
+  (`returns (Plan)`). A parameter or return written as a single word is a type with no name
+  — a name can only follow a type — so there is nothing to follow and nothing is marked.
+  Seen on `FLAMMDeployLib.initcodeHash` and `FLAMMFactory._salt`, where it also marked the
+  `bytes32` standing as a parameter's TYPE, since every occurrence of the word was being
+  followed.
+  _Re-read: nothing._
+
 ## 0.26.26
 - **A screenshot lets you follow a variable through the code.** On a PNG there is no
   clicking an identifier to see where it is used, so the names a function works with are
