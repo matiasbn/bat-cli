@@ -449,27 +449,47 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
 
         let client = client.as_ref().expect("client is present when not in dry-run mode");
 
-        // PASS 1: create every frame, empty. 30 calls and a couple of seconds, and after
-        // it every card in the deployment knows its destination — which is what lets a
-        // frame be filled without waiting for the frames it points at.
-        let mut frame_ids: Vec<String> = Vec::with_capacity(plans.len());
-        let mut urls: HashMap<String, String> = HashMap::new();
-        for plan in &plans {
+        // PASS 1: create every frame, empty. After it every card in the deployment knows
+        // its destination — which is what lets a frame be filled without waiting for the
+        // frames it points at. The plan already fixed where each one goes, so these are
+        // independent of each other and go up together; the ids are put back in plan
+        // order afterwards, because pass 2 reads them by position.
+        let bar = phase_bar("creating frames", plans.len());
+        let mut creating = tokio::task::JoinSet::new();
+        for (index, plan) in plans.iter().enumerate() {
+            let client = client.clone();
+            let title = format!("auto: {}", plan.title);
             let fill = frame_fill_for(&plan.nodes);
-            let frame_id = client
-                .create_frame(
-                    &format!("auto: {}", plan.title),
-                    plan.frame_x,
-                    plan.frame_y,
-                    plan.layout.frame_width,
-                    plan.layout.frame_height,
-                    fill,
-                )
-                .await
-                .change_context(EvmMiroError)?;
-            urls.insert(plan.title.clone(), client.frame_url(&frame_id));
-            frame_ids.push(frame_id);
+            let (x, y) = (plan.frame_x, plan.frame_y);
+            let (width, height) = (plan.layout.frame_width, plan.layout.frame_height);
+            let bar = bar.clone();
+            creating.spawn(async move {
+                let frame_id = client
+                    .create_frame(&title, x, y, width, height, fill)
+                    .await
+                    .map_err(|report| report.change_context(EvmMiroError))?;
+                bar.inc(1);
+                Ok::<(usize, String), Report<EvmMiroError>>((index, frame_id))
+            });
         }
+        let mut created: Vec<Option<String>> = vec![None; plans.len()];
+        while let Some(joined) = creating.join_next().await {
+            let (index, frame_id) = joined
+                .map_err(|e| Report::new(EvmMiroError).attach_printable(e.to_string()))??;
+            created[index] = Some(frame_id);
+        }
+        bar.finish_and_clear();
+        // Every slot is filled or the loop above returned the error, so a gap here would
+        // be a bug in this function rather than something the board did.
+        let frame_ids: Vec<String> = created
+            .into_iter()
+            .map(|id| id.expect("every planned frame was created or the run failed"))
+            .collect();
+        let urls: HashMap<String, String> = plans
+            .iter()
+            .zip(frame_ids.iter())
+            .map(|(plan, frame_id)| (plan.title.clone(), client.frame_url(frame_id)))
+            .collect();
 
         // PASS 2: fill them. Every frame's contents are independent of every other's —
         // the plan fixed the geometry and pass 1 fixed the destinations — so they go up
