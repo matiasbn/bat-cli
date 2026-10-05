@@ -27,8 +27,16 @@ pub const LEVEL_2_CREDITS: u32 = 100;
 pub const LEVEL_1_CREDITS: u32 = 50;
 /// Miro's global budget, per user and application.
 const CREDITS_PER_MINUTE: u32 = 100_000;
-/// How many requests we allow in flight at once.
-const MAX_CONCURRENT_REQUESTS: usize = 6;
+/// How many requests we allow in flight at once, across the whole run — one client is
+/// shared by every frame, so this counts images, connectors, markers and frames together.
+///
+/// It was 6, chosen with no recorded reason, and a 34-frame cluster of ~2 000 calls took
+/// 16 minutes where the credit budget alone (100 000/minute at 100 per level-2 call, so
+/// ~16 calls a second) allows about two. The ceiling was us, not Miro. The budget is still
+/// enforced locally by the token bucket below, so a higher number cannot overrun it: it
+/// just reaches the bucket sooner and waits there. 429s and 5xx retry with backoff, so if
+/// the board pushes back the cost is visible in the retry warnings rather than in failures.
+const MAX_CONCURRENT_REQUESTS: usize = 24;
 const MAX_ATTEMPTS: u32 = 5;
 
 /// Token bucket over Miro's credit budget.

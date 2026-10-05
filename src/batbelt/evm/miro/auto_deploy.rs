@@ -49,7 +49,13 @@ const REGION_MARGIN: f64 = 5_000.0;
 
 /// Side of the invisible square the connector attaches to, in board units.
 /// Small enough that the arrow head reads as landing on the token itself.
-pub(crate) const ANCHOR_MARKER_SIZE: f64 = 24.0;
+/// The invisible shape a connector endpoint anchors to, at Miro's smallest allowed size.
+///
+/// Miro clips a connector to the item's border, so the marker is a HOLE in the line: at 24
+/// units the two halves visibly failed to meet, which read as two lines passing by rather
+/// than one arrow arriving. 8 is the floor — 4 and below are refused with a 400 — and it
+/// is no wider than the 8dp stroke, so the gap disappears under the line itself.
+pub(crate) const ANCHOR_MARKER_SIZE: f64 = 8.0;
 /// Horizontal distance between two arrows' vertical lanes in a gutter: five times the
 /// default 8dp stroke, so two arrows at full width still have four strokes of white
 /// between them. Narrowed automatically when a gutter cannot fit them all.

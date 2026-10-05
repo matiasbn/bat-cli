@@ -239,6 +239,21 @@ pub struct ShelfState {
     pub row_height: f64,
     pub row_max_width: f64,
     pub gutter: f64,
+    /// Outline placement: the step per cluster level and the open row's state. Defaulted,
+    /// so a `BatMetadata.json` written before outline placement still loads — and the
+    /// region is reset at the start of every run anyway.
+    #[serde(default = "default_indent")]
+    pub indent: f64,
+    #[serde(default)]
+    pub row_depth: usize,
+    #[serde(default)]
+    pub row_closed: bool,
+    #[serde(default)]
+    pub row_used: bool,
+}
+
+fn default_indent() -> f64 {
+    crate::batbelt::miro::layout::ShelfAllocator::DEFAULT_INDENT
 }
 
 impl ShelfState {
@@ -251,6 +266,10 @@ impl ShelfState {
             row_height: self.row_height,
             row_max_width: self.row_max_width,
             gutter: self.gutter,
+            indent: self.indent,
+            row_depth: self.row_depth,
+            row_closed: self.row_closed,
+            row_used: self.row_used,
         }
     }
 }
@@ -265,6 +284,10 @@ impl From<&crate::batbelt::miro::layout::ShelfAllocator> for ShelfState {
             row_height: allocator.row_height,
             row_max_width: allocator.row_max_width,
             gutter: allocator.gutter,
+            indent: allocator.indent,
+            row_depth: allocator.row_depth,
+            row_closed: allocator.row_closed,
+            row_used: allocator.row_used,
         }
     }
 }
