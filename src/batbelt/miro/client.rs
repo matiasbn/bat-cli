@@ -27,8 +27,16 @@ pub const LEVEL_2_CREDITS: u32 = 100;
 pub const LEVEL_1_CREDITS: u32 = 50;
 /// Miro's global budget, per user and application.
 const CREDITS_PER_MINUTE: u32 = 100_000;
-/// How many requests we allow in flight at once.
-const MAX_CONCURRENT_REQUESTS: usize = 6;
+/// How many requests we allow in flight at once, across the whole run — one client is
+/// shared by every frame, so this counts images, connectors, markers and frames together.
+///
+/// It was 6, chosen with no recorded reason, and a 34-frame cluster of ~2 000 calls took
+/// 16 minutes where the credit budget alone (100 000/minute at 100 per level-2 call, so
+/// ~16 calls a second) allows about two. The ceiling was us, not Miro. The budget is still
+/// enforced locally by the token bucket below, so a higher number cannot overrun it: it
+/// just reaches the bucket sooner and waits there. 429s and 5xx retry with backoff, so if
+/// the board pushes back the cost is visible in the retry warnings rather than in failures.
+const MAX_CONCURRENT_REQUESTS: usize = 24;
 const MAX_ATTEMPTS: u32 = 5;
 
 /// Token bucket over Miro's credit budget.
@@ -832,6 +840,27 @@ impl MiroClient {
     ) -> Result<String, MiroError> {
         self.create_card(frame_id, title, "see dependencies →", target_url, x, y, width, height,
                          "#fff9b1", "#f24726").await
+    }
+
+    /// The way back: a card in the destination frame pointing at a frame that links TO it.
+    ///
+    /// A card takes the reader deeper and leaves no trail, and a frame can be reached from
+    /// several — `FLAMMGateLib.priced` is carded from three frames of one deployment — so
+    /// the destination carries one of these per origin. Blue, because yellow already means
+    /// "a call goes out here" and purple "a type lives there"; this one is the only arrow
+    /// that points back.
+    pub async fn create_back_card(
+        &self,
+        frame_id: &str,
+        title: &str,
+        target_url: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        self.create_card(frame_id, title, "↑ back to", target_url, x, y, width, height,
+                         "#e6f2ff", "#2d9bf0").await
     }
 
     /// The same card in the colours a struct gets: a type is not a call, and the two

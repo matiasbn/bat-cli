@@ -370,6 +370,9 @@ pub async fn draw(
 
     let record = AutoDeployedFrame {
         entry_point: root_label.clone(),
+        // A type frame is reached from the card on the frame that asked for it; the way
+        // back is a one-line follow-up, not part of this change.
+        back_cards: Vec::new(),
         type_frame: true,
         frame_id: frame_id.clone(),
         frame_url: frame_url.clone(),
