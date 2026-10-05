@@ -388,6 +388,9 @@ pub struct MiroFrameRef {
     pub dependency_image_ids: Vec<String>,
 }
 
+/// Serialises every read-modify-write of `BatMetadata.json` from this process.
+static METADATA_FILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 impl EvmBatMetadata {
     pub fn read_metadata() -> EvmMetadataResult<Self> {
         let content = fs::read_to_string(EVM_METADATA_FILE).map_err(|e| {
@@ -423,6 +426,11 @@ impl EvmBatMetadata {
     where
         F: FnOnce(&mut EvmBatMetadata),
     {
+        // Read-modify-write of one file. Frames are drawn concurrently, each recording
+        // itself, so without this the second writer reads before the first has saved and
+        // the first frame's record is simply gone. The SVM side has the same lock for the
+        // same reason (`METADATA_FILE_LOCK`).
+        let _guard = METADATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut metadata = Self::read_metadata()?;
         f(&mut metadata);
         metadata.save_metadata()
