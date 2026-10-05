@@ -1326,7 +1326,10 @@ fn parameter_name(declaration: &str) -> Option<String> {
             || matches!(w, "address" | "bool" | "bytes" | "string")
             || w.contains('.')
     };
-    (!word.is_empty() && !is_type(word)).then(|| word.to_string())
+    // `$` is the storage pointer by convention and is threaded through nearly every line,
+    // so colouring it marks the whole function and costs a slot in a palette of six. What
+    // a reader needs to follow is the values that differ between call sites.
+    (!word.is_empty() && word != "$" && !is_type(word)).then(|| word.to_string())
 }
 
 /// The name a screenshot is rendered under before it is moved into place.
@@ -6641,9 +6644,11 @@ mod signature_test {
         let slice = lines(
             "// src/core/flamm/FLAMMLoanSwapLib.sol\n\n    function _plan(FLAMMStore.S storage $, address hook, address assetIn,\n        uint256 amountIn, uint256 supply)\n        private\n        view\n        returns (Plan memory p)\n    {",
         );
+        // `$` is left out on purpose: it is on nearly every line and tells a reader
+        // nothing they can follow.
         assert_eq!(
             signature_parameters(&slice),
-            vec!["$", "hook", "assetIn", "amountIn", "supply"]
+            vec!["hook", "assetIn", "amountIn", "supply"]
         );
     }
 
