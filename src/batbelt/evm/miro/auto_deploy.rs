@@ -152,6 +152,10 @@ impl Default for AutoDeployOptions {
 struct ClusterCtx {
     root: String,
     stale_ids: HashSet<String>,
+    /// Dry run only: the frames this walk has already expanded. A real deploy asks the
+    /// registry whether a target is drawn, which a dry run never writes to, so the walk
+    /// carries its own memory — and it is what stops a cycle from recursing forever.
+    dry_seen: std::sync::Arc<std::sync::Mutex<HashSet<String>>>,
 }
 
 /// What a node stands for.
@@ -386,6 +390,7 @@ pub async fn run(options: AutoDeployOptions) -> Result<()> {
         let cluster = ClusterCtx {
             root: title.clone(),
             stale_ids,
+            dry_seen: std::sync::Arc::new(std::sync::Mutex::new(HashSet::new())),
         };
 
         // Deploying an entry point that already has a deployment REPLACES it: the new
@@ -1222,6 +1227,36 @@ async fn deploy_one(
     if options.dry_run {
         print_dry_run(&nodes, &edges, &anchors, &layout, (frame_x, frame_y));
         cleanup(&nodes);
+        // Walk the whole cluster, not just this frame. There is nothing to upload, so the
+        // recursion is pure local work — and it is the only way to see the outline (every
+        // frame's indent and board position) before drawing it. A real deploy discovers
+        // the same tree inside `ensure_target_frames`, which needs a client.
+        for (target, target_file) in card_order {
+            {
+                let mut seen = cluster.dry_seen.lock().unwrap();
+                if !seen.insert(target.clone()) {
+                    continue;
+                }
+            }
+            let Some((contract, function)) = target.split_once('.') else {
+                continue;
+            };
+            let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+            Box::pin(deploy_one(
+                &metadata,
+                contract,
+                function,
+                &target_file,
+                options,
+                None,
+                allocator,
+                false,
+                cluster,
+                None,
+                cluster_depth + 1,
+            ))
+            .await?;
+        }
         return Ok(());
     }
 

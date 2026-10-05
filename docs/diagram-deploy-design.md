@@ -612,3 +612,55 @@ drawn, frames can be created concurrently without losing it. Today they cannot: 
 mutex on the allocator cursor, a lock on the read-modify-write of `BatMetadata.json`, an in-flight
 map so two branches do not draw the same helper twice, and the per-run temp subdirectory §15
 already wants.
+
+## 21. How to do the §16 split, concretely
+
+§16 says what the planning phase is for. This section is the recipe, written down so it does not
+have to be re-derived. Budget: about a day, most of it in `deploy_one`.
+
+**Half of it already exists.** `--dry-run` recurses over the whole cluster (the `options.dry_run`
+branch of `deploy_one`, which walks `card_order` with `cluster.dry_seen` as its memory) and does
+every local step: parse, render, frame, localize, layout, measure, allocate. Measured on
+`FLAMM.swap`: **34 frames in 74.5 s, zero API calls**. What is missing is that it prints the result
+and throws it away.
+
+### Steps
+
+1. **`struct FramePlan`** — everything `draw` needs and `plan` already computed: `title`,
+   `contract`, `function`, `file`, `cluster_depth`, `frame_x/y/width/height`, `fill`, `nodes`,
+   `edges`, `anchors`, `layout`, the rendered PNG paths (keyed as `render_and_measure` keys them),
+   `card_order`, and the amber/red line sets.
+2. **`plan_one` / `plan_cluster`** — lift the local half of `deploy_one` (everything up to and
+   including `place_in_outline`) into a function returning `FramePlan`, and make `plan_cluster`
+   the recursion, keeping `dry_seen` as the dedup. `--dry-run` becomes "plan, then print", which
+   is also how the plan half gets its regression test.
+3. **`draw_cluster(plans)`** — a flat loop over the plans **in plan order**. It recurses over
+   nothing: every position is already decided, so the allocator is not touched during drawing.
+4. **Two passes over the board, not one.** A parent needs its children's frame URLs for its link
+   cards, so pass 1 creates all 34 frames (empty, from the plan's geometry) and collects
+   `title → frame_id`; pass 2 fills each frame. Pass 2 is where concurrency lands: the frames are
+   independent once their ids exist.
+5. **Temp dir per run** (§15). The PNGs of the whole cluster now exist at once and `cleanup` moves
+   to the end of the run, so the shared `$TMPDIR/bat-cli/<project>/` becomes a collision.
+
+### The traps, in the order they will bite
+
+- **Two walks that can disagree.** Do NOT let `draw` recurse "and also" read the plan: the plan's
+  dedup (`dry_seen`) and the draw's dedup (the registry's `created_here`) WILL diverge on a helper
+  reached twice, and the symptom is two frames placed at one position — which Miro rejects with a
+  500 (§19). One walk, in `plan`. The draw consumes a list.
+- **The registry is written during the draw, and read during it too.** `created_here` exists
+  because the draw discovers reuse as it goes. Once the plan decides reuse, that check is dead
+  weight and a second source of truth — delete it rather than leave it agreeing by luck.
+- **Back cards are per origin, not per frame** (`AutoDeployedFrame::back_cards`): the plan has to
+  record every origin that cards a target, not just the first, or a frame reached from three
+  callers comes back with one way out.
+- **`--yes`/replacement semantics** run before the first frame: the old cluster's ids are collected
+  into `ClusterCtx::stale_ids` up front, so that part is unaffected — do not move it.
+
+### Verification
+
+`cargo test` does not catch any of this; it shows up on the board. Verify in this order: a
+`--dry-run` diff of the plan against today's output (same frames, same order, same positions), then
+one real deploy of `FLAMM.swap` (34 frames) checking no overlap, no duplicate title within the
+cluster, every card resolving, and every non-root frame carrying its way back.
