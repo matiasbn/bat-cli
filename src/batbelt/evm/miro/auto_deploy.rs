@@ -4351,16 +4351,25 @@ fn render_and_measure(
                 end
             );
             let png_path = format!("{destination}/{file_name}.png");
-            // Cache hit: an earlier frame this run already rendered this function.
+            // Cache hit: an earlier frame this run already rendered this function. The
+            // file has to be WHOLE to count as one — a run killed mid-render leaves a
+            // truncated PNG behind, and since the cache is keyed by name alone every
+            // later run inherits it and dies measuring it. So the render goes to a
+            // private name and is moved into place in one step: a reader either sees the
+            // finished file or no file.
             if !std::path::Path::new(&png_path).exists() {
+                let partial = format!("{file_name}.part{}", std::process::id());
                 silicon::create_figure(
                     &lines.join("\n"),
                     &destination,
-                    &file_name,
+                    &partial,
                     line_offset,
                     Some(REFERENCE_FONT),
                     true,
                 );
+                let partial_path = format!("{destination}/{partial}.png");
+                std::fs::rename(&partial_path, &png_path)
+                    .map_err(|e| format!("cannot store {png_path}: {e}"))?;
             }
             let (width, height) = image::image_dimensions(&png_path)
                 .map_err(|e| format!("cannot measure {png_path}: {e}"))?;
