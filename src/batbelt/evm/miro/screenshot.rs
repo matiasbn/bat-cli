@@ -921,6 +921,7 @@ mod screenshot_test {
     fn free_spot_lands_below_the_content_and_never_on_it() {
         let mut record = AutoDeployedFrame {
             entry_point: "C.f".to_string(),
+            back_cards: Vec::new(),
             type_frame: false,
             frame_id: String::new(),
             frame_url: String::new(),

@@ -290,6 +290,12 @@ pub struct ExtraScreenshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoDeployedFrame {
     pub entry_point: String,
+    /// The frames this one is reached from, as (origin entry point, the card's item id).
+    /// A frame can be carded by several frames of one deployment, and each gets its own
+    /// way back; the ids are kept so a relink can forget them, the names so the registry
+    /// can answer "who reaches this" without walking every record's link cards.
+    #[serde(default)]
+    pub back_cards: Vec<(String, String)>,
     /// A frame drawn for a TYPE rather than a function: the tree of a struct whose fields
     /// are structs. It is replayed after a redeploy from the card that asked for it, not
     /// from the call graph, which never mentions it.

@@ -834,6 +834,27 @@ impl MiroClient {
                          "#fff9b1", "#f24726").await
     }
 
+    /// The way back: a card in the destination frame pointing at a frame that links TO it.
+    ///
+    /// A card takes the reader deeper and leaves no trail, and a frame can be reached from
+    /// several — `FLAMMGateLib.priced` is carded from three frames of one deployment — so
+    /// the destination carries one of these per origin. Blue, because yellow already means
+    /// "a call goes out here" and purple "a type lives there"; this one is the only arrow
+    /// that points back.
+    pub async fn create_back_card(
+        &self,
+        frame_id: &str,
+        title: &str,
+        target_url: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<String, MiroError> {
+        self.create_card(frame_id, title, "↑ back to", target_url, x, y, width, height,
+                         "#e6f2ff", "#2d9bf0").await
+    }
+
     /// The same card in the colours a struct gets: a type is not a call, and the two
     /// should not read as the same thing on a board where colour already means something.
     #[allow(clippy::too_many_arguments)]
