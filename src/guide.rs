@@ -396,11 +396,11 @@ what tells you so.
 
 ## Reading state changes on the diagram
 
-**Each parameter has its own colour inside a screenshot.** A function's parameters are
-drawn in distinct colours wherever they appear in its body, so a name can be followed
-through the code the way a click follows it in an editor. The signature is the legend.
-These colours are for reading INSIDE a screenshot and are not the ones the arrows use —
-same name, same colour, within one screenshot only.
+**Each parameter is marked in its own colour inside a screenshot.** A function's
+parameters carry a coloured mark behind them wherever they appear in its body, so a name
+can be followed through the code the way a click follows it in an editor. The signature
+is the legend. These colours are for reading INSIDE a screenshot and are not the ones the
+arrows use — same name, same mark, within one screenshot only.
 
 **One red mark is one state change.** A red band marks either the assignment itself, or — when
 the write happens past the edge of this frame — the call that reaches it. A red border means the
@@ -875,10 +875,11 @@ so you re-open only the docs that actually changed — not everything.
 ## 0.26.26
 - **A screenshot lets you follow a parameter through the code.** On a PNG there is no
   clicking an identifier to see where it is used, so each of a function's parameters is now
-  drawn in its own colour everywhere it appears, and the signature is the legend: read
-  `address assetIn` in lilac, then sweep the body for lilac. Capped at six parameters —
-  past that a reader cannot tell the colours apart, so the rest stay as they were, the same
-  rule the arrows use when they run out of hues.
+  marked with its own colour everywhere it appears — behind the text, like a marker pen, so
+  the syntax colouring is untouched. The signature is the legend: find `address assetIn` on
+  the lilac mark, then sweep the body for lilac. Capped at the palette; past that a reader
+  cannot tell the colours apart, so the rest stay unmarked — the rule the arrows already use
+  when they run out of hues.
   _Re-read: workflow.md._
 
 ## 0.26.25

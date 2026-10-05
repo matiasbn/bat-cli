@@ -140,61 +140,15 @@ pub const BAT_PALETTE: &[&str] = &[
 /// already uses green for calls, orange for types and yellow for fields — `BAT_PALETTE`
 /// was tried there and three of its eight colours were lost in the highlighting.
 ///
-/// These are Dracula's own BRIGHT variants: built for `#282a36`, and a register the theme
-/// itself never uses, so a traced name reads as "follow me" rather than as one more
+/// These are Dracula's own BRIGHT variants: built for `#282a36`, and a lighter register
+/// than the theme's own, so a traced name reads as "follow me" rather than as one more
 /// syntactic category.
-pub const TRACE_COLORS: &[&str] = &[
-    "#ff6e6e", "#69ff94", "#d6acff", "#ffffa5", "#a4ffff", "#ff92df",
-];
-
-/// Repaint every whole-word occurrence of `traced[i]` in `TRACE_COLORS[i]`, splitting the
-/// highlighter's spans where it has to. Everything else keeps the colour the theme gave
-/// it — the aim is to add a way to follow one name, not to restyle the code.
-fn trace_names<'a>(
-    highlight: &mut Vec<Vec<(syntect::highlighting::Style, &'a str)>>,
-    traced: &[String],
-) {
-    if traced.is_empty() {
-        return;
-    }
-    let colors: Vec<syntect::highlighting::Color> = traced
-        .iter()
-        .enumerate()
-        .map(|(i, _)| parse_hex(TRACE_COLORS[i % TRACE_COLORS.len()]))
-        .collect();
-
-    for line in highlight.iter_mut() {
-        let mut rebuilt: Vec<(syntect::highlighting::Style, &'a str)> = Vec::new();
-        for (style, text) in line.iter() {
-            let mut cursor = 0usize;
-            while cursor < text.len() {
-                // The earliest match among the traced names, so two names sharing a prefix
-                // cannot shadow each other by the order they were given.
-                let next = traced
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, name)| find_word(&text[cursor..], name).map(|at| (at, i, name.len())))
-                    .min_by_key(|(at, i, _)| (*at, *i));
-                match next {
-                    Some((at, index, len)) => {
-                        if at > 0 {
-                            rebuilt.push((*style, &text[cursor..cursor + at]));
-                        }
-                        let mut traced_style = *style;
-                        traced_style.foreground = colors[index];
-                        rebuilt.push((traced_style, &text[cursor + at..cursor + at + len]));
-                        cursor += at + len;
-                    }
-                    None => {
-                        rebuilt.push((*style, &text[cursor..]));
-                        break;
-                    }
-                }
-            }
-        }
-        *line = rebuilt;
-    }
-}
+///
+/// No bright GREEN here, though Dracula has one. Green is what the theme gives function
+/// names, and a Solidity body is mostly calls — a traced name in green would be hunted
+/// among thirty others. The same objection holds in smaller degree for the rest, which is
+/// why the list is short: these are the tones that survive the competition.
+pub const TRACE_COLORS: &[&str] = &["#ff6e6e", "#d6acff", "#ffffa5", "#a4ffff", "#ff92df"];
 
 /// `name` as a WHOLE word: `p` must not match the `p` inside `supply`, and `from` must not
 /// match `p.from`'s field when the traced name is the variable `from` — a word boundary is
@@ -213,6 +167,95 @@ fn find_word(haystack: &str, name: &str) -> Option<usize> {
         from = at + name.len().max(1);
     }
     None
+}
+
+/// Where each traced name sits in the rendered PNG: one rectangle per occurrence, in
+/// pixels, with the index of the colour it is traced in.
+///
+/// Mirrors silicon's own layout — text starts at `get_left_pad()` and advances by
+/// `FontCollection::get_text_len`, tabs expanded first — which is the same arithmetic
+/// `line_end_x` uses to anchor a connector on a token. A monospaced font would let us
+/// multiply by a character width; measuring the prefix instead is what keeps this correct
+/// if the font ever changes.
+fn traced_rects(
+    content: &str,
+    traced: &[String],
+    font_size: Option<usize>,
+    show_line_number: bool,
+    line_offset: usize,
+) -> Vec<(u32, u32, u32, u32, usize)> {
+    if traced.is_empty() {
+        return Vec::new();
+    }
+    let size = font_size.map(|s| s as f32).unwrap_or(DEFAULT_FONT_SIZE);
+    let font = silicon::font::FontCollection::new(&[("Hack", size)])
+        .expect("Hack font not available for silicon");
+    let geometry = line_geometry(font_size);
+    let lines: Vec<&str> = content.lines().collect();
+
+    let left_pad = CODE_PAD
+        + if show_line_number {
+            let line_number_chars =
+                (((lines.len() + line_offset) as f32).log10() + 1.0).floor() as usize;
+            let widest = format!("{:>width$}", 0, width = line_number_chars);
+            2 * LINE_NUMBER_PAD + font.get_text_len(&widest)
+        } else {
+            0
+        };
+
+    let mut rects = Vec::new();
+    for (row, line) in lines.iter().enumerate() {
+        let expanded = line.replace('\t', &" ".repeat(TAB_WIDTH));
+        for (index, name) in traced.iter().enumerate() {
+            let mut from = 0usize;
+            while let Some(at) = find_word(&expanded[from..], name) {
+                let at = from + at;
+                let x = PAD + left_pad + font.get_text_len(&expanded[..at]);
+                let width = font.get_text_len(&expanded[at..at + name.len()]);
+                // `first_line_y` already carries the ShadowAdder's padding.
+                let y = geometry.first_line_y + row as u32 * geometry.line_height;
+                rects.push((x, y, width, geometry.line_height, index));
+                from = at + name.len();
+            }
+        }
+    }
+    rects
+}
+
+/// Paint each traced occurrence's own colour BEHIND it, like a marker pen.
+///
+/// The foreground is left to the syntax theme on purpose. The theme already spends every
+/// hue it has — green on calls, orange on types, yellow on fields, pink on keywords — so
+/// recolouring an identifier makes it compete with that; the background is the one register
+/// nothing else uses. It is also what an editor does when you click a name.
+///
+/// Drawn OVER the finished image at low alpha rather than under the text, because silicon
+/// composes the text itself and ignores a span's background (`formatter.rs`, which reads
+/// only `style.foreground`).
+fn paint_traces(
+    image: &mut image::DynamicImage,
+    rects: &[(u32, u32, u32, u32, usize)],
+) {
+    use image::GenericImageView;
+    const ALPHA: f32 = 0.30;
+    let buffer = image.to_rgba8();
+    let (width, height) = image.dimensions();
+    let mut buffer = buffer;
+    for (x, y, w, h, index) in rects {
+        let tint = parse_hex(TRACE_COLORS[index % TRACE_COLORS.len()]);
+        for py in *y..(*y + *h).min(height) {
+            for px in *x..(*x + *w).min(width) {
+                let pixel = buffer.get_pixel_mut(px, py);
+                let blend = |under: u8, over: u8| {
+                    (under as f32 * (1.0 - ALPHA) + over as f32 * ALPHA).round() as u8
+                };
+                pixel[0] = blend(pixel[0], tint.r);
+                pixel[1] = blend(pixel[1], tint.g);
+                pixel[2] = blend(pixel[2], tint.b);
+            }
+        }
+    }
+    *image = image::DynamicImage::ImageRgba8(buffer);
 }
 
 fn parse_hex(hex: &str) -> syntect::highlighting::Color {
@@ -270,7 +313,7 @@ pub fn create_figure_tracing(
         LinesWithEndings::from(content)
             .map(|line| highlighter.highlight_line(line, &ps).unwrap())
             .collect();
-    trace_names(&mut highlight, traced);
+
 
     // Configure background + padding (no shadow).
     let shadow = ShadowAdder::default()
@@ -294,7 +337,11 @@ pub fn create_figure_tracing(
         .build()
         .expect("Failed to build silicon ImageFormatter");
 
-    let image = formatter.format(&highlight, theme);
+    let mut image = formatter.format(&highlight, theme);
+    paint_traces(
+        &mut image,
+        &traced_rects(content, traced, font_size, show_line_number, offset),
+    );
 
     image
         .save(&dest_png_path)
@@ -436,6 +483,27 @@ mod line_geometry_test {
 mod trace_test {
     use super::*;
 
+    /// The rectangles must land on the token, and a name used twice on one line must get
+    /// two of them — the geometry is the same arithmetic a connector anchor uses.
+    #[test]
+    fn a_rect_is_produced_per_occurrence_and_lines_up_with_the_text() {
+        let content = "// path.sol\n\nuint a = b + amountIn;\nx = amountIn * amountIn;";
+        let rects = traced_rects(content, &["amountIn".to_string()], Some(20), true, 0);
+        assert_eq!(rects.len(), 3, "one on line 3, two on line 4");
+
+        let geometry = line_geometry(Some(20));
+        assert_eq!(rects[0].1, geometry.first_line_y + 2 * geometry.line_height);
+        assert!(rects[0].2 > 0 && rects[0].3 == geometry.line_height);
+        // The second occurrence on a line sits to the right of the first.
+        assert!(rects[2].0 > rects[1].0);
+        assert_eq!(rects[1].1, rects[2].1, "same line, same row");
+    }
+
+    #[test]
+    fn nothing_is_painted_when_nothing_is_traced() {
+        assert!(traced_rects("uint a = b;", &[], Some(20), true, 0).is_empty());
+    }
+
     #[test]
     fn a_traced_name_matches_whole_words_only() {
         // `p` must not light up the `p` inside `supply`, and `from` must not light up
@@ -447,44 +515,6 @@ mod trace_test {
         assert_eq!(find_word("maxSwapNotional", "Swap"), None);
     }
 
-    #[test]
-    fn tracing_splits_a_span_and_repaints_only_the_name() {
-        let plain = syntect::highlighting::Style {
-            foreground: syntect::highlighting::Color::WHITE,
-            background: syntect::highlighting::Color::BLACK,
-            font_style: syntect::highlighting::FontStyle::empty(),
-        };
-        let mut highlight = vec![vec![(plain, "p.to = f(amountIn, supply);")]];
-        trace_names(&mut highlight, &["amountIn".to_string(), "supply".to_string()]);
 
-        let line = &highlight[0];
-        let text: String = line.iter().map(|(_, t)| *t).collect();
-        assert_eq!(text, "p.to = f(amountIn, supply);", "no character may be lost");
-
-        let painted: Vec<&str> = line
-            .iter()
-            .filter(|(style, _)| style.foreground != plain.foreground)
-            .map(|(_, t)| *t)
-            .collect();
-        assert_eq!(painted, vec!["amountIn", "supply"]);
-        assert_eq!(line[0].1, "p.to = f(");
-    }
-
-    #[test]
-    fn each_traced_name_gets_its_own_colour() {
-        let plain = syntect::highlighting::Style {
-            foreground: syntect::highlighting::Color::WHITE,
-            background: syntect::highlighting::Color::BLACK,
-            font_style: syntect::highlighting::FontStyle::empty(),
-        };
-        let mut highlight = vec![vec![(plain, "a + b")]];
-        trace_names(&mut highlight, &["a".to_string(), "b".to_string()]);
-        let colors: Vec<_> = highlight[0]
-            .iter()
-            .filter(|(s, _)| s.foreground != plain.foreground)
-            .map(|(s, _)| s.foreground)
-            .collect();
-        assert_eq!(colors.len(), 2);
-        assert_ne!(colors[0], colors[1]);
-    }
 }
+
