@@ -649,6 +649,11 @@ and throws it away.
   dedup (`dry_seen`) and the draw's dedup (the registry's `created_here`) WILL diverge on a helper
   reached twice, and the symptom is two frames placed at one position — which Miro rejects with a
   500 (§19). One walk, in `plan`. The draw consumes a list.
+  **This is measured, not predicted.** On `FLAMM.swap` the dry run plans **34** frames and the real
+  deploy draws **30**: the real one also reads `deployed_titles` (`auto_deploy.rs:930`, the frames
+  this run has already drawn for this cluster), which lets `best_cut` card a callee at any size, so
+  four branches the plan expected to draw became cards. Any split that keeps both walks starts four
+  frames out of step.
 - **The registry is written during the draw, and read during it too.** `created_here` exists
   because the draw discovers reuse as it goes. Once the plan decides reuse, that check is dead
   weight and a second source of truth — delete it rather than leave it agreeing by luck.
@@ -664,3 +669,13 @@ and throws it away.
 `--dry-run` diff of the plan against today's output (same frames, same order, same positions), then
 one real deploy of `FLAMM.swap` (34 frames) checking no overlap, no duplicate title within the
 cluster, every card resolving, and every non-root frame carrying its way back.
+
+### What the split is actually worth (measured 2026-10-05)
+
+`FLAMM.swap`, 30 frames: **865.8 s wall, 232 s of CPU, and 74.5 s for the whole local half** (the
+recursive dry run does the same parse/render/frame/layout work with zero API calls). So **~91 % of a
+deploy is waiting on Miro**, one frame at a time, with no rate limiting at all (zero 429s, zero
+retries, at 24 permits).
+
+That settles which half to optimise: nothing local moves the needle, and the only change that does
+is drawing frames concurrently — which needs the positions decided up front, which is the split.
