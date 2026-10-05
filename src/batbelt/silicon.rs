@@ -245,21 +245,26 @@ struct Occurrence {
 ///
 /// Each name carries the colour it was given.
 fn occurrences(content: &str, traced: &[TracedName]) -> Vec<Occurrence> {
+    let code = code_spans(content);
     let mut found = Vec::new();
     for (row, line) in content.lines().enumerate() {
-        let expanded = line.replace('\t', &" ".repeat(TAB_WIDTH));
+        let spans = &code[row];
         for traced_name in traced.iter() {
             let name = &traced_name.name;
             let mut from = 0usize;
-            while let Some(at) = find_word(&expanded[from..], name) {
+            while let Some(at) = find_word(&line[from..], name) {
                 let at = from + at;
                 from = at + name.len();
-                if is_field_key(&expanded, at, name.len()) || in_comment(&expanded, at) {
+                let is_code = spans.iter().any(|(s, e)| at >= *s && at + name.len() <= *e);
+                if !is_code || is_field_key(line, at, name.len()) || is_member(line, at) {
                     continue;
                 }
+                // Positions are reported in the EXPANDED text, because that is what silicon
+                // draws: each tab before this point is already four spaces wide there.
+                let tabs = line[..at].matches('\t').count();
                 found.push(Occurrence {
                     row,
-                    at,
+                    at: at + tabs * (TAB_WIDTH - 1),
                     len: name.len(),
                     color: traced_name.color,
                     kind: traced_name.kind,
@@ -331,10 +336,94 @@ struct TracedRect {
     kind: TraceKind,
 }
 
-/// Whether this occurrence sits inside a `//` comment, where a name is prose rather than a
-/// use — "the pair band bounds the whole concession" is about `band`, it does not read it.
-fn in_comment(line: &str, at: usize) -> bool {
-    line.find("//").is_some_and(|start| at > start)
+/// Whether this occurrence is a MEMBER of something else rather than the variable itself.
+///
+/// `p.poolAsset = poolAsset` assigns the parameter to a field that happens to share its
+/// name, and marking the field says the value came from itself. A member is always written
+/// after a dot; a variable never is. (The exact version of this reads the AST, which calls
+/// one a `Member` and the other an `Ident` — this rule agrees with it on everything except
+/// a dot separated from its name by whitespace.)
+fn is_member(line: &str, at: usize) -> bool {
+    line[..at].trim_end().ends_with('.')
+}
+
+/// The byte ranges of each line that are CODE — everything outside a comment or a string
+/// literal.
+///
+/// A name is only a use of a variable where the compiler would read it as one. Prose
+/// mentions it ("the pair band bounds the whole concession"), and so does a message
+/// (`revert("amountIn too large")`); neither is the variable. Scanning once for the three
+/// things that suspend code — `//` to end of line, `/* */` across lines, and a quoted
+/// string — covers them together, instead of a rule per case.
+fn code_spans(content: &str) -> Vec<Vec<(usize, usize)>> {
+    let mut spans = Vec::new();
+    let mut in_block = false;
+    for line in content.lines() {
+        let bytes = line.as_bytes();
+        let mut line_spans: Vec<(usize, usize)> = Vec::new();
+        let mut start = 0usize;
+        let mut index = 0usize;
+        let mut quote: Option<u8> = None;
+        while index < bytes.len() {
+            if in_block {
+                if bytes[index..].starts_with(b"*/") {
+                    in_block = false;
+                    index += 2;
+                    start = index;
+                    continue;
+                }
+                index += 1;
+                continue;
+            }
+            match quote {
+                Some(closing) => {
+                    if bytes[index] == b'\\' {
+                        index += 2;
+                        continue;
+                    }
+                    if bytes[index] == closing {
+                        quote = None;
+                        index += 1;
+                        start = index;
+                        continue;
+                    }
+                    index += 1;
+                }
+                None => {
+                    if bytes[index..].starts_with(b"//") {
+                        if index > start {
+                            line_spans.push((start, index));
+                        }
+                        start = line.len();
+                        index = line.len();
+                        break;
+                    }
+                    if bytes[index..].starts_with(b"/*") {
+                        if index > start {
+                            line_spans.push((start, index));
+                        }
+                        in_block = true;
+                        index += 2;
+                        continue;
+                    }
+                    if bytes[index] == b'"' || bytes[index] == b'\'' {
+                        if index > start {
+                            line_spans.push((start, index));
+                        }
+                        quote = Some(bytes[index]);
+                        index += 1;
+                        continue;
+                    }
+                    index += 1;
+                }
+            }
+        }
+        if quote.is_none() && !in_block && start < line.len() {
+            line_spans.push((start, line.len()));
+        }
+        spans.push(line_spans);
+    }
+    spans
 }
 
 /// Whether this occurrence is a struct literal's FIELD NAME rather than a use of the
@@ -346,9 +435,11 @@ fn in_comment(line: &str, at: usize) -> bool {
 /// `a ? b : c` never has `b` there.
 fn is_field_key(line: &str, at: usize, len: usize) -> bool {
     let starts_the_line = line[..at].trim().is_empty();
-    let followed_by_colon = line[at + len..]
-        .trim_start()
-        .starts_with(|c: char| c == ':');
+    let after = line[at + len..].trim_start();
+    // `:` and not `:=`. In Yul an assignment is written `pool := create2(…)`, which starts
+    // its line and is followed by a colon exactly like a field key — and it is the single
+    // place a named return is given its value, so dropping it hid the one line that matters.
+    let followed_by_colon = after.starts_with(':') && !after.starts_with(":=");
     starts_the_line && followed_by_colon
 }
 
@@ -751,6 +842,40 @@ mod trace_test {
         assert_eq!(rects.len(), 1, "only the value on the right is a use");
     }
 
+    /// Prose and messages mention a name without reading it, and the three things that
+    /// suspend code are handled by one scan rather than a rule each.
+    #[test]
+    fn only_code_is_marked() {
+        let cases = [
+            ("    // the pair band bounds it\n    uint a = band;", 1, "line comment"),
+            ("    /* band is\n       the band */\n    uint a = band;", 1, "block comment"),
+            ("    revert(\"band too wide\");\n    uint a = band;", 1, "string"),
+            ("    uint a = band; // band again", 1, "trailing comment"),
+            ("    uint a = band + band;", 2, "plain code"),
+        ];
+        for (code, expected, what) in cases {
+            let content = format!("// path.sol\n\n{code}");
+            let rects = traced_rects(&content, &[local("band")], Some(20), true, 0);
+            assert_eq!(rects.len(), expected, "{what}: {rects:?}", rects = rects.len());
+        }
+    }
+
+    /// A field that shares a parameter's name is not that parameter.
+    #[test]
+    fn a_member_is_not_the_variable() {
+        let content = "// path.sol\n\n    p.poolAsset = poolAsset;";
+        let rects = traced_rects(content, &[local("poolAsset")], Some(20), true, 0);
+        assert_eq!(rects.len(), 1, "only the value on the right");
+    }
+
+    /// Yul assigns with `:=`, and that line is where a named return gets its value.
+    #[test]
+    fn a_yul_assignment_is_not_a_field_key() {
+        let content = "// path.sol\n\n        pool := create2(0, p, n, salt)";
+        let rects = traced_rects(content, &[local("pool")], Some(20), true, 0);
+        assert_eq!(rects.len(), 1, "the assignment is the use that matters");
+    }
+
     /// A ternary's colon follows a value mid-line, which must stay marked.
     #[test]
     fn a_ternary_is_not_mistaken_for_a_field_key() {
@@ -777,6 +902,8 @@ mod trace_test {
 
 
 }
+
+
 
 
 

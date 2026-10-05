@@ -872,6 +872,31 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.29
+- **Only code is marked.** A traced name was also marked where it is merely mentioned: in a
+  comment, in a revert message, and — worst — in a struct field that shares a parameter's
+  name, so `p.poolAsset = poolAsset` read as if the value came from itself
+  (`MMRouter.registerPool`). A name is marked only where the compiler would read it as the
+  variable: outside comments (both kinds) and strings, and never as a member, which is
+  always written after a dot.
+- **Names declared in assembly are followed.** `let p := sub(…)` is Yul, not Solidity, so it
+  was invisible: in `FixedPointMathLib.lnWad` the two busiest names in the whole function
+  were the only ones unmarked.
+- **Two kinds no longer open on the same colour.** `lnWad(int256 x) returns (int256 r)` put
+  a salmon `x` and a salmon `r` on every line, and on a one-character name the rule
+  underneath is too small to tell them apart. The underlined sequence now starts past the
+  parameters.
+- **`BAT_CLI_KEEP_FIGURES=1` keeps a run's screenshots** instead of wiping them, so a
+  `--dry-run` can be used to look at what the code will actually render as.
+  _Re-read: nothing._
+
+## 0.26.28
+- **A name assigned in assembly is marked again.** Yul writes an assignment as
+  `pool := create2(…)`, which starts its line and is followed by a colon — exactly the
+  shape of a struct field key, which is skipped. So the one line where a named return gets
+  its value was the one line not marked. Seen on `FLAMMDeployLib.deployPool`.
+  _Re-read: nothing._
+
 ## 0.26.27
 - **A type is no longer marked as if it were a variable.** `returns (bytes32)` was read as a
   variable named `bytes32`, and the same would have happened to any user-defined type
