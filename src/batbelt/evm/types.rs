@@ -126,8 +126,10 @@ pub struct EvmContract {
     pub events: Vec<EvmEvent>,
     pub file_path: String,
     pub line: usize,
-    /// true if the contract comes from lib/ (external dependency)
-    pub external: bool,
+    /// Whether this came from a VENDORED dependency — somebody else's code copied into
+    /// `lib/`. Where it comes from, not whether it is worth reviewing.
+    #[serde(default, alias = "external")]
+    pub vendored: bool,
     /// Struct types declared inside this contract/library (with field types), used
     /// to resolve the type of a `structPointer.field` call receiver.
     #[serde(default)]
@@ -182,7 +184,9 @@ pub struct EvmFileItem {
     pub file_path: String,
     pub line: usize,
     pub end_line: usize,
-    pub external: bool,
+    /// From a vendored dependency in `lib/`.
+    #[serde(default, alias = "external")]
+    pub vendored: bool,
     /// Contract, library or interface this was declared inside; empty when the
     /// declaration sits at file level and belongs to nobody.
     ///

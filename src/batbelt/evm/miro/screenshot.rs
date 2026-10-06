@@ -803,7 +803,7 @@ mod screenshot_test {
             file_path: "./src/A.sol".to_string(),
             line: 10,
             end_line: 14,
-            external: false,
+            vendored: false,
             owner: owner.to_string(),
         }
     }
@@ -836,7 +836,7 @@ mod screenshot_test {
                 events: vec![],
                 modifiers: vec![],
                 line: 1,
-                external: false,
+                vendored: false,
             })
             .collect();
         metadata

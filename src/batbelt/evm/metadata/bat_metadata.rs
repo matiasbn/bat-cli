@@ -66,9 +66,15 @@ pub struct ContractMetadata {
     pub events: Vec<EvmEvent>,
     pub modifiers: Vec<EvmModifierDef>,
     pub line: usize,
-    /// true if the contract comes from lib/ (external dependency)
-    #[serde(default)]
-    pub external: bool,
+    /// Whether this came from a VENDORED dependency — a copy of somebody else's code
+    /// living in `lib/`, which Foundry puts there rather than installing it elsewhere.
+    ///
+    /// It says where the code comes from, NOT whether it is worth reviewing. What a review
+    /// leaves out is `ignored_contracts`, which the auditor declares; conflating the two is
+    /// how `lib/` silently started deciding which contracts could be offered as resolution
+    /// candidates. Read every use of this as "is a dependency" and the wrong ones stand out.
+    #[serde(default, alias = "external")]
+    pub vendored: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -554,7 +560,7 @@ impl EvmBatMetadata {
         // mocks, OZ tokens) is not an in-scope storage change worth chasing.
         let external_contracts: std::collections::HashSet<String> = contracts
             .iter()
-            .filter(|c| c.external)
+            .filter(|c| c.vendored)
             .map(|c| c.name.clone())
             .collect();
         let mut impl_map: std::collections::HashMap<String, Vec<String>> =
@@ -871,7 +877,7 @@ impl EvmBatMetadata {
                 events: contract.events.clone(),
                 modifiers,
                 line: contract.line,
-                external: contract.external,
+                vendored: contract.vendored,
             };
 
             metadata.contracts.push(contract_metadata);
@@ -880,7 +886,7 @@ impl EvmBatMetadata {
 
         // Build entry points from external/public functions (skip external/lib contracts)
         for contract in &metadata.contracts.clone() {
-            if contract.external {
+            if contract.vendored {
                 continue;
             }
             if matches!(
