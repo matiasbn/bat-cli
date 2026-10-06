@@ -82,7 +82,7 @@ const MAX_COPIES_OF_ONE_CALLEE: usize = 3;
 /// Rendering and uploading are both long enough to look like a hang without
 /// one: a deployment can render dozens of screenshots and then make a hundred
 /// API calls, and the previous output went silent for the whole of each phase.
-fn phase_bar(label: &str, total: usize) -> ProgressBar {
+pub(crate) fn phase_bar(label: &str, total: usize) -> ProgressBar {
     let bar = ProgressBar::new(total as u64);
     bar.set_style(
         ProgressStyle::with_template("  {spinner:.blue} {msg} {pos}/{len} {wide_bar:.blue}")
@@ -2746,7 +2746,7 @@ fn ignored_contract(options: &AutoDeployOptions, contract: &ContractMetadata) ->
 /// from a diagram completely — no box, no card, no marking — and the deploy's only word on
 /// the subject was "not drawing: Math". Whatever an auditor means by naming a library they
 /// have read, they do not mean every contract whose file name happens to end in it.
-fn matches_ignore(pattern: &str, name: &str, file_path: &str) -> bool {
+pub(crate) fn matches_ignore(pattern: &str, name: &str, file_path: &str) -> bool {
     let pattern = pattern.trim().trim_matches('/');
     if pattern.is_empty() {
         return false;

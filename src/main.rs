@@ -191,6 +191,10 @@ enum BatCommands {
         #[arg(long)]
         check: bool,
     },
+    /// Draw every in-scope contract, whole, side by side in ONE frame — the picture of how
+    /// much there is to read and how much of it you have. The scale comes from the longest
+    /// file, so it is the one you can read comfortably.
+    Overview,
     /// Never draw a contract's functions again (a library you have already read)
     Ignore {
         /// Contract name (`Math`) or any part of a path
@@ -330,6 +334,9 @@ impl BatCommands {
             )
             .await
             .change_context(CommandError),
+            BatCommands::Overview => {
+                crate::batbelt::evm::miro::overview::run().await.change_context(CommandError)
+            }
             BatCommands::Ignore {
                 pattern,
                 list,
@@ -361,6 +368,7 @@ impl BatCommands {
             | BatCommands::Screenshot { .. }
             | BatCommands::Relink { .. }
             | BatCommands::Resolve { .. }
+            | BatCommands::Overview
             | BatCommands::Ignore { .. } => true,
         };
 
