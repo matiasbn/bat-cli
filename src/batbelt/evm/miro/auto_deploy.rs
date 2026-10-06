@@ -1271,8 +1271,11 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
     use crate::batbelt::silicon::{TraceKind, TRACE_COLORS};
     let limit = TRACE_COLORS.len();
 
+    // Twice the palette, because a reused colour is drawn with a broken rule: the limit on
+    // how many names can be followed is how many MARKS are distinguishable, not how many
+    // hues there are.
     let mut parameters = signature_parameters(lines);
-    parameters.truncate(limit);
+    parameters.truncate(limit * 2);
 
     let body = lines.join("\n");
     let mut carried: Vec<String> = named_returns(lines)
@@ -1280,12 +1283,21 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
         .filter(|name| !parameters.contains(name))
         .collect();
 
+    // A loop counter is a local the compiler sees and a reader does not need: its whole
+    // life is the three tokens of the `for` header. Leaving it out is also what frees a
+    // colour for a name that is genuinely hard to follow.
+    let counters = crate::batbelt::evm::parser::call_resolver::extract_loop_variables(&body);
     let mut locals: Vec<String> =
         crate::batbelt::evm::parser::call_resolver::extract_local_types(&body)
             .into_iter()
             .map(|(name, _)| name)
             .chain(yul_locals(&body))
-            .filter(|name| name != "$" && !parameters.contains(name) && !carried.contains(name))
+            .filter(|name| {
+                name != "$"
+                    && !counters.contains(name)
+                    && !parameters.contains(name)
+                    && !carried.contains(name)
+            })
             .collect();
     locals.sort();
     locals.dedup();
@@ -1298,15 +1310,21 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
     // colour one of them already has.
     let returns = carried.len();
     carried.extend(locals);
-    carried.truncate(crate::batbelt::silicon::UNDERLINED_TRACE_COLORS.len());
+    carried.truncate(crate::batbelt::silicon::UNDERLINED_TRACE_COLORS.len() * 2);
 
     // Parameters draw from their own palette, because their background keeps them apart
     // whatever hue they get.
     let parameter_count = parameters.len();
+    let palette = crate::batbelt::silicon::TRACE_COLORS.len();
     let mut traced: Vec<TracedName> = parameters
         .into_iter()
         .enumerate()
-        .map(|(color, name)| TracedName { name, kind: TraceKind::Parameter, color })
+        .map(|(index, name)| TracedName {
+            name,
+            kind: TraceKind::Parameter,
+            color: index % palette,
+            dotted: index >= palette,
+        })
         .collect();
     // The underlined sequence starts PAST the parameters instead of at zero. Both kinds
     // would otherwise open on the same hue, and `lnWad(int256 x) returns (int256 r)` put a
@@ -1317,6 +1335,7 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
         name,
         kind: if index < returns { TraceKind::NamedReturn } else { TraceKind::Local },
         color: (parameter_count + index) % underlined,
+        dotted: index >= underlined,
     }));
     traced
 }
@@ -1393,9 +1412,9 @@ fn signature_parameters(lines: &[String]) -> Vec<String> {
     let Some(close) = matching_paren(&joined, open) else {
         return Vec::new();
     };
-    let mut names = split_parameters(&joined[open + 1..close]);
-    names.truncate(crate::batbelt::silicon::TRACE_COLORS.len());
-    names
+    // Not capped here: how many names can be MARKED is a question about the palette and
+    // the decorations, which `traced_names` owns. This just reads the signature.
+    split_parameters(&joined[open + 1..close])
 }
 
 /// The index of the `)` that closes the `(` at `open`, counting nesting.
@@ -6847,6 +6866,67 @@ mod signature_test {
         assert!(names.contains(&"ts".to_string()), "{names:?}");
     }
 
+    /// A loop counter lives in its own header; following it is the one thing nobody needs
+    /// help with, and leaving it out frees a colour for a name that is genuinely hard to
+    /// follow. The bound of the loop is not a counter and stays.
+    #[test]
+    fn a_loop_counter_is_not_traced() {
+        let slice = lines(
+            "    function f() internal {\n        uint256 n = size();\n        for (uint256 i = 0; i < n; ++i) {\n            use(i, n);\n        }\n    }",
+        );
+        let names: Vec<String> = traced_names(&slice).into_iter().map(|t| t.name).collect();
+        assert!(!names.contains(&"i".to_string()), "{names:?}");
+        assert!(names.contains(&"n".to_string()), "{names:?}");
+    }
+
+    /// Only the counter of a `for`, not any variable that happens to be called `i`.
+    #[test]
+    fn a_variable_named_like_a_counter_is_still_traced() {
+        let slice = lines(
+            "    function f() internal {\n        uint256 i = pick();\n        use(i, i);\n    }",
+        );
+        let names: Vec<String> = traced_names(&slice).into_iter().map(|t| t.name).collect();
+        assert!(names.contains(&"i".to_string()), "{names:?}");
+    }
+
+    /// A palette's worth of names is not the limit — what is distinguishable is. Past it a
+    /// name reuses a colour and draws its rule broken, rather than going unmarked:
+    /// `FLAMMGateLib.priceIn` has eleven locals and left four of them out, and the ones it
+    /// dropped were the ones worth following, since the ranking favours a loop counter.
+    #[test]
+    fn more_names_than_colours_are_all_still_marked() {
+        use crate::batbelt::silicon::{TraceKind, UNDERLINED_TRACE_COLORS};
+        let count = UNDERLINED_TRACE_COLORS.len() + 3;
+        let mut body = String::from("    function f() internal {\n");
+        for i in 0..count {
+            body.push_str(&format!("        uint256 v{i} = {i};\n        use(v{i}, v{i});\n"));
+        }
+        body.push_str("    }");
+        let traced = traced_names(&lines(&body));
+        assert_eq!(traced.len(), count, "every local is marked");
+
+        let marks: HashSet<(usize, bool)> = traced
+            .iter()
+            .filter(|t| t.kind == TraceKind::Local)
+            .map(|t| (t.color, t.dotted))
+            .collect();
+        assert_eq!(marks.len(), count, "two locals carry the same mark");
+        assert_eq!(traced.iter().filter(|t| t.dotted).count(), 3);
+    }
+
+    #[test]
+    fn more_parameters_than_colours_are_all_still_marked() {
+        use crate::batbelt::silicon::TRACE_COLORS;
+        let count = TRACE_COLORS.len() + 2;
+        let params: Vec<String> = (0..count).map(|i| format!("uint256 a{i}")).collect();
+        let slice = lines(&format!("    function f({}) internal {{}}", params.join(", ")));
+        let traced = traced_names(&slice);
+        assert_eq!(traced.len(), count);
+        let marks: HashSet<(usize, bool)> =
+            traced.iter().map(|t| (t.color, t.dotted)).collect();
+        assert_eq!(marks.len(), count, "two parameters carry the same mark");
+    }
+
     /// Yul declares with `let`, and it is not in the Solidity statement tree: in
     /// `FixedPointMathLib.lnWad` the two busiest names in the function are declared there.
     #[test]
@@ -6905,14 +6985,14 @@ mod signature_test {
     /// The palette bounds each KIND separately: the decoration tells a parameter from a
     /// local, so the same colour serves one of each.
     #[test]
-    fn each_kind_is_capped_at_the_palette_on_its_own() {
-        use crate::batbelt::silicon::{TraceKind, TRACE_COLORS};
+    fn a_parameter_and_a_local_may_share_a_colour() {
+        use crate::batbelt::silicon::TraceKind;
         let slice = lines(
-            "    function f(uint a, uint b, uint c, uint d, uint e, uint g, uint h, uint i, uint j, uint k) internal {}",
+            "    function f(uint256 a) internal {\n        uint256 b = a;\n        use(b, b);\n    }",
         );
         let traced = traced_names(&slice);
-        let parameters = traced.iter().filter(|t| t.kind == TraceKind::Parameter).count();
-        assert_eq!(parameters, TRACE_COLORS.len());
+        assert_eq!(traced.iter().filter(|t| t.kind == TraceKind::Parameter).count(), 1);
+        assert_eq!(traced.iter().filter(|t| t.kind == TraceKind::Local).count(), 1);
     }
 
     #[test]

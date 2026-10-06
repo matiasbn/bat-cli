@@ -949,6 +949,108 @@ pub fn extract_local_types(source: &str) -> Vec<(String, String)> {
     analyze_body(source, &[], &[]).local_types
 }
 
+/// The variables a `for` declares in its own initialiser — the loop counters.
+///
+/// They are locals like any other to the compiler, but not to a reader: a counter's whole
+/// life is the three tokens of the loop header, so following it through the function is
+/// the one thing nobody needs help with. Reported separately so a caller can leave them
+/// out without having to guess from the name — `i` is a counter here and a perfectly good
+/// variable elsewhere.
+pub fn extract_loop_variables(source: &str) -> Vec<String> {
+    // The same two wrappings `analyze_body` uses: a slice is sometimes a whole function and
+    // sometimes bare statements, and nesting a function inside one does not parse.
+    for wrapped in [
+        format!("contract _C {{ {source} }}"),
+        format!("contract _C {{ function _f() {{ {source} }} }}"),
+    ] {
+        let found = loop_variables_in_wrap(&wrapped);
+        if !found.is_empty() {
+            return found;
+        }
+    }
+    Vec::new()
+}
+
+fn loop_variables_in_wrap(wrapped: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let sess = Session::builder().with_silent_emitter(None).build();
+    let _ = sess.enter(|| -> Option<()> {
+        let arena = ast::Arena::new();
+        let mut parser = Parser::from_source_code(
+            &sess,
+            &arena,
+            FileName::Custom("loop_vars".into()),
+            wrapped.to_string(),
+        )
+        .ok()?;
+        let file = parser.parse_file().map_err(|e| e.emit()).ok()?;
+        for item in file.items.iter() {
+            if let ast::ItemKind::Contract(c) = &item.kind {
+                for body_item in c.body.iter() {
+                    if let ast::ItemKind::Function(f) = &body_item.kind {
+                        if let Some(block) = &f.body {
+                            for stmt in block.stmts.iter() {
+                                collect_loop_variables(&stmt.kind, &mut out);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Some(())
+    });
+    out
+}
+
+fn collect_loop_variables(kind: &ast::StmtKind<'_>, out: &mut Vec<String>) {
+    match kind {
+        ast::StmtKind::For { init, body, .. } => {
+            if let Some(init) = init {
+                match &init.kind {
+                    ast::StmtKind::DeclSingle(var) => {
+                        if let Some(name) = var.name {
+                            out.push(name.as_str().to_string());
+                        }
+                    }
+                    ast::StmtKind::DeclMulti(vars, _) => {
+                        for slot in vars.iter() {
+                            if let Some(var) = slot.as_ref().unspan() {
+                                if let Some(name) = var.name {
+                                    out.push(name.as_str().to_string());
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            collect_loop_variables(&body.kind, out);
+        }
+        ast::StmtKind::Block(b) | ast::StmtKind::UncheckedBlock(b) => {
+            for s in b.stmts.iter() {
+                collect_loop_variables(&s.kind, out);
+            }
+        }
+        ast::StmtKind::If(_, t, e) => {
+            collect_loop_variables(&t.kind, out);
+            if let Some(e) = e {
+                collect_loop_variables(&e.kind, out);
+            }
+        }
+        ast::StmtKind::While(_, b) | ast::StmtKind::DoWhile(b, _) => {
+            collect_loop_variables(&b.kind, out);
+        }
+        ast::StmtKind::Try(t) => {
+            for clause in t.clauses.iter() {
+                for s in clause.block.stmts.iter() {
+                    collect_loop_variables(&s.kind, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 fn collect_local_types_from_stmt(
     sess: &Session,
     kind: &ast::StmtKind<'_>,

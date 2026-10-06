@@ -877,6 +877,22 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.31
+- **A name is no longer left unmarked because the colours ran out.** A function with more
+  variables than the palette simply dropped the extras, and the ranking favours a loop
+  counter — so in `FLAMMGateLib.priceIn` the four it dropped (`okUsd0`, `usdI`, `p`, `p0`)
+  were the ones worth following, while `i` and `n` kept their colours. A name past the
+  palette now reuses a colour and draws its rule **broken**, the same idea the arrows use:
+  what limits how many names can be followed is how many MARKS are distinguishable, not how
+  many hues there are. Sixteen parameters and fourteen other names now fit.
+- **A loop counter is not marked.** The variable a `for` declares in its own initialiser
+  lives and dies in that header, so following it is the one thing a reader needs no help
+  with — and it was taking a colour from a name that is genuinely hard to follow, because
+  the ranking counts uses and a counter is used on every line of the loop. Only the `for`'s
+  own counter: a variable that merely happens to be called `i` is marked like any other.
+  The loop's BOUND is not a counter and keeps its mark.
+  _Re-read: workflow.md._
+
 ## 0.26.30
 - **Two arrows in the same gutter are never drawn the same way again.** When a gutter held
   more callees than the palette has colours, every one past the eighth got the SAME colour
@@ -935,9 +951,9 @@ so you re-open only the docs that actually changed — not everything.
 
   The names come from the AST, so a tuple declaration and a `for` initialiser count while a
   struct field that merely looks like one does not, and a name inside a comment is left
-  alone. Locals are ranked by how often they are really used. Capped at the palette: past
-  that a reader cannot tell the colours apart, so the rest stay unmarked — the rule the
-  arrows already use when they run out of hues.
+  alone, and neither is a `for`'s own counter — its whole life is the loop header. Locals
+  are ranked by how often they are really used, and past the palette a name reuses a colour
+  and draws its rule broken, so it is still followed.
   _Re-read: workflow.md._
 
 ## 0.26.25
