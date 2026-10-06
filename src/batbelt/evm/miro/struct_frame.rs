@@ -394,6 +394,10 @@ pub async fn draw(
             .iter()
             .filter_map(|node| layout.node(&node.label).map(|p| (node.label.clone(), p.x, p.y)))
             .collect(),
+        // A type frame draws struct declarations, not function bodies: there is no call
+        // graph behind it and nothing to point a line at.
+        line_maps: Vec::new(),
+        highlights: Vec::new(),
         callee_connectors: Vec::new(),
         link_cards: Vec::new(),
         connector_ids,
