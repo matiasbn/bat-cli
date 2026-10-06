@@ -938,6 +938,21 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.35
+- **`bat-cli resolve` now actually binds the interface.** The binding it records was written
+  to the metadata and never read where it was needed: a contract that implements an
+  interface WITHOUT declaring `is IFace` — legal, and common — could not be resolved at all,
+  by anyone. `TrancheToken.deposit` drew a single box while its twin `mint` walked 56
+  functions, because `depositFor` happens to collide with nine vendored copies of
+  OpenZeppelin's `ERC20Wrapper` and `mintFor` collides with nothing. Record the binding and
+  the call is followed: 57 functions.
+- **An unresolvable call on an interface-typed state variable is reported.** Only the cast
+  form (`IFace(addr).method()`) was listed, so `controller.depositFor` failed in silence and
+  the deploy had nothing to say about it. It now appears on the list `resolve` works
+  through, with the interface named, so there is a way forward. A view-only call still goes
+  to the "left out" note rather than stopping a deploy.
+  _Re-read: workflow.md._
+
 ## 0.26.34
 - **`bat-cli effects <ENTRY POINT>` prints what it can do to the world.** Two trees: every
   state change reachable from it, and every call that leaves the code in scope — each under
