@@ -1271,11 +1271,11 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
     use crate::batbelt::silicon::{TraceKind, TRACE_COLORS};
     let limit = TRACE_COLORS.len();
 
-    // Twice the palette, because a reused colour is drawn with a broken rule: the limit on
-    // how many names can be followed is how many MARKS are distinguishable, not how many
-    // hues there are.
-    let mut parameters = signature_parameters(lines);
-    parameters.truncate(limit * 2);
+    // NOT capped. Past the palette the colours start over — two names of a kind can share a
+    // hue, told apart by whether their rule is solid or broken, and past that by nothing at
+    // all. A repeated colour on two variables is something a reader can work out from
+    // context; a variable with no mark cannot be followed at all, which is worse.
+    let parameters = signature_parameters(lines);
 
     let body = lines.join("\n");
     let mut carried: Vec<String> = named_returns(lines)
@@ -1310,7 +1310,6 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
     // colour one of them already has.
     let returns = carried.len();
     carried.extend(locals);
-    carried.truncate(crate::batbelt::silicon::UNDERLINED_TRACE_COLORS.len() * 2);
 
     // Parameters draw from their own palette, because their background keeps them apart
     // whatever hue they get.
@@ -1323,7 +1322,9 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
             name,
             kind: TraceKind::Parameter,
             color: index % palette,
-            dotted: index >= palette,
+            // Solid for the first pass through the palette, broken for the second, and
+            // round again: the mark repeats rather than running out.
+            dotted: (index / palette) % 2 == 1,
         })
         .collect();
     // The underlined sequence starts PAST the parameters instead of at zero. Both kinds
@@ -1335,7 +1336,7 @@ fn traced_names(lines: &[String]) -> Vec<TracedName> {
         name,
         kind: if index < returns { TraceKind::NamedReturn } else { TraceKind::Local },
         color: (parameter_count + index) % underlined,
-        dotted: index >= underlined,
+        dotted: (index / underlined) % 2 == 1,
     }));
     traced
 }
@@ -6889,14 +6890,14 @@ mod signature_test {
         assert!(names.contains(&"i".to_string()), "{names:?}");
     }
 
-    /// A palette's worth of names is not the limit — what is distinguishable is. Past it a
-    /// name reuses a colour and draws its rule broken, rather than going unmarked:
-    /// `FLAMMGateLib.priceIn` has eleven locals and left four of them out, and the ones it
-    /// dropped were the ones worth following, since the ranking favours a loop counter.
+    /// Nothing is ever left unmarked. Past the palette the colours start over and the rule
+    /// alternates solid/broken, so two names may end up alike — which a reader can work out
+    /// from context, unlike a name with no mark at all.
     #[test]
     fn more_names_than_colours_are_all_still_marked() {
         use crate::batbelt::silicon::{TraceKind, UNDERLINED_TRACE_COLORS};
-        let count = UNDERLINED_TRACE_COLORS.len() + 3;
+        // Past twice the palette, so the cycle has to come round rather than stop.
+        let count = UNDERLINED_TRACE_COLORS.len() * 2 + 3;
         let mut body = String::from("    function f() internal {\n");
         for i in 0..count {
             body.push_str(&format!("        uint256 v{i} = {i};\n        use(v{i}, v{i});\n"));
@@ -6905,13 +6906,13 @@ mod signature_test {
         let traced = traced_names(&lines(&body));
         assert_eq!(traced.len(), count, "every local is marked");
 
-        let marks: HashSet<(usize, bool)> = traced
-            .iter()
-            .filter(|t| t.kind == TraceKind::Local)
-            .map(|t| (t.color, t.dotted))
-            .collect();
-        assert_eq!(marks.len(), count, "two locals carry the same mark");
-        assert_eq!(traced.iter().filter(|t| t.dotted).count(), 3);
+        // The first palette-worth is solid, the second broken, and then it starts over:
+        // a mark repeats instead of a name going unmarked.
+        let solid = traced.iter().filter(|t| !t.dotted).count();
+        assert_eq!(solid, UNDERLINED_TRACE_COLORS.len() + 3);
+        assert_eq!(traced.iter().filter(|t| t.dotted).count(), UNDERLINED_TRACE_COLORS.len());
+        assert!(traced.iter().all(|t| t.color < UNDERLINED_TRACE_COLORS.len()));
+        let _ = TraceKind::Local;
     }
 
     #[test]
@@ -6921,10 +6922,8 @@ mod signature_test {
         let params: Vec<String> = (0..count).map(|i| format!("uint256 a{i}")).collect();
         let slice = lines(&format!("    function f({}) internal {{}}", params.join(", ")));
         let traced = traced_names(&slice);
-        assert_eq!(traced.len(), count);
-        let marks: HashSet<(usize, bool)> =
-            traced.iter().map(|t| (t.color, t.dotted)).collect();
-        assert_eq!(marks.len(), count, "two parameters carry the same mark");
+        assert_eq!(traced.len(), count, "every parameter is marked");
+        assert!(traced.iter().all(|t| t.color < TRACE_COLORS.len()));
     }
 
     /// Yul declares with `let`, and it is not in the Solidity statement tree: in
