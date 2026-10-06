@@ -1011,7 +1011,7 @@ fn select_targets(
     // explicitly with `--entry-point` reaches everything — see `resolve_named_target`.
     let mut entry_points: Vec<(String, String, String)> = Vec::new();
     let mut others: Vec<(String, String, String)> = Vec::new();
-    for contract in metadata.contracts.iter().filter(|c| !c.external) {
+    for contract in metadata.contracts.iter().filter(|c| !c.vendored) {
         for function in &contract.functions {
             let target = (
                 contract.name.clone(),
@@ -1139,13 +1139,13 @@ fn resolve_named_target(
             }
         }
         for function in contract.functions.iter().filter(|f| f.name == wanted_function) {
-            let entry = !contract.external
+            let entry = !contract.vendored
                 && entry_names.contains(&(contract.name.clone(), function.name.clone()));
             matches.push((
                 contract.name.clone(),
                 function.name.clone(),
                 contract.file_path.clone(),
-                contract.external,
+                contract.vendored,
                 entry,
             ));
         }
@@ -1178,7 +1178,7 @@ fn resolve_named_target(
         metadata
             .contracts
             .iter()
-            .filter(|c| !c.external)
+            .filter(|c| !c.vendored)
             .map(|c| c.file_path.as_str()),
     );
     let narrowed: Vec<_> = tier
@@ -3424,7 +3424,7 @@ fn build_graph(
                         crate::batbelt::evm::types::EvmMutability::View
                             | crate::batbelt::evm::types::EvmMutability::Pure
                     );
-                    if lib_contract.external && !read_only {
+                    if lib_contract.vendored && !read_only {
                         lib_boundary_lines.push(function.line + call.line - 1);
                     }
                 }
@@ -7624,7 +7624,7 @@ mod marking_test {
             events: Vec::new(),
             modifiers: Vec::new(),
             line: 1,
-            external: false,
+            vendored: false,
         }
     }
 

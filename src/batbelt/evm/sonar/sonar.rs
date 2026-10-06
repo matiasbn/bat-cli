@@ -112,12 +112,19 @@ impl EvmSonar {
                 .attach_printable(format!("Source directory not found: {}", src_dir.display())));
         }
 
-        let src_files = Self::collect_sol_files(&src_dir);
-        let lib_files = if lib_dir.is_dir() {
+        let (src_files, src_skipped) = Self::collect_sol_files(&src_dir);
+        let (lib_files, _) = if lib_dir.is_dir() {
             Self::collect_sol_files(&lib_dir)
         } else {
-            vec![]
+            (vec![], vec![])
         };
+        if !src_skipped.is_empty() {
+            let summary: Vec<String> = src_skipped
+                .iter()
+                .map(|(dir, count)| format!("{count} in {}", dir.trim_matches('/')))
+                .collect();
+            println!("  not scanned: {}", summary.join(", "));
+        }
 
         let total = src_files.len() + lib_files.len();
         let pb = Self::create_spinner();
@@ -137,7 +144,7 @@ impl EvmSonar {
                     }
                     for mut file_item in sol_file.file_items {
                         file_item.file_path = file_path.clone();
-                        file_item.external = false;
+                        file_item.vendored = false;
                         self.file_items.push(file_item);
                     }
                 }
@@ -162,7 +169,7 @@ impl EvmSonar {
                     }
                     for mut file_item in sol_file.file_items {
                         file_item.file_path = file_path.clone();
-                        file_item.external = true;
+                        file_item.vendored = true;
                         self.file_items.push(file_item);
                     }
                 }
@@ -172,8 +179,8 @@ impl EvmSonar {
             }
         }
 
-        let src_contracts = self.contracts.iter().filter(|c| !c.external).count();
-        let ext_contracts = self.contracts.iter().filter(|c| c.external).count();
+        let src_contracts = self.contracts.iter().filter(|c| !c.vendored).count();
+        let ext_contracts = self.contracts.iter().filter(|c| c.vendored).count();
         let file_items_count = self.file_items.len();
         let error_msg = if self.error_count > 0 {
             format!(", {} errors", self.error_count)
@@ -194,25 +201,36 @@ impl EvmSonar {
         Ok(())
     }
 
-    fn collect_sol_files(dir: &std::path::Path) -> Vec<String> {
-        WalkDir::new(dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_type().is_file()
-                    && e.path()
-                        .extension()
-                        .map(|ext| ext == "sol")
-                        .unwrap_or(false)
-                    && !e.path().to_str().unwrap_or("").contains("/test/")
-                    && !e.path().to_str().unwrap_or("").contains("/tests/")
-                    && !e.path().to_str().unwrap_or("").contains("/script/")
-                    && !e.path().to_str().unwrap_or("").contains("/scripts/")
-                    && !e.path().to_str().unwrap_or("").contains("/mock/")
-                    && !e.path().to_str().unwrap_or("").contains("/mocks/")
-            })
-            .map(|e| e.path().to_str().unwrap().to_string())
-            .collect()
+    /// Directories the scan never reads. Tests, deploy scripts and mocks are not the code
+    /// under review, and a diagram of them is noise.
+    ///
+    /// It is a real limit, though, and until now a silent one: `script/` and `broadcast/`
+    /// are where a deployment says who owns whom and who holds which role, so nothing in
+    /// the metadata can answer those questions. The scan now says how much it skipped
+    /// instead of leaving it to be discovered.
+    const SKIPPED_DIRS: &'static [&'static str] = &[
+        "/test/", "/tests/", "/script/", "/scripts/", "/mock/", "/mocks/",
+    ];
+
+    /// The `.sol` files under `dir`, and how many were skipped per directory kind.
+    fn collect_sol_files(dir: &std::path::Path) -> (Vec<String>, Vec<(&'static str, usize)>) {
+        let mut kept = Vec::new();
+        let mut skipped: Vec<(&'static str, usize)> =
+            Self::SKIPPED_DIRS.iter().map(|d| (*d, 0usize)).collect();
+        for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+            if !entry.file_type().is_file()
+                || entry.path().extension().map(|ext| ext != "sol").unwrap_or(true)
+            {
+                continue;
+            }
+            let path = entry.path().to_str().unwrap_or("").to_string();
+            match skipped.iter_mut().find(|(dir, _)| path.contains(*dir)) {
+                Some((_, count)) => *count += 1,
+                None => kept.push(path),
+            }
+        }
+        skipped.retain(|(_, count)| *count > 0);
+        (kept, skipped)
     }
 
     /// Phase 2: Resolve imports and build inheritance graph.
@@ -299,7 +317,7 @@ impl EvmSonar {
             "{} Entry points: {} detected across {} contracts",
             SPARKLE,
             metadata.entry_points.len(),
-            metadata.contracts.iter().filter(|c| !c.external).count()
+            metadata.contracts.iter().filter(|c| !c.vendored).count()
         ));
 
         Ok(metadata)
