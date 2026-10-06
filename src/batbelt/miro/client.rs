@@ -1048,3 +1048,4 @@ mod client_test {
         assert_eq!(out_of_range.to_json()["y"], "100.00%");
     }
 }
+

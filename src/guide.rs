@@ -510,6 +510,34 @@ is there: it draws a NEW cluster in a clean zone and hands you the old frames' U
 Safe to run unattended: `init --yes`, `sonar`, `config` (no flag), `update --check`,
 `login --status`, `deploy --entry-point <X>` (add `--dry-run` to see the layout first).
 
+## overview — the whole codebase in one frame
+
+```bash
+bat-cli overview
+```
+
+Draws every in-scope contract, whole, side by side in a single frame. It answers a different
+question from `deploy`: not how something works, but **how much there is to read and how much
+of it is left**. Twenty-five files in an editor is twenty-five tabs and no sense of
+proportion; as columns on a board it is one picture.
+
+The unit is the FILE, not the contract — a file holds a contract plus the interfaces and
+libraries that belong with it, and that is what gets read top to bottom. Each column carries
+its path on its first line. **Import statements are blanked**, not deleted — an import path is
+often the widest line in a file and nobody reads it in an overview, but deleting the lines
+would shift every line number after them away from what the editor shows. Columns are aligned at the TOP, because what is being compared is
+how far down each one goes. The `ignore` list is respected, and `lib/` is never included.
+
+The scale comes from the longest file: the largest font whose render still fits Miro's upload
+limit, applied to every file, so the longest one is the one you can read comfortably and the
+rest are bigger than they need to be. It is reported (`rendering every file at font 12`).
+
+The frame is placed BELOW every frame already on the board, re-read from the board on each
+run, so it cannot land on top of anything — Miro refuses overlapping frames outright.
+
+Safe to run unattended. It creates one frame and nothing else, and does not touch the
+deployment registry.
+
 ## deploy
 
 ```bash
@@ -876,6 +904,18 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.33
+- **`bat-cli overview` draws the whole codebase in one frame.** Every in-scope contract,
+  whole, side by side — the picture of how much there is to read and how much is left, which
+  twenty-five editor tabs do not give. One column per file, path on its first line, aligned
+  at the top so the comparison is how far down each one goes. The scale is taken from the
+  longest file so that one is comfortable to read, and reported. The frame goes below
+  everything already on the board, re-read each run, so it never lands on top of anything.
+  Import statements are blanked rather than deleted: an import path is often the widest line
+  in a file, and deleting the lines would shift every line number away from the editor's.
+  On a 49-file, 11 891-line repository: one frame, about a minute and a half.
+  _Re-read: workflow.md._
 
 ## 0.26.32
 - **Nothing is left unmarked, whatever the function's size.** 0.26.31 raised the ceiling to

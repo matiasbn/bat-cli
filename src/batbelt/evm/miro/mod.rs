@@ -7,6 +7,7 @@
 //! there is nothing left for them to do.
 
 pub mod auto_deploy;
+pub mod overview;
 pub mod screenshot;
 pub mod struct_frame;
 
