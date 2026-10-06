@@ -225,3 +225,21 @@ A Web SDK app that converted those anchors into native `linkedTo` in one click w
 - Enums that back CLI choices implement `BatEnumerator` (via `strum` `Display`/`EnumIter`), which provides `get_type_vec`, `from_index`, snake/sentence-case conversions and drives the `dialoguer` prompts in `batbelt/bat_dialoguer.rs`. Command enums additionally implement `BatCommandEnumerator` (`execute_command`, `check_metadata_is_initialized`, `check_correct_branch`), and that same enum shape is reflected into generated `package.json` scripts.
 - Several modules are dormant behind `#[allow(dead_code, unused_imports)]` (`analytics`, `finding_commands`, `repository_commands`) and are commented out of `BatCommands` — leave them unless asked.
 - Logging goes to stderr via `env_logger` (level from `-v` flags); `println!` is reserved for user-facing CLI output, colored with `colored`.
+
+## The CLI is driven by an AI, not by a person at a prompt
+
+bat-cli is used by an assistant reading `~/.config/bat-cli/ai_context/`, not by someone
+typing and picking from a menu. So **command-line arguments are the interface, and the
+interactive pickers are legacy**. Every capability must be reachable by flags alone.
+
+What follows from that, when the moment comes to act on it (not urgent, and nothing below
+is broken today):
+
+- **Stop extending the `dialoguer` pickers** (`batbelt/bat_dialoguer.rs`, and the fuzzy
+  entry-point list in `auto_deploy::select_targets`). A new command gets flags, not a menu.
+- **Remove the pickers when one is in the way**, rather than keeping both paths alive. The
+  entry-point picker is the main one left; it also carries the only remaining place where
+  `vendored` narrows what you can choose without saying so, and deleting it settles that
+  question instead of documenting around it.
+- A prompt that cannot be answered non-interactively is a bug: the guide already lists what
+  is safe to run unattended, and that list should eventually be "everything".
