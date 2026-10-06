@@ -528,7 +528,10 @@ opening the link and seeing it.
 - `--lines` takes `288`, `288-291`, or `288,290-292`, as FILE lines.
 - The frame gets a blue outline flush with its edge, and each marked screenshot a thin blue
   border, so a marked frame is recognisable from the zoom where a whole cluster fits.
-- `--list` says what can be marked, per deployment, with the line range each screenshot
+- Each marked line is reported with the FRAME it landed on (`on frame auto: Vault.deposit`),
+  which is what to send along with the link: at the zoom where a cluster fits on screen, the
+  frame titles are the only legible thing, and the link itself reloads the whole board.
+- `--list` says what can be marked, grouped by frame, with the line range each screenshot
   shows. Use it before guessing: a deployment draws what ITS entry point reaches, so
   `TrancheToken.deposit` has `_enter` and not `_exit`, which lives on the redeem path. It is
   a much bigger set than the frames `bat-cli screenshot` lists, because most functions are
@@ -974,6 +977,14 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.39
+- **A marked line says which FRAME it is on**, and `--list` is grouped by frame. At the zoom
+  where a whole cluster fits on screen the frame titles are the only legible thing, so that
+  is what to pass along with the link — opening the link reloads the entire board, because
+  Miro navigates with a query parameter rather than a fragment. A function drawn on several
+  frames of one deployment now appears under each, which is what says where to send someone.
+  _Re-read: workflow.md._
 
 ## 0.26.38
 - **`bat-cli highlight --list` says what can be marked**, per deployment, with the line range

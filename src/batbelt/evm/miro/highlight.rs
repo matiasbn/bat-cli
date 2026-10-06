@@ -156,7 +156,16 @@ pub async fn run(options: HighlightOptions) -> Result<(), EvmMiroError> {
             .create_colored_line_band(&frame.frame_id, x, y, width, height, HIGHLIGHT_COLOR)
             .await
             .change_context(EvmMiroError)?;
-        println!("  {} {}:{}", "●".blue(), node_id.replacen("::", ".", 1), line);
+        // The frame's NAME, not just the function's: at the zoom where a whole cluster fits
+        // on screen the frame titles are the only legible thing, so that is what someone
+        // being sent there needs. A function can be drawn on any frame of the deployment.
+        println!(
+            "  {} {}:{}  on frame {}",
+            "●".blue(),
+            node_id.replacen("::", ".", 1),
+            line,
+            format!("auto: {}", frame.entry_point).bold()
+        );
         first.get_or_insert_with(|| id.clone());
         drawn.push(id);
     }
@@ -221,22 +230,8 @@ fn list(metadata: &EvmBatMetadata, deployment: Option<&str>) -> Result<(), EvmMi
             .iter()
             .filter(|f| f.cluster_root == root)
             .collect();
-        let mut drawable: Vec<(String, usize, usize)> = frames
-            .iter()
-            .flat_map(|f| f.line_maps.iter())
-            .map(|map| {
-                // A function copied next to two callers is drawn twice on purpose and
-                // carries a `#dup…` id for each copy. To the question "what can I mark" it
-                // is one function — and marking it marks every copy anyway.
-                let name = map.node_id.split('#').next().unwrap_or(&map.node_id);
-                (name.replacen("::", ".", 1), map.start_line, map.end_line)
-            })
-            .collect();
-        drawable.sort();
-        drawable.dedup();
-
         println!("\n{} {}", "▸".blue(), root.bold());
-        if drawable.is_empty() {
+        if frames.iter().all(|f| f.line_maps.is_empty()) {
             println!(
                 "  {} drawn before 0.26.37, which is when bat-cli started recording what each",
                 "note:".yellow()
@@ -244,8 +239,33 @@ fn list(metadata: &EvmBatMetadata, deployment: Option<&str>) -> Result<(), EvmMi
             println!("  screenshot shows, so nothing on it can be marked — deploy it again");
             continue;
         }
-        for (name, start, end) in drawable {
-            println!("  {name:<48} lines {start}-{end}");
+
+        // Grouped BY FRAME, because the frame is what the reader navigates by: at the zoom
+        // where a cluster fits on screen, the titles are the only legible thing. The same
+        // function can be drawn on several frames of one deployment, and which one it is
+        // changes where you send somebody.
+        for frame in &frames {
+            if frame.line_maps.is_empty() {
+                continue;
+            }
+            let mut drawable: Vec<(String, usize, usize)> = frame
+                .line_maps
+                .iter()
+                .map(|map| {
+                    // A function copied next to two callers is drawn twice on purpose and
+                    // carries a `#dup…` id for each copy. To the question "what can I mark"
+                    // it is one function — and marking it marks every copy anyway.
+                    let name = map.node_id.split('#').next().unwrap_or(&map.node_id);
+                    (name.replacen("::", ".", 1), map.start_line, map.end_line)
+                })
+                .collect();
+            drawable.sort();
+            drawable.dedup();
+
+            println!("  {}", format!("auto: {}", frame.entry_point).bold());
+            for (name, start, end) in drawable {
+                println!("    {name:<46} lines {start}-{end}");
+            }
         }
     }
     Ok(())
