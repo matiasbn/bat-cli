@@ -191,6 +191,19 @@ enum BatCommands {
         #[arg(long)]
         check: bool,
     },
+    /// What an entry point can do to the world: every storage write and every call that
+    /// leaves the code in scope, in call order. The same walk `deploy` draws, printed.
+    Effects {
+        /// `Contract.function`, or a bare function name.
+        #[arg(long = "entry-point", value_name = "NAME")]
+        entry_point: Option<String>,
+        /// Follow the graph even where an interface call is unresolved.
+        #[arg(long)]
+        allow_unresolved: bool,
+        /// Also put the report on the board, in a frame of its own.
+        #[arg(long)]
+        deploy: bool,
+    },
     /// Draw every in-scope contract, whole, side by side in ONE frame — the picture of how
     /// much there is to read and how much of it you have. The scale comes from the longest
     /// file, so it is the one you can read comfortably.
@@ -295,6 +308,7 @@ impl BatCommands {
                     assume_yes: *yes,
                     ignore_contracts: ignore_contract.clone(),
                     inline_all: *inline_all,
+                    deploy_effects: false,
                     },
                 )
                 .await
@@ -334,6 +348,20 @@ impl BatCommands {
             )
             .await
             .change_context(CommandError),
+            BatCommands::Effects {
+                entry_point,
+                allow_unresolved,
+                deploy,
+            } => crate::batbelt::evm::miro::auto_deploy::effects(
+                crate::batbelt::evm::miro::auto_deploy::AutoDeployOptions {
+                    entry_point: entry_point.clone(),
+                    allow_unresolved: *allow_unresolved,
+                    deploy_effects: *deploy,
+                    ..Default::default()
+                },
+            )
+            .await
+            .change_context(CommandError),
             BatCommands::Overview => {
                 crate::batbelt::evm::miro::overview::run().await.change_context(CommandError)
             }
@@ -369,6 +397,7 @@ impl BatCommands {
             | BatCommands::Relink { .. }
             | BatCommands::Resolve { .. }
             | BatCommands::Overview
+            | BatCommands::Effects { .. }
             | BatCommands::Ignore { .. } => true,
         };
 

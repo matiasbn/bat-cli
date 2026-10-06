@@ -110,6 +110,8 @@ pub struct AutoDeployOptions {
     pub with_documentation: bool,
     /// Compose a local preview PNG of the frame at this path.
     pub preview: Option<String>,
+    /// `effects` only: also put the report on the board, in a frame of its own.
+    pub deploy_effects: bool,
     /// Connector thickness in dp, 1 to 24. Miro's UI snaps this to its own
     /// preset levels, so 12 lands on roughly "level 5".
     pub stroke_width: u32,
@@ -137,6 +139,7 @@ impl Default for AutoDeployOptions {
             dry_run: false,
             with_documentation: false,
             preview: None,
+            deploy_effects: false,
             stroke_width: 8,
             allow_unresolved: false,
             assume_yes: false,
@@ -286,6 +289,374 @@ fn scale_for_depth(depth: usize) -> f64 {
     font_for_depth(depth) as f64 / REFERENCE_FONT as f64
 }
 
+
+/// Print everything an entry point can do to the world, in one page.
+///
+/// It is the same walk a deploy does — build the call graph, follow every call through the
+/// interface bindings `resolve` recorded, mark what writes storage and what leaves the
+/// repository — but printed instead of drawn. A deploy answers "how does this work"; this
+/// answers "what does it touch", which is the question you take to a spec.
+///
+/// Nothing here is new analysis. The value is that the analysis already existed and could
+/// only be read by looking at thirty frames on a board.
+pub async fn effects(options: AutoDeployOptions) -> Result<()> {
+    let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+    let mut options = options;
+    for pattern in &metadata.ignored_contracts {
+        if !options.ignore_contracts.contains(pattern) {
+            options.ignore_contracts.push(pattern.clone());
+        }
+    }
+    let options = options;
+
+    let targets = select_targets(&metadata, &options)?;
+    let Some((contract_name, function_name, root_file)) = targets.into_iter().next() else {
+        return Err(Report::new(EvmMiroError)
+            .attach_printable("no entry point matched; run `bat-cli sonar` first"));
+    };
+
+    let title = format!("{contract_name}.{function_name}");
+    let (nodes, edges, unresolved) =
+        build_graph(&metadata, &contract_name, &function_name, &root_file, &options)?;
+    if nodes.is_empty() {
+        return Err(Report::new(EvmMiroError)
+            .attach_printable(format!("no function metadata for {title}")));
+    }
+
+    let depth = nodes.iter().map(|node| node.depth).max().unwrap_or(0) + 1;
+
+    // Built as plain lines and then printed, so the terminal and the board show exactly the
+    // same report rather than two renderings that can drift apart.
+    let mut report: Vec<String> = Vec::new();
+    report.push(format!(
+        "{title} — {} function(s) reached, {depth} level(s) deep",
+        nodes.len()
+    ));
+
+    // A TREE, not a list of routes. Every route shares the same prefix — `swap → execute →
+    // …` was on every line — and repeating it is noise that hides the shape. Each function
+    // appears once, indented under the one that reaches it, and carries its own effects.
+    //
+    // Pruned to the branches that lead somewhere: of 166 functions reached, the ones that
+    // change nothing and call nothing that changes anything are not what the question is
+    // about.
+    let (children, order) = call_tree(&nodes, &edges);
+    let by_id: HashMap<&str, &GraphNode> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+
+    let writes_count: usize = nodes.iter().map(|n| n.write_lines.len()).sum();
+    let boundary_count: usize = nodes.iter().map(|n| n.external_call_lines.len()).sum();
+
+    report.push(String::new());
+    for note in [
+        "This is the UNION over every branch, not one execution: which of these happen",
+        "depends on the path taken, and under WHICH condition a branch is taken is not",
+        "something this tool knows. Branches that change nothing are left out.",
+    ] {
+        report.push(note.to_string());
+    }
+    // Two trees, not one with two kinds of mark on it. They answer different questions —
+    // "what does this change" and "where does value leave" — and a reader following one of
+    // them should not have to step over the other. On the board they become two screenshots
+    // side by side, so the two answers are compared rather than scrolled between.
+    let root = nodes[0].id.clone();
+    let mut sections: Vec<Vec<String>> = Vec::new();
+    for effect in [Effect::State, Effect::Boundary] {
+        let mut section = vec![
+            match effect {
+                Effect::State => format!("{title} — ● state changes ({writes_count})"),
+                Effect::Boundary => format!(
+                    "{title} — ▲ external boundaries ({boundary_count}), where value can move"
+                ),
+            },
+            "the union over every branch; which happen depends on the path taken".to_string(),
+            String::new(),
+        ];
+        let keep = branches_that_matter(&nodes, &children, effect);
+        if keep.is_empty() {
+            section.push(match effect {
+                Effect::State => "  nothing here writes contract storage".to_string(),
+                Effect::Boundary => "  nothing here leaves the code in scope".to_string(),
+            });
+        } else {
+            write_subtree(&root, "", "", &children, &by_id, &keep, &order, effect, &mut section);
+        }
+        report.push(String::new());
+        report.extend(section.iter().cloned());
+        sections.push(section);
+    }
+
+    // Said last and said plainly: an unresolved interface is a branch this walk did not
+    // follow, so everything above is a lower bound on what the entry point can do.
+    if !unresolved.is_empty() {
+        report.push(String::new());
+        report.push(format!(
+            "{} interface call(s) were NOT followed, so the list above is a floor:",
+            unresolved.len()
+        ));
+        for call in &unresolved {
+            let kind = if call.inferred_type.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", call.inferred_type)
+            };
+            report.push(format!("  {}.{}{}", call.receiver, call.method, kind));
+        }
+        report.push("  fix: bat-cli resolve <INTERFACE> <CONTRACT>, then run this again".to_string());
+    }
+
+    println!();
+    for line in &report {
+        println!("{line}");
+    }
+
+    if options.deploy_effects {
+        deploy_effects(&title, &sections).await?;
+    }
+
+    Ok(())
+}
+
+/// Put the report on the board, as one frame of its own.
+///
+/// The terminal is where you read it once; the board is where it sits next to the diagram it
+/// describes, so "what does this touch" and "how does it work" are the same glance apart.
+/// It is placed below everything already there, re-read from the board, so it cannot land on
+/// another frame — Miro refuses that outright.
+async fn deploy_effects(title: &str, sections: &[Vec<String>]) -> Result<()> {
+    use crate::batbelt::path::BatFolder;
+
+    BatFolder::Figures.create_folder().change_context(EvmMiroError)?;
+    let destination = BatFolder::Figures.get_path(true).change_context(EvmMiroError)?;
+
+    const MARGIN: f64 = 400.0;
+    const GAP: f64 = 400.0;
+
+    let mut rendered: Vec<(String, f64, f64)> = Vec::new();
+    for (index, section) in sections.iter().enumerate() {
+        let png_path = crate::batbelt::silicon::create_figure(
+            &section.join("\n"),
+            &destination,
+            &format!("effects_{}_{index}.txt", title.replace('.', "_")),
+            0,
+            Some(REFERENCE_FONT),
+            false,
+        );
+        let (png_width, png_height) =
+            image::image_dimensions(&png_path).change_context(EvmMiroError)?;
+        rendered.push((png_path, png_width as f64, png_height as f64));
+    }
+
+    let width: f64 = rendered.iter().map(|(_, w, _)| w).sum::<f64>()
+        + GAP * (rendered.len() as f64 - 1.0);
+    let height: f64 = rendered.iter().fold(0.0_f64, |tallest, (_, _, h)| tallest.max(*h));
+
+    let client = MiroClient::new_refreshed().await.change_context(EvmMiroError)?;
+    let (frame_x, frame_y) = crate::batbelt::evm::miro::overview::free_spot(
+        &client,
+        width + MARGIN * 2.0,
+        height + MARGIN * 2.0,
+    )
+    .await?;
+    let frame_id = client
+        .create_frame(
+            &format!("effects: {title}"),
+            frame_x,
+            frame_y,
+            width + MARGIN * 2.0,
+            height + MARGIN * 2.0,
+            None,
+        )
+        .await
+        .change_context(EvmMiroError)?;
+
+    // Top-aligned, like the overview's columns: the two trees are different lengths and
+    // what is being read is each one from its first line.
+    let mut cursor = MARGIN;
+    for (png_path, png_width, png_height) in &rendered {
+        client
+            .create_image_in_frame(
+                png_path,
+                &frame_id,
+                title,
+                cursor + png_width / 2.0,
+                MARGIN + png_height / 2.0,
+                *png_width,
+            )
+            .await
+            .change_context(EvmMiroError)?;
+        cursor += png_width + GAP;
+        let _ = std::fs::remove_file(png_path);
+    }
+    println!("  {}", client.frame_url(&frame_id).blue());
+    Ok(())
+}
+
+/// The call graph as a TREE: for each function, the ones it reaches that are not already
+/// reached by something shallower, plus the order each was first met in.
+///
+/// Breadth-first, so a function hangs under the SHORTEST way in and appears exactly once. A
+/// function reached by several callers is shown under one of them; the report says so,
+/// because pretending otherwise would be the same mistake as listing every branch's effects
+/// as though they all happen.
+fn call_tree(
+    nodes: &[GraphNode],
+    edges: &[GraphEdge],
+) -> (HashMap<String, Vec<String>>, HashMap<String, usize>) {
+    let mut children: HashMap<String, Vec<String>> = HashMap::new();
+    let mut order: HashMap<String, usize> = HashMap::new();
+    let Some(root) = nodes.first() else {
+        return (children, order);
+    };
+
+    let mut callees: HashMap<&str, Vec<&str>> = HashMap::new();
+    for edge in edges {
+        callees.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
+    }
+
+    let mut seen: HashSet<&str> = HashSet::new();
+    seen.insert(root.id.as_str());
+    order.insert(root.id.clone(), 0);
+    let mut queue: VecDeque<&str> = VecDeque::new();
+    queue.push_back(root.id.as_str());
+    while let Some(id) = queue.pop_front() {
+        for callee in callees.get(id).into_iter().flatten() {
+            if !seen.insert(callee) {
+                continue;
+            }
+            order.insert((*callee).to_string(), order.len());
+            children.entry(id.to_string()).or_default().push((*callee).to_string());
+            queue.push_back(callee);
+        }
+    }
+    (children, order)
+}
+
+/// Which question a tree is answering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Effect {
+    /// What this changes.
+    State,
+    /// Where value can leave.
+    Boundary,
+}
+
+impl Effect {
+    fn present_in(self, node: &GraphNode) -> bool {
+        match self {
+            Self::State => !node.write_lines.is_empty(),
+            Self::Boundary => !node.external_call_lines.is_empty(),
+        }
+    }
+}
+
+/// The nodes worth printing for ONE kind of effect: the ones that have it, and every
+/// ancestor that leads to one.
+///
+/// Without this the tree is 166 functions and the six that matter are lost in it.
+fn branches_that_matter(
+    nodes: &[GraphNode],
+    children: &HashMap<String, Vec<String>>,
+    effect: Effect,
+) -> HashSet<String> {
+    let has_effect: HashSet<&str> = nodes
+        .iter()
+        .filter(|n| effect.present_in(n))
+        .map(|n| n.id.as_str())
+        .collect();
+
+    let mut keep: HashSet<String> = HashSet::new();
+    // Deepest first, so a node is decided after its children are.
+    let mut by_depth: Vec<&GraphNode> = nodes.iter().collect();
+    by_depth.sort_by(|a, b| b.depth.cmp(&a.depth));
+    for node in by_depth {
+        let child_matters = children
+            .get(&node.id)
+            .into_iter()
+            .flatten()
+            .any(|child| keep.contains(child));
+        if child_matters || has_effect.contains(node.id.as_str()) {
+            keep.insert(node.id.clone());
+        }
+    }
+    keep
+}
+
+/// Print one node and the kept branches under it, indented.
+/// Print one node and the kept branches under it, drawn as a tree.
+///
+/// `prefix` is what precedes this node's own line — the elbow that connects it to its
+/// caller — and `continuation` what precedes everything underneath it, so a branch with
+/// more siblings keeps a vertical line through its children and the last one does not.
+///
+/// One effect per line, never a comma-separated run: a function that assigns six fields of
+/// the same struct is six things to check, and six things to check do not fit on a line a
+/// reader is meant to scan.
+#[allow(clippy::too_many_arguments)]
+fn write_subtree(
+    id: &str,
+    prefix: &str,
+    continuation: &str,
+    children: &HashMap<String, Vec<String>>,
+    by_id: &HashMap<&str, &GraphNode>,
+    keep: &HashSet<String>,
+    order: &HashMap<String, usize>,
+    effect: Effect,
+    report: &mut Vec<String>,
+) {
+    let Some(node) = by_id.get(id) else { return };
+
+    let marks: Vec<String> = match effect {
+        Effect::State => node
+            .write_lines
+            .iter()
+            .map(|(line, lvalue)| format!("{lvalue}  {}:{line}", prettify(&node.file_path)))
+            .collect(),
+        Effect::Boundary => node
+            .external_call_lines
+            .iter()
+            .map(|line| format!("{}:{line}", prettify(&node.file_path)))
+            .collect(),
+    };
+
+    report.push(format!("{prefix}{}", node.label));
+
+    let mut kids: Vec<&String> = children
+        .get(id)
+        .into_iter()
+        .flatten()
+        .filter(|child| keep.contains(*child))
+        .collect();
+    kids.sort_by_key(|child| order.get(*child).copied().unwrap_or(usize::MAX));
+
+    // The effects hang under their own function, before its callees, with the vertical line
+    // carried through when there are callees still to come.
+    let stem = if kids.is_empty() { "   " } else { "│  " };
+    for mark in &marks {
+        report.push(format!("{continuation}{stem}{}{mark}", if effect == Effect::State { "● " } else { "▲ " }));
+    }
+
+    for (index, child) in kids.iter().enumerate() {
+        let last = index + 1 == kids.len();
+        let elbow = if last { "└─ " } else { "├─ " };
+        let carry = if last { "   " } else { "│  " };
+        write_subtree(
+            child,
+            &format!("{continuation}{elbow}"),
+            &format!("{continuation}{carry}"),
+            children,
+            by_id,
+            keep,
+            order,
+            effect,
+            report,
+        );
+    }
+}
+
+/// A path as the screenshots show it — relative to the audited repository.
+fn prettify(path: &str) -> String {
+    crate::batbelt::path::prettify_source_code_path(path).unwrap_or_else(|_| path.to_string())
+}
 
 pub async fn run(options: AutoDeployOptions) -> Result<()> {
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
