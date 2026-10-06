@@ -652,6 +652,10 @@ fn written_names(section: &[String]) -> Vec<String> {
 /// One distinguishable mark per state variable: a colour each, and when the wheel runs out
 /// the DECORATION changes rather than the colour repeating alone.
 ///
+/// The order the decorations come in is itself a reading: a block of colour, then a rule
+/// with no block, then BOTH — so the first wheel is the plainest and a variable only gets a
+/// busier mark once the simple ones are spent. The broken-rule pair closes it out.
+///
 /// Five decorations × seven colours is thirty-five marks no two of which look alike, which
 /// is well past what one entry point writes. The shortest palette sets the wheel so an index
 /// means the same hue whichever decoration is on it — two variables of the same colour are
@@ -660,10 +664,10 @@ fn state_traces(names: &[String]) -> Vec<crate::batbelt::silicon::TracedName> {
     use crate::batbelt::silicon::{TraceKind, TracedName};
     const VARIANTS: &[(TraceKind, bool)] = &[
         (TraceKind::Parameter, false),   // a block of colour
-        (TraceKind::NamedReturn, false), // block + solid rule
+        (TraceKind::Local, false),       // a rule under it, no block
+        (TraceKind::NamedReturn, false), // both: block + solid rule
+        (TraceKind::Local, true),        // broken rule, no block
         (TraceKind::Parameter, true),    // block + broken rule
-        (TraceKind::Local, false),       // solid rule
-        (TraceKind::Local, true),        // broken rule
     ];
     const WHEEL: usize = 7;
     names

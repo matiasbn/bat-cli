@@ -558,7 +558,8 @@ bat-cli effects --entry-point Vault.deposit --deploy    # also put it on the boa
 deployed, so the report and the diagram it summarises are one glance apart; with nothing
 deployed it goes below everything on the board.
 
-On the board each state variable is marked in its own colour, and the state-changes tree
+On the board each state variable is marked in its own colour — a block of colour first, a
+rule with no block once those run out, both on the third wheel — and the state-changes tree
 opens with a `changed: …` line listing them all — the one-line answer to "what does this
 touch", with the tree underneath saying where each write happens.
 
@@ -985,6 +986,13 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.41
+- **The marks on `effects` state variables go plain first.** The first seven are a block of
+  colour, the next seven a rule with no block, and only the third wheel carries both — so a
+  tree with four variables is marked as simply as it can be, and a busier mark means the
+  simple ones were spent.
+  _Re-read: workflow.md._
 
 ## 0.26.40
 - **`effects --deploy` lands next to the diagram.** The frame goes to the right of the entry
