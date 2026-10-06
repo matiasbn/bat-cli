@@ -3472,6 +3472,68 @@ fn build_graph(
                             }
                         }
                     }
+                    // The same for a receiver that is a STATE VARIABLE typed with an
+                    // interface — `controller.depositFor` where `controller` is an
+                    // `ITrancheController`. Only the cast form was reported, so this one
+                    // failed in silence: `TrancheToken.deposit` drew a single box because
+                    // nine vendored copies of OpenZeppelin's `ERC20Wrapper` also define
+                    // `depositFor`, and nothing said which binding was missing.
+                    //
+                    // Refusing to guess is right; refusing without saying what to resolve is
+                    // what left the auditor with no way forward.
+                    else if let Some(variable) =
+                        contract.state_variables.iter().find(|v| v.name == receiver)
+                    {
+                        let type_name = variable.type_name.trim().to_string();
+                        let is_interface =
+                            metadata.interfaces.iter().any(|i| i.name == type_name)
+                                || metadata.contracts.iter().any(|c| {
+                                    c.name == type_name
+                                        && c.contract_type == EvmContractType::Interface
+                                });
+                        if is_interface && !metadata.resolutions.contains_key(&type_name) {
+                            let names: Vec<String> =
+                                definer_map.get(method).cloned().unwrap_or_default();
+                            let writes = names.iter().any(|name| {
+                                metadata
+                                    .contract_in_scope(name, &contract.file_path)
+                                    .and_then(|c| {
+                                        find_function(metadata, &c.name, &c.file_path, method, arity)
+                                    })
+                                    .is_some_and(|(c, f)| {
+                                        leads_to_write(
+                                            metadata,
+                                            c,
+                                            &f,
+                                            &write_options,
+                                            &write_definer_map,
+                                            &mut write_memo,
+                                            &mut HashSet::new(),
+                                        )
+                                    })
+                            });
+                            if writes {
+                                unresolved.push(
+                                    crate::batbelt::evm::metadata::bat_metadata::UnresolvedCall {
+                                        receiver: receiver.to_string(),
+                                        method: method.to_string(),
+                                        inferred_type: type_name.clone(),
+                                        candidates: names,
+                                        assigned_in: Vec::new(),
+                                    },
+                                );
+                            } else {
+                                let entry = left_out_reads
+                                    .entry((type_name, method.to_string()))
+                                    .or_insert_with(|| (names.clone(), Vec::new()));
+                                entry.1.push(format!(
+                                    "{}:{}",
+                                    contract.name,
+                                    function.line + call.line - 1
+                                ));
+                            }
+                        }
+                    }
                 }
                 continue;
             };
@@ -4852,6 +4914,13 @@ fn destub<'a>(
 /// concrete contract name.
 fn implementations_of(metadata: &EvmBatMetadata, type_name: &str) -> Vec<String> {
     let clean = type_name.trim();
+    // What the auditor said wins over what the source declares. `bat-cli resolve` exists for
+    // exactly the case this function cannot see: a contract that implements an interface
+    // WITHOUT declaring `is IFace`, which is legal and common. The binding was recorded and
+    // then never read here, so the one escape hatch for an unresolvable call did nothing.
+    if let Some(bound) = metadata.resolutions.get(clean) {
+        return vec![bound.clone()];
+    }
     if let Some(interface) = metadata.interfaces.iter().find(|i| i.name == clean) {
         if !interface.implemented_by.is_empty() {
             return interface.implemented_by.clone();
@@ -7553,6 +7622,36 @@ mod marking_test {
             line: 1,
             external: false,
         }
+    }
+
+    /// A contract may implement an interface WITHOUT declaring `is IFace`, which is legal
+    /// and common, and then nothing in the source says what the interface binds to. That is
+    /// what `bat-cli resolve` is for — and the binding it records was written and never
+    /// read on this path, so `TrancheToken.deposit` drew one box with no way to fix it.
+    #[test]
+    fn a_recorded_resolution_binds_an_interface_nothing_declares() {
+        let metadata = EvmBatMetadata {
+            resolutions: std::collections::HashMap::from([(
+                "ITrancheController".to_string(),
+                "TrancheController".to_string(),
+            )]),
+            ..Default::default()
+        };
+        assert_eq!(
+            implementations_of(&metadata, "ITrancheController"),
+            vec!["TrancheController".to_string()]
+        );
+    }
+
+    /// Without one, the answer is unchanged: the interface itself, which has no body — the
+    /// caller then refuses to guess rather than picking a definer.
+    #[test]
+    fn without_a_resolution_an_undeclared_interface_stays_unbound() {
+        let metadata = EvmBatMetadata::default();
+        assert_eq!(
+            implementations_of(&metadata, "ITrancheController"),
+            vec!["ITrancheController".to_string()]
+        );
     }
 
     /// `using Address for address;` binds a bare method to a library — and the receiver
