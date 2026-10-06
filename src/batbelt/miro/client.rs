@@ -418,13 +418,28 @@ impl MiroClient {
         width: f64,
         height: f64,
     ) -> Result<String, MiroError> {
+        self.create_colored_line_band(frame_id, x, y, width, height, "#f24726").await
+    }
+
+    /// The same band in any colour. Blue is what `bat-cli highlight` draws: a mark the
+    /// assistant puts on a line for the auditor to find, which must not be mistaken for the
+    /// red one the deploy puts on a state change — those mean something about the code.
+    pub async fn create_colored_line_band(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        color: &str,
+    ) -> Result<String, MiroError> {
         let url = self.endpoint("shapes");
         let body = json!({
             "data": { "shape": "rectangle" },
             "style": {
-                "fillColor": "#f24726",
+                "fillColor": color,
                 "fillOpacity": "0.30",
-                "borderColor": "#f24726",
+                "borderColor": color,
                 "borderWidth": "2",
                 "borderOpacity": "0.9",
             },
@@ -435,7 +450,97 @@ impl MiroClient {
         .to_string();
 
         let value = self
-            .execute(LEVEL_2_CREDITS, "create_line_highlight", move |http| {
+            .execute(LEVEL_2_CREDITS, "create_line_band", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
+    /// A hollow rectangle at the FRAME's own bounds, so a frame carrying a highlight is
+    /// recognisable from the zoom where a whole cluster fits on screen.
+    ///
+    /// Not the frame's border: Miro's REST API does not set one (see §19 of
+    /// docs/diagram-deploy-design.md, where the state tint had to become the frame's FILL
+    /// for the same reason). The fill is spoken for — pale red and amber already say
+    /// whether the frame changes state — so an outline it is. It costs one item, which is
+    /// the objection that ruled it out for the tint, and here it does not apply: this mark
+    /// is temporary and `--clear` already deletes what it created.
+    pub async fn create_frame_outline(
+        &self,
+        frame_id: &str,
+        frame_width: f64,
+        frame_height: f64,
+        color: &str,
+    ) -> Result<String, MiroError> {
+        // Flush with the frame's edge, on the outside of it. The stroke is centred on the
+        // rectangle's path, so a rectangle one stroke wider than the frame puts the inner
+        // half of the line exactly on the edge and the outer half beyond it — against the
+        // board, where nothing else is, and clear of the frame's title.
+        let outset = 24.0;
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": {
+                "fillOpacity": "0.0",
+                "borderColor": color,
+                // 24 is Miro's ceiling: anything above it is refused with
+                // `style.borderWidth: Expected valid decimal number: must be less than 24.0`.
+                // So "thicker" is bought with the outset, not the stroke.
+                "borderWidth": "24",
+                "borderOpacity": "1.0",
+            },
+            "position": { "x": frame_width / 2.0, "y": frame_height / 2.0 },
+            "geometry": { "width": frame_width + outset, "height": frame_height + outset },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_frame_outline", move |http| {
+                http.post(&url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.clone())
+            })
+            .await?;
+        Ok(value["id"].as_str().unwrap_or_default().to_string())
+    }
+
+    /// A hollow BLUE rectangle around a screenshot that carries a highlight, so the box
+    /// holding the marked line is findable from across the frame.
+    ///
+    /// Drawn thinner and tighter than the red and amber borders on purpose: those say
+    /// something about the code and this only says "look here", so when a screenshot
+    /// carries both, the claim stays legible and the pointer sits inside it.
+    pub async fn create_highlight_border(
+        &self,
+        frame_id: &str,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        color: &str,
+    ) -> Result<String, MiroError> {
+        let pad = 16.0;
+        let url = self.endpoint("shapes");
+        let body = json!({
+            "data": { "shape": "rectangle" },
+            "style": {
+                "fillOpacity": "0.0",
+                "borderColor": color,
+                "borderWidth": "8",
+                "borderOpacity": "1.0",
+            },
+            "position": { "x": x, "y": y },
+            "geometry": { "width": width + pad, "height": height + pad },
+            "parent": { "id": frame_id },
+        })
+        .to_string();
+
+        let value = self
+            .execute(LEVEL_2_CREDITS, "create_highlight_border", move |http| {
                 http.post(&url)
                     .header(CONTENT_TYPE, "application/json")
                     .body(body.clone())

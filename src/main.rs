@@ -191,6 +191,25 @@ enum BatCommands {
         #[arg(long)]
         check: bool,
     },
+    /// Put a blue band on chosen lines of a frame already on the board, so the assistant
+    /// can point the auditor at code without them hunting for the box.
+    Highlight {
+        /// The deployment: the entry point it was deployed for.
+        #[arg(long)]
+        deployment: Option<String>,
+        /// Which frame of that deployment — a function's name. Omitted means its root frame.
+        #[arg(long)]
+        function: Option<String>,
+        /// The frame's Miro link, when the names are ambiguous.
+        #[arg(long = "frame-url", value_name = "URL")]
+        frame_url: Option<String>,
+        /// File lines to mark: `288`, `288-291`, or `288,290-292`.
+        #[arg(long, default_value = "")]
+        lines: String,
+        /// Remove every band this command put on that frame instead of drawing one.
+        #[arg(long)]
+        clear: bool,
+    },
     /// What an entry point can do to the world: every storage write and every call that
     /// leaves the code in scope, in call order. The same walk `deploy` draws, printed.
     Effects {
@@ -353,6 +372,23 @@ impl BatCommands {
             )
             .await
             .change_context(CommandError),
+            BatCommands::Highlight {
+                deployment,
+                function,
+                frame_url,
+                lines,
+                clear,
+            } => crate::batbelt::evm::miro::highlight::run(
+                crate::batbelt::evm::miro::highlight::HighlightOptions {
+                    deployment: deployment.clone(),
+                    function: function.clone(),
+                    frame_url: frame_url.clone(),
+                    lines: lines.clone(),
+                    clear: *clear,
+                },
+            )
+            .await
+            .change_context(CommandError),
             BatCommands::Effects {
                 entry_point,
                 allow_unresolved,
@@ -405,6 +441,7 @@ impl BatCommands {
             | BatCommands::Resolve { .. }
             | BatCommands::Overview { .. }
             | BatCommands::Effects { .. }
+            | BatCommands::Highlight { .. }
             | BatCommands::Ignore { .. } => true,
         };
 

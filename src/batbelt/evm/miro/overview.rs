@@ -272,13 +272,10 @@ pub(crate) async fn free_spot(
     height: f64,
 ) -> Result<(f64, f64), EvmMiroError> {
     let frames = client.list_frames().await.change_context(EvmMiroError)?;
-    let (left, top) = if frames.is_empty() {
-        (0.0, 0.0)
-    } else {
-        let bottom = frames.iter().map(|f| f.bottom()).fold(f64::MIN, f64::max);
-        let left = frames.iter().map(|f| f.left()).fold(f64::MAX, f64::min);
-        (left, bottom + REGION_MARGIN)
-    };
+    // Under the frame that reaches lowest, and aligned with IT — not with the leftmost
+    // frame on the board, which lets one frame dragged far left move the origin for
+    // everything drawn afterwards.
+    let (left, top) = crate::batbelt::evm::miro::auto_deploy::below_everything(&frames);
     println!(
         "  below {} existing frame(s), at ({}, {})",
         frames.len(),
