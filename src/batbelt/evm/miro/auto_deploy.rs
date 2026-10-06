@@ -410,7 +410,7 @@ pub async fn effects(options: AutoDeployOptions) -> Result<()> {
     }
 
     if options.deploy_effects {
-        deploy_effects(&title, &sections).await?;
+        deploy_effects(&metadata, &title, &sections).await?;
     }
 
     Ok(())
@@ -420,9 +420,16 @@ pub async fn effects(options: AutoDeployOptions) -> Result<()> {
 ///
 /// The terminal is where you read it once; the board is where it sits next to the diagram it
 /// describes, so "what does this touch" and "how does it work" are the same glance apart.
-/// It is placed below everything already there, re-read from the board, so it cannot land on
-/// another frame — Miro refuses that outright.
-async fn deploy_effects(title: &str, sections: &[Vec<String>]) -> Result<()> {
+/// "Next to" is literal: it lands to the RIGHT of the entry point's own cluster when that
+/// entry point has been deployed, because a report a screen away from the diagram it
+/// summarises is a report nobody reads. With no cluster to sit beside it falls back to below
+/// everything. Either way the spot is checked against the board's frames first — Miro
+/// refuses overlapping frames outright.
+async fn deploy_effects(
+    metadata: &EvmBatMetadata,
+    title: &str,
+    sections: &[Vec<String>],
+) -> Result<()> {
     use crate::batbelt::path::BatFolder;
 
     BatFolder::Figures.create_folder().change_context(EvmMiroError)?;
@@ -451,12 +458,31 @@ async fn deploy_effects(title: &str, sections: &[Vec<String>]) -> Result<()> {
     let height: f64 = rendered.iter().fold(0.0_f64, |tallest, (_, _, h)| tallest.max(*h));
 
     let client = MiroClient::new_refreshed().await.change_context(EvmMiroError)?;
-    let (frame_x, frame_y) = crate::batbelt::evm::miro::overview::free_spot(
-        &client,
-        width + MARGIN * 2.0,
-        height + MARGIN * 2.0,
-    )
-    .await?;
+    let frame_width = width + MARGIN * 2.0;
+    let frame_height = height + MARGIN * 2.0;
+    let board_frames = client.list_frames().await.change_context(EvmMiroError)?;
+    let (frame_x, frame_y) = match beside_cluster(
+        metadata,
+        title,
+        &board_frames,
+        frame_width,
+        frame_height,
+    ) {
+        Some(spot) => {
+            println!("  beside the {title} cluster");
+            spot
+        }
+        None => {
+            let (left, top) = below_everything(&board_frames);
+            println!(
+                "  below {} existing frame(s), at ({}, {})",
+                board_frames.len(),
+                left.round(),
+                top.round()
+            );
+            (left + frame_width / 2.0, top + frame_height / 2.0)
+        }
+    };
     let frame_id = client
         .create_frame(
             &format!("effects: {title}"),
@@ -1233,6 +1259,72 @@ async fn resolve_allocator(
         frames.len()
     );
     Ok(ShelfAllocator::new(origin_x, origin_y))
+}
+
+/// A centre for the effects frame to the RIGHT of `title`'s deployed cluster.
+///
+/// The cluster is read from the registry (every frame whose `cluster_root` is this entry
+/// point) but its CURRENT box comes from the board, because the auditor drags frames and the
+/// recorded position is only where a frame was born. `None` when the entry point has nothing
+/// deployed, or when nothing clear was found — the caller then falls back to below everything.
+///
+/// Scanning downward rather than sideways: to the right of a cluster is where the next
+/// cluster's column usually is, so the first free slot is normally one step down, and
+/// stepping down keeps the report at the same reading distance from its diagram.
+fn beside_cluster(
+    metadata: &EvmBatMetadata,
+    title: &str,
+    board_frames: &[crate::batbelt::miro::client::BoardFrame],
+    width: f64,
+    height: f64,
+) -> Option<(f64, f64)> {
+    const GAP: f64 = 1_000.0;
+
+    let ids: HashSet<&str> = metadata
+        .miro
+        .auto
+        .frames
+        .iter()
+        .filter(|frame| frame.cluster_root == title || frame.entry_point == title)
+        .map(|frame| frame.frame_id.as_str())
+        .collect();
+    if ids.is_empty() {
+        return None;
+    }
+
+    let cluster: Vec<&crate::batbelt::miro::client::BoardFrame> = board_frames
+        .iter()
+        .filter(|frame| ids.contains(frame.id.as_str()))
+        .collect();
+    if cluster.is_empty() {
+        return None;
+    }
+
+    let right = cluster
+        .iter()
+        .map(|frame| frame.x + frame.width / 2.0)
+        .fold(f64::MIN, f64::max);
+    let top = cluster
+        .iter()
+        .map(|frame| frame.y - frame.height / 2.0)
+        .fold(f64::MAX, f64::min);
+
+    let left = right + GAP;
+    let mut candidate_top = top;
+    // Bounded: an unbounded walk down a crowded board would be a silent hang, and the
+    // fallback is perfectly usable.
+    for _ in 0..40 {
+        let center = (left + width / 2.0, candidate_top + height / 2.0);
+        let clear = board_frames.iter().all(|frame| {
+            (center.0 - frame.x).abs() * 2.0 >= width + frame.width + GAP
+                || (center.1 - frame.y).abs() * 2.0 >= height + frame.height + GAP
+        });
+        if clear {
+            return Some(center);
+        }
+        candidate_top += height + GAP;
+    }
+    None
 }
 
 /// The top-left of a clear band under every frame on the board.
