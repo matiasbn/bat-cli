@@ -827,7 +827,7 @@ Top level: `contracts`, `entry_points`, `function_dependencies`, `interfaces`, `
   declarations inside a contract, which is where Solidity puts most structs and enums.
 
 - **`contracts[]`** — `metadata_id`, `name`, `file_path`, `contract_type`
-  (`Contract` | `Interface` | `Abstract` | `Library`), `base_contracts`, `line`, `external`,
+  (`Contract` | `Interface` | `Abstract` | `Library`), `base_contracts`, `line`, `vendored`,
   and nested `functions`, `state_variables`, `events`, `modifiers`.
   - `functions[]` — `metadata_id`, `name`, `contract_name`, `visibility`, `mutability`,
     `modifiers`, `params`, `returns`, `line`, `end_line`, `is_constructor`, `is_stub` (bodyless
@@ -873,8 +873,11 @@ Two rules that decide most queries:
 
 - **Cross-references are by `metadata_id`** — a random 30-character string — **never by name.**
   Join on the id; two contracts can define the same function name.
-- **`external: true` marks anything from `lib/`.** Exclude it for scope questions: a finding in
-  a vendored dependency is usually out of scope.
+- **`vendored: true` marks anything from `lib/`** — somebody else's code copied into the
+  repository by Foundry. It says where the code came from, not whether it is worth reviewing:
+  a finding in a dependency is usually out of scope, but that is YOUR call, and the list of
+  what a review leaves out is `ignored_contracts`. (Written as `external` before 0.26.36;
+  files from then on carry both names on read.)
 
 `access_control` values: `OnlyOwner`, `{"RoleBased": {"role": …}}`,
 `{"RequireMsgSender": {"compared_to": …}}`, `{"CustomModifier": {"name": …}}`, `None`.
@@ -889,7 +892,7 @@ jq -r '.entry_points[] | "\(.name)  \(.access_control | tostring)"' BatMetadata.
 jq -r '.entry_points[] | select((.access_control | length) == 0 or .access_control == ["None"]) | .name' BatMetadata.json
 
 # in-scope contracts only (drop lib/)
-jq -r '.contracts[] | select(.external | not) | "\(.name)\t\(.file_path)"' BatMetadata.json
+jq -r '.contracts[] | select(.vendored | not) | "\(.name)\t\(.file_path)"' BatMetadata.json
 
 # one contract's functions, with visibility, mutability and line span
 jq -r '.contracts[] | select(.name == "Vault") | .functions[]
@@ -937,6 +940,29 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.36
+- **`external` is now `vendored`, and it means where the code comes from.** The flag marks
+  a contract copied into `lib/` by Foundry — somebody else's code living in your repository.
+  It never meant "out of scope"; what a review leaves out is the `ignore` list, which you
+  declare. The old name read as scope and that is how `lib/` quietly started deciding what
+  could be offered as a resolution candidate. `BatMetadata.json` written by an older version
+  still loads, and `jq` recipes should move from `.external` to `.vendored`.
+- **The scan says what it does not read.** `test/`, `script/` and `mock/` directories are
+  skipped — reasonably, they are not the code under review — but in silence. It now reports
+  how many files that was. It matters because `script/` is where a deployment says who owns
+  whom and who holds which role, so no question of that kind can be answered from the
+  metadata.
+- **`overview --include-dependencies`** draws `lib/` too. It is left out by default because
+  it dwarfs the project, not because it is out of scope, and now that is a choice you make.
+- **A resolution candidate is no longer hidden for living in `lib/`.** When a deploy listed
+  the contracts an interface call could bind to, it silently dropped every one under `lib/`.
+  The reasoning was sound — `IERC20(token)` is a deployed token, never OpenZeppelin's
+  `ERC20` template — but it is the tool deciding the scope of your review in silence, and
+  the day the real target IS a vendored contract it would not appear and nothing would say
+  why. The candidates are now whatever defines the method, minus what YOU put on the ignore
+  list, which is the one place a review's scope is declared.
+  _Re-read: workflow.md._
 
 ## 0.26.35
 - **`bat-cli resolve` now actually binds the interface.** The binding it records was written

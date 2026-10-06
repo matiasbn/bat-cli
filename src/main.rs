@@ -204,10 +204,15 @@ enum BatCommands {
         #[arg(long)]
         deploy: bool,
     },
-    /// Draw every in-scope contract, whole, side by side in ONE frame — the picture of how
-    /// much there is to read and how much of it you have. The scale comes from the longest
-    /// file, so it is the one you can read comfortably.
-    Overview,
+    /// Draw every contract of this project, whole, side by side in ONE frame — the picture
+    /// of how much there is to read and how much of it you have. The scale comes from the
+    /// longest file, so it is the one you can read comfortably.
+    Overview {
+        /// Include the vendored dependencies under `lib/` too. Off by default because
+        /// `lib/` dwarfs the project, not because it is out of scope — that is `ignore`.
+        #[arg(long = "include-dependencies")]
+        include_dependencies: bool,
+    },
     /// Never draw a contract's functions again (a library you have already read)
     Ignore {
         /// Contract name (`Math`) or any part of a path
@@ -362,9 +367,11 @@ impl BatCommands {
             )
             .await
             .change_context(CommandError),
-            BatCommands::Overview => {
-                crate::batbelt::evm::miro::overview::run().await.change_context(CommandError)
-            }
+            BatCommands::Overview {
+                include_dependencies,
+            } => crate::batbelt::evm::miro::overview::run(*include_dependencies)
+                .await
+                .change_context(CommandError),
             BatCommands::Ignore {
                 pattern,
                 list,
@@ -396,7 +403,7 @@ impl BatCommands {
             | BatCommands::Screenshot { .. }
             | BatCommands::Relink { .. }
             | BatCommands::Resolve { .. }
-            | BatCommands::Overview
+            | BatCommands::Overview { .. }
             | BatCommands::Effects { .. }
             | BatCommands::Ignore { .. } => true,
         };

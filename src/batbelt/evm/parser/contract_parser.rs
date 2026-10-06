@@ -102,7 +102,7 @@ pub fn parse_contract_definition(
                     file_path: String::new(),
                     line: span_to_line(sess, item.span),
                     end_line: span_to_end_line(sess, item.span),
-                    external: false,
+                    vendored: false,
                     owner: name.clone(),
                 });
             }
@@ -113,7 +113,7 @@ pub fn parse_contract_definition(
                     file_path: String::new(),
                     line: span_to_line(sess, item.span),
                     end_line: span_to_end_line(sess, item.span),
-                    external: false,
+                    vendored: false,
                     owner: name.clone(),
                 });
             }
@@ -123,7 +123,8 @@ pub fn parse_contract_definition(
 
     let line = span_to_line(sess, contract.name.span);
 
-    let external = file_path.contains("/lib/");
+    // `lib/` is where Foundry puts a vendored dependency: somebody else's code, copied in.
+    let vendored = file_path.contains("/lib/");
 
     using_libraries.sort();
     using_libraries.dedup();
@@ -138,7 +139,7 @@ pub fn parse_contract_definition(
         events,
         file_path: file_path.to_string(),
         line,
-        external,
+        vendored,
         structs,
         inner_items,
     }

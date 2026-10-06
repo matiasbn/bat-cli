@@ -86,7 +86,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         file_path: String::new(),
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
-                        external: false,
+                        vendored: false,
                         owner: String::new(),
                     });
                 }
@@ -97,7 +97,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         file_path: String::new(),
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
-                        external: false,
+                        vendored: false,
                         owner: String::new(),
                     });
                 }
@@ -108,7 +108,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         file_path: String::new(),
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
-                        external: false,
+                        vendored: false,
                         owner: String::new(),
                     });
                 }
@@ -119,7 +119,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         file_path: String::new(),
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
-                        external: false,
+                        vendored: false,
                         owner: String::new(),
                     });
                 }
@@ -131,7 +131,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                             file_path: String::new(),
                             line: span_to_line(&sess, item.span),
                             end_line: span_to_end_line(&sess, item.span),
-                            external: false,
+                            vendored: false,
                             owner: String::new(),
                         });
                     }
@@ -145,7 +145,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                                 file_path: String::new(),
                                 line: span_to_line(&sess, item.span),
                                 end_line: span_to_end_line(&sess, item.span),
-                                external: false,
+                                vendored: false,
                                 owner: String::new(),
                             });
                         }
@@ -158,7 +158,7 @@ pub fn parse_sol_file(file_path: &str) -> EvmParserResult<EvmFile> {
                         file_path: String::new(),
                         line: span_to_line(&sess, item.span),
                         end_line: span_to_end_line(&sess, item.span),
-                        external: false,
+                        vendored: false,
                         owner: String::new(),
                     });
                 }

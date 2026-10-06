@@ -54,7 +54,7 @@ struct Column {
     height: f64,
 }
 
-pub async fn run() -> Result<(), EvmMiroError> {
+pub async fn run(include_dependencies: bool) -> Result<(), EvmMiroError> {
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
 
     // The unit is the FILE, not the contract: a file holds a contract plus the interfaces
@@ -64,7 +64,11 @@ pub async fn run() -> Result<(), EvmMiroError> {
     let mut paths: Vec<String> = metadata
         .contracts
         .iter()
-        .filter(|contract| !contract.external)
+        // Vendored code is left out by default and NOT because it is out of scope — that is
+        // the ignore list's job — but because `lib/` is hundreds of thousands of lines
+        // against this project's eleven thousand, and the picture stops being one. Asking
+        // for it is a flag, so the choice is yours and visible.
+        .filter(|contract| include_dependencies || !contract.vendored)
         .filter(|contract| {
             !metadata.ignored_contracts.iter().any(|pattern| {
                 matches_ignore(pattern, &contract.name, &contract.file_path)
