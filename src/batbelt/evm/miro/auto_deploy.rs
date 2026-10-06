@@ -3437,6 +3437,7 @@ fn build_graph(
                             type_name,
                             method,
                             arity,
+                            options,
                         );
                         if candidates.len() > 1 && !metadata.resolutions.contains_key(type_name) {
                             let names: Vec<String> =
@@ -4814,7 +4815,8 @@ fn resolve_cast<'a>(
         return destub(metadata, found, options);
     }
 
-    let mut implementations = cast_implementations(metadata, caller_contract, type_name, method, arg_count);
+    let mut implementations =
+        cast_implementations(metadata, caller_contract, type_name, method, arg_count, options);
     implementations.retain(|(contract, _)| keep(contract));
     if implementations.len() == 1 {
         return implementations.pop();
@@ -4833,6 +4835,7 @@ fn cast_implementations<'a>(
     type_name: &str,
     method: &str,
     arg_count: Option<usize>,
+    options: &AutoDeployOptions,
 ) -> Vec<(&'a ContractMetadata, FunctionMetadata)> {
     let mut names: Vec<String> = implementations_of(metadata, type_name);
     names.sort();
@@ -4848,12 +4851,13 @@ fn cast_implementations<'a>(
         if contract.contract_type == EvmContractType::Interface {
             continue;
         }
-        // The same rule the scan applies (`compute_unresolved_calls`): a generic library
-        // implementation is not what a runtime address points at. `IERC20(token)` is some
-        // deployed token, never OpenZeppelin's `ERC20` template, and offering the template
-        // as a candidate invites a global `bat-cli resolve IERC20 ERC20` that would bind
-        // every IERC20 cast in the project to the wrong code.
-        if contract.external {
+        // A candidate is offered whatever directory it lives in. Dropping the ones under
+        // `lib/` kept `IERC20(token)` from suggesting OpenZeppelin's `ERC20` template —
+        // which is good advice and the wrong place to enforce it, because the tool was
+        // deciding in silence and the day the real target IS in `lib/` it would not appear
+        // and nobody could tell why. What the auditor does not want to see goes on the
+        // ignore list, which is the one place the scope of a review is declared.
+        if ignored_contract(options, contract) {
             continue;
         }
         if let Some((defining, function)) =

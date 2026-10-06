@@ -938,6 +938,16 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.36
+- **A resolution candidate is no longer hidden for living in `lib/`.** When a deploy listed
+  the contracts an interface call could bind to, it silently dropped every one under `lib/`.
+  The reasoning was sound — `IERC20(token)` is a deployed token, never OpenZeppelin's
+  `ERC20` template — but it is the tool deciding the scope of your review in silence, and
+  the day the real target IS a vendored contract it would not appear and nothing would say
+  why. The candidates are now whatever defines the method, minus what YOU put on the ignore
+  list, which is the one place a review's scope is declared.
+  _Re-read: workflow.md._
+
 ## 0.26.35
 - **`bat-cli resolve` now actually binds the interface.** The binding it records was written
   to the metadata and never read where it was needed: a contract that implements an
