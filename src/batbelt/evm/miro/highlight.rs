@@ -41,10 +41,15 @@ pub struct HighlightOptions {
     pub lines: String,
     /// Remove every band this command put on the frame, and draw nothing.
     pub clear: bool,
+    /// List what can be marked instead of marking anything.
+    pub list: bool,
 }
 
 pub async fn run(options: HighlightOptions) -> Result<(), EvmMiroError> {
     let metadata = EvmBatMetadata::read_metadata().change_context(EvmMiroError)?;
+    if options.list {
+        return list(&metadata, options.deployment.as_deref());
+    }
     let frame = pick_frame(&metadata, &options)?;
     if options.clear {
         return clear(frame).await;
@@ -182,6 +187,70 @@ pub async fn run(options: HighlightOptions) -> Result<(), EvmMiroError> {
     Ok(())
 }
 
+/// What can be marked: every function DRAWN in a deployment, with the lines it shows.
+///
+/// Guessing and failing is the alternative, and the set is not obvious — a deployment draws
+/// what its own entry point reaches, so `TrancheToken.deposit` has `_enter` and not `_exit`,
+/// which lives on the redeem path. `screenshot` lists frames, a much smaller set: most
+/// functions are screenshots INSIDE one.
+fn list(metadata: &EvmBatMetadata, deployment: Option<&str>) -> Result<(), EvmMiroError> {
+    let mut deployments: Vec<&str> = metadata
+        .miro
+        .auto
+        .frames
+        .iter()
+        .map(|f| f.cluster_root.as_str())
+        .filter(|root| deployment.is_none_or(|wanted| *root == wanted))
+        .collect();
+    deployments.sort_unstable();
+    deployments.dedup();
+
+    if deployments.is_empty() {
+        println!("  {} no deployment{}", "note:".yellow(), match deployment {
+            Some(name) => format!(" called `{name}`"),
+            None => " on this board".to_string(),
+        });
+        return Ok(());
+    }
+
+    for root in deployments {
+        let frames: Vec<&AutoDeployedFrame> = metadata
+            .miro
+            .auto
+            .frames
+            .iter()
+            .filter(|f| f.cluster_root == root)
+            .collect();
+        let mut drawable: Vec<(String, usize, usize)> = frames
+            .iter()
+            .flat_map(|f| f.line_maps.iter())
+            .map(|map| {
+                // A function copied next to two callers is drawn twice on purpose and
+                // carries a `#dup…` id for each copy. To the question "what can I mark" it
+                // is one function — and marking it marks every copy anyway.
+                let name = map.node_id.split('#').next().unwrap_or(&map.node_id);
+                (name.replacen("::", ".", 1), map.start_line, map.end_line)
+            })
+            .collect();
+        drawable.sort();
+        drawable.dedup();
+
+        println!("\n{} {}", "▸".blue(), root.bold());
+        if drawable.is_empty() {
+            println!(
+                "  {} drawn before 0.26.37, which is when bat-cli started recording what each",
+                "note:".yellow()
+            );
+            println!("  screenshot shows, so nothing on it can be marked — deploy it again");
+            continue;
+        }
+        for (name, start, end) in drawable {
+            println!("  {name:<48} lines {start}-{end}");
+        }
+    }
+    Ok(())
+}
+
 /// Take every band off the frame.
 ///
 /// Only the ones this command drew: their ids were recorded, so the auditor's own shapes —
@@ -297,12 +366,27 @@ fn pick_frame<'a>(
                 })
             })
             .collect();
+
+        // A deployment drawn before the line maps existed can answer nothing, and saying
+        // "that function is not drawn" blames the function for the record being old. The
+        // two are different problems and only one of them is fixed by looking elsewhere.
+        if matches.is_empty() {
+            let candidates: Vec<&AutoDeployedFrame> =
+                frames.iter().filter(in_deployment).collect();
+            if !candidates.is_empty() && candidates.iter().all(|f| f.line_maps.is_empty()) {
+                return Err(Report::new(EvmMiroError).attach_printable(format!(
+                    "the deployment of `{}` was drawn before bat-cli recorded what each \
+                     screenshot shows, so nothing on it can be marked — deploy it again",
+                    candidates[0].cluster_root
+                )));
+            }
+        }
     }
 
     match matches.len() {
         1 => Ok(matches[0]),
         0 => Err(Report::new(EvmMiroError).attach_printable(format!(
-            "nothing called `{wanted}` is drawn{}",
+            "nothing called `{wanted}` is drawn{} — `bat-cli highlight --list` says what is",
             deployment.map(|d| format!(" in the deployment of {d}")).unwrap_or_default()
         ))),
         _ => {

@@ -528,6 +528,11 @@ opening the link and seeing it.
 - `--lines` takes `288`, `288-291`, or `288,290-292`, as FILE lines.
 - The frame gets a blue outline flush with its edge, and each marked screenshot a thin blue
   border, so a marked frame is recognisable from the zoom where a whole cluster fits.
+- `--list` says what can be marked, per deployment, with the line range each screenshot
+  shows. Use it before guessing: a deployment draws what ITS entry point reaches, so
+  `TrancheToken.deposit` has `_enter` and not `_exit`, which lives on the redeem path. It is
+  a much bigger set than the frames `bat-cli screenshot` lists, because most functions are
+  screenshots inside a frame rather than frames.
 - `--clear` removes every band, border and outline this command drew on that frame — and
   nothing else: the ids are recorded, so the auditor's own shapes and the deploy's red and
   amber marks are untouched.
@@ -969,6 +974,18 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.38
+- **`bat-cli highlight --list` says what can be marked**, per deployment, with the line range
+  each screenshot shows — so an assistant stops guessing a name and finding out by failing.
+  It is a much bigger set than the frames `bat-cli screenshot` lists: most functions are
+  screenshots inside a frame. And it makes a real limit visible, which is that a deployment
+  draws what ITS entry point reaches — `TrancheToken.deposit` has `_enter` and not `_exit`,
+  which is on the redeem path.
+- **A deployment drawn before the line maps says so.** It reported "nothing called X is
+  drawn", which blames the function for the record being old — two different problems, and
+  only one of them is fixed by trying another name.
+  _Re-read: workflow.md._
 
 ## 0.26.37
 - **A new cluster lands under the last one, not under the leftmost frame on the board.**
