@@ -558,6 +558,10 @@ bat-cli effects --entry-point Vault.deposit --deploy    # also put it on the boa
 deployed, so the report and the diagram it summarises are one glance apart; with nothing
 deployed it goes below everything on the board.
 
+On the board each state variable is marked in its own colour, and the state-changes tree
+opens with a `changed: …` line listing them all — the one-line answer to "what does this
+touch", with the tree underneath saying where each write happens.
+
 Prints two trees: every **state change** reachable from the entry point, and every
 **external boundary** — a call leaving the code in scope, which is where value can move.
 Each one hangs under the function that reaches it, with the variable it writes and the exact
@@ -988,6 +992,11 @@ so you re-open only the docs that actually changed — not everything.
   of below every frame there, which on a board with thirty clusters put the summary a screen
   away from what it summarises. With that entry point not deployed, or no clear spot beside
   it, it still falls back to below everything.
+- **Each state variable carries its own mark** in the deployed state-changes tree, and the
+  section opens with a `changed: a, b, c` line naming every one of them in its colour. A
+  colour each until the wheel runs out, then the decoration changes — thirty-five marks that
+  cannot be confused — so following one variable through a forty-line tree is a sweep instead
+  of a read.
   _Re-read: workflow.md._
 
 ## 0.26.39
