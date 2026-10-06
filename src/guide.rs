@@ -554,6 +554,14 @@ bat-cli effects --entry-point Vault.deposit
 bat-cli effects --entry-point Vault.deposit --deploy    # also put it on the board
 ```
 
+`--deploy` puts the frame **to the right of that entry point's own cluster** when it has been
+deployed, so the report and the diagram it summarises are one glance apart; with nothing
+deployed it goes below everything on the board.
+
+On the board each state variable is marked in its own colour, and the state-changes tree
+opens with a `changed: …` line listing them all — the one-line answer to "what does this
+touch", with the tree underneath saying where each write happens.
+
 Prints two trees: every **state change** reachable from the entry point, and every
 **external boundary** — a call leaving the code in scope, which is where value can move.
 Each one hangs under the function that reaches it, with the variable it writes and the exact
@@ -977,6 +985,19 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.40
+- **`effects --deploy` lands next to the diagram.** The frame goes to the right of the entry
+  point's deployed cluster — read from the BOARD, so dragging a frame is respected — instead
+  of below every frame there, which on a board with thirty clusters put the summary a screen
+  away from what it summarises. With that entry point not deployed, or no clear spot beside
+  it, it still falls back to below everything.
+- **Each state variable carries its own mark** in the deployed state-changes tree, and the
+  section opens with a `changed: a, b, c` line naming every one of them in its colour. A
+  colour each until the wheel runs out, then the decoration changes — thirty-five marks that
+  cannot be confused — so following one variable through a forty-line tree is a sweep instead
+  of a read.
+  _Re-read: workflow.md._
 
 ## 0.26.39
 - **A marked line says which FRAME it is on**, and `--list` is grouped by frame. At the zoom

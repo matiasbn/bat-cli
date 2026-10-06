@@ -359,7 +359,7 @@ pub async fn effects(options: AutoDeployOptions) -> Result<()> {
     // them should not have to step over the other. On the board they become two screenshots
     // side by side, so the two answers are compared rather than scrolled between.
     let root = nodes[0].id.clone();
-    let mut sections: Vec<Vec<String>> = Vec::new();
+    let mut sections: Vec<(Vec<String>, Vec<crate::batbelt::silicon::TracedName>)> = Vec::new();
     for effect in [Effect::State, Effect::Boundary] {
         let mut section = vec![
             match effect {
@@ -380,9 +380,21 @@ pub async fn effects(options: AutoDeployOptions) -> Result<()> {
         } else {
             write_subtree(&root, "", "", &children, &by_id, &keep, &order, effect, &mut section);
         }
+        // Every variable this entry point can write, named once, in the colour its marks
+        // carry further down. A tree of twelve writes spread over forty lines does not
+        // answer "what does it touch" until they are read together on one line.
+        let traced = if effect == Effect::State {
+            let names = written_names(&section);
+            if !names.is_empty() {
+                section.insert(2, format!("changed: {}", names.join(", ")));
+            }
+            state_traces(&names)
+        } else {
+            Vec::new()
+        };
         report.push(String::new());
         report.extend(section.iter().cloned());
-        sections.push(section);
+        sections.push((section, traced));
     }
 
     // Said last and said plainly: an unresolved interface is a branch this walk did not
@@ -410,7 +422,7 @@ pub async fn effects(options: AutoDeployOptions) -> Result<()> {
     }
 
     if options.deploy_effects {
-        deploy_effects(&title, &sections).await?;
+        deploy_effects(&metadata, &title, &sections).await?;
     }
 
     Ok(())
@@ -420,9 +432,16 @@ pub async fn effects(options: AutoDeployOptions) -> Result<()> {
 ///
 /// The terminal is where you read it once; the board is where it sits next to the diagram it
 /// describes, so "what does this touch" and "how does it work" are the same glance apart.
-/// It is placed below everything already there, re-read from the board, so it cannot land on
-/// another frame — Miro refuses that outright.
-async fn deploy_effects(title: &str, sections: &[Vec<String>]) -> Result<()> {
+/// "Next to" is literal: it lands to the RIGHT of the entry point's own cluster when that
+/// entry point has been deployed, because a report a screen away from the diagram it
+/// summarises is a report nobody reads. With no cluster to sit beside it falls back to below
+/// everything. Either way the spot is checked against the board's frames first — Miro
+/// refuses overlapping frames outright.
+async fn deploy_effects(
+    metadata: &EvmBatMetadata,
+    title: &str,
+    sections: &[(Vec<String>, Vec<crate::batbelt::silicon::TracedName>)],
+) -> Result<()> {
     use crate::batbelt::path::BatFolder;
 
     BatFolder::Figures.create_folder().change_context(EvmMiroError)?;
@@ -432,14 +451,15 @@ async fn deploy_effects(title: &str, sections: &[Vec<String>]) -> Result<()> {
     const GAP: f64 = 400.0;
 
     let mut rendered: Vec<(String, f64, f64)> = Vec::new();
-    for (index, section) in sections.iter().enumerate() {
-        let png_path = crate::batbelt::silicon::create_figure(
+    for (index, (section, traced)) in sections.iter().enumerate() {
+        let png_path = crate::batbelt::silicon::create_figure_tracing(
             &section.join("\n"),
             &destination,
             &format!("effects_{}_{index}.txt", title.replace('.', "_")),
             0,
             Some(REFERENCE_FONT),
             false,
+            traced,
         );
         let (png_width, png_height) =
             image::image_dimensions(&png_path).change_context(EvmMiroError)?;
@@ -451,12 +471,31 @@ async fn deploy_effects(title: &str, sections: &[Vec<String>]) -> Result<()> {
     let height: f64 = rendered.iter().fold(0.0_f64, |tallest, (_, _, h)| tallest.max(*h));
 
     let client = MiroClient::new_refreshed().await.change_context(EvmMiroError)?;
-    let (frame_x, frame_y) = crate::batbelt::evm::miro::overview::free_spot(
-        &client,
-        width + MARGIN * 2.0,
-        height + MARGIN * 2.0,
-    )
-    .await?;
+    let frame_width = width + MARGIN * 2.0;
+    let frame_height = height + MARGIN * 2.0;
+    let board_frames = client.list_frames().await.change_context(EvmMiroError)?;
+    let (frame_x, frame_y) = match beside_cluster(
+        metadata,
+        title,
+        &board_frames,
+        frame_width,
+        frame_height,
+    ) {
+        Some(spot) => {
+            println!("  beside the {title} cluster");
+            spot
+        }
+        None => {
+            let (left, top) = below_everything(&board_frames);
+            println!(
+                "  below {} existing frame(s), at ({}, {})",
+                board_frames.len(),
+                left.round(),
+                top.round()
+            );
+            (left + frame_width / 2.0, top + frame_height / 2.0)
+        }
+    };
     let frame_id = client
         .create_frame(
             &format!("effects: {title}"),
@@ -592,6 +631,51 @@ fn branches_that_matter(
 /// the same struct is six things to check, and six things to check do not fit on a line a
 /// reader is meant to scan.
 #[allow(clippy::too_many_arguments)]
+/// The state variables a built section writes, in the order the tree names them, each once.
+///
+/// Read back off the lines rather than collected while walking: the walk decides WHICH
+/// writes survive pruning, and a list built beside it would have to repeat that decision.
+fn written_names(section: &[String]) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for line in section {
+        let Some(rest) = line.split_once("● ") else { continue };
+        // `● <lvalue>  <path>:<line>` — two spaces is the separator, so an lvalue may
+        // carry a dot or an index (`$.foo`, `balances[]`) without being cut.
+        let Some((name, _)) = rest.1.split_once("  ") else { continue };
+        if !names.iter().any(|seen| seen == name) {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+/// One distinguishable mark per state variable: a colour each, and when the wheel runs out
+/// the DECORATION changes rather than the colour repeating alone.
+///
+/// Five decorations × seven colours is thirty-five marks no two of which look alike, which
+/// is well past what one entry point writes. The shortest palette sets the wheel so an index
+/// means the same hue whichever decoration is on it — two variables of the same colour are
+/// then always a different shape, never the same mark twice.
+fn state_traces(names: &[String]) -> Vec<crate::batbelt::silicon::TracedName> {
+    use crate::batbelt::silicon::{TraceKind, TracedName};
+    const VARIANTS: &[(TraceKind, bool)] = &[
+        (TraceKind::Parameter, false),   // a block of colour
+        (TraceKind::NamedReturn, false), // block + solid rule
+        (TraceKind::Parameter, true),    // block + broken rule
+        (TraceKind::Local, false),       // solid rule
+        (TraceKind::Local, true),        // broken rule
+    ];
+    const WHEEL: usize = 7;
+    names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let (kind, dotted) = VARIANTS[(index / WHEEL) % VARIANTS.len()];
+            TracedName { name: name.clone(), kind, color: index % WHEEL, dotted }
+        })
+        .collect()
+}
+
 fn write_subtree(
     id: &str,
     prefix: &str,
@@ -1233,6 +1317,72 @@ async fn resolve_allocator(
         frames.len()
     );
     Ok(ShelfAllocator::new(origin_x, origin_y))
+}
+
+/// A centre for the effects frame to the RIGHT of `title`'s deployed cluster.
+///
+/// The cluster is read from the registry (every frame whose `cluster_root` is this entry
+/// point) but its CURRENT box comes from the board, because the auditor drags frames and the
+/// recorded position is only where a frame was born. `None` when the entry point has nothing
+/// deployed, or when nothing clear was found — the caller then falls back to below everything.
+///
+/// Scanning downward rather than sideways: to the right of a cluster is where the next
+/// cluster's column usually is, so the first free slot is normally one step down, and
+/// stepping down keeps the report at the same reading distance from its diagram.
+fn beside_cluster(
+    metadata: &EvmBatMetadata,
+    title: &str,
+    board_frames: &[crate::batbelt::miro::client::BoardFrame],
+    width: f64,
+    height: f64,
+) -> Option<(f64, f64)> {
+    const GAP: f64 = 1_000.0;
+
+    let ids: HashSet<&str> = metadata
+        .miro
+        .auto
+        .frames
+        .iter()
+        .filter(|frame| frame.cluster_root == title || frame.entry_point == title)
+        .map(|frame| frame.frame_id.as_str())
+        .collect();
+    if ids.is_empty() {
+        return None;
+    }
+
+    let cluster: Vec<&crate::batbelt::miro::client::BoardFrame> = board_frames
+        .iter()
+        .filter(|frame| ids.contains(frame.id.as_str()))
+        .collect();
+    if cluster.is_empty() {
+        return None;
+    }
+
+    let right = cluster
+        .iter()
+        .map(|frame| frame.x + frame.width / 2.0)
+        .fold(f64::MIN, f64::max);
+    let top = cluster
+        .iter()
+        .map(|frame| frame.y - frame.height / 2.0)
+        .fold(f64::MAX, f64::min);
+
+    let left = right + GAP;
+    let mut candidate_top = top;
+    // Bounded: an unbounded walk down a crowded board would be a silent hang, and the
+    // fallback is perfectly usable.
+    for _ in 0..40 {
+        let center = (left + width / 2.0, candidate_top + height / 2.0);
+        let clear = board_frames.iter().all(|frame| {
+            (center.0 - frame.x).abs() * 2.0 >= width + frame.width + GAP
+                || (center.1 - frame.y).abs() * 2.0 >= height + frame.height + GAP
+        });
+        if clear {
+            return Some(center);
+        }
+        candidate_top += height + GAP;
+    }
+    None
 }
 
 /// The top-left of a clear band under every frame on the board.
@@ -7888,5 +8038,65 @@ mod natspec_test {
         assert_eq!(doc_lines_above(&options, &path, 3), 0);
         options.with_documentation = true;
         assert_eq!(doc_lines_above(&options, &path, 3), 1);
+    }
+}
+
+#[cfg(test)]
+mod effects_legend_test {
+    use super::*;
+
+    /// The lvalue is read off the line, and one written twice is named once.
+    #[test]
+    fn written_names_are_in_tree_order_and_unique() {
+        let section = vec![
+            "TrancheToken.deposit — ● state changes (3)".to_string(),
+            "   │  ● accruedWad  src/T.sol:443".to_string(),
+            "   │  ● lastAccrualTs  src/T.sol:444".to_string(),
+            "      ● accruedWad  src/T.sol:512".to_string(),
+        ];
+        assert_eq!(written_names(&section), vec!["accruedWad", "lastAccrualTs"]);
+    }
+
+    /// An lvalue that is not a plain identifier survives: the separator is two spaces,
+    /// not the first dot or bracket.
+    #[test]
+    fn a_dotted_or_indexed_lvalue_is_kept_whole() {
+        let section = vec![
+            "  ● $.totalAssets  src/T.sol:10".to_string(),
+            "  ● balances[]  src/T.sol:11".to_string(),
+        ];
+        assert_eq!(written_names(&section), vec!["$.totalAssets", "balances[]"]);
+    }
+
+    /// No two variables carry the same mark until the colours AND the decorations are
+    /// exhausted — a repeated colour always comes with a different shape.
+    #[test]
+    fn every_variable_gets_its_own_mark() {
+        let names: Vec<String> = (0..35).map(|i| format!("v{i}")).collect();
+        let traces = state_traces(&names);
+        let mut marks: Vec<(usize, crate::batbelt::silicon::TraceKind, bool)> = traces
+            .iter()
+            .map(|trace| (trace.color, trace.kind, trace.dotted))
+            .collect();
+        marks.sort_by_key(|(color, _, dotted)| (*color, *dotted));
+        marks.dedup();
+        assert_eq!(marks.len(), 35);
+    }
+
+    /// The colour moves first: two variables next to each other are never told apart by
+    /// decoration alone.
+    #[test]
+    fn the_colour_wheel_turns_before_the_decoration() {
+        let names: Vec<String> = (0..8).map(|i| format!("v{i}")).collect();
+        let traces = state_traces(&names);
+        assert_eq!(traces[0].color, 0);
+        assert_eq!(traces[6].color, 6);
+        assert_eq!(traces[0].kind, traces[6].kind);
+        // The eighth wraps the colour and changes the decoration.
+        assert_eq!(traces[7].color, 0);
+        assert_ne!(
+            (traces[7].kind, traces[7].dotted),
+            (traces[0].kind, traces[0].dotted)
+        );
     }
 }
