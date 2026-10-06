@@ -971,6 +971,11 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.26.37
+- **A new cluster lands under the last one, not under the leftmost frame on the board.**
+  The origin took the lowest edge of everything AND the leftmost edge of everything, so
+  dragging one wide frame — the `overview`, 49 files across — moved the starting x for every
+  deployment drawn afterwards, leaving them a screen apart. The bottom is still the lowest
+  edge, so frames never overlap; the left now comes from the frame that reaches it.
 - **`bat-cli highlight` marks lines on a frame already on the board.** A blue band on the
   lines you name, a blue outline on the frame carrying them, and a link that lands on the
   band — so an assistant that has read the code can point the auditor at it instead of

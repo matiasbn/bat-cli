@@ -1224,13 +1224,7 @@ async fn resolve_allocator(
     println!("Scanning the board once to reserve a region for automatic frames...");
     let frames = client.list_frames().await.change_context(EvmMiroError)?;
 
-    let (origin_x, origin_y) = if frames.is_empty() {
-        (0.0, 0.0)
-    } else {
-        let bottom = frames.iter().map(|f| f.bottom()).fold(f64::MIN, f64::max);
-        let left = frames.iter().map(|f| f.left()).fold(f64::MAX, f64::min);
-        (left, bottom + REGION_MARGIN)
-    };
+    let (origin_x, origin_y) = below_everything(&frames);
 
     println!(
         "  region origin: ({}, {}) — below {} existing frame(s)",
@@ -1239,6 +1233,23 @@ async fn resolve_allocator(
         frames.len()
     );
     Ok(ShelfAllocator::new(origin_x, origin_y))
+}
+
+/// The top-left of a clear band under every frame on the board.
+///
+/// The bottom is the lowest edge of anything there, so a new cluster cannot overlap one —
+/// Miro refuses that outright. The LEFT comes from the frame that reaches that bottom, not
+/// from the leftmost frame on the board: taking the global minimum meant one frame dragged
+/// far to the left moved the origin for everything drawn afterwards. Moving the `overview`
+/// frame — 49 files wide — put the next deployment a screen away from the previous ones,
+/// which is the opposite of what "below everything" is for.
+pub(crate) fn below_everything(frames: &[crate::batbelt::miro::client::BoardFrame]) -> (f64, f64) {
+    let Some(lowest) = frames.iter().max_by(|a, b| {
+        a.bottom().partial_cmp(&b.bottom()).unwrap_or(std::cmp::Ordering::Equal)
+    }) else {
+        return (0.0, 0.0);
+    };
+    (lowest.left(), lowest.bottom() + REGION_MARGIN)
 }
 
 /// Where the k-th way-back card goes: the bottom-right corner of the frame, stacking
