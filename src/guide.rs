@@ -510,6 +510,39 @@ is there: it draws a NEW cluster in a clean zone and hands you the old frames' U
 Safe to run unattended: `init --yes`, `sonar`, `config` (no flag), `update --check`,
 `login --status`, `deploy --entry-point <X>` (add `--dry-run` to see the layout first).
 
+## effects — what an entry point can do to the world
+
+```bash
+bat-cli effects --entry-point Vault.deposit
+bat-cli effects --entry-point Vault.deposit --deploy    # also put it on the board
+```
+
+Prints two trees: every **state change** reachable from the entry point, and every
+**external boundary** — a call leaving the code in scope, which is where value can move.
+Each one hangs under the function that reaches it, with the variable it writes and the exact
+file and line.
+
+It is the SAME walk `deploy` draws, printed instead. `deploy` answers "how does this work";
+this answers "what does it touch", in seconds instead of minutes, which is the question you
+take to a spec.
+
+Read it with three things in mind, which the output states too:
+
+- It is the **union over every branch**, not one execution. `swap` sells or buys and borrows
+  or does not; which of these happen depends on the path taken.
+- **Under which condition a branch is taken is not something bat-cli knows.** That needs
+  control-flow analysis it does not do.
+- A function reached from several callers appears **once**, under the shortest way in.
+
+Branches that change nothing and reach no boundary are left out — of 166 functions reached
+by `FLAMM.swap`, the trees show the twenty that matter.
+
+If an interface call could not be resolved, the report says so and names it: the lists are
+then a FLOOR, not the total. Fix with `bat-cli resolve <INTERFACE> <CONTRACT>` and run again.
+
+`--deploy` adds one frame to the board with the two trees side by side, placed below
+everything already there.
+
 ## overview — the whole codebase in one frame
 
 ```bash
@@ -904,6 +937,20 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.34
+- **`bat-cli effects <ENTRY POINT>` prints what it can do to the world.** Two trees: every
+  state change reachable from it, and every call that leaves the code in scope — each under
+  the function that reaches it, with the variable written and the exact file and line. It is
+  the same walk `deploy` draws, printed instead, so it answers "what does this touch" in
+  seconds where drawing it takes minutes. `FLAMM.swap`: 166 functions reached, 20 state
+  changes, 16 boundaries.
+  It says its own limits, which is the point: the lists are the **union over every branch**,
+  not one execution; under WHICH condition a branch is taken is not something bat-cli knows;
+  and a function reached from several callers is shown once, under the shortest way in. An
+  unresolved interface call makes the lists a floor, and is named.
+  `--deploy` puts the two trees side by side in a frame of their own.
+  _Re-read: workflow.md._
 
 ## 0.26.33
 - **`bat-cli overview` draws the whole codebase in one frame.** Every in-scope contract,

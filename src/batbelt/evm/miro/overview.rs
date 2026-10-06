@@ -262,7 +262,7 @@ fn render_columns(
 /// Miro refuses overlapping frames with a 500, so this is not a nicety. The board is asked
 /// for its frames and the new one goes below all of them — the same rule the deploy region
 /// uses, and it re-reads the board every time so two runs in a row cannot collide either.
-async fn free_spot(
+pub(crate) async fn free_spot(
     client: &MiroClient,
     width: f64,
     height: f64,
