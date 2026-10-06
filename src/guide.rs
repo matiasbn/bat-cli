@@ -877,14 +877,22 @@ When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read T
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
 
+## 0.26.32
+- **Nothing is left unmarked, whatever the function's size.** 0.26.31 raised the ceiling to
+  sixteen names and fourteen others; past that a variable still went unmarked, and since
+  the ranking counts uses, the ones that fell off the end were the ones worth following.
+  The colours now simply start over — the first pass through the palette draws a solid
+  rule, the second a **broken** one, then round again. Two variables can end up looking
+  alike in a very long function, which a reader works out from context; a variable with no
+  mark at all cannot be followed.
+  _Re-read: workflow.md._
+
 ## 0.26.31
-- **Every variable is marked; nothing is dropped for want of a colour.** A function with
-  more variables than the palette used to drop the extras, and since the ranking counts
-  uses, the ones it dropped were the ones worth following: in `FLAMMGateLib.priceIn` it
-  kept `i` and `n` and lost `okUsd0`, `usdI`, `p` and `p0`. Past the palette the colours
-  now start over — the first pass draws a solid rule, the second a **broken** one, and then
-  round again. Two variables may end up looking alike in a very long function, which a
-  reader can work out from context; a variable with no mark at all cannot be followed.
+- **A variable is no longer dropped for want of a colour.** A function with more variables
+  than the palette dropped the extras, and since the ranking counts uses, the ones it
+  dropped were the ones worth following: in `FLAMMGateLib.priceIn` it kept `i` and `n` and
+  lost `okUsd0`, `usdI`, `p` and `p0`. A name past the palette now reuses a colour and draws
+  its rule **broken**, which raised the ceiling to sixteen parameters and fourteen others.
 - **A loop counter is not marked.** The variable a `for` declares in its own initialiser
   lives and dies in that header, so following it is the one thing a reader needs no help
   with — and it was taking a colour from a name that is genuinely hard to follow, because
