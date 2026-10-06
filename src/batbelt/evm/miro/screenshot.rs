@@ -932,6 +932,8 @@ mod screenshot_test {
             images: vec![],
             image_dims: vec![("n".to_string(), 1000, 400)],
             node_positions: vec![("n".to_string(), 700.0, 500.0)],
+            line_maps: vec![],
+            highlights: vec![],
             callee_connectors: vec![],
             link_cards: vec![],
             connector_ids: vec![],

@@ -510,6 +510,35 @@ is there: it draws a NEW cluster in a clean zone and hands you the old frames' U
 Safe to run unattended: `init --yes`, `sonar`, `config` (no flag), `update --check`,
 `login --status`, `deploy --entry-point <X>` (add `--dry-run` to see the layout first).
 
+## highlight — point the auditor at a line
+
+```bash
+bat-cli highlight --deployment Vault.deposit --function Vault._pull --lines 288-291
+bat-cli highlight --deployment Vault.deposit --function Vault._pull --clear
+```
+
+Puts a **blue band** on chosen lines of a frame that is already on the board, and prints a
+link that lands on the band itself. This is how you point the auditor at code: "look at
+`_pull` lines 288 to 291" means hunting for a box among twenty screenshots, a band means
+opening the link and seeing it.
+
+- `--function` names any function **drawn** on the board, whether it has a frame of its own
+  or is a screenshot inside one. `--deployment` narrows it when the same function is drawn
+  in several deployments; `--frame-url` is exact.
+- `--lines` takes `288`, `288-291`, or `288,290-292`, as FILE lines.
+- The frame gets a blue outline flush with its edge, and each marked screenshot a thin blue
+  border, so a marked frame is recognisable from the zoom where a whole cluster fits.
+- `--clear` removes every band, border and outline this command drew on that frame — and
+  nothing else: the ids are recorded, so the auditor's own shapes and the deploy's red and
+  amber marks are untouched.
+
+Blue on purpose. Red and amber are claims the deploy makes about the code — this writes
+storage, this leaves the repository — and a mark that only says "look here" must not be
+confused with them.
+
+A frame deployed before 0.26.37 cannot be marked: nothing recorded which source lines each
+screenshot shows. The command says so; deploy the entry point again.
+
 ## effects — what an entry point can do to the world
 
 ```bash
@@ -940,6 +969,18 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.37
+- **`bat-cli highlight` marks lines on a frame already on the board.** A blue band on the
+  lines you name, a blue outline on the frame carrying them, and a link that lands on the
+  band — so an assistant that has read the code can point the auditor at it instead of
+  saying "look at `_pull` lines 288 to 291" and leaving them to find the box. `--clear`
+  takes it all off again, and only what this command drew.
+  `--function` names any function DRAWN on the board, whether it owns a frame or is a
+  screenshot inside one. Blue because red and amber already mean something about the code.
+  Frames deployed before this cannot be marked — nothing recorded which source lines each
+  screenshot shows — and the command says so rather than failing quietly.
+  _Re-read: workflow.md._
 
 ## 0.26.36
 - **`external` is now `vendored`, and it means where the code comes from.** The flag marks

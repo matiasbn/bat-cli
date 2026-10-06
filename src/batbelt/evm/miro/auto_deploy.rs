@@ -2097,6 +2097,8 @@ async fn draw_one(
         images: Vec::new(),
         image_dims: Vec::new(),
         node_positions: Vec::new(),
+        line_maps: Vec::new(),
+        highlights: Vec::new(),
         callee_connectors: Vec::new(),
         link_cards: Vec::new(),
         connector_ids: Vec::new(),
@@ -2902,6 +2904,26 @@ async fn draw_one(
     record.node_positions = nodes
         .iter()
         .filter_map(|node| layout.node(&node.id).map(|placed| (node.id.clone(), placed.x, placed.y)))
+        .collect();
+    // What each screenshot SHOWS, so a line of source can be found on this frame later —
+    // `bat-cli highlight` has only the board and this record to work from.
+    record.line_maps = nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Screenshot && image_ids.contains_key(&node.id))
+        .filter_map(|node| {
+            layout.node(&node.id).map(|placed| {
+                crate::batbelt::evm::metadata::bat_metadata::LineMap {
+                    node_id: node.id.clone(),
+                    file_path: node.file_path.clone(),
+                    start_line: node.start_line,
+                    end_line: node.end_line,
+                    font_size: node.font_size,
+                    png_height: node.png_height,
+                    width: placed.width,
+                    height: placed.height,
+                }
+            })
+        })
         .collect();
     record.callee_connectors = callee_owned.into_iter().collect();
     // Record link cards by the TARGET they stand for (their own node id is a

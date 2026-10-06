@@ -298,6 +298,26 @@ impl From<&crate::batbelt::miro::layout::ShelfAllocator> for ShelfState {
     }
 }
 
+/// What one screenshot on a frame shows, in source terms.
+///
+/// `start_line`..`end_line` are file lines, 1-based and inclusive, and include the NatSpec
+/// when the deploy was run with `--with-documentation` — they are what the image actually
+/// renders, which is what a later command has to map a line onto.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineMap {
+    pub node_id: String,
+    pub file_path: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    /// The font the image was rendered at, which sets the height of one line in it.
+    pub font_size: usize,
+    /// Pixel height of the rendered PNG, the denominator for a line's position in it.
+    pub png_height: u32,
+    /// Size on the board, which is the PNG scaled for this node's depth.
+    pub width: f64,
+    pub height: f64,
+}
+
 /// One entry point's frame, with every item it owns, so a re-deploy can update
 /// instead of duplicating.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -348,6 +368,15 @@ pub struct AutoDeployedFrame {
     /// at the exact spot of the node it replaces without re-laying-out anything.
     #[serde(default)]
     pub node_positions: Vec<(String, f64, f64)>,
+    /// Where each screenshot's code lives, so a line of SOURCE can be found on the board
+    /// after the fact. Without it a frame is a picture: the positions say where the images
+    /// are, nothing says which file lines they show or at what size.
+    #[serde(default)]
+    pub line_maps: Vec<LineMap>,
+    /// Item ids of the green bands `bat-cli highlight` drew here. Kept so clearing them is
+    /// exact: it deletes what this tool put on the frame and nothing the auditor did.
+    #[serde(default)]
+    pub highlights: Vec<String>,
     /// `(callee graph node id, [connector/marker ids])` — every connector and
     /// marker drawn for the arrows INTO that callee, so removing the callee deletes
     /// exactly its arrows and nothing else. Lets `--refresh-links` swap one node for
