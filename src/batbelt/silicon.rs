@@ -227,6 +227,11 @@ pub struct TracedName {
     /// Index into this kind's palette. Assigned by the caller, because which names may
     /// share a colour is a question about the function, not about drawing.
     pub color: usize,
+    /// Set for a name that had to reuse a colour: its rule is drawn broken instead of
+    /// solid, which doubles how many names a kind can carry. A function with eleven locals
+    /// in a palette of seven otherwise left four of them unmarked — and the ones it dropped
+    /// were the ones worth following, since the ranking favours a loop counter.
+    pub dotted: bool,
 }
 
 /// One occurrence of a traced name in the rendered text: which line, where in it, and how
@@ -238,6 +243,7 @@ struct Occurrence {
     len: usize,
     color: usize,
     kind: TraceKind,
+    dotted: bool,
 }
 
 /// Every occurrence of every traced name, in the EXPANDED text of each line (tabs already
@@ -268,6 +274,7 @@ fn occurrences(content: &str, traced: &[TracedName]) -> Vec<Occurrence> {
                     len: name.len(),
                     color: traced_name.color,
                     kind: traced_name.kind,
+                    dotted: traced_name.dotted,
                 });
             }
         }
@@ -321,6 +328,7 @@ fn traced_rects(
                 height: geometry.line_height,
                 color: found.color,
                 kind: found.kind,
+                dotted: found.dotted,
             }
         })
         .collect()
@@ -334,6 +342,7 @@ struct TracedRect {
     height: u32,
     color: usize,
     kind: TraceKind,
+    dotted: bool,
 }
 
 /// Whether this occurrence is a MEMBER of something else rather than the variable itself.
@@ -474,6 +483,7 @@ fn paint_traces(image: &mut image::DynamicImage, rects: &[TracedRect]) {
             // rule under it. Eight colours, sixteen marks that cannot be confused.
             let on_rule = py + RULE >= rect.y + rect.height;
             let paint = match rect.kind {
+                TraceKind::Parameter if on_rule && rect.dotted => Some(1.0),
                 TraceKind::Parameter => Some(ALPHA),
                 TraceKind::NamedReturn if on_rule => Some(1.0),
                 TraceKind::NamedReturn => Some(ALPHA),
@@ -482,6 +492,12 @@ fn paint_traces(image: &mut image::DynamicImage, rects: &[TracedRect]) {
             };
             let Some(alpha) = paint else { continue };
             for px in rect.x..(rect.x + rect.width).min(width) {
+                // A reused colour draws its rule broken. The gaps are what tell two names
+                // on one hue apart, the same way a dotted connector tells two arrows apart
+                // when a gutter runs out of colours.
+                if rect.dotted && on_rule && (px / RULE) % 2 == 0 {
+                    continue;
+                }
                 let pixel = buffer.get_pixel_mut(px, py);
                 pixel[0] = blend(pixel[0], tint.r, alpha);
                 pixel[1] = blend(pixel[1], tint.g, alpha);
@@ -783,7 +799,7 @@ mod trace_test {
     use super::*;
 
     fn local(name: &str) -> TracedName {
-        TracedName { name: name.to_string(), kind: TraceKind::Local, color: 0 }
+        TracedName { name: name.to_string(), kind: TraceKind::Local, color: 0, dotted: false }
     }
 
     /// A name inside a comment is prose, not a use: "the pair band bounds the whole
@@ -800,7 +816,7 @@ mod trace_test {
     #[test]
     fn a_named_return_carries_both_marks() {
         let content = "// path.sol\n\n    p = 1;";
-        let name = |kind| TracedName { name: "p".to_string(), kind, color: 0 };
+        let name = |kind| TracedName { name: "p".to_string(), kind, color: 0, dotted: false };
         for kind in [TraceKind::Parameter, TraceKind::Local, TraceKind::NamedReturn] {
             let rects = traced_rects(content, &[name(kind)], Some(20), true, 0);
             assert_eq!(rects.len(), 1);
@@ -902,6 +918,7 @@ mod trace_test {
 
 
 }
+
 
 
 
