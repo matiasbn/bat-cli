@@ -209,6 +209,9 @@ enum BatCommands {
         /// Remove every band this command put on that frame instead of drawing one.
         #[arg(long)]
         clear: bool,
+        /// List the functions that can be marked, per deployment, and draw nothing.
+        #[arg(long)]
+        list: bool,
     },
     /// What an entry point can do to the world: every storage write and every call that
     /// leaves the code in scope, in call order. The same walk `deploy` draws, printed.
@@ -378,6 +381,7 @@ impl BatCommands {
                 frame_url,
                 lines,
                 clear,
+                list,
             } => crate::batbelt::evm::miro::highlight::run(
                 crate::batbelt::evm::miro::highlight::HighlightOptions {
                     deployment: deployment.clone(),
@@ -385,6 +389,7 @@ impl BatCommands {
                     frame_url: frame_url.clone(),
                     lines: lines.clone(),
                     clear: *clear,
+                    list: *list,
                 },
             )
             .await
