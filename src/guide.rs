@@ -403,7 +403,11 @@ both. The signature is the legend. These colours are for reading INSIDE a screen
 are not the ones the arrows use — same name, same mark, within one screenshot only.
 
 **One red mark is one state change.** A red band marks either the assignment itself, or — when
-the write happens past the edge of this frame — the call that reaches it. A red border means the
+the write happens past the edge of this frame — the call that reaches it. **A
+CONSTRUCTOR also marks its `immutable` bindings**: an immutable is not storage and never
+appears in the metadata's `storage_writes` — which stays the answer to "what can still
+change" — but the constructor is the one place it can be assigned, and fixing that value is a
+decision worth seeing. A `constant` is never marked, since it cannot be assigned at all. A red border means the
 function contains at least one such mark. Counting the red marks on a frame counts the distinct
 state changes it causes.
 
@@ -986,6 +990,21 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.42
+- **A constructor's arguments are marked as PARAMETERS**, not as locals. The signature was
+  found by looking for the word `function`, which a `constructor`, a `modifier`, a `fallback`
+  and a `receive` do not carry — so their arguments fell through to the locals and were
+  underlined instead of sitting on a block of colour, the opposite of what the legend says. A
+  constructor's arguments are the ones most worth following: they are what the contract is
+  fixed with. Redeploy to pick it up.
+- **A constructor's `immutable` bindings are marked red.** `hypeUsdFeed = hypeUsdFeed_` —
+  fixing the feed every quote divides by — was an unmarked line, because an immutable does not
+  live in storage. It is now marked **at deploy time and only for a constructor**, which is
+  the one place an immutable can be assigned. The metadata is unchanged on purpose:
+  `storage_writes` stays the answer to "what can still change", so a later question about
+  mutable state does not get a wrong answer. No rescan needed, just redeploy.
+  _Re-read: workflow.md._
 
 ## 0.26.41
 - **The marks on `effects` state variables go plain first.** The first seven are a block of
