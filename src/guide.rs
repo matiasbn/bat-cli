@@ -992,6 +992,12 @@ first**: each entry lists exactly what changed AND which guide docs to re-read (
 so you re-open only the docs that actually changed — not everything.
 
 ## 0.26.42
+- **A constructor's arguments are marked as PARAMETERS**, not as locals. The signature was
+  found by looking for the word `function`, which a `constructor`, a `modifier`, a `fallback`
+  and a `receive` do not carry — so their arguments fell through to the locals and were
+  underlined instead of sitting on a block of colour, the opposite of what the legend says. A
+  constructor's arguments are the ones most worth following: they are what the contract is
+  fixed with. Redeploy to pick it up.
 - **A constructor's `immutable` bindings are marked red.** `hypeUsdFeed = hypeUsdFeed_` —
   fixing the feed every quote divides by — was an unmarked line, because an immutable does not
   live in storage. It is now marked **at deploy time and only for a constructor**, which is

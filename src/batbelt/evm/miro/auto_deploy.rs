@@ -1940,9 +1940,58 @@ fn named_returns(lines: &[String]) -> Vec<String> {
 ///
 /// `lines` is the rendered slice, header included. The result is capped at the palette:
 /// past six colours a reader stops being able to tell them apart, so the rest stay plain.
+/// Where the declaration this screenshot shows begins, as an offset into the joined lines.
+///
+/// Not just `function `: a **constructor**, a modifier, a `fallback` and a `receive` carry no
+/// such word, so looking for it alone found no signature at all and left their parameters to
+/// be picked up as LOCALS — underlined instead of sitting on a block of colour, which is the
+/// opposite of what a parameter means. A constructor's arguments are exactly the ones worth
+/// following: they are what the contract is fixed with.
+///
+/// Comment lines are skipped, so `/// @notice set in the constructor` above a function does
+/// not pass for the declaration when `--with-documentation` renders the NatSpec.
+fn signature_start(lines: &[String]) -> Option<usize> {
+    const KEYWORDS: &[&str] = &["function", "constructor", "modifier", "fallback", "receive"];
+    let mut offset = 0usize;
+    for line in lines {
+        let trimmed = line.trim_start();
+        let is_comment =
+            trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with('*');
+        if !is_comment {
+            let found = KEYWORDS
+                .iter()
+                .filter_map(|keyword| whole_word_at(line, keyword))
+                .min();
+            if let Some(at) = found {
+                return Some(offset + at);
+            }
+        }
+        offset += line.len() + 1; // the `\n` the join puts back
+    }
+    None
+}
+
+/// The first offset of `word` in `line` as a whole identifier, so `receive` does not match
+/// inside `receiveAndStake`.
+fn whole_word_at(line: &str, word: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut from = 0usize;
+    while let Some(relative) = line[from..].find(word) {
+        let at = from + relative;
+        let after = at + word.len();
+        let before_ok = at == 0 || !is_ident_byte(bytes[at - 1]);
+        let after_ok = after >= bytes.len() || !is_ident_byte(bytes[after]);
+        if before_ok && after_ok {
+            return Some(at);
+        }
+        from = at + word.len();
+    }
+    None
+}
+
 fn signature_parameters(lines: &[String]) -> Vec<String> {
     let joined = lines.join("\n");
-    let Some(open) = joined.find("function ").and_then(|at| joined[at..].find('(').map(|p| at + p))
+    let Some(open) = signature_start(lines).and_then(|at| joined[at..].find('(').map(|p| at + p))
     else {
         return Vec::new();
     };
@@ -7695,6 +7744,49 @@ mod signature_test {
     fn a_nested_type_does_not_end_the_parameter_list() {
         let slice = lines("    function f(mapping(uint256 => uint256) storage book, uint256[] memory legs) internal {");
         assert_eq!(signature_parameters(&slice), vec!["book", "legs"]);
+    }
+
+    /// A constructor's arguments are parameters, not locals: they sit on a block of colour,
+    /// because they are what the contract is fixed with.
+    #[test]
+    fn a_constructor_has_parameters_like_any_other_declaration() {
+        let slice = lines(
+            "    constructor(address hypeUsdFeed_, Feed[] memory feeds) {\n        hypeUsdFeed = hypeUsdFeed_;\n    }",
+        );
+        assert_eq!(signature_parameters(&slice), vec!["hypeUsdFeed_", "feeds"]);
+        let traced = traced_names(&slice);
+        let bound = traced.iter().find(|t| t.name == "hypeUsdFeed_").expect("marked");
+        assert_eq!(bound.kind, crate::batbelt::silicon::TraceKind::Parameter);
+    }
+
+    /// The same for the three other declarations that carry no `function` keyword.
+    #[test]
+    fn a_modifier_fallback_and_receive_have_parameters_too() {
+        assert_eq!(
+            signature_parameters(&lines("    modifier onlyRole(bytes32 role) {")),
+            vec!["role"]
+        );
+        assert_eq!(
+            signature_parameters(&lines("    fallback(bytes calldata data) external returns (bytes memory) {")),
+            vec!["data"]
+        );
+        assert!(signature_parameters(&lines("    receive() external payable {")).is_empty());
+    }
+
+    /// A NatSpec line that mentions one of the keywords is not the declaration.
+    #[test]
+    fn a_comment_above_the_declaration_is_not_read_as_one() {
+        let slice = lines(
+            "    /// @notice Fixed in the constructor (see below).\n    function f(uint256 amount) external {",
+        );
+        assert_eq!(signature_parameters(&slice), vec!["amount"]);
+    }
+
+    /// A word a keyword is a prefix of is not that keyword.
+    #[test]
+    fn a_name_containing_a_keyword_is_not_a_declaration() {
+        let slice = lines("    function receiveAndStake(uint256 amount) external {");
+        assert_eq!(signature_parameters(&slice), vec!["amount"]);
     }
 
     #[test]
