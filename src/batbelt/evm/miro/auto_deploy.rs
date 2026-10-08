@@ -4121,6 +4121,51 @@ fn node_id(contract: &str, function: &str) -> String {
     format!("{contract}::{function}")
 }
 
+/// Where a CONSTRUCTOR binds this contract's `immutable`s, as `(file line, name)`.
+///
+/// The scan leaves immutables out of `storage_writes` on purpose, and that stays: they do
+/// not live in storage, and a list of "state that can change" which included them would
+/// answer the next question — which variables a live contract can still move — wrongly.
+///
+/// The constructor is the one place they CAN be assigned, though, and binding the feed every
+/// quote divides by is exactly the kind of decision a red mark is for. So the DEPLOY adds
+/// them back, for a constructor and nowhere else: the drawing gains the line, the metadata
+/// keeps its meaning.
+fn immutable_bindings(
+    contract: &ContractMetadata,
+    function: &FunctionMetadata,
+) -> Vec<(usize, String)> {
+    if !function.is_constructor {
+        return Vec::new();
+    }
+    let immutables: Vec<String> = contract
+        .state_variables
+        .iter()
+        .filter(|variable| variable.is_immutable && !variable.is_constant)
+        .map(|variable| variable.name.clone())
+        .collect();
+    if immutables.is_empty() {
+        return Vec::new();
+    }
+
+    let content = std::fs::read_to_string(&contract.file_path).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().collect();
+    let first = function.line.saturating_sub(1);
+    let last = function_end(function, contract).min(lines.len());
+    if first >= last {
+        return Vec::new();
+    }
+    // The same AST walk the scan uses, with the immutables standing in for the state
+    // variables — not a textual search for `name =`, which would take `name == x` in a
+    // require and miss a tuple assignment.
+    let body = lines[first..last].join("\n");
+    crate::batbelt::evm::parser::call_resolver::analyze_body(&body, &immutables, &[])
+        .storage_write_sites
+        .into_iter()
+        .map(|(name, body_line)| (function.line + body_line.saturating_sub(1), name))
+        .collect()
+}
+
 fn make_node(
     id: String,
     label: String,
@@ -4149,11 +4194,19 @@ fn make_node(
         png_height: 0,
         rendered_lines: Vec::new(),
         line_offset: 0,
-        writes_storage: !function.storage_writes.is_empty(),
+        writes_storage: !function.storage_writes.is_empty()
+            || !immutable_bindings(contract, function).is_empty(),
         write_lines: function
             .storage_write_sites
             .iter()
             .map(|s| (s.line, s.name.clone()))
+            .chain(immutable_bindings(contract, function).into_iter().filter(|(line, name)| {
+                // A scan that already counted this binding must not make it two marks.
+                !function
+                    .storage_write_sites
+                    .iter()
+                    .any(|site| site.line == *line && site.name == *name)
+            }))
             .collect(),
         external_call_lines: Vec::new(),
         leads_to_write: false,
