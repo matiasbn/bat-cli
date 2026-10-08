@@ -593,6 +593,46 @@ then a FLOOR, not the total. Fix with `bat-cli resolve <INTERFACE> <CONTRACT>` a
 `--deploy` adds one frame to the board with the two trees side by side, placed below
 everything already there.
 
+## storage — where one contract's state lives, and who moves it
+
+```bash
+bat-cli storage --contract YieldRouter
+bat-cli storage --contract YieldRouter --dry-run   # print it, touch no board
+```
+
+One frame per contract: the declarations on the left, the slot table on the right, and an
+arrow from each slot to the exact line it is declared on.
+
+What it answers that the source cannot:
+
+- **Which slots this contract actually occupies, including the inherited ones.**
+  `YieldRouter` declares four mutable variables; its slots 0, 1 and 2 belong to
+  `TwoStepOwned` and to the reentrancy guard. A row carries the declaring contract in
+  parentheses when the slot came from a base.
+- **What is packed with what.** A repeated slot number with different offsets is two
+  variables sharing one slot.
+- **Who writes each slot**, listed under its own row with the exact `file:line` — the
+  functions of this contract and of its bases. `name[]` on the row means the writes go
+  through an index.
+- **What reads like state and occupies nothing.** In the declarations capture a purple name
+  is a `constant` and a red one an `immutable`; both live in the bytecode. A declaration with
+  no mark holds a slot.
+
+The slot numbers come from `forge inspect <C> storage-layout --json`, not from bat-cli:
+packing, dynamic types, inherited layout and ERC-7201 base-slot hashing are the compiler's
+answer to give, and every Foundry repo already ships it. So the contract has to compile; if
+`forge` fails, this says so instead of drawing half a table.
+
+Two limits, stated rather than hidden:
+
+- A write through a storage POINTER (`Request storage r = requests[id]; r.status = …`) is not
+  listed under its slot, because the lvalue names `r`, not the variable it points into.
+- Only the slots this contract's own file declares get an arrow; an inherited one is named in
+  its row instead of pointed at a line in a file this frame does not draw.
+
+A second run REPLACES the frame: the picture is derived entirely from the source and the
+compiler, so two of them are not two views, they are one view and one stale copy.
+
 ## overview — the whole codebase in one frame
 
 ```bash
@@ -990,6 +1030,14 @@ New bat-cli capabilities **by version, newest first**. You are running bat-cli
 When `Bat.toml`'s `bat_cli_version` rises above the value you last saw, **read THIS file
 first**: each entry lists exactly what changed AND which guide docs to re-read (`Re-read:`),
 so you re-open only the docs that actually changed — not everything.
+
+## 0.26.43
+- **`bat-cli storage --contract <C>` draws where a contract's state lives.** The slot table
+  from `forge inspect` beside the declarations, an arrow from each slot to the line it is
+  declared on, the writers of each slot under its own row, and `constant`/`immutable` marked
+  in the code (purple and red) since they occupy no slot. It says which slots came from a
+  BASE, which is what the contract's own file never shows.
+  _Re-read: workflow.md._
 
 ## 0.26.42
 - **A constructor's arguments are marked as PARAMETERS**, not as locals. The signature was

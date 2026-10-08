@@ -1087,15 +1087,40 @@ impl MiroClient {
         end_anchor: RelativeAnchor,
         style: ConnectorStyle,
     ) -> Result<String, MiroError> {
+        self.create_connector_shaped(
+            start_item_id,
+            start_anchor,
+            end_item_id,
+            end_anchor,
+            style,
+            "elbowed",
+        )
+        .await
+    }
+
+    /// The same connector, drawn with a shape of your choosing.
+    ///
+    /// `elbowed` is right for a call graph, where arrows run between columns and orthogonal
+    /// segments are what keeps them legible. It is wrong wherever two points simply have to
+    /// be joined — a row of a table and the line it describes — because an elbow between two
+    /// far-apart points is a bracket around everything in between, and four of those nest
+    /// into a shape that hides what it is pointing at. There `straight` is one diagonal.
+    pub async fn create_connector_shaped(
+        &self,
+        start_item_id: &str,
+        start_anchor: RelativeAnchor,
+        end_item_id: &str,
+        end_anchor: RelativeAnchor,
+        style: ConnectorStyle,
+        shape: &str,
+    ) -> Result<String, MiroError> {
         let mut body = json!({
             "startItem": { "id": start_item_id, "position": start_anchor.to_json() },
             "endItem": { "id": end_item_id, "position": end_anchor.to_json() },
-            // Always elbowed: orthogonal segments are what makes a call graph
-            // readable, and the alternatives were only ever tried to find out
-            // whether the shape was what pushed anchors to the item border.
-            // It is not — Miro clips a connector at the item boundary whatever
-            // the shape.
-            "shape": "elbowed",
+            // Whatever the shape, Miro clips a connector at the item's boundary — that was
+            // tried when the anchors were first pushed out to the border, and the shape is
+            // not what causes it. The marker shapes are.
+            "shape": shape,
             "style": {
                 "strokeColor": style.stroke_color,
                 "strokeWidth": style.stroke_width,

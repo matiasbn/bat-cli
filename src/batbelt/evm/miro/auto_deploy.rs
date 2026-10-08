@@ -1300,6 +1300,108 @@ fn resolve_named_target(
         ))))
 }
 
+/// Where one end of a lane-routed arrow attaches.
+pub(crate) enum LaneEnd {
+    /// A point on the board: an invisible marker is dropped there to land on.
+    Point { x: f64, y: f64 },
+    /// An item already on the board, with the anchor to use on it and where it sits, so the
+    /// lane knows which side of itself to leave from.
+    Item { id: String, anchor: RelativeAnchor, x: f64, y: f64 },
+}
+
+/// Draw ONE arrow as three straight legs through a lane of its own — the way every arrow in
+/// a deployed frame is drawn.
+///
+/// Miro routes a connector itself: you give it two endpoints and it picks the path, and what
+/// it picks for several arrows crossing one gutter is a single shared vertical run, so they
+/// read as one bracket. The way out is to stop asking it to route — every leg here joins two
+/// points that share an axis, with the anchors on the facing SIDES of the markers, so there
+/// is nothing left for Miro to decide. Only the last leg carries a head.
+///
+/// Returns `(markers, connectors)` it created, so the caller can attribute them and delete
+/// exactly this arrow later.
+pub(crate) async fn draw_lane_arrow(
+    client: &MiroClient,
+    frame_id: &str,
+    from: LaneEnd,
+    to: LaneEnd,
+    lane_x: f64,
+    style: ConnectorStyle,
+) -> std::result::Result<(Vec<String>, Vec<String>), Report<crate::batbelt::miro::MiroError>> {
+    let mut markers = Vec::new();
+    let mut connectors = Vec::new();
+
+    // The side of an endpoint the lane is on, which is the side its leg leaves from.
+    let facing = |x: f64| {
+        if lane_x >= x {
+            (RelativeAnchor::new(1.0, 0.5), RelativeAnchor::new(0.0, 0.5))
+        } else {
+            (RelativeAnchor::new(0.0, 0.5), RelativeAnchor::new(1.0, 0.5))
+        }
+    };
+
+    let resolve = |end: &LaneEnd| -> (String, RelativeAnchor, RelativeAnchor, f64) {
+        match end {
+            LaneEnd::Item { id, anchor, x, y } => {
+                let (_, lane_side) = facing(*x);
+                (id.clone(), *anchor, lane_side, *y)
+            }
+            LaneEnd::Point { x, y } => {
+                let (own, lane_side) = facing(*x);
+                (String::new(), own, lane_side, *y)
+            }
+        }
+    };
+    let (mut from_id, from_anchor, from_lane_side, from_y) = resolve(&from);
+    let (mut to_id, to_anchor, to_lane_side, to_y) = resolve(&to);
+
+    for (end, id) in [(&from, &mut from_id), (&to, &mut to_id)] {
+        if let LaneEnd::Point { x, y } = end {
+            let marker = client
+                .create_anchor_marker(frame_id, *x, *y, ANCHOR_MARKER_SIZE)
+                .await?;
+            markers.push(marker.clone());
+            *id = marker;
+        }
+    }
+
+    let lane_top = client
+        .create_anchor_marker(frame_id, lane_x, from_y, ANCHOR_MARKER_SIZE)
+        .await?;
+    let lane_end = client
+        .create_anchor_marker(frame_id, lane_x, to_y, ANCHOR_MARKER_SIZE)
+        .await?;
+    markers.push(lane_top.clone());
+    markers.push(lane_end.clone());
+
+    let mut leg = style.clone();
+    leg.arrow = ArrowEnd::None;
+    connectors.push(
+        client
+            .create_connector(&from_id, from_anchor, &lane_top, from_lane_side, leg.clone())
+            .await?,
+    );
+    // Down the lane, or up it — the anchors say which, so the segment stays vertical.
+    let (top_side, end_side) = if to_y >= from_y {
+        (RelativeAnchor::new(0.5, 1.0), RelativeAnchor::new(0.5, 0.0))
+    } else {
+        (RelativeAnchor::new(0.5, 0.0), RelativeAnchor::new(0.5, 1.0))
+    };
+    connectors.push(
+        client
+            .create_connector(&lane_top, top_side, &lane_end, end_side, leg.clone())
+            .await?,
+    );
+    let mut head = style;
+    head.arrow = ArrowEnd::End;
+    connectors.push(
+        client
+            .create_connector(&lane_end, to_lane_side, &to_id, to_anchor, head)
+            .await?,
+    );
+    Ok((markers, connectors))
+}
+
 /// Reserve (or recover) the board region the automatic frames live in.
 async fn resolve_allocator(
     client: &MiroClient,
@@ -1333,7 +1435,7 @@ async fn resolve_allocator(
 /// Scanning downward rather than sideways: to the right of a cluster is where the next
 /// cluster's column usually is, so the first free slot is normally one step down, and
 /// stepping down keeps the report at the same reading distance from its diagram.
-fn beside_cluster(
+pub(crate) fn beside_cluster(
     metadata: &EvmBatMetadata,
     title: &str,
     board_frames: &[crate::batbelt::miro::client::BoardFrame],
@@ -3033,54 +3135,31 @@ async fn draw_one(
                     );
                     continue;
                 }
-                // Three straight legs, each between two points that share an axis, so
-                // there is nothing left for Miro to route: out of the caller at the
-                // call line, down (or up) this arrow's own lane, into the callee's
-                // signature line.
-                let lane_top = client
-                    .create_anchor_marker(&frame_id, link.lane_x, group.token_y, ANCHOR_MARKER_SIZE)
-                    .await?;
-                let lane_end = client
-                    .create_anchor_marker(&frame_id, link.lane_x, link.end_y, ANCHOR_MARKER_SIZE)
-                    .await?;
-                markers.push(lane_top.clone());
-                markers.push(lane_end.clone());
-                // Straight into the call line itself, carrying this arrow's head: the
-                // edge marker is not on the path at all.
-                let mut head_style = route_style.clone();
-                head_style.arrow = ArrowEnd::End;
-                connectors.push(
-                    client
-                        .create_connector(
-                            &lane_top,
-                            RelativeAnchor::new(0.0, 0.5),
-                            &token_marker,
-                            RelativeAnchor::new(1.0, 0.5),
-                            head_style,
-                        )
-                        .await?,
-                );
-                let (top_side, end_side) = if link.end_y >= group.token_y {
-                    (RelativeAnchor::new(0.5, 1.0), RelativeAnchor::new(0.5, 0.0))
-                } else {
-                    (RelativeAnchor::new(0.5, 0.0), RelativeAnchor::new(0.5, 1.0))
-                };
-                connectors.push(
-                    client
-                        .create_connector(&lane_top, top_side, &lane_end, end_side, route_style.clone())
-                        .await?,
-                );
-                connectors.push(
-                    client
-                        .create_connector(
-                            &link.end_id,
-                            link.end_anchor,
-                            &lane_end,
-                            RelativeAnchor::new(1.0, 0.5),
-                            route_style,
-                        )
-                        .await?,
-                );
+                // Out of the callee, down (or up) this arrow's own lane, and into the
+                // call line itself carrying the head — the edge marker is not on the
+                // path at all. Drawn by `draw_lane_arrow`, which is the same three legs
+                // `bat-cli storage` points a slot at its declaration with.
+                let (lane_markers, lane_connectors) = draw_lane_arrow(
+                    &client,
+                    &frame_id,
+                    LaneEnd::Item {
+                        id: link.end_id.clone(),
+                        anchor: link.end_anchor,
+                        x: link.end_point.0,
+                        y: link.end_y,
+                    },
+                    LaneEnd::Item {
+                        id: token_marker.clone(),
+                        anchor: RelativeAnchor::new(1.0, 0.5),
+                        x: group.token_x,
+                        y: group.token_y,
+                    },
+                    link.lane_x,
+                    route_style,
+                )
+                .await?;
+                markers.extend(lane_markers);
+                connectors.extend(lane_connectors);
             }
 
             bar.inc(1);

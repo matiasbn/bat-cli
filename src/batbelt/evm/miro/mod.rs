@@ -10,6 +10,7 @@ pub mod auto_deploy;
 pub mod highlight;
 pub mod overview;
 pub mod screenshot;
+pub mod storage;
 pub mod struct_frame;
 
 use std::{error::Error, fmt};
