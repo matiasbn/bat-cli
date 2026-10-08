@@ -235,6 +235,17 @@ enum BatCommands {
         #[arg(long = "include-dependencies")]
         include_dependencies: bool,
     },
+    /// Draw ONE contract's storage layout: every slot it occupies (from `forge inspect`),
+    /// the line each one is declared on, what reads like state and occupies nothing, and
+    /// which functions write what.
+    Storage {
+        /// The contract to draw, by name (`YieldRouter`).
+        #[arg(long)]
+        contract: String,
+        /// Print the table and stop, without touching the board.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Never draw a contract's functions again (a library you have already read)
     Ignore {
         /// Contract name (`Math`) or any part of a path
@@ -413,6 +424,16 @@ impl BatCommands {
             } => crate::batbelt::evm::miro::overview::run(*include_dependencies)
                 .await
                 .change_context(CommandError),
+            BatCommands::Storage { contract, dry_run } => {
+                crate::batbelt::evm::miro::storage::run(
+                    crate::batbelt::evm::miro::storage::StorageOptions {
+                        contract: contract.clone(),
+                        dry_run: *dry_run,
+                    },
+                )
+                .await
+                .change_context(CommandError)
+            }
             BatCommands::Ignore {
                 pattern,
                 list,
@@ -445,6 +466,7 @@ impl BatCommands {
             | BatCommands::Relink { .. }
             | BatCommands::Resolve { .. }
             | BatCommands::Overview { .. }
+            | BatCommands::Storage { .. }
             | BatCommands::Effects { .. }
             | BatCommands::Highlight { .. }
             | BatCommands::Ignore { .. } => true,
